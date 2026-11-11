@@ -581,10 +581,10 @@ pub fn container_totals(c: &ContainerData, articles: &[ArticleLoad]) -> Containe
         }
     };
     ContainerTotals {
-        used_u,
+        used_u: used_u + 0.0,
         total_u: if c.rackable { c.height_u } else { None },
-        weight_kg: (weight * 10.0).round() / 10.0,
-        power_w: power.round(),
+        weight_kg: (weight * 10.0).round() / 10.0 + 0.0,
+        power_w: power.round() + 0.0,
         volume_m3: volume.map(|v| (v * 1000.0).round() / 1000.0),
         over_weight: c.max_weight_kg.is_some_and(|m| weight > m),
         over_power: c.max_power_w.is_some_and(|m| power > m),

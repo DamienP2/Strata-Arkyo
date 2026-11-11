@@ -195,7 +195,8 @@ pub struct Electrical {
 
 /// Courant par circuit et par phase. `loads` : (circuit, watts) de chaque élément branché.
 pub fn electrical(circuits: &[CircuitSpec], loads: &[(Option<String>, f64)]) -> Electrical {
-    let round = |v: f64| (v * 10.0).round() / 10.0;
+    // `+ 0.0` : une somme vide de flottants vaut −0 ; on l'affiche 0.
+    let round = |v: f64| (v * 10.0).round() / 10.0 + 0.0;
     let mut out: Vec<CircuitLoad> = circuits
         .iter()
         .map(|c| {
@@ -255,7 +256,7 @@ pub fn electrical(circuits: &[CircuitSpec], loads: &[(Option<String>, f64)]) -> 
         imbalance_pct: imbalance,
         // Signalé au-delà de 30 % d'écart, quand la phase la plus chargée dépasse 2 A.
         unbalanced: imbalance > 30.0 && max > 2.0,
-        unassigned_watts: unassigned.round(),
+        unassigned_watts: unassigned.round() + 0.0,
     }
 }
 

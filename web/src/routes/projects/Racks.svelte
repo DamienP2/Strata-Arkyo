@@ -95,7 +95,9 @@
     if (c.id !== cid) return;
     if (c.kind === 'rack' && c.action === 'saved' && !mine) newer = true;
     if (c.kind === 'lock' && c.action === 'request' && mine) requested = c.actor;
-    if (c.kind === 'lock' && (c.action === 'released' || c.action === 'taken') && !mine) load();
+    // Main prise ailleurs (y compris par soi-même dans un autre onglet) : cet onglet passe en lecture.
+    if (c.kind === 'lock' && c.action === 'taken') { if (mine) stopBeat(); load(); }
+    if (c.kind === 'lock' && c.action === 'released' && !mine) load();
   }));
   const leave = () => { if (current && beat) fetch(`/api/containers/${current}/rack/lock`, { method: 'DELETE', headers: { 'X-Strata-Request': '1' }, keepalive: true }); };
   onDestroy(() => { stopBeat(); if (current) release(current); });
@@ -103,10 +105,13 @@
   // ----- Pose et déplacement -----
   const faceEls = $derived(rack?.elements.filter((e) => e.placement.face === face) ?? []);
   const selected = $derived(rack?.elements.find((e) => e.placement.id === sel) ?? null);
+  let placing = false;
   async function placeAt(u: number, col: number) {
-    if (!armed || !mine || face === 'side') return;
+    // Une pose à la fois : le clic suivant attend la réponse du serveur.
+    if (!armed || !mine || face === 'side' || placing) return;
     lastAction = Date.now();
     const p = armed;
+    placing = true;
     try {
       const r = await api.post<{ adjusted: boolean; warning: string | null; placement: Placement }>(`/containers/${cid}/placements`, { article_id: p.article_id, instance_id: p.instance_id ?? null, face, u_start: u, col });
       if (r.adjusted) toast(`Posé en U${r.placement.u_start}, la place libre la plus proche.`, 'info');
@@ -114,7 +119,7 @@
       armed = null; sel = r.placement.id; await load();
       const next = rack?.pending.find((x) => x.article_id === p.article_id && x.rackable);
       if (next) armed = next;
-    } catch (e) { fail(e); }
+    } catch (e) { fail(e); } finally { placing = false; }
   }
   async function patch(e: RackEl, change: Partial<Placement>) {
     lastAction = Date.now();

@@ -17,7 +17,8 @@ Strata Arkyo est un seul programme Rust installé sur un serveur Ubuntu du site.
 | 3 | Catalogue : référentiels et pack de départ, fiches équipements, câbles, modèles de câble, adaptateurs, doublons, compatibilité câble et signal, import CSV/XLSX, export, échange entre sites, retour arrière | Fait |
 | 4 | Projets et inventaire : assistant de création, liste et tableau de bord, fiche, emplacements, contenants, articles, exemplaires (repère, série, MAC, étiquette), tâches, historique, nomenclature ; temps réel et présence par WebSocket | Fait (modèles de contenants et panels : lot 5) |
 | Interface | Web app Svelte embarquée : connexion, administration, catalogue, projets et inventaire en temps réel | Fait pour les lots 1 à 4 |
-| 5 à 10 | Racks, synoptique, livrables, terrain, réseau, plans | À venir |
+| 5 | Racks : élévations (avant, arrière, arrière intérieure, côté ; réel ou schématique), placement au demi-U contrôlé par le serveur, profondeur utile, bilan électrique par circuit et par phase, verrou « une personne à la fois » | En cours (modèles de contenants, panels, étagères, contrôles de construction et planche d'élévations à venir) |
+| 6 à 10 | Synoptique, livrables, terrain, réseau, plans | À venir |
 
 ## Organisation du dépôt
 
@@ -140,6 +141,9 @@ Lire demande « Projets : lecture », écrire « Projets : écriture ». Chaque 
 | `PATCH /api/instances/{id}` | Exemplaire : numéro de série, adresse MAC, étiquette d'inventaire |
 | `GET`/`POST /api/projects/{id}/tasks`, `PATCH`/`DELETE /api/tasks/{id}` | Tâches |
 | `GET /api/projects/{id}/inventory/export?format=&group=&free=` | Nomenclature CSV ou XLSX, sous-totaux par emplacement ou contenant |
+| `GET /api/containers/{id}/rack`, `POST`/`DELETE /api/containers/{id}/rack/lock`, `POST /api/containers/{id}/rack/lock/request` | Élévation (éléments posés, à placer, bilan, avertissements) ; prendre, renouveler, céder ou demander la main |
+| `POST /api/containers/{id}/placements`, `PATCH`/`DELETE /api/placements/{id}`, `POST /api/containers/{id}/placements/clear` | Poser, déplacer, retirer, vider (droit Conception : écriture et main tenue) |
+| `POST /api/containers/{id}/circuits`, `PATCH`/`DELETE /api/circuits/{id}` | Circuits électriques (phase, calibre) |
 | `GET /api/live` (WebSocket) | Temps réel : `{"type":"join","room":"project:<id>"}`, battement `{"type":"ping"}` toutes les 30 s ; événements `change` et `presence` |
 
 ## Mises à jour OTA

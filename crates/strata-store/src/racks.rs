@@ -338,7 +338,8 @@ impl Store {
             .map(Lock::from_row);
         let limit = timestamp(chrono::Utc::now() - chrono::Duration::seconds(ttl_secs));
         if let Some(l) = &cur {
-            if l.token_hash != token_hash && l.beat_at >= limit {
+            // La même personne (autre onglet, session d'avant une coupure) reprend la main.
+            if l.token_hash != token_hash && l.account_id != account_id && l.beat_at >= limit {
                 return Ok(LockOutcome::Held(l.clone()));
             }
         }
@@ -429,6 +430,20 @@ mod tests {
             matches!(s.take_lock("rack:1", &p.id, "t2", "a2", "Hugo", 45).await.unwrap(), LockOutcome::Held(l) if l.account_name == "Léa")
         );
         assert!(s.holds_lock("rack:1", "t1", 45).await.unwrap());
+        // Léa dans un autre onglet : elle reprend la main, l'ancien onglet la perd.
+        assert!(matches!(
+            s.take_lock("rack:1", &p.id, "t1b", "a1", "Léa", 45)
+                .await
+                .unwrap(),
+            LockOutcome::Taken(_)
+        ));
+        assert!(!s.holds_lock("rack:1", "t1", 45).await.unwrap());
+        assert!(matches!(
+            s.take_lock("rack:1", &p.id, "t1", "a1", "Léa", 45)
+                .await
+                .unwrap(),
+            LockOutcome::Taken(_)
+        ));
         // Sans battement : la main expire.
         sqlx::query("UPDATE locks SET beat_at = '2000-01-01T00:00:00Z'")
             .execute(&s.pool)
