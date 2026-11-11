@@ -17,8 +17,10 @@ use strata_domain::{Level, Permissions, RoleInfo, builtin};
 
 pub mod catalog;
 pub mod projects;
+pub mod racks;
 pub use catalog::*;
 pub use projects::*;
+pub use racks::*;
 
 /// Migrations du schéma. Une base écrite par une version plus récente porte des
 /// migrations que cette version ne connaît pas : elles sont ignorées, ce qui permet
@@ -857,7 +859,10 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let s = Store::open(&dir.join("strata.db")).await.unwrap();
         assert!(s.integrity_ok().await.unwrap());
-        assert_eq!(s.schema_version().await.unwrap(), 3);
+        assert_eq!(
+            s.schema_version().await.unwrap(),
+            migrator().migrations.len() as i64
+        );
         s.close().await;
         // Rouvrir ne rejoue pas les migrations.
         let s = Store::open(&dir.join("strata.db")).await.unwrap();

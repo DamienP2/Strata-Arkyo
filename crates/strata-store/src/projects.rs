@@ -681,7 +681,8 @@ impl Store {
             if quantity > old {
                 add_instances(&mut tx, &pid, id, quantity - old).await?;
             } else if quantity < old {
-                sqlx::query("DELETE FROM instances WHERE id IN (SELECT id FROM instances WHERE article_id = ? ORDER BY created_at DESC, tag DESC LIMIT ?)")
+                // Les exemplaires non posés partent d'abord, puis les plus récents.
+                sqlx::query("DELETE FROM instances WHERE id IN (SELECT i.id FROM instances i WHERE i.article_id = ? ORDER BY EXISTS (SELECT 1 FROM placements p WHERE p.instance_id = i.id), i.created_at DESC, i.tag DESC LIMIT ?)")
                     .bind(id)
                     .bind(old - quantity)
                     .execute(&mut *tx)
@@ -703,6 +704,12 @@ impl Store {
     ) -> Result<Article> {
         let mut tx = self.pool.begin().await?;
         check_rev(&mut tx, "articles", id, rev).await?;
+        // L'article change de contenant : il n'est plus posé dans l'ancien.
+        sqlx::query("DELETE FROM placements WHERE article_id = ? AND container_id IS NOT ?")
+            .bind(id)
+            .bind(container_id)
+            .execute(&mut *tx)
+            .await?;
         let pid: String = sqlx::query_scalar("UPDATE articles SET location_id = ?, container_id = ?, rev = rev + 1, updated_at = ? WHERE id = ? RETURNING project_id")
             .bind(location_id)
             .bind(container_id)
@@ -763,6 +770,10 @@ impl Store {
         if moved.rows_affected() == 0 {
             return Err(StoreError::NotFound);
         }
+        sqlx::query("DELETE FROM placements WHERE instance_id = ?")
+            .bind(instance_id)
+            .execute(&mut *tx)
+            .await?;
         sqlx::query("UPDATE articles SET quantity = quantity - 1, rev = rev + 1, updated_at = ? WHERE id = ?").bind(&t).bind(article_id).execute(&mut *tx).await?;
         touch_project(&mut tx, &a.0).await?;
         tx.commit().await?;

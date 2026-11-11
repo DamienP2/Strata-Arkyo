@@ -61,7 +61,7 @@ fn today() -> String {
     chrono::Local::now().format("%Y-%m-%d").to_string()
 }
 
-fn fields(e: Vec<FieldError>) -> ApiResult<()> {
+pub(crate) fn fields(e: Vec<FieldError>) -> ApiResult<()> {
     if e.is_empty() {
         Ok(())
     } else {
@@ -69,14 +69,14 @@ fn fields(e: Vec<FieldError>) -> ApiResult<()> {
     }
 }
 
-fn one(field: &str, message: impl Into<String>) -> ApiError {
+pub(crate) fn one(field: &str, message: impl Into<String>) -> ApiError {
     ApiError::Fields(vec![FieldError {
         field: field.into(),
         message: message.into(),
     }])
 }
 
-fn read(m: &Member) -> ApiResult<()> {
+pub(crate) fn read(m: &Member) -> ApiResult<()> {
     m.0.require(Domain::Projets, Level::Lecture, READ)
 }
 
@@ -88,7 +88,7 @@ async fn project_of(store: &Store, id: &str) -> ApiResult<Project> {
     store.project(id).await?.ok_or(ApiError::NotFound("Projet"))
 }
 
-fn room(pid: &str) -> String {
+pub(crate) fn room(pid: &str) -> String {
     format!("project:{pid}")
 }
 
@@ -125,23 +125,30 @@ async fn record<B: Serialize, A: Serialize>(
 
 /// Ce que l'inventaire doit savoir d'une fiche du catalogue.
 #[derive(Debug, Clone, Serialize)]
-struct ItemView {
-    id: String,
-    kind: strata_domain::catalog::ItemKind,
-    name: String,
-    reference: Option<String>,
-    brand: Option<String>,
-    category: Option<String>,
-    rackable: bool,
-    height_u: Option<f64>,
-    depth_mm: Option<f64>,
-    weight_kg: Option<f64>,
-    power_w: Option<f64>,
-    modular: bool,
-    active: bool,
+pub(crate) struct ItemView {
+    pub(crate) id: String,
+    pub(crate) kind: strata_domain::catalog::ItemKind,
+    pub(crate) name: String,
+    pub(crate) reference: Option<String>,
+    pub(crate) brand: Option<String>,
+    pub(crate) category: Option<String>,
+    pub(crate) rackable: bool,
+    pub(crate) height_u: Option<f64>,
+    pub(crate) depth_mm: Option<f64>,
+    pub(crate) weight_kg: Option<f64>,
+    pub(crate) power_w: Option<f64>,
+    pub(crate) modular: bool,
+    pub(crate) active: bool,
+    /// Largeur en rack (pleine, 1/2…), réserve de câbles à l'arrière, première fonction.
+    pub(crate) width: strata_domain::catalog::Width,
+    pub(crate) rear_reserve_mm: Option<f64>,
+    pub(crate) function: Option<String>,
 }
 
-async fn item_views(store: &Store, ids: &HashSet<String>) -> ApiResult<HashMap<String, ItemView>> {
+pub(crate) async fn item_views(
+    store: &Store,
+    ids: &HashSet<String>,
+) -> ApiResult<HashMap<String, ItemView>> {
     let refs = store.list_refs(None).await?;
     let name = |kind: strata_domain::catalog::RefKind, id: Option<&str>| {
         id.and_then(|id| refs.iter().find(|r| r.kind == kind && r.id == id))
@@ -157,7 +164,7 @@ async fn item_views(store: &Store, ids: &HashSet<String>) -> ApiResult<HashMap<S
     Ok(out)
 }
 
-fn view_of(
+pub(crate) fn view_of(
     i: &CatalogItem,
     name: &dyn Fn(strata_domain::catalog::RefKind, Option<&str>) -> Option<String>,
 ) -> ItemView {
@@ -166,12 +173,17 @@ fn view_of(
     let format: Option<Format> = d
         .get("format")
         .and_then(|f| serde_json::from_value(f.clone()).ok());
-    let (rackable, height_u, depth_mm) = match format {
+    let (rackable, height_u, depth_mm, width, rear_reserve_mm) = match format {
         Some(Format::Rack {
-            height_u, depth_mm, ..
-        }) => (true, Some(height_u), Some(depth_mm)),
-        Some(Format::Free { length_mm, .. }) => (false, None, Some(length_mm)),
-        None => (false, None, None),
+            height_u,
+            depth_mm,
+            width,
+            rear_reserve_mm,
+        }) => (true, Some(height_u), Some(depth_mm), width, rear_reserve_mm),
+        Some(Format::Free { length_mm, .. }) => {
+            (false, None, Some(length_mm), Default::default(), None)
+        }
+        None => (false, None, None, Default::default(), None),
     };
     let modular: Option<Modular> = d
         .get("modular")
@@ -193,10 +205,17 @@ fn view_of(
         power_w: d.get("power_w").and_then(Value::as_f64),
         modular: matches!(modular, Some(Modular::Host { .. })),
         active: i.active,
+        width,
+        rear_reserve_mm,
+        function: d
+            .get("functions")
+            .and_then(|f| f.get(0))
+            .and_then(Value::as_str)
+            .map(str::to_string),
     }
 }
 
-fn load_of(a: &Article, items: &HashMap<String, ItemView>) -> ArticleLoad {
+pub(crate) fn load_of(a: &Article, items: &HashMap<String, ItemView>) -> ArticleLoad {
     let q = a.quantity.max(0) as u32;
     match (&a.accessory, a.item_id.as_ref().and_then(|i| items.get(i))) {
         (Some(acc), _) => ArticleLoad {
@@ -218,7 +237,7 @@ fn load_of(a: &Article, items: &HashMap<String, ItemView>) -> ArticleLoad {
     }
 }
 
-fn article_label(a: &Article, items: &HashMap<String, ItemView>) -> String {
+pub(crate) fn article_label(a: &Article, items: &HashMap<String, ItemView>) -> String {
     match (&a.accessory, a.item_id.as_ref().and_then(|i| items.get(i))) {
         (Some(acc), _) => acc.label(),
         (None, Some(it)) => it.name.clone(),
@@ -849,6 +868,9 @@ struct ContainerPatch {
     rev: i64,
     location_id: String,
     name: String,
+    /// Retirer de l'élévation ce qui dépasserait une hauteur réduite (après confirmation).
+    #[serde(default)]
+    confirm_remove: bool,
     #[serde(flatten)]
     data: ContainerData,
 }
@@ -868,6 +890,26 @@ async fn update_container(
         .ok_or(ApiError::NotFound("Contenant"))?;
     location_in(&st.store, &before.project_id, &b.location_id).await?;
     fields(validate_container(&mut b.name, &mut b.data))?;
+    // Hauteur réduite ou contenant devenu non rackable : la liste de ce qui dépasse
+    // est rendue ; après confirmation, ces éléments redeviennent « à placer ».
+    let limit = if b.data.rackable {
+        b.data.height_u.unwrap_or(0.0)
+    } else {
+        0.0
+    };
+    let over = crate::racks::overflow(&st.store, &before, limit).await?;
+    if !over.is_empty() {
+        if !b.confirm_remove {
+            let names: Vec<&str> = over.iter().map(|o| o.1.as_str()).collect();
+            return Err(ApiError::Conflict(format!(
+                "{} élément(s) dépasseraient : {}. Confirmez pour les retirer de l'élévation.",
+                over.len(),
+                names.join(", ")
+            )));
+        }
+        let ids: Vec<String> = over.into_iter().map(|o| o.0).collect();
+        st.store.delete_placements(&ids).await?;
+    }
     let after = st
         .store
         .update_container(&id, b.rev, &b.location_id, &b.name, &b.data)

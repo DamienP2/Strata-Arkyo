@@ -11,6 +11,7 @@ pub mod error;
 pub mod live;
 pub mod ops;
 pub mod projects;
+pub mod racks;
 pub mod web;
 
 use crate::auth::{
@@ -89,6 +90,7 @@ pub fn router(state: AppState) -> Router {
         .nest("/admin", admin::routes())
         .nest("/catalog", catalog::routes())
         .merge(projects::routes())
+        .merge(racks::routes())
         .route("/live", get(live::socket))
         .layer(middleware::from_fn(csrf));
     Router::new()
@@ -281,6 +283,19 @@ async fn logout(
     s: Session,
     jar: CookieJar,
 ) -> ApiResult<(CookieJar, StatusCode)> {
+    // Une déconnexion libère la main sur les écrans de conception.
+    for l in st.store.release_session_locks(&s.token_hash).await? {
+        let cid = l.view.trim_start_matches("rack:");
+        st.hub.change(
+            format!("project:{}", l.project_id),
+            "lock",
+            cid,
+            "released",
+            None,
+            &s.account.id,
+            None,
+        );
+    }
     st.store.delete_session(&s.token_hash).await?;
     Ok((jar.add(removal_cookie()), StatusCode::NO_CONTENT))
 }
