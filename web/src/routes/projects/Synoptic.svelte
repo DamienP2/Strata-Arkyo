@@ -7,6 +7,7 @@
   import { untrack, onDestroy } from 'svelte';
   import Icon from '../../components/Icon.svelte';
   import Confirm from '../../components/Confirm.svelte';
+  import NumberingDialog from './NumberingDialog.svelte';
   import ConnGlyph from '../../components/ConnGlyph.svelte';
   import { api, ApiError } from '../../lib/api';
   import { can } from '../../lib/session.svelte';
@@ -39,6 +40,26 @@
   let syn = $state<Syn | null>(null);
   const mine = $derived(!!syn?.lock?.mine);
   let sel = $state<string | null>(null);
+  /** Câbles choisis (Ctrl ou Maj + clic pour en ajouter). */
+  let multi = $state<Set<string>>(new Set());
+  let numbering = $state(false);
+  let tab = $state<'cable' | 'issues'>('cable');
+  interface Issue { code: number; severity: 'error' | 'warning' | 'info'; title: string; detail: string; cables: string[]; nodes: string[]; view: string | null }
+  let issues = $state<{ counts: { error: number; warning: number; info: number }; issues: Issue[] } | null>(null);
+  let hl = $state<{ cables: Set<string>; nodes: Set<string> }>({ cables: new Set(), nodes: new Set() });
+  let pendingHl: Issue | null = null;
+  async function validate() { try { issues = await api.get(`/projects/${pid}/synoptic/validate`); } catch (e) { fail(e); } }
+  function pickCable(id: string, e: MouseEvent) {
+    e.stopPropagation();
+    if (e.ctrlKey || e.metaKey || e.shiftKey) { const m = new Set(multi); if (m.has(id)) m.delete(id); else m.add(id); multi = m; }
+    else multi = new Set([id]);
+    sel = id; tab = 'cable';
+  }
+  function goIssue(i: Issue) {
+    hl = { cables: new Set(i.cables), nodes: new Set(i.nodes) };
+    if (i.view && syn && i.view !== syn.view) { pendingHl = i; navigate(viewUrl(i.view)); return; }
+    if (i.cables[0]) { sel = i.cables[0]; multi = new Set(i.cables); }
+  }
   let armed = $state<Port[]>([]);
   let mouse = $state<[number, number] | null>(null);
   let confirmReplace = $state<{ body: object; n: number } | null>(null);
@@ -56,6 +77,9 @@
       syn = s;
       pos = { ...autoLayout(s.nodes.filter((n) => showEmpty || n.ports.length)), ...s.layout };
       if (sel && !s.cables.some((c) => c.id === sel)) sel = null;
+      multi = new Set([...multi].filter((id) => s.cables.some((c) => c.id === id)));
+      if (pendingHl && pendingHl.view === s.view) { const i = pendingHl; pendingHl = null; if (i.cables[0]) { sel = i.cables[0]; multi = new Set(i.cables); } }
+      if (tab === 'issues') validate();
       if (!wanted && s.view) navigate(viewUrl(s.view), true);
     } catch (e) { fail(e); }
   }
@@ -208,7 +232,7 @@
       drag = { kind: 'node', key, ox: wx - pos[key]!.x, oy: wy - pos[key]!.y, moved: false };
     } else if (!nodeEl) {
       drag = { kind: 'pan', ox: e.clientX - tx, oy: e.clientY - ty, moved: false };
-      sel = null;
+      sel = null; multi = new Set();
     }
     if (drag) { (e.currentTarget as Element).setPointerCapture(e.pointerId); }
   }
@@ -265,12 +289,13 @@
     try { await api.patch(`/cables/${c.id}`, { rev: c.rev, ...c.fields, ...f }); await load(); } catch (e) { fail(e); await load(); }
   }
   async function deleteSel() {
-    if (!selected) return;
-    try { await api.post(`/projects/${pid}/cables/delete`, { ids: [selected.id] }); sel = null; confirmDelete = false; await load(); } catch (e) { fail(e); }
+    const ids = multi.size > 1 ? [...multi] : selected ? [selected.id] : [];
+    if (!ids.length) return;
+    try { await api.post(`/projects/${pid}/cables/delete`, { ids }); sel = null; multi = new Set(); confirmDelete = false; await load(); } catch (e) { fail(e); }
   }
   function key(e: KeyboardEvent) {
     if ((e.target as Element).closest('input,textarea,select')) return;
-    if (e.key === 'Escape') { armed = []; mouse = null; sel = null; }
+    if (e.key === 'Escape') { armed = []; mouse = null; sel = null; multi = new Set(); hl = { cables: new Set(), nodes: new Set() }; }
     if ((e.key === 'Delete' || e.key === 'Backspace') && selected && mine) { e.preventDefault(); confirmDelete = true; }
   }
   const armedPreview = $derived.by(() => {
@@ -310,6 +335,8 @@
       <span class="mono small">{Math.round(k * 100)} %</span>
       <button class="icon-btn sm" title="Zoom avant" aria-label="Zoom avant" onclick={() => (k = Math.min(2.5, k * 1.2))}><Icon name="zin" size="sm" /></button>
       <button class="btn sm" onclick={fit}><Icon name="fit" size="sm" />Tout afficher</button>
+      <button class="btn sm" class:on={tab === 'issues'} onclick={() => { tab = tab === 'issues' ? 'cable' : 'issues'; if (tab === 'issues') validate(); }}><Icon name="check" size="sm" />Anomalies{#if issues} <span class="mono">{issues.counts.error + issues.counts.warning}</span>{/if}</button>
+      {#if mine}<button class="btn sm primary" onclick={() => (numbering = true)}><Icon name="hash" size="sm" />Numéroter</button>{/if}
     </div>
     <div class="syn-body">
       <svg bind:this={svgEl} class="syn-canvas" class:arming={armed.length > 0} role="application" aria-label="Synoptique"
@@ -322,7 +349,7 @@
               {#if c.a_in_view && c.b_in_view}
                 {@const g = cPath(c)}
                 {#if g}
-                  <g class="cable" class:sel={sel === c.id} class:warn={c.warnings.length > 0} style="--c:{cableColor(c)}" role="button" tabindex="-1" onclick={(e) => { e.stopPropagation(); sel = c.id; }} onkeydown={() => {}}>
+                  <g class="cable" class:sel={multi.has(c.id) || sel === c.id} class:hl={hl.cables.has(c.id)} class:warn={c.warnings.length > 0} style="--c:{cableColor(c)}" role="button" tabindex="-1" onclick={(e) => pickCable(c.id, e)} onkeydown={() => {}}>
                     <title>{c.fields.number ?? 'Sans numéro'} · {endName(c.a, c.a_info)} → {endName(c.b, c.b_info)}</title>
                     <path class="case" d={g.d} /><path class="vis" d={g.d} /><path class="hit" d={g.d} />
                   </g>
@@ -330,7 +357,7 @@
               {:else}
                 {@const s = stub(c)}
                 {#if s}
-                  <g class="cable stub" class:sel={sel === c.id} class:warn={c.warnings.length > 0} style="--c:{cableColor(c)}" role="button" tabindex="-1" onclick={(e) => { e.stopPropagation(); sel = c.id; }} onkeydown={() => {}}>
+                  <g class="cable stub" class:sel={multi.has(c.id) || sel === c.id} class:hl={hl.cables.has(c.id)} class:warn={c.warnings.length > 0} style="--c:{cableColor(c)}" role="button" tabindex="-1" onclick={(e) => pickCable(c.id, e)} onkeydown={() => {}}>
                     <path class="case" d={s.d} /><path class="vis" d={s.d} /><path class="hit" d={s.d} />
                     <g class="far" transform="translate({s.dx > 0 ? s.ex + 4 : s.ex - 4} {s.ey - 11})"><rect x={s.dx > 0 ? 0 : -190} width="190" height="22" rx="6" /><text x={s.dx > 0 ? 8 : -182} y="15">→ {(s.far ? `${s.far.label} › ${s.far.port}` : 'Extrémité manquante').slice(0, 30)}</text></g>
                   </g>
@@ -342,7 +369,7 @@
             {#each nodes as n (n.key)}
               {@const at = pos[n.key] ?? { x: 0, y: 0 }}
               {@const h = nodeH(n)}
-              <g class="node {n.kind}" data-node={n.key} transform="translate({at.x} {at.y})" style="--c:{n.function ? fnColor(n.function) : n.kind === 'panel' ? '#5B636D' : '#8A919B'}">
+              <g class="node {n.kind}" class:hl={hl.nodes.has(n.key)} data-node={n.key} transform="translate({at.x} {at.y})" style="--c:{n.function ? fnColor(n.function) : n.kind === 'panel' ? '#5B636D' : '#8A919B'}">
                 <rect class="box" width={NW} height={h} rx="10" />
                 <path class="hdr" d="M0 10a10 10 0 0 1 10-10h{NW - 20}a10 10 0 0 1 10 10v{HH - 10}H0z" />
                 <rect class="band" x="0" y="0" width={NW} height="4" rx="2" />
@@ -380,7 +407,7 @@
               {@const g = both ? cPath(c) : null}
               {@const s = both ? null : stub(c)}
               {#each (g ? [g.t1, g.t2] : s ? [s.t] : []) as t}
-                <g class="lbl" class:none={!c.fields.number} class:sel={sel === c.id} style="--c:{cableColor(c)}" transform="translate({t[0]} {t[1] - 9})" role="button" tabindex="-1" onclick={(e) => { e.stopPropagation(); sel = c.id; }} onkeydown={() => {}}>
+                <g class="lbl" class:none={!c.fields.number} class:sel={multi.has(c.id) || sel === c.id} class:hl={hl.cables.has(c.id)} style="--c:{cableColor(c)}" transform="translate({t[0]} {t[1] - 9})" role="button" tabindex="-1" onclick={(e) => pickCable(c.id, e)} onkeydown={() => {}}>
                   <rect class="tag" width={tagW(c)} height="18" rx="4" />
                   {#if c.fields.number}<rect class="bandc" x="3.5" y="3.5" width="3" height="11" rx="1" /><text x="10.5" y="13">{c.fields.number}</text>{:else}<text x="7.5" y="13.5">?</text>{/if}
                 </g>
@@ -392,7 +419,26 @@
       </svg>
 
       <aside class="syn-side">
-        {#if selected}
+        {#if tab === 'issues'}
+          <section>
+            <span class="lbl-t">Validation</span>
+            {#if !issues}<span class="spin"></span>
+            {:else}
+              <div class="counts"><span class="cnt err"><b>{issues.counts.error}</b> erreur{issues.counts.error > 1 ? 's' : ''}</span><span class="cnt warn"><b>{issues.counts.warning}</b> avertissement{issues.counts.warning > 1 ? 's' : ''}</span><span class="cnt info"><b>{issues.counts.info}</b> info{issues.counts.info > 1 ? 's' : ''}</span></div>
+              {#each issues.issues as i, k (k)}
+                <button class="issue {i.severity}" onclick={() => goIssue(i)}><Icon name={i.severity === 'info' ? 'info' : 'alert'} size="sm" /><span><b>{i.title}</b><span class="muted small">{i.detail}</span></span></button>
+              {:else}<p class="muted">Aucune anomalie : le câblage est cohérent.</p>{/each}
+              <button class="btn sm ghost" onclick={validate}><Icon name="refresh" size="sm" />Relancer</button>
+            {/if}
+          </section>
+        {:else if multi.size > 1}
+          <section>
+            <span class="lbl-t">{multi.size} câbles choisis</span>
+            <p class="muted small" style="margin:0">Ctrl ou Maj + clic pour en ajouter ou en retirer.</p>
+            {#if mine}<button class="btn sm primary" onclick={() => (numbering = true)}><Icon name="hash" size="sm" />Numéroter la sélection</button>
+              <button class="btn sm ghost danger" onclick={() => (confirmDelete = true)}><Icon name="trash" size="sm" />Supprimer les {multi.size} câbles</button>{/if}
+          </section>
+        {:else if selected}
           {@const c = selected}
           <section>
             <span class="lbl-t">Câble</span>
@@ -427,12 +473,17 @@
   </div>
 {/if}
 
+{#if numbering && syn}<NumberingDialog project={project} view={syn.view} selection={multi.size ? [...multi] : sel ? [sel] : []} onclose={() => (numbering = false)} ondone={() => { numbering = false; load(); }} />{/if}
 {#if confirmReplace}
   <Confirm title="Remplacer des câbles ?" confirmLabel="Remplacer" onconfirm={async () => { const b = confirmReplace!.body; confirmReplace = null; await place(b as { cables: { a: string; b: string }[] }, true); }} onclose={() => (confirmReplace = null)}>
     <p>Un ou plusieurs ports visés portent déjà un câble. Un port ne porte qu’un câble : le câble existant sera supprimé et remplacé.</p>
   </Confirm>
 {/if}
-{#if confirmDelete && selected}
+{#if confirmDelete && multi.size > 1}
+  <Confirm title="Supprimer {multi.size} câbles ?" confirmLabel="Supprimer" danger onconfirm={deleteSel} onclose={() => (confirmDelete = false)}>
+    <p>Les câbles choisis sont supprimés ; leurs numéros ne seront pas réattribués.</p>
+  </Confirm>
+{:else if confirmDelete && selected}
   <Confirm title="Supprimer le câble {selected.fields.number ?? ''} ?" confirmLabel="Supprimer" danger onconfirm={deleteSel} onclose={() => (confirmDelete = false)}>
     <p>{endName(selected.a, selected.a_info)} → {endName(selected.b, selected.b_info)}</p>
   </Confirm>
@@ -489,6 +540,15 @@
   .lbl text { font: 700 11px var(--mono); fill: #15171A; }
   .lbl.none .tag { fill: color-mix(in srgb, #B78400 18%, #fff); stroke-dasharray: 3 2; }
   .lbl.sel .tag { stroke-width: 2.2; }
+  .cable.hl .vis { stroke-width: 4; filter: drop-shadow(0 0 6px var(--err, #D33)); }
+  .node.hl .box { stroke: var(--err, #D33); stroke-width: 3; }
+  .counts { display: flex; gap: 6px; flex-wrap: wrap; }
+  .cnt { padding: 4px 10px; border-radius: 99px; font-size: 13px; background: var(--surface-2); }
+  .cnt.err b { color: var(--err); } .cnt.warn b { color: var(--warn, #B78400); }
+  .issue { display: flex; gap: 8px; align-items: flex-start; padding: 8px 10px; border-radius: 10px; border: 0; text-align: left; cursor: pointer; font: inherit; color: inherit; background: var(--surface-2); }
+  .issue span { display: flex; flex-direction: column; min-width: 0; }
+  .issue.error { background: color-mix(in srgb, var(--err) 10%, transparent); }
+  .issue.warning { background: color-mix(in srgb, var(--warn, #B78400) 12%, transparent); }
   .preview { fill: none; stroke: var(--accent, #4F6BFF); stroke-width: 2; stroke-dasharray: 6 4; pointer-events: none; }
   @media (max-width: 1000px) { .syn-body { grid-template-columns: 1fr; height: auto; } .syn-canvas { height: 70vh; } .syn-side { border-left: 0; border-top: 1px solid var(--line); } }
 </style>
