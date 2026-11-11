@@ -3776,3 +3776,119 @@ async fn drawings_pages_equipment_sync_and_dmx() {
         assert_eq!(link["to"]["element"], Value::Null);
     }
 }
+
+#[tokio::test]
+async fn print_library_title_blocks_labels_dossiers() {
+    let Setup {
+        app, o, lea, pid, ..
+    } = setup().await;
+    let tb = call(&app, "GET", "/api/print/title-blocks", None, Some(&lea))
+        .await
+        .body;
+    let mut items = tb["items"].as_array().unwrap().clone();
+    assert_eq!(items.len(), 4);
+    assert_eq!(items[0]["key"], "standard");
+    // Technicienne : pas de droit « Paramètres ».
+    let r = call(
+        &app,
+        "PUT",
+        "/api/print/title-blocks",
+        Some(json!({"items": items})),
+        Some(&lea),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::FORBIDDEN);
+    items[1]["zones"][0]["value"] = json!("inconnue");
+    let r = call(
+        &app,
+        "PUT",
+        "/api/print/title-blocks",
+        Some(json!({"items": items})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
+    items.remove(1);
+    items[0]["name"] = json!("Maison");
+    let r = call(
+        &app,
+        "PUT",
+        "/api/print/title-blocks",
+        Some(json!({"items": items})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    let r = call(
+        &app,
+        "POST",
+        "/api/print/title-blocks/restore",
+        None,
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.body["restored"], 1);
+    assert_eq!(r.body["items"][0]["name"], "Maison");
+    assert_eq!(r.body["items"][1]["key"], "compact");
+
+    let ls = call(&app, "GET", "/api/print/label-sheets", None, Some(&o))
+        .await
+        .body;
+    let mut sheets = ls["items"].as_array().unwrap().clone();
+    sheets[0]["cols"] = json!(12);
+    let r = call(
+        &app,
+        "PUT",
+        "/api/print/label-sheets",
+        Some(json!({"items": sheets})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(
+        r.status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "déborde de la feuille"
+    );
+
+    // Modèles de dossier : nom unique, duplication « (copie) », réparation à la lecture.
+    let r = call(&app, "POST", "/api/print/dossier-templates", Some(json!({"id": "", "name": "Dossier car", "docs": [
+        {"key": "recette", "include": true}, {"key": "net_ip", "include": true, "columns": ["ip", "vlan"], "hidden": ["mode"]}, {"key": "disparu", "include": true}
+    ]})), Some(&lea)).await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    let id = r.body["id"].as_str().unwrap().to_string();
+    let docs = r.body["docs"].as_array().unwrap();
+    assert_eq!(docs.last().unwrap()["key"], "recette");
+    assert!(!docs.iter().any(|d| d["key"] == "disparu"));
+    let r = call(
+        &app,
+        "POST",
+        "/api/print/dossier-templates",
+        Some(json!({"id": "", "name": "dossier CAR", "docs": []})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let r = call(
+        &app,
+        "POST",
+        "/api/print/dossier-templates/duplicate",
+        Some(json!({"id": id})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.body["name"], "Dossier car (copie)");
+    let r = call(&app, "POST", "/api/print/column-models", Some(json!({"id": "", "table": "net_ip", "name": "Court", "columns": ["ip", "ip", "nope", "hostname"]})), Some(&o)).await;
+    assert_eq!(r.body["columns"], json!(["ip", "hostname"]));
+    // Dernière exportation mémorisée par projet.
+    let r = call(
+        &app,
+        "PUT",
+        &format!("/api/projects/{pid}/settings/dossier"),
+        Some(json!({"rev": 0, "data": {"docs": []}})),
+        Some(&lea),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    let site = call(&app, "GET", "/api/site", None, Some(&lea)).await.body;
+    assert_eq!(site["logo"], Value::Null);
+}

@@ -11,7 +11,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use strata_domain::{Domain, Level};
 
-const KEYS: [&str; 1] = ["rack_sheet"];
+const KEYS: [&str; 2] = ["rack_sheet", "dossier"];
 const SITE_NAME: &str = "site_name";
 
 pub fn routes() -> Router<AppState> {
@@ -73,8 +73,9 @@ async fn put(
 
 async fn site(State(st): State<AppState>, _m: Member) -> ApiResult<Json<Value>> {
     let name = st.store.meta(SITE_NAME).await?;
+    let logo = st.store.meta(crate::print::SITE_LOGO).await?;
     Ok(Json(
-        json!({ "name": name.unwrap_or_else(|| "Strata Arkyo".into()) }),
+        json!({ "name": name.unwrap_or_else(|| "Strata Arkyo".into()), "logo": logo }),
     ))
 }
 

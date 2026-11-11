@@ -14,6 +14,7 @@ pub mod panel;
 pub mod permissions;
 pub mod plan;
 pub mod prep;
+pub mod print;
 pub mod project;
 pub mod rack;
 pub mod synoptic;
