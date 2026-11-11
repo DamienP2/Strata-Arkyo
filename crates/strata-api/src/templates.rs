@@ -272,10 +272,23 @@ pub(crate) async fn snapshot(store: &Store, c: &Container) -> ApiResult<Content>
                 .position(|i| &i.id == iid)
         })
     };
+    // Les tuiles et postes citent des exemplaires : on les note « article:rang ».
+    let inst_ref: HashMap<String, String> = arts
+        .iter()
+        .enumerate()
+        .flat_map(|(k, a)| {
+            inv.instances
+                .iter()
+                .filter(|i| i.article_id == a.id)
+                .enumerate()
+                .map(move |(n, i)| (i.id.clone(), format!("{k}:{n}")))
+        })
+        .collect();
     let data = Content {
         container: {
             let mut d = c.data.clone();
             d.cable_code = String::new();
+            d.details.map_instances(&|i| inst_ref.get(i).cloned());
             d
         },
         articles: arts
@@ -498,7 +511,9 @@ pub(crate) async fn instantiate(
         .map(|x| x.name)
         .collect();
     let name = unique_name(&name, &taken);
-    let container: Container = store.insert_container(pid, lid, &name, &data).await?;
+    let mut bare = data.clone();
+    bare.details.map_instances(&|_| None);
+    let mut container: Container = store.insert_container(pid, lid, &name, &bare).await?;
     // Articles : une fiche disparue du catalogue est ignorée.
     let mut skipped = 0;
     let mut art_ids: HashMap<usize, String> = HashMap::new();
@@ -562,6 +577,20 @@ pub(crate) async fn instantiate(
                 .ok()
                 .map(|x| x.id),
         );
+    }
+    // Tuiles et postes : « article:rang » redevient l'exemplaire recréé.
+    if !data.details.instances().is_empty() {
+        let mut map: HashMap<String, String> = HashMap::new();
+        for (k, aid) in &art_ids {
+            for (n, i) in store.article_instances(aid).await?.iter().enumerate() {
+                map.insert(format!("{k}:{n}"), i.id.clone());
+            }
+        }
+        let mut d = data.clone();
+        d.details.map_instances(&|r| map.get(r).cloned());
+        container = store
+            .update_container(&container.id, container.rev, lid, &container.name, &d)
+            .await?;
     }
     Ok((container, skipped))
 }

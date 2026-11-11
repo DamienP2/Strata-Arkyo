@@ -258,6 +258,22 @@ pub enum ContainerKind {
     HardCase,
     WaterproofCase,
     Furniture,
+    // Postes de régie
+    MonitorWall,
+    Desk,
+    OperatorPosition,
+    // Terrain et plateau
+    Zone,
+    CameraPosition,
+    FieldBox,
+    RfMast,
+    // Infrastructure du site
+    SitePoint,
+    Power,
+    ExternalFeed,
+    // Diffusion et logistique
+    Display,
+    CableDrum,
 }
 
 impl ContainerKind {
@@ -280,7 +296,26 @@ impl ContainerKind {
             ContainerKind::HardCase => "Valise rigide",
             ContainerKind::WaterproofCase => "Valise étanche",
             ContainerKind::Furniture => "Mobilier",
+            ContainerKind::MonitorWall => "Mur d'écrans",
+            ContainerKind::Desk => "Pupitre",
+            ContainerKind::OperatorPosition => "Poste opérateur",
+            ContainerKind::Zone => "Emplacement libre",
+            ContainerKind::CameraPosition => "Position caméra",
+            ContainerKind::FieldBox => "Boîtier de terrain",
+            ContainerKind::RfMast => "Mât HF",
+            ContainerKind::SitePoint => "Point de raccordement",
+            ContainerKind::Power => "Énergie",
+            ContainerKind::ExternalFeed => "Arrivée externe",
+            ContainerKind::Display => "Diffusion",
+            ContainerKind::CableDrum => "Touret",
         }
+    }
+    /// Seuls les contenants 19″ peuvent être rackables.
+    pub fn can_rack(self) -> bool {
+        matches!(
+            self,
+            ContainerKind::Rack | ContainerKind::FlightCase | ContainerKind::HardCase
+        )
     }
 }
 
@@ -302,6 +337,8 @@ pub struct ContainerData {
     pub max_power_w: Option<f64>,
     pub cable_code: String,
     pub notes: Option<String>,
+    /// Caractéristiques propres au type d'élément (mur d'écrans, pupitre, caméra…).
+    pub details: crate::element::ElementDetails,
 }
 
 impl Default for ContainerData {
@@ -321,6 +358,7 @@ impl Default for ContainerData {
             max_power_w: None,
             cable_code: String::new(),
             notes: None,
+            details: Default::default(),
         }
     }
 }
@@ -344,6 +382,10 @@ pub fn validate_container(name: &mut String, c: &mut ContainerData) -> Vec<Field
     if !c.kind.mobile() {
         c.wheels = false;
     }
+    if !c.kind.can_rack() {
+        c.rackable = false;
+    }
+    e.extend(crate::element::validate_details(c.kind, &mut c.details));
     if c.rackable {
         if c.height_u.is_none() {
             e.push(err("height_u", "Indiquez la hauteur en U."));

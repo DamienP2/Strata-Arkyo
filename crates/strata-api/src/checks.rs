@@ -58,10 +58,7 @@ async fn lines(store: &Store, c: &Container) -> ApiResult<Vec<Line>> {
         family: "materiel",
         kind: "rack",
         label: c.name.clone(),
-        detail: match (c.data.rackable, c.data.height_u) {
-            (true, Some(h)) => format!("Baie {h} U · roulettes, rails, portes et visserie"),
-            _ => "Contenant : état, fermetures et poignées".into(),
-        },
+        detail: element_detail(&c.data),
         order: (0, 0, String::new()),
     }];
     for a in arts {
@@ -136,6 +133,38 @@ async fn lines(store: &Store, c: &Container) -> ApiResult<Vec<Line>> {
     }
     out.sort_by(|a, b| a.order.cmp(&b.order));
     Ok(out)
+}
+
+/// Ce qu'on vérifie sur l'élément lui-même, selon son type.
+fn element_detail(d: &strata_domain::project::ContainerData) -> String {
+    use strata_domain::project::ContainerKind as K;
+    let kind = d.kind.label();
+    match d.kind {
+        _ if d.rackable => format!(
+            "{kind} {} U · roulettes, rails, portes et visserie",
+            d.height_u.unwrap_or(0.0)
+        ),
+        K::MonitorWall => {
+            let w = d.details.wall.clone().unwrap_or_default();
+            format!(
+                "{kind} {} × {} · {} tuile(s) · structure, fixations et alimentation",
+                w.rows,
+                w.cols,
+                w.tiles.len()
+            )
+        }
+        K::Desk => format!(
+            "{kind} · {} poste(s) · mobilier, éclairage et câblage des postes",
+            d.details.positions.len()
+        ),
+        K::Zone => format!("{kind} · surface prête, protégée et balisée"),
+        K::CameraPosition => format!("{kind} · support, sécurité et passage des câbles"),
+        K::RfMast => format!("{kind} · haubanage, antennes et terre"),
+        K::Power => format!("{kind} · raccordement, protections et terre"),
+        K::ExternalFeed => format!("{kind} · liaison livrée et testée"),
+        K::CableDrum => format!("{kind} · longueur et état du câble"),
+        _ => format!("{kind} : état, fermetures et fixations"),
+    }
 }
 
 async fn view(st: &AppState, c: &Container) -> ApiResult<Value> {

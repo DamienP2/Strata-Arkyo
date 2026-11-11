@@ -1308,3 +1308,149 @@ async fn build_checks_follow_the_inventory() {
     let r = call(&app, "DELETE", &url, None, Some(&o)).await;
     assert_eq!(r.body["progress"], json!({"done": 0, "total": 3}));
 }
+
+#[tokio::test]
+async fn monitor_wall_element_keeps_its_screens_through_templates() {
+    let Setup {
+        app, o, pid, mixer, ..
+    } = setup().await;
+    let p = call(&app, "GET", &format!("/api/projects/{pid}"), None, Some(&o)).await;
+    let loc = p.body["locations"][0]["id"].as_str().unwrap().to_string();
+    let r = call(&app, "POST", &format!("/api/projects/{pid}/containers"), Some(json!({
+        "location_id": loc, "name": "Mur réal", "kind": "monitor_wall", "rackable": true, "height_u": 42,
+        "details": {"wall": {"rows": 2, "cols": 3, "support": "Structure alu"}, "power_kva": 12}
+    })), Some(&o)).await;
+    assert_eq!(r.status, StatusCode::CREATED, "{:?}", r.body);
+    assert_eq!(r.body["rackable"], false, "un mur n'est pas rackable");
+    assert_eq!(
+        r.body["details"]["power_kva"],
+        Value::Null,
+        "champ d'un autre type écarté"
+    );
+    let wall = r.body["id"].as_str().unwrap().to_string();
+    let item = call(&app, "POST", "/api/catalog/items", Some(json!({"kind": "equipment", "data": {"name": "Moniteur 55 pouces", "functions": ["V"], "format": {"kind": "free", "length_mm": 1230, "width_mm": 80, "height_mm": 710}, "power_w": 150, "weight_kg": 18}})), Some(&o)).await;
+    let item = item.body["item"]["id"].as_str().unwrap().to_string();
+    call(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid}/articles"),
+        Some(json!({"container_id": wall, "nature": "equipment", "item_id": item, "quantity": 2})),
+        Some(&o),
+    )
+    .await;
+    let p = call(&app, "GET", &format!("/api/projects/{pid}"), None, Some(&o)).await;
+    let arts = p.body["articles"].as_array().unwrap();
+    let screen_art = arts
+        .iter()
+        .find(|a| a["container_id"] == wall.as_str())
+        .unwrap()["id"]
+        .clone();
+    let inst: Vec<String> = p.body["instances"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|i| i["article_id"] == screen_art)
+        .map(|i| i["id"].as_str().unwrap().to_string())
+        .collect();
+    let foreign = p.body["instances"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["article_id"] == mixer.as_str())
+        .unwrap()["id"]
+        .clone();
+    let c = p.body["containers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["id"] == wall.as_str())
+        .unwrap()
+        .clone();
+    let r = call(
+        &app,
+        "PATCH",
+        &format!("/api/containers/{wall}"),
+        Some(json!({
+            "rev": c["rev"], "location_id": loc, "name": "Mur réal", "kind": "monitor_wall",
+            "details": {"wall": {"rows": 2, "cols": 3, "tiles": [
+                {"row": 1, "col": 1, "w": 2, "h": 2, "instance_id": inst[0], "source": "PGM"},
+                {"row": 1, "col": 3, "instance_id": inst[1], "source": "PVW"},
+                {"row": 2, "col": 3, "instance_id": foreign, "source": "CAM 1"}]}}
+        })),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    let tiles = r.body["details"]["wall"]["tiles"].clone();
+    assert_eq!(tiles[0]["instance_id"], inst[0].as_str());
+    assert_eq!(
+        tiles[2]["instance_id"],
+        Value::Null,
+        "un écran d'un autre élément est refusé"
+    );
+
+    // Modèle puis copie : chaque tuile retrouve l'écran recréé.
+    let t = call(
+        &app,
+        "POST",
+        &format!("/api/containers/{wall}/save-as-template"),
+        Some(json!({})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(t.status, StatusCode::CREATED, "{:?}", t.body);
+    let tid = t.body["id"].as_str().unwrap();
+    call(
+        &app,
+        "PATCH",
+        &format!("/api/templates/{tid}"),
+        Some(json!({"rev": t.body["rev"], "status": "active"})),
+        Some(&o),
+    )
+    .await;
+    let r = call(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid}/containers/from-template"),
+        Some(json!({"template_id": tid, "location_id": loc})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::CREATED, "{:?}", r.body);
+    let copy = r.body["container"].clone();
+    let p = call(&app, "GET", &format!("/api/projects/{pid}"), None, Some(&o)).await;
+    let copy_art = p.body["articles"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["container_id"] == copy["id"])
+        .unwrap()["id"]
+        .clone();
+    let copy_inst: Vec<&str> = p.body["instances"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|i| i["article_id"] == copy_art)
+        .map(|i| i["id"].as_str().unwrap())
+        .collect();
+    let t0 = copy["details"]["wall"]["tiles"][0]["instance_id"]
+        .as_str()
+        .unwrap();
+    assert!(copy_inst.contains(&t0) && !inst.iter().any(|i| i == t0));
+    assert_eq!(copy["details"]["wall"]["tiles"][0]["source"], "PGM");
+
+    let r = call(
+        &app,
+        "GET",
+        &format!("/api/containers/{wall}/checks"),
+        None,
+        Some(&o),
+    )
+    .await;
+    assert!(
+        r.body["items"][0]["detail"]
+            .as_str()
+            .unwrap()
+            .starts_with("Mur d'écrans 2 × 3")
+    );
+}

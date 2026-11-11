@@ -246,6 +246,27 @@ pub(crate) fn article_label(a: &Article, items: &HashMap<String, ItemView>) -> S
 }
 
 /// Inventaire enrichi : totaux par contenant et par emplacement, libellés des articles.
+/// Exemplaires du matériel posé dans un élément.
+pub(crate) async fn own_instances(
+    store: &Store,
+    pid: &str,
+    cid: &str,
+) -> ApiResult<HashSet<String>> {
+    let inv = store.inventory(pid).await?;
+    let arts: HashSet<&str> = inv
+        .articles
+        .iter()
+        .filter(|a| a.container_id.as_deref() == Some(cid))
+        .map(|a| a.id.as_str())
+        .collect();
+    Ok(inv
+        .instances
+        .iter()
+        .filter(|i| arts.contains(i.article_id.as_str()))
+        .map(|i| i.id.clone())
+        .collect())
+}
+
 pub(crate) async fn inventory_view(
     store: &Store,
     pid: &str,
@@ -833,6 +854,8 @@ async fn create_container(
         .ok_or_else(|| one("location_id", "Choisissez un emplacement du projet."))?;
     location_in(&st.store, &pid, &lid).await?;
     fields(validate_container(&mut b.name, &mut b.data))?;
+    // Un élément neuf n'a pas encore de matériel : aucun écran ni poste ne peut en citer.
+    b.data.details.map_instances(&|_| None);
     // Nom unique dans le projet : suffixe automatique en cas de collision.
     let taken: Vec<String> = st
         .store
@@ -890,6 +913,11 @@ async fn update_container(
         .ok_or(ApiError::NotFound("Contenant"))?;
     location_in(&st.store, &before.project_id, &b.location_id).await?;
     fields(validate_container(&mut b.name, &mut b.data))?;
+    // Tuiles et postes ne citent que des exemplaires du matériel de l'élément.
+    let own = own_instances(&st.store, &before.project_id, &id).await?;
+    b.data
+        .details
+        .map_instances(&|i| own.contains(i).then(|| i.to_string()));
     // Hauteur réduite ou contenant devenu non rackable : la liste de ce qui dépasse
     // est rendue ; après confirmation, ces éléments redeviennent « à placer ».
     let limit = if b.data.rackable {
