@@ -11,6 +11,7 @@
   import { STATUS, STATUS_ORDER, REGIE, keyDate, daysBetween, fdate, urgency, type ProjectView, type Status } from '../../lib/projects';
   import Overview from './Overview.svelte';
   import Inventory from './Inventory.svelte';
+  import Regies from './Regies.svelte';
   import Tasks from './Tasks.svelte';
   import History from './History.svelte';
   import Racks from './Racks.svelte';
@@ -40,6 +41,7 @@
   const groups = $derived<SecGroup[]>([{ label: 'Organiser', items: [
     { key: '', label: 'Vue d’ensemble', href: `/projets/${id}` },
     { key: 'inventaire', label: 'Inventaire', href: `/projets/${id}/inventaire` },
+    { key: 'regies', label: 'Régies', href: `/projets/${id}/regies` },
     { key: 'taches', label: 'Tâches', href: `/projets/${id}/taches`, badge: view?.tasks.filter((t) => t.status === 'todo' || t.status === 'in_progress').length || undefined },
     { key: 'historique', label: 'Historique', href: `/projets/${id}/historique` },
   ] }, { label: 'Dessiner', lock: true, items: [
@@ -80,6 +82,7 @@
     <SecNav {groups} active={sub} label="Sections du projet" />
     {#if sub === ''}<Overview bind:view reload={load} />
     {:else if sub === 'inventaire'}<Inventory bind:view reload={load} />
+    {:else if sub === 'regies'}<Regies {view} />
     {:else if sub === 'taches'}<Tasks bind:view reload={load} />
     {:else if sub === 'historique'}<History projectId={id} />
     {:else if sub === 'racks'}<Racks {view} />

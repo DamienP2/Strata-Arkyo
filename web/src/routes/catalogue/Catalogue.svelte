@@ -10,6 +10,7 @@
   import Exchange from './Exchange.svelte';
   import Templates from './Templates.svelte';
   import Panels from './Panels.svelte';
+  import RegieTemplates from './RegieTemplates.svelte';
   import PanelPage from './PanelPage.svelte';
 
   loadRefs();
@@ -18,7 +19,7 @@
   const kind = $derived(ITEM_KINDS.find((k) => k.path === sub));
   const groups = $derived.by(() => {
     const g: SecGroup[] = [{ label: 'Fiches', items: ITEM_KINDS.map((k) => ({ key: k.path, label: k.label, href: `/catalogue/${k.path}` })) }];
-    g.push({ label: 'Bibliothèque', items: [{ key: 'modeles', label: 'Modèles de contenants', href: '/catalogue/modeles' }, { key: 'panels', label: 'Panels', href: '/catalogue/panels' }] });
+    g.push({ label: 'Bibliothèque', items: [{ key: 'modeles', label: 'Modèles de contenants', href: '/catalogue/modeles' }, { key: 'regies', label: 'Modèles de régies', href: '/catalogue/regies' }, { key: 'panels', label: 'Panels', href: '/catalogue/panels' }] });
     const tools = [{ key: 'referentiels', label: 'Référentiels', href: '/catalogue/referentiels' }];
     if (can('catalogue', 'ecriture')) tools.push({ key: 'import', label: 'Import', href: '/catalogue/import' });
     tools.push({ key: 'echange', label: 'Export et échange', href: '/catalogue/echange' });
@@ -43,6 +44,7 @@
     {:else if sub === 'echange'}<Exchange />
     {:else if sub === 'modeles'}<Templates />
     {:else if sub === 'panels'}<Panels />
+    {:else if sub === 'regies'}<RegieTemplates />
     {:else}<p class="lead">Section introuvable.</p>{/if}
   </div>
 {/if}

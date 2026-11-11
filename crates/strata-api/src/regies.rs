@@ -111,7 +111,7 @@ async fn project_views(store: &Store, pid: &str, only: Option<&str>) -> ApiResul
                 .filter_map(|id| by_id.get(id.as_str()))
                 .map(|c| {
                     json!({
-                        "id": c["id"], "name": c["name"], "data": c["data"], "totals": c["totals"],
+                        "id": c["id"], "name": c["name"], "data": c, "totals": c["totals"],
                         "location": c["location_id"].as_str().and_then(|l| loc_name.get(l)),
                     })
                 })
@@ -293,7 +293,11 @@ async fn from_template(
         let Some(t) = st.store.template(tid).await? else {
             continue;
         };
-        let (c, s) = instantiate(&st.store, &pid, &l.id, &t, None).await?;
+        let short = t
+            .name
+            .strip_prefix(&format!("{} · ", tpl.name))
+            .map(str::to_string);
+        let (c, s) = instantiate(&st.store, &pid, &l.id, &t, short.as_deref()).await?;
         skipped += s;
         st.hub.change(
             crate::projects::room(&pid),
@@ -410,12 +414,21 @@ async fn save_as(
         .map(|t| t.name)
         .collect();
     let mut ids = Vec::new();
+    // Les modèles de contenants portent le nom de la régie, pour qu'on les retrouve.
+    let prefix = b
+        .name
+        .as_deref()
+        .map(str::trim)
+        .filter(|n| !n.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| r.name.replace(" — Régie principale", ""));
     for cid in &r.members {
         let Some(c) = st.store.container(cid).await? else {
             continue;
         };
         let data = snapshot(&st.store, &c).await?;
-        let name = unique_name(&c.name.chars().take(120).collect::<String>(), &taken);
+        let base: String = format!("{prefix} · {}", c.name).chars().take(120).collect();
+        let name = unique_name(&base, &taken);
         let t = st
             .store
             .insert_template(

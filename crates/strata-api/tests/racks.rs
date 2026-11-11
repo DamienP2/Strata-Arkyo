@@ -1088,6 +1088,7 @@ async fn regies_main_custom_and_library() {
     assert_eq!(main["kind"], "car");
     assert_eq!(main["main"], true);
     assert_eq!(main["members"][0]["id"], cid.as_str());
+    assert_eq!(main["members"][0]["data"]["kind"], "rack");
     assert_eq!(main["totals"]["containers"], 1);
     assert_eq!(main["totals"]["total_u"], 12.0);
     let main_id = main["id"].as_str().unwrap().to_string();
@@ -1164,7 +1165,7 @@ async fn regies_main_custom_and_library() {
     assert_eq!(r.status, StatusCode::CREATED, "{:?}", r.body);
     assert_eq!(r.body["name"], "Finale");
     assert_eq!(r.body["project_id"], Value::Null);
-    assert_eq!(r.body["members"][0]["name"], "Baie V1");
+    assert_eq!(r.body["members"][0]["name"], "Finale · Baie V1");
     let lib = r.body["id"].as_str().unwrap().to_string();
     let r = call(&app, "GET", "/api/regies", None, Some(&o)).await;
     assert_eq!(r.body["regies"].as_array().unwrap().len(), 1);

@@ -17,7 +17,7 @@ Strata Arkyo est un seul programme Rust installé sur un serveur Ubuntu du site.
 | 3 | Catalogue : référentiels et pack de départ, fiches équipements, câbles, modèles de câble, adaptateurs, doublons, compatibilité câble et signal, import CSV/XLSX, export, échange entre sites, retour arrière | Fait |
 | 4 | Projets et inventaire : assistant de création, liste et tableau de bord, fiche, emplacements, contenants, articles, exemplaires (repère, série, MAC, étiquette), tâches, historique, nomenclature ; temps réel et présence par WebSocket | Fait (modèles de contenants et panels : lot 5) |
 | Interface | Web app Svelte embarquée : connexion, administration, catalogue, projets et inventaire en temps réel | Fait pour les lots 1 à 4 |
-| 5 | Racks : élévations (avant, arrière, arrière intérieure, côté ; réel ou schématique), placement au demi-U contrôlé par le serveur, profondeur utile, bilan électrique par circuit et par phase, verrou « une personne à la fois » | En cours : étagères, modèles de contenants et panels de brassage faits ; régies, contrôles de construction et planche d'élévations à venir |
+| 5 | Racks : élévations (avant, arrière, arrière intérieure, côté ; réel ou schématique), placement au demi-U contrôlé par le serveur, profondeur utile, bilan électrique par circuit et par phase, verrou « une personne à la fois » | En cours : étagères, modèles de contenants, panels de brassage et régies faits ; contrôles de construction et planche d'élévations à venir |
 | 6 à 10 | Synoptique, livrables, terrain, réseau, plans | À venir |
 
 ## Organisation du dépôt
@@ -147,6 +147,8 @@ Lire demande « Projets : lecture », écrire « Projets : écriture ». Chaque 
 | `GET /api/templates`, `GET`/`PATCH`/`DELETE /api/templates/{id}`, `POST /api/containers/{id}/save-as-template`, `POST /api/projects/{id}/containers/from-template` | Modèles de contenants : bibliothèque, enregistrement depuis un projet, copie dans un projet |
 | `GET`/`POST /api/panels`, `GET`/`PUT`/`DELETE /api/panels/{id}`, `POST /api/panels/{id}/duplicate` | Bibliothèque de panels de brassage : emplacements, connecteurs, format D, groupes de ports et libellés (droit Catalogue : écriture) |
 | `PUT /api/articles/{id}/panel` | Panel posé dans un projet, modifié sans toucher la bibliothèque ; hauteur figée tant qu'il est dans la baie |
+| `GET`/`POST /api/projects/{id}/regies`, `GET`/`PATCH`/`DELETE /api/regies/{id}` | Régies du projet : ensembles ordonnés de contenants, totaux ; la régie principale (créée au premier contenant) ne se supprime pas |
+| `GET`/`POST /api/regies`, `POST /api/regies/{id}/save-as-template`, `POST /api/projects/{id}/regies/from-template` | Modèles de régies : bibliothèque, enregistrement depuis un projet, copie dans un projet (contenants recréés avec leur contenu) |
 | `GET /api/live` (WebSocket) | Temps réel : `{"type":"join","room":"project:<id>"}`, battement `{"type":"ping"}` toutes les 30 s ; événements `change` et `presence` |
 
 ## Mises à jour OTA
