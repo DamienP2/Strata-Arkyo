@@ -14,6 +14,7 @@ pub mod error;
 pub mod live;
 pub mod ops;
 pub mod panels;
+pub mod prep;
 pub mod projects;
 pub mod racks;
 pub mod regies;
@@ -107,6 +108,7 @@ pub fn router(state: AppState) -> Router {
         .merge(synoptic::routes())
         .merge(cabling::routes())
         .merge(cable_table::routes())
+        .merge(prep::routes())
         .route("/live", get(live::socket))
         .layer(middleware::from_fn(csrf));
     Router::new()

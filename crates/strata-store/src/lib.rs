@@ -19,6 +19,7 @@ pub mod cables;
 pub mod catalog;
 pub mod checks;
 pub mod panels;
+pub mod prep;
 pub mod projects;
 pub mod racks;
 pub mod regies;

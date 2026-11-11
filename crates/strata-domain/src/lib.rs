@@ -10,6 +10,7 @@ pub mod element;
 pub mod numbering;
 pub mod panel;
 pub mod permissions;
+pub mod prep;
 pub mod project;
 pub mod rack;
 pub mod synoptic;

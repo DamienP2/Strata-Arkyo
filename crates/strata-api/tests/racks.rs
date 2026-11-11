@@ -2534,3 +2534,219 @@ async fn annotations_and_zone_checks() {
     .await;
     assert_eq!(r.body["deleted"], 2);
 }
+
+#[tokio::test]
+async fn preparation_lines_and_cabled_state() {
+    let Setup {
+        app,
+        o,
+        lea,
+        pid,
+        cid,
+        ..
+    } = setup().await;
+    let item = |name: &str, ports: Value| json!({"kind": "equipment", "data": {"name": name, "functions": ["V"], "format": {"kind": "rack", "height_u": 1, "depth_mm": 300}, "ports": ports}});
+    let a = call(&app, "POST", "/api/catalog/items", Some(item("Src", json!([{"connector_id": "bnc", "signal_id": "sdi-3g", "direction": "out", "gender": "F", "quantity": 3}]))), Some(&o)).await.body["item"]["id"].as_str().unwrap().to_string();
+    let b = call(&app, "POST", "/api/catalog/items", Some(item("Dst", json!([{"connector_id": "bnc", "signal_id": "sdi-3g", "direction": "in", "gender": "F", "quantity": 3}]))), Some(&o)).await.body["item"]["id"].as_str().unwrap().to_string();
+    for it in [&a, &b] {
+        call(
+            &app,
+            "POST",
+            &format!("/api/projects/{pid}/articles"),
+            Some(json!({"container_id": cid, "nature": "equipment", "item_id": it})),
+            Some(&o),
+        )
+        .await;
+    }
+    call(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid}/synoptic/lock"),
+        None,
+        Some(&o),
+    )
+    .await;
+    let s = call(
+        &app,
+        "GET",
+        &format!("/api/projects/{pid}/synoptic?view=container:{cid}"),
+        None,
+        Some(&o),
+    )
+    .await
+    .body;
+    let node = |l: &str| {
+        s["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|n| n["label"] == l)
+            .unwrap()
+            .clone()
+    };
+    let (src, dst) = (node("Src"), node("Dst"));
+    let p = |n: &Value, i: usize| n["ports"][i]["ref"].as_str().unwrap().to_string();
+    call(&app, "POST", &format!("/api/projects/{pid}/cables"), Some(json!({"cables": [
+        {"a": p(&src, 0), "b": p(&dst, 0), "length_m": 2}, {"a": p(&src, 1), "b": p(&dst, 1), "length_m": 1.8}, {"a": p(&src, 2), "b": p(&dst, 2), "length_m": 5}
+    ]})), Some(&o)).await;
+
+    let v = call(
+        &app,
+        "GET",
+        &format!("/api/projects/{pid}/prep"),
+        None,
+        Some(&lea),
+    )
+    .await
+    .body;
+    let fam = |k: &str| {
+        v["families"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|f| f["key"] == k)
+            .unwrap()
+            .clone()
+    };
+    assert_eq!(fam("elements")["lines"].as_array().unwrap().len(), 1);
+    let eq = fam("equipment");
+    let mixer = eq["lines"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|l| l["label"] == "Mélangeur 2U")
+        .unwrap()
+        .clone();
+    assert_eq!(
+        (mixer["min"].clone(), mixer["status"].clone()),
+        (json!(3), json!("to_prepare"))
+    );
+    let cables = fam("cables")["lines"].as_array().unwrap().clone();
+    assert_eq!(cables.len(), 2, "2 m (2 et 1,8 arrondi) et 5 m");
+    let two = cables.iter().find(|l| l["min"] == 2).unwrap().clone();
+    assert!(
+        two["detail"]
+            .as_str()
+            .unwrap()
+            .contains("BNC M ↔ BNC M · 2,0 m"),
+        "{}",
+        two["detail"]
+    );
+    assert_eq!(two["missing_model"], true);
+
+    // Saisie : statut, réserve, approvisionnement ; une réserve négative est refusée.
+    let url = format!("/api/projects/{pid}/prep/line");
+    let r = call(&app, "PATCH", &url, Some(json!({"key": mixer["key"], "status": "to_configure", "reserve": 1, "supply": "rental"})), Some(&lea)).await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    let r = call(
+        &app,
+        "PATCH",
+        &url,
+        Some(json!({"key": mixer["key"], "reserve": -2})),
+        Some(&lea),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let r = call(
+        &app,
+        "PATCH",
+        &url,
+        Some(json!({"key": mixer["key"], "status": "made"})),
+        Some(&lea),
+    )
+    .await;
+    assert_eq!(
+        r.status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "statut d'une autre famille"
+    );
+
+    // Modèle de câble pour toute la ligne, puis liaison câblée.
+    let model = call(
+        &app,
+        "POST",
+        "/api/catalog/items",
+        Some(json!({"kind": "cable-models", "data": {"name": "Coax 75 Ω HD"}})),
+        Some(&o),
+    )
+    .await
+    .body["item"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let r = call(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid}/prep/cable-model"),
+        Some(json!({"key": two["key"], "model_id": model})),
+        Some(&lea),
+    )
+    .await;
+    assert_eq!(r.body["changed"], 2);
+    let cid1 = two["cables"][0]["id"].as_str().unwrap();
+    call(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid}/prep/cabled"),
+        Some(json!({"cable_id": cid1, "done": true, "note": "Repris au chantier"})),
+        Some(&lea),
+    )
+    .await;
+    let v = call(
+        &app,
+        "GET",
+        &format!("/api/projects/{pid}/prep"),
+        None,
+        Some(&o),
+    )
+    .await
+    .body;
+    let cl = v["families"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["key"] == "cables")
+        .unwrap()["lines"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|l| l["label"] == "Coax 75 Ω HD")
+        .unwrap()
+        .clone();
+    assert_eq!(cl["cabled"], 1);
+    assert_eq!(
+        cl["cables"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["id"] == cid1)
+            .unwrap()["done_by"],
+        "Léa"
+    );
+    let m2 = v["families"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["key"] == "equipment")
+        .unwrap()["lines"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|l| l["label"] == "Mélangeur 2U")
+        .unwrap()
+        .clone();
+    assert_eq!(
+        (m2["total"].clone(), m2["supply"].clone()),
+        (json!(4), json!("rental"))
+    );
+    assert_eq!(v["packing"][0]["content"].as_array().unwrap().len(), 5);
+    let r = call(
+        &app,
+        "GET",
+        &format!("/api/projects/{pid}/prep/export?format=xlsx"),
+        None,
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK);
+}
