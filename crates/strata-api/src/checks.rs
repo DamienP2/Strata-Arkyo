@@ -131,6 +131,128 @@ async fn lines(store: &Store, c: &Container) -> ApiResult<Vec<Line>> {
             ),
         });
     }
+    // Câbles à préparer (par faisceau, sinon par signal) et connexions à faire.
+    let nodes = crate::synoptic::project_nodes(store, &c.project_id).await?;
+    let port_of: HashMap<&str, (&crate::synoptic::Node, &crate::synoptic::Port)> = nodes
+        .iter()
+        .flat_map(|n| n.ports.iter().map(move |p| (p.r.as_str(), (n, p))))
+        .collect();
+    let mine = |r: &str| {
+        port_of
+            .get(r)
+            .is_some_and(|(n, _)| n.container_id.as_deref() == Some(c.id.as_str()))
+    };
+    let harnesses = store.harnesses(&c.project_id).await?;
+    let end = |r: &str| {
+        port_of
+            .get(r)
+            .map(|(n, p)| format!("{} › {}", n.label, p.label))
+            .unwrap_or_else(|| "?".into())
+    };
+    let mut groups: Vec<(String, String, Vec<String>)> = Vec::new();
+    for cb in store
+        .cables(&c.project_id)
+        .await?
+        .iter()
+        .filter(|x| mine(&x.a) || mine(&x.b))
+    {
+        if cb.fields.attach {
+            let (ad, port) = if cb.a.starts_with("a:") {
+                (&cb.a, &cb.b)
+            } else {
+                (&cb.b, &cb.a)
+            };
+            out.push(Line {
+                key: format!("attach:{}", cb.id),
+                family: "connexions",
+                kind: "attach",
+                label: format!(
+                    "Attache {}",
+                    port_of
+                        .get(ad.as_str())
+                        .map(|(n, _)| n.label.clone())
+                        .unwrap_or_default()
+                ),
+                detail: format!("sur {}", end(port)),
+                order: (6, 0, cb.id.clone()),
+            });
+            continue;
+        }
+        let num = cb
+            .fields
+            .number
+            .clone()
+            .unwrap_or_else(|| "Sans numéro".into());
+        let to = match &cb.fields.external {
+            Some(x) => format!(
+                "port externe {}",
+                x.label
+                    .clone()
+                    .unwrap_or_else(|| "vers un autre lieu".into())
+            ),
+            None => end(&cb.b),
+        };
+        out.push(Line {
+            key: format!("cable:{}", cb.id),
+            family: "connexions",
+            kind: "connection",
+            label: num.clone(),
+            detail: format!("{} → {to}", end(&cb.a)),
+            order: (5, 0, num.clone()),
+        });
+        let (gk, gl) = match cb
+            .fields
+            .harness_id
+            .as_deref()
+            .and_then(|h| harnesses.iter().find(|x| x.id == h))
+        {
+            Some(h) => (format!("harness:{}", h.id), format!("Faisceau {}", h.name)),
+            None => {
+                let sig = [&cb.a, &cb.b]
+                    .iter()
+                    .find_map(|r| {
+                        port_of
+                            .get(r.as_str())
+                            .and_then(|(_, p)| p.signal.clone())
+                            .or_else(|| port_of.get(r.as_str()).map(|(_, p)| p.connector.clone()))
+                    })
+                    .unwrap_or_else(|| "divers".into());
+                (format!("group:{sig}"), format!("Câbles {sig}"))
+            }
+        };
+        match groups.iter_mut().find(|g| g.0 == gk) {
+            Some(g) => g.2.push(num),
+            None => groups.push((gk, gl, vec![num])),
+        }
+    }
+    let sigs = store
+        .list_refs(Some(strata_domain::catalog::RefKind::Signal))
+        .await?;
+    for (k, l, nums) in groups {
+        let label = match k.strip_prefix("group:") {
+            Some(s) => format!(
+                "Câbles {}",
+                sigs.iter()
+                    .find(|r| r.id == s)
+                    .map(|r| r.name.clone())
+                    .unwrap_or_else(|| s.to_string())
+            ),
+            None => l,
+        };
+        out.push(Line {
+            key: k,
+            family: "cables",
+            kind: "cable_group",
+            label,
+            detail: format!(
+                "{} câble(s) à préparer : {}",
+                nums.len(),
+                nums.iter().take(8).cloned().collect::<Vec<_>>().join(", ")
+                    + if nums.len() > 8 { "…" } else { "" }
+            ),
+            order: (4, 0, String::new()),
+        });
+    }
     out.sort_by(|a, b| a.order.cmp(&b.order));
     Ok(out)
 }

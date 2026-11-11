@@ -35,6 +35,8 @@ pub enum PortRef {
         unit: u32,
         out: Option<(u32, u32)>,
     },
+    /// Extrémité fictive d'un port externe (vers un autre lieu ou hors projet).
+    External { id: String },
 }
 
 impl fmt::Display for PortRef {
@@ -52,6 +54,7 @@ impl fmt::Display for PortRef {
                 None => write!(f, "a:{article}:{unit}:in"),
                 Some((k, n)) => write!(f, "a:{article}:{unit}:o{k}.{n}"),
             },
+            PortRef::External { id } => write!(f, "x:{id}"),
         }
     }
 }
@@ -91,6 +94,7 @@ impl std::str::FromStr for PortRef {
                     out,
                 })
             }
+            ["x", id] if !id.is_empty() => Ok(PortRef::External { id: id.to_string() }),
             _ => Err(()),
         }
     }
@@ -106,6 +110,7 @@ impl PortRef {
                 format!("p:{article}:{row}")
             }
             PortRef::Adapter { article, unit, .. } => format!("a:{article}:{unit}"),
+            PortRef::External { id } => format!("x:{id}"),
         }
     }
 }
@@ -179,6 +184,36 @@ pub struct CableFields {
     pub harness_id: Option<String>,
     /// Longueur réelle, saisie ; la longueur estimée est calculée.
     pub length_m: Option<f64>,
+    /// Attache d'adaptateur : l'entrée de l'adaptateur est enfichée sur le port, sans câble.
+    pub attach: bool,
+    /// Port externe : la seconde extrémité sort de l'élément.
+    pub external: Option<ExternalEnd>,
+}
+
+/// Destination d'un port externe : un autre lieu du projet, ou hors projet (étiquette libre).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ExternalEnd {
+    pub location_id: Option<String>,
+    pub label: Option<String>,
+}
+
+/// Un adaptateur s'attache sur un port du même connecteur que son entrée, de genre opposé ;
+/// un port neutre accepte les deux.
+pub fn attach_ok(
+    port_connector: &str,
+    port_gender: Option<&str>,
+    adapter_connector: &str,
+    adapter_gender: &str,
+) -> Result<(), String> {
+    if port_connector != adapter_connector {
+        return Err("L'entrée de l'adaptateur n'a pas le connecteur du port.".into());
+    }
+    match (port_gender.unwrap_or("N"), adapter_gender) {
+        ("N", _) | (_, "N") => Ok(()),
+        (a, b) if a != b => Ok(()),
+        _ => Err("Même genre des deux côtés : il faut un mâle face à un femelle.".into()),
+    }
 }
 
 pub fn validate_cable(c: &mut CableFields) -> Vec<FieldError> {
@@ -220,6 +255,26 @@ pub fn validate_cable(c: &mut CableFields) -> Vec<FieldError> {
             .any(|(x, y)| !x.is_finite() || !y.is_finite())
     {
         e.push(err("waypoints", "50 points de passage au plus."));
+    }
+    if let Some(x) = &mut c.external {
+        x.label = x
+            .label
+            .as_ref()
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty());
+        if x.label.as_ref().is_some_and(|l| l.chars().count() > 120) {
+            e.push(err("external.label", "120 caractères au plus."));
+        }
+        if x.location_id.is_none() && x.label.is_none() {
+            e.push(err(
+                "external",
+                "Choisissez un lieu du projet ou décrivez la destination.",
+            ));
+        }
+    }
+    if c.attach {
+        c.number = None;
+        c.harness_id = None;
     }
     if c.length_m
         .is_some_and(|l| !l.is_finite() || !(0.0..=10_000.0).contains(&l))
@@ -273,7 +328,13 @@ mod tests {
 
     #[test]
     fn port_refs_round_trip() {
-        for s in ["i:abc:2:7", "p:pan:17:r", "a:ad:3:in", "a:ad:1:o2.4"] {
+        for s in [
+            "i:abc:2:7",
+            "p:pan:17:r",
+            "a:ad:3:in",
+            "a:ad:1:o2.4",
+            "x:42",
+        ] {
             assert_eq!(s.parse::<PortRef>().unwrap().to_string(), s);
         }
         assert!("i:abc:x:1".parse::<PortRef>().is_err());
@@ -282,6 +343,19 @@ mod tests {
             "p:pan:17:f".parse::<PortRef>().unwrap().node(Some(16)),
             "p:pan:2"
         );
+    }
+
+    #[test]
+    fn adapters_attach_by_connector_and_gender() {
+        assert!(attach_ok("bnc", Some("F"), "bnc", "M").is_ok());
+        assert!(attach_ok("bnc", Some("F"), "bnc", "F").is_err());
+        assert!(attach_ok("bnc", Some("F"), "hd-bnc", "M").is_err());
+        assert!(attach_ok("rj45", None, "rj45", "F").is_ok());
+        let mut x = CableFields {
+            external: Some(ExternalEnd::default()),
+            ..Default::default()
+        };
+        assert_eq!(validate_cable(&mut x).len(), 1);
     }
 
     #[test]

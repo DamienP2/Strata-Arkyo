@@ -812,6 +812,12 @@ impl Store {
                 .bind(id)
                 .fetch_optional(&mut *tx)
                 .await?;
+        // Supprimer un adaptateur supprime ses câbles et ses attaches.
+        sqlx::query("DELETE FROM cables WHERE a LIKE ? OR b LIKE ?")
+            .bind(format!("a:{id}:%"))
+            .bind(format!("a:{id}:%"))
+            .execute(&mut *tx)
+            .await?;
         touch_project(&mut tx, &pid.ok_or(StoreError::NotFound)?).await?;
         tx.commit().await?;
         Ok(())

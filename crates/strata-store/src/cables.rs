@@ -347,3 +347,136 @@ mod tests {
         );
     }
 }
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct Harness {
+    pub id: String,
+    pub project_id: String,
+    pub name: String,
+    pub color: String,
+    pub rev: i64,
+}
+
+impl Store {
+    pub async fn harnesses(&self, project_id: &str) -> Result<Vec<Harness>> {
+        let rows = sqlx::query("SELECT id, project_id, name, color, rev FROM harnesses WHERE project_id = ? ORDER BY name")
+            .bind(project_id)
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(rows
+            .iter()
+            .map(|r| Harness {
+                id: r.get("id"),
+                project_id: r.get("project_id"),
+                name: r.get("name"),
+                color: r.get("color"),
+                rev: r.get("rev"),
+            })
+            .collect())
+    }
+
+    pub async fn harness(&self, id: &str) -> Result<Option<Harness>> {
+        Ok(self.harnesses_where(id).await?)
+    }
+
+    async fn harnesses_where(&self, id: &str) -> Result<Option<Harness>> {
+        let r = sqlx::query("SELECT id, project_id, name, color, rev FROM harnesses WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(r.map(|r| Harness {
+            id: r.get("id"),
+            project_id: r.get("project_id"),
+            name: r.get("name"),
+            color: r.get("color"),
+            rev: r.get("rev"),
+        }))
+    }
+
+    pub async fn insert_harness(
+        &self,
+        project_id: &str,
+        name: &str,
+        color: &str,
+    ) -> Result<Harness> {
+        let id = new_id();
+        let t = now();
+        sqlx::query("INSERT INTO harnesses (id, project_id, name, color, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
+            .bind(&id)
+            .bind(project_id)
+            .bind(name)
+            .bind(color)
+            .bind(&t)
+            .bind(&t)
+            .execute(&self.pool)
+            .await?;
+        self.harness(&id).await?.ok_or(StoreError::NotFound)
+    }
+
+    pub async fn update_harness(
+        &self,
+        id: &str,
+        rev: i64,
+        name: &str,
+        color: &str,
+    ) -> Result<Harness> {
+        let done = sqlx::query("UPDATE harnesses SET name = ?, color = ?, rev = rev + 1, updated_at = ? WHERE id = ? AND rev = ?")
+            .bind(name)
+            .bind(color)
+            .bind(now())
+            .bind(id)
+            .bind(rev)
+            .execute(&self.pool)
+            .await?;
+        if done.rows_affected() == 0 {
+            return Err(if self.harness(id).await?.is_some() {
+                StoreError::Stale
+            } else {
+                StoreError::NotFound
+            });
+        }
+        self.harness(id).await?.ok_or(StoreError::NotFound)
+    }
+
+    /// Supprime un faisceau ; ses câbles restent, sans faisceau.
+    pub async fn delete_harness(&self, id: &str) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("UPDATE cables SET data = json_set(data, '$.harness_id', json('null')), rev = rev + 1 WHERE json_extract(data, '$.harness_id') = ?")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+        let n = sqlx::query("DELETE FROM harnesses WHERE id = ?")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?
+            .rows_affected();
+        if n == 0 {
+            return Err(StoreError::NotFound);
+        }
+        tx.commit().await?;
+        Ok(())
+    }
+
+    /// Range des câbles dans un faisceau (ou les en sort avec `None`).
+    pub async fn set_harness(
+        &self,
+        project_id: &str,
+        ids: &[String],
+        harness: Option<&str>,
+    ) -> Result<u64> {
+        let mut tx = self.pool.begin().await?;
+        let mut n = 0;
+        for id in ids {
+            n += sqlx::query("UPDATE cables SET data = json_set(data, '$.harness_id', json(?)), rev = rev + 1, updated_at = ? WHERE id = ? AND project_id = ? AND COALESCE(json_extract(data, '$.attach'), 0) = 0")
+                .bind(serde_json::to_string(&harness).unwrap_or_else(|_| "null".into()))
+                .bind(now())
+                .bind(id)
+                .bind(project_id)
+                .execute(&mut *tx)
+                .await?
+                .rows_affected();
+        }
+        tx.commit().await?;
+        Ok(n)
+    }
+}

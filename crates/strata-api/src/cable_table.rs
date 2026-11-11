@@ -115,7 +115,12 @@ async fn rows(store: &Store, pid: &str) -> ApiResult<Vec<Row>> {
         },
     };
     let mut out = Vec::new();
-    for c in store.cables(pid).await? {
+    for c in store
+        .cables(pid)
+        .await?
+        .into_iter()
+        .filter(|c| !c.fields.attach)
+    {
         let ea = port_of.get(c.a.as_str()).copied();
         let eb = port_of.get(c.b.as_str()).copied();
         let sig = ea
@@ -138,8 +143,36 @@ async fn rows(store: &Store, pid: &str) -> ApiResult<Vec<Row>> {
                 .unwrap_or_default(),
             family,
             a: end(&c.a),
-            b: end(&c.b),
-            warnings: cable_warnings(ea, eb),
+            b: match &c.fields.external {
+                Some(x) => End {
+                    port_ref: c.b.clone(),
+                    element: "Port externe".into(),
+                    container_id: None,
+                    location: x
+                        .location_id
+                        .as_deref()
+                        .and_then(|l| locations.get(l))
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| "Hors projet".into()),
+                    location_id: x.location_id.clone(),
+                    equipment: match (&x.location_id, &x.label) {
+                        (Some(l), _) => format!(
+                            "→ {}",
+                            locations
+                                .get(l.as_str())
+                                .copied()
+                                .unwrap_or("Lieu supprimé")
+                        ),
+                        (None, Some(t)) => format!("→ {t}"),
+                        _ => "→ Hors projet".into(),
+                    },
+                    tag: String::new(),
+                    port: String::new(),
+                    connector: String::new(),
+                },
+                None => end(&c.b),
+            },
+            warnings: cable_warnings(ea, eb, &c.fields),
         });
     }
     // Ordre de lecture : numéro, puis câbles sans numéro.

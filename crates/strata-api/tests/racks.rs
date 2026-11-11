@@ -2120,3 +2120,316 @@ async fn cable_table_bulk_edit_and_export() {
     .await;
     assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
 }
+
+#[tokio::test]
+async fn externals_attachments_harnesses_and_overview() {
+    let Setup {
+        app, o, pid, cid, ..
+    } = setup().await;
+    let item = |name: &str, ports: Value| json!({"kind": "equipment", "data": {"name": name, "functions": ["V"], "format": {"kind": "rack", "height_u": 1, "depth_mm": 300}, "ports": ports}});
+    let src = call(&app, "POST", "/api/catalog/items", Some(item("Source", json!([{"connector_id": "bnc", "signal_id": "sdi-3g", "direction": "out", "gender": "F", "quantity": 4}]))), Some(&o)).await.body["item"]["id"].as_str().unwrap().to_string();
+    let ad = call(&app, "POST", "/api/catalog/items", Some(json!({"kind": "adapters", "data": {"name": "BNC vers HD-BNC", "input": {"connector_id": "bnc", "gender": "M"}, "outputs": [{"connector_id": "hd-bnc", "gender": "F", "quantity": 1}]}})), Some(&o)).await;
+    assert_eq!(ad.status, StatusCode::CREATED, "{:?}", ad.body);
+    let ad = ad.body["item"]["id"].as_str().unwrap().to_string();
+    let bad = call(&app, "POST", "/api/catalog/items", Some(json!({"kind": "adapters", "data": {"name": "XLR F-M", "input": {"connector_id": "xlr3", "gender": "F"}, "outputs": [{"connector_id": "xlr3", "gender": "M"}]}})), Some(&o)).await.body["item"]["id"].as_str().unwrap().to_string();
+    call(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid}/articles"),
+        Some(json!({"container_id": cid, "nature": "equipment", "item_id": src})),
+        Some(&o),
+    )
+    .await;
+    let ad_art = call(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid}/articles"),
+        Some(json!({"container_id": cid, "nature": "adapter", "item_id": ad})),
+        Some(&o),
+    )
+    .await
+    .body["article"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    call(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid}/articles"),
+        Some(json!({"container_id": cid, "nature": "adapter", "item_id": bad})),
+        Some(&o),
+    )
+    .await;
+    let other = call(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid}/locations"),
+        Some(json!({"name": "Bord terrain", "code": "BORD"})),
+        Some(&o),
+    )
+    .await
+    .body["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    call(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid}/synoptic/lock"),
+        None,
+        Some(&o),
+    )
+    .await;
+    let s = call(
+        &app,
+        "GET",
+        &format!("/api/projects/{pid}/synoptic?view=container:{cid}"),
+        None,
+        Some(&o),
+    )
+    .await
+    .body;
+    let node = |l: &str| {
+        s["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|n| n["label"] == l)
+            .unwrap()
+            .clone()
+    };
+    let source = node("Source");
+    let p = |i: usize| source["ports"][i]["ref"].as_str().unwrap().to_string();
+    let ad_in = node("BNC vers HD-BNC")["ports"][0]["ref"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let bad_in = node("XLR F-M")["ports"][0]["ref"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Attache : BNC mâle sur BNC femelle ; un XLR ne s'attache pas sur un BNC.
+    let r = call(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid}/attach"),
+        Some(json!({"adapter": ad_in, "port": p(0)})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::CREATED, "{:?}", r.body);
+    let r = call(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid}/attach"),
+        Some(json!({"adapter": bad_in, "port": p(1)})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
+
+    // Ports externes : vers un lieu (non rattaché puis rattaché), hors projet ; un port marqué une fois.
+    let ext = format!("/api/projects/{pid}/external");
+    let r = call(
+        &app,
+        "POST",
+        &ext,
+        Some(json!({"port": p(1), "location_id": other})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::CREATED, "{:?}", r.body);
+    let r = call(
+        &app,
+        "POST",
+        &ext,
+        Some(json!({"port": p(1), "label": "OB2"})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::CONFLICT);
+    call(
+        &app,
+        "POST",
+        &ext,
+        Some(json!({"port": p(2), "label": "Diffuseur · fibre A"})),
+        Some(&o),
+    )
+    .await;
+    let r = call(&app, "POST", &ext, Some(json!({"port": p(3)})), Some(&o)).await;
+    assert_eq!(
+        r.status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "destination obligatoire"
+    );
+    let s = call(
+        &app,
+        "GET",
+        &format!("/api/projects/{pid}/synoptic?view=container:{cid}"),
+        None,
+        Some(&o),
+    )
+    .await
+    .body;
+    let to_loc = s["cables"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["b_info"]["location_id"] == other.as_str())
+        .unwrap()
+        .clone();
+    assert_eq!(to_loc["b_info"]["resolved"], false);
+    assert!(
+        to_loc["b_info"]["label"]
+            .as_str()
+            .unwrap()
+            .contains("non rattaché")
+    );
+    assert!(to_loc["warnings"].as_array().unwrap().is_empty());
+
+    // Faisceau et vue générale.
+    let h = call(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid}/harnesses"),
+        Some(json!({"name": "Multi vidéo", "color": "#2459E0"})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(h.status, StatusCode::CREATED);
+    let hid = h.body["id"].as_str().unwrap().to_string();
+    let r = call(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid}/harnesses/assign"),
+        Some(json!({"ids": [to_loc["id"]], "harness_id": hid})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.body["changed"], 1);
+    let ov = call(
+        &app,
+        "GET",
+        &format!("/api/projects/{pid}/synoptic?view=overview"),
+        None,
+        Some(&o),
+    )
+    .await
+    .body;
+    assert_eq!(ov["overview"]["links"][0]["external"], 1);
+    assert_eq!(ov["harnesses"][0]["name"], "Multi vidéo");
+    let car = ov["overview"]["locations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|l| l["id"] != other.as_str())
+        .unwrap()
+        .clone();
+    assert_eq!(car["outside"], 1, "un port hors projet");
+
+    // Numérotation : les ports externes comptent, pas l'attache.
+    let r = call(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid}/numbering"),
+        Some(json!({"mode": "missing"})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.body["changed"], 2, "{:?}", r.body);
+    let t = call(
+        &app,
+        "GET",
+        &format!("/api/projects/{pid}/cables/table"),
+        None,
+        Some(&o),
+    )
+    .await
+    .body;
+    assert_eq!(t["rows"].as_array().unwrap().len(), 2);
+    assert!(
+        t["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["b"]["equipment"] == "→ Bord terrain")
+    );
+
+    // Atelier : connexions et câbles à préparer.
+    let w = call(
+        &app,
+        "GET",
+        &format!("/api/containers/{cid}/checks"),
+        None,
+        Some(&o),
+    )
+    .await
+    .body;
+    let fam = |k: &str| {
+        w["families"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|f| f["key"] == k)
+            .unwrap()["total"]
+            .as_u64()
+            .unwrap()
+    };
+    assert_eq!(
+        (fam("connexions"), fam("cables")),
+        (3, 2),
+        "{:?}",
+        w["families"]
+    );
+
+    // Supprimer l'adaptateur supprime son attache.
+    call(
+        &app,
+        "DELETE",
+        &format!("/api/articles/{ad_art}"),
+        None,
+        Some(&o),
+    )
+    .await;
+    let s = call(
+        &app,
+        "GET",
+        &format!("/api/projects/{pid}/synoptic?view=container:{cid}"),
+        None,
+        Some(&o),
+    )
+    .await
+    .body;
+    assert!(
+        !s["cables"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c["fields"]["attach"] == true)
+    );
+    call(
+        &app,
+        "DELETE",
+        &format!("/api/harnesses/{hid}"),
+        None,
+        Some(&o),
+    )
+    .await;
+    let s = call(
+        &app,
+        "GET",
+        &format!("/api/projects/{pid}/synoptic?view=container:{cid}"),
+        None,
+        Some(&o),
+    )
+    .await
+    .body;
+    assert!(
+        s["cables"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|c| c["fields"]["harness_id"].is_null())
+    );
+}

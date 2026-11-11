@@ -131,6 +131,7 @@ async fn number(
     };
     let chosen: Vec<&strata_store::cables::Cable> = cables
         .iter()
+        .filter(|c| !c.fields.attach)
         .filter(|c| match b.mode {
             Mode::Missing => in_scope(c) && c.fields.number.is_none(),
             Mode::All => in_scope(c),
@@ -221,9 +222,10 @@ async fn number(
                     .container_id
                     .as_deref()
                     .and_then(|id| containers.get(id));
-                let same = r
-                    .other
-                    .is_some_and(|(n, _)| n.container_id == r.node.container_id);
+                // Un port externe se numérote avec son élément ; une liaison entre éléments, au projet.
+                let same = c.fields.external.is_some()
+                    || r.other
+                        .is_some_and(|(n, _)| n.container_id == r.node.container_id);
                 let scope = if same {
                     r.node
                         .container_id
@@ -432,7 +434,9 @@ async fn validate(
     let mut numbers: HashMap<&str, Vec<String>> = HashMap::new();
     for c in &cables {
         // 1. Extrémité manquante
-        if !port_of.contains_key(c.a.as_str()) || !port_of.contains_key(c.b.as_str()) {
+        if !port_of.contains_key(c.a.as_str())
+            || (c.fields.external.is_none() && !port_of.contains_key(c.b.as_str()))
+        {
             out.push(Issue {
                 code: 1,
                 severity: "error",
@@ -449,8 +453,26 @@ async fn validate(
         if let Some(n) = &c.fields.number {
             numbers.entry(n.as_str()).or_default().push(c.id.clone());
         }
-        // 4. Incompatibilité (familles, à défaut connecteurs ; hors IP et transit)
-        if let (Some((_, pa)), Some((_, pb))) =
+        // 4. Incompatibilité (familles, à défaut connecteurs ; hors IP et transit) ; pour une
+        // attache d'adaptateur, connecteur et genres.
+        if c.fields.attach {
+            let w = crate::synoptic::cable_warnings(
+                port_of.get(c.a.as_str()).copied(),
+                port_of.get(c.b.as_str()).copied(),
+                &c.fields,
+            );
+            if let Some(m) = w.into_iter().find(|m| !m.starts_with("Extrémité")) {
+                out.push(Issue {
+                    code: 4,
+                    severity: "error",
+                    title: "Attache incompatible",
+                    detail: m,
+                    cables: vec![c.id.clone()],
+                    nodes: vec![],
+                    view: where_(c),
+                });
+            }
+        } else if let (Some((_, pa)), Some((_, pb))) =
             (port_of.get(c.a.as_str()), port_of.get(c.b.as_str()))
         {
             let mut a = info(pa);
@@ -476,7 +498,7 @@ async fn validate(
             }
         }
         // 5. Câble sans numéro
-        if c.fields.number.is_none() {
+        if c.fields.number.is_none() && !c.fields.attach {
             out.push(Issue {
                 code: 5,
                 severity: "warning",
