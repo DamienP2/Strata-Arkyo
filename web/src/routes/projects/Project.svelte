@@ -13,6 +13,7 @@
   import Inventory from './Inventory.svelte';
   import Tasks from './Tasks.svelte';
   import History from './History.svelte';
+  import Racks from './Racks.svelte';
 
   let { id }: { id: string } = $props();
   let view = $state<ProjectView | null>(null);
@@ -41,6 +42,8 @@
     { key: 'inventaire', label: 'Inventaire', href: `/projets/${id}/inventaire` },
     { key: 'taches', label: 'Tâches', href: `/projets/${id}/taches`, badge: view?.tasks.filter((t) => t.status === 'todo' || t.status === 'in_progress').length || undefined },
     { key: 'historique', label: 'Historique', href: `/projets/${id}/historique` },
+  ] }, { label: 'Dessiner', lock: true, items: [
+    { key: 'racks', label: 'Racks', href: `/projets/${id}/racks` },
   ] }]);
 
   async function setStatus(s: Status) {
@@ -79,6 +82,7 @@
     {:else if sub === 'inventaire'}<Inventory bind:view reload={load} />
     {:else if sub === 'taches'}<Tasks bind:view reload={load} />
     {:else if sub === 'historique'}<History projectId={id} />
+    {:else if sub === 'racks'}<Racks {view} />
     {:else}<p class="lead">Section introuvable.</p>{/if}
   </div>
 {:else}<span class="spin"></span>{/if}
