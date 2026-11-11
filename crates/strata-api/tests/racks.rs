@@ -2433,3 +2433,104 @@ async fn externals_attachments_harnesses_and_overview() {
             .all(|c| c["fields"]["harness_id"].is_null())
     );
 }
+
+#[tokio::test]
+async fn annotations_and_zone_checks() {
+    let Setup {
+        app, o, pid, cid, ..
+    } = setup().await;
+    call(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid}/synoptic/lock"),
+        None,
+        Some(&o),
+    )
+    .await;
+    let view = format!("container:{cid}");
+    let url = format!("/api/projects/{pid}/annotations");
+    let z = call(
+        &app,
+        "POST",
+        &url,
+        Some(json!({"view": view, "kind": "zone", "data": {"x": 0, "y": 0, "w": 500, "h": 400}})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(z.status, StatusCode::CREATED, "{:?}", z.body);
+    assert_eq!(z.body["data"]["stroke"], "dashed");
+    let bad = call(
+        &app,
+        "POST",
+        &url,
+        Some(json!({"view": view, "kind": "label", "data": {"text": " "}})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(bad.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let l = call(&app, "POST", &url, Some(json!({"view": view, "kind": "label", "data": {"x": 10, "y": 10, "text": "Régie image", "bold": true, "size": 400}})), Some(&o)).await;
+    assert_eq!(l.body["data"]["size"], 96.0);
+    let v = call(
+        &app,
+        "GET",
+        &format!("/api/projects/{pid}/synoptic/validate"),
+        None,
+        Some(&o),
+    )
+    .await
+    .body;
+    let codes: Vec<u64> = v["issues"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["code"].as_u64().unwrap())
+        .collect();
+    assert!(codes.contains(&10) && codes.contains(&11), "{codes:?}");
+    // Un nœud dans la zone, un nom : plus d'anomalie de zone.
+    call(
+        &app,
+        "PUT",
+        &format!("/api/projects/{pid}/synoptic/layout"),
+        Some(json!({"view": view, "positions": [{"node": "i:x", "x": 100, "y": 100}]})),
+        Some(&o),
+    )
+    .await;
+    let zid = z.body["id"].as_str().unwrap();
+    let r = call(&app, "PATCH", &format!("/api/annotations/{zid}"), Some(json!({"rev": z.body["rev"], "data": {"x": 0, "y": 0, "w": 500, "h": 400, "name": "Vidéo"}})), Some(&o)).await;
+    assert_eq!(r.body["data"]["name"], "Vidéo");
+    let v = call(
+        &app,
+        "GET",
+        &format!("/api/projects/{pid}/synoptic/validate"),
+        None,
+        Some(&o),
+    )
+    .await
+    .body;
+    assert!(
+        !v["issues"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|i| i["code"] == 10 || i["code"] == 11)
+    );
+    let s = call(
+        &app,
+        "GET",
+        &format!("/api/projects/{pid}/synoptic?view={view}"),
+        None,
+        Some(&o),
+    )
+    .await
+    .body;
+    assert_eq!(s["annotations"].as_array().unwrap().len(), 2);
+    let r = call(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid}/annotations/delete"),
+        Some(json!({"ids": [zid, l.body["id"]]})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.body["deleted"], 2);
+}

@@ -50,6 +50,9 @@ pub fn routes() -> Router<AppState> {
             "/harnesses/{id}",
             patch(harness_update).delete(harness_delete),
         )
+        .route("/projects/{id}/annotations", post(annotation_create))
+        .route("/projects/{id}/annotations/delete", post(annotation_delete))
+        .route("/annotations/{id}", patch(annotation_update))
 }
 
 fn lock_key(pid: &str) -> String {
@@ -557,6 +560,7 @@ async fn show(
         "view": view,
         "overview": overview,
         "harnesses": st.store.harnesses(&pid).await?,
+        "annotations": st.store.annotations(&pid, Some(&view)).await?,
         "nodes": if view == "overview" { Vec::new() } else { shown },
         "cables": cables,
         "layout": layout.into_iter().map(|(k, (x, y))| (k, json!({ "x": x, "y": y }))).collect::<serde_json::Map<String, Value>>(),
@@ -1199,4 +1203,106 @@ async fn harness_assign(
         origin.0.as_deref(),
     );
     Ok(Json(json!({ "changed": n })))
+}
+
+// ----- Annotations -----
+
+#[derive(Deserialize)]
+struct NewAnnotation {
+    view: String,
+    kind: String,
+    data: Value,
+}
+
+fn ann_fields(e: Vec<strata_domain::catalog::FieldError>) -> ApiError {
+    ApiError::Fields(e)
+}
+
+async fn annotation_create(
+    State(st): State<AppState>,
+    m: Member,
+    origin: Origin,
+    Path(pid): Path<String>,
+    Json(b): Json<NewAnnotation>,
+) -> ApiResult<(StatusCode, Json<Value>)> {
+    editing(&st, &m, &pid).await?;
+    let data =
+        strata_domain::synoptic::validate_annotation(&b.kind, &b.data).map_err(ann_fields)?;
+    let a = st
+        .store
+        .insert_annotation(&pid, &b.view, &b.kind, &data)
+        .await?;
+    record(
+        &st,
+        &m,
+        &origin,
+        &pid,
+        "annotation",
+        &a.id,
+        "create",
+        Some(a.rev),
+        None::<&()>,
+        Some(&a),
+    )
+    .await?;
+    Ok((StatusCode::CREATED, Json(json!(a))))
+}
+
+#[derive(Deserialize)]
+struct PatchAnnotation {
+    rev: i64,
+    data: Value,
+}
+
+async fn annotation_update(
+    State(st): State<AppState>,
+    m: Member,
+    origin: Origin,
+    Path(id): Path<String>,
+    Json(b): Json<PatchAnnotation>,
+) -> ApiResult<Json<Value>> {
+    let a = st
+        .store
+        .annotation(&id)
+        .await?
+        .ok_or(ApiError::NotFound("Annotation"))?;
+    editing(&st, &m, &a.project_id).await?;
+    let data =
+        strata_domain::synoptic::validate_annotation(&a.kind, &b.data).map_err(ann_fields)?;
+    let after = st.store.update_annotation(&id, b.rev, &data).await?;
+    record(
+        &st,
+        &m,
+        &origin,
+        &a.project_id,
+        "annotation",
+        &id,
+        "update",
+        Some(after.rev),
+        Some(&a),
+        Some(&after),
+    )
+    .await?;
+    Ok(Json(json!(after)))
+}
+
+async fn annotation_delete(
+    State(st): State<AppState>,
+    m: Member,
+    origin: Origin,
+    Path(pid): Path<String>,
+    Json(b): Json<RemoveBody>,
+) -> ApiResult<Json<Value>> {
+    editing(&st, &m, &pid).await?;
+    let n = st.store.delete_annotations(&pid, &b.ids).await?;
+    st.hub.change(
+        room(&pid),
+        "annotation",
+        &pid,
+        "delete",
+        None,
+        &m.0.account.id,
+        origin.0.as_deref(),
+    );
+    Ok(Json(json!({ "deleted": n })))
 }

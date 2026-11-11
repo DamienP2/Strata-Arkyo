@@ -480,3 +480,109 @@ impl Store {
         Ok(n)
     }
 }
+
+/// Annotation du synoptique : zone ou étiquette, dans une vue.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct Annotation {
+    pub id: String,
+    pub project_id: String,
+    pub view: String,
+    pub kind: String,
+    pub data: serde_json::Value,
+    pub rev: i64,
+}
+
+impl Store {
+    fn annotation_row(r: &SqliteRow) -> Annotation {
+        Annotation {
+            id: r.get("id"),
+            project_id: r.get("project_id"),
+            view: r.get("view"),
+            kind: r.get("kind"),
+            data: serde_json::from_str(r.get::<&str, _>("data")).unwrap_or_default(),
+            rev: r.get("rev"),
+        }
+    }
+
+    /// Annotations d'une vue, ou de tout le projet si `view` est vide.
+    pub async fn annotations(
+        &self,
+        project_id: &str,
+        view: Option<&str>,
+    ) -> Result<Vec<Annotation>> {
+        let rows = sqlx::query("SELECT * FROM syn_annotations WHERE project_id = ? AND (? IS NULL OR view = ?) ORDER BY created_at")
+            .bind(project_id)
+            .bind(view)
+            .bind(view)
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(rows.iter().map(Self::annotation_row).collect())
+    }
+
+    pub async fn annotation(&self, id: &str) -> Result<Option<Annotation>> {
+        Ok(sqlx::query("SELECT * FROM syn_annotations WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?
+            .as_ref()
+            .map(Self::annotation_row))
+    }
+
+    pub async fn insert_annotation(
+        &self,
+        project_id: &str,
+        view: &str,
+        kind: &str,
+        data: &serde_json::Value,
+    ) -> Result<Annotation> {
+        let id = new_id();
+        let t = now();
+        sqlx::query("INSERT INTO syn_annotations (id, project_id, view, kind, data, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+            .bind(&id)
+            .bind(project_id)
+            .bind(view)
+            .bind(kind)
+            .bind(data.to_string())
+            .bind(&t)
+            .bind(&t)
+            .execute(&self.pool)
+            .await?;
+        self.annotation(&id).await?.ok_or(StoreError::NotFound)
+    }
+
+    pub async fn update_annotation(
+        &self,
+        id: &str,
+        rev: i64,
+        data: &serde_json::Value,
+    ) -> Result<Annotation> {
+        let done = sqlx::query("UPDATE syn_annotations SET data = ?, rev = rev + 1, updated_at = ? WHERE id = ? AND rev = ?")
+            .bind(data.to_string())
+            .bind(now())
+            .bind(id)
+            .bind(rev)
+            .execute(&self.pool)
+            .await?;
+        if done.rows_affected() == 0 {
+            return Err(if self.annotation(id).await?.is_some() {
+                StoreError::Stale
+            } else {
+                StoreError::NotFound
+            });
+        }
+        self.annotation(id).await?.ok_or(StoreError::NotFound)
+    }
+
+    pub async fn delete_annotations(&self, project_id: &str, ids: &[String]) -> Result<u64> {
+        let mut n = 0;
+        for id in ids {
+            n += sqlx::query("DELETE FROM syn_annotations WHERE id = ? AND project_id = ?")
+                .bind(id)
+                .bind(project_id)
+                .execute(&self.pool)
+                .await?
+                .rows_affected();
+        }
+        Ok(n)
+    }
+}

@@ -418,3 +418,138 @@ mod tests {
         assert_eq!(f.number.as_deref(), Some("V-001"));
     }
 }
+
+// ----- Annotations (section 10.4) -----
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Stroke {
+    #[default]
+    Solid,
+    Dashed,
+    Dotted,
+}
+
+/// Zone : rectangle nommé qui regroupe des nœuds.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Zone {
+    pub x: f64,
+    pub y: f64,
+    pub w: f64,
+    pub h: f64,
+    pub name: String,
+    pub color: String,
+    pub radius: f64,
+    pub stroke: Stroke,
+    pub width: f64,
+    pub opacity: f64,
+}
+
+impl Default for Zone {
+    fn default() -> Self {
+        Zone {
+            x: 0.0,
+            y: 0.0,
+            w: 400.0,
+            h: 260.0,
+            name: String::new(),
+            color: "#2459E0".into(),
+            radius: 14.0,
+            stroke: Stroke::Dashed,
+            width: 2.0,
+            opacity: 0.08,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Font {
+    #[default]
+    Sans,
+    Serif,
+    Mono,
+}
+
+/// Étiquette : texte libre posé sur le synoptique.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Label {
+    pub x: f64,
+    pub y: f64,
+    pub text: String,
+    pub font: Font,
+    pub size: f64,
+    pub bold: bool,
+    pub italic: bool,
+    pub underline: bool,
+    /// Pastille colorée derrière le texte.
+    pub pill: bool,
+    pub color: String,
+}
+
+impl Default for Label {
+    fn default() -> Self {
+        Label {
+            x: 0.0,
+            y: 0.0,
+            text: String::new(),
+            font: Font::Sans,
+            size: 16.0,
+            bold: false,
+            italic: false,
+            underline: false,
+            pill: false,
+            color: "#15171A".into(),
+        }
+    }
+}
+
+fn hex(c: &str) -> bool {
+    c.len() == 7 && c.starts_with('#') && c[1..].chars().all(|x| x.is_ascii_hexdigit())
+}
+
+/// Valide une annotation (`zone` ou `label`) et la renvoie normalisée.
+pub fn validate_annotation(
+    kind: &str,
+    data: &serde_json::Value,
+) -> Result<serde_json::Value, Vec<FieldError>> {
+    let mut e = Vec::new();
+    let finite = |v: f64| v.is_finite() && v.abs() < 1e6;
+    let out = match kind {
+        "zone" => {
+            let mut z: Zone = serde_json::from_value(data.clone())
+                .map_err(|_| vec![err("data", "Zone illisible.")])?;
+            z.name = z.name.trim().chars().take(120).collect();
+            if ![z.x, z.y, z.w, z.h].iter().all(|v| finite(*v)) || z.w < 20.0 || z.h < 20.0 {
+                e.push(err("data", "Zone de 20 × 20 au moins."));
+            }
+            if !hex(&z.color) {
+                e.push(err("color", "Couleur au format #RRVVBB."));
+            }
+            z.radius = z.radius.clamp(0.0, 200.0);
+            z.width = z.width.clamp(0.5, 12.0);
+            z.opacity = z.opacity.clamp(0.0, 1.0);
+            serde_json::to_value(z).unwrap_or_default()
+        }
+        "label" => {
+            let mut l: Label = serde_json::from_value(data.clone())
+                .map_err(|_| vec![err("data", "Étiquette illisible.")])?;
+            l.text = l.text.trim().to_string();
+            if l.text.is_empty() || l.text.chars().count() > 500 {
+                e.push(err("text", "De 1 à 500 caractères."));
+            }
+            if !finite(l.x) || !finite(l.y) {
+                e.push(err("data", "Position illisible."));
+            }
+            if !hex(&l.color) {
+                e.push(err("color", "Couleur au format #RRVVBB."));
+            }
+            l.size = l.size.clamp(8.0, 96.0);
+            serde_json::to_value(l).unwrap_or_default()
+        }
+        _ => return Err(vec![err("kind", "Zone ou étiquette.")]),
+    };
+    if e.is_empty() { Ok(out) } else { Err(e) }
+}

@@ -633,7 +633,51 @@ async fn validate(
             _ => {}
         }
     }
-    // 10 et 11 (zones sans nom ou vides) : avec les annotations.
+    // 10. Zone sans nom ; 11. Zone vide (aucun nœud dont la position enregistrée y tombe).
+    for z in st
+        .store
+        .annotations(&pid, None)
+        .await?
+        .into_iter()
+        .filter(|a| a.kind == "zone")
+    {
+        let f = |k: &str| z.data[k].as_f64().unwrap_or(0.0);
+        let name = z.data["name"].as_str().unwrap_or("").to_string();
+        let view = Some(z.view.clone()).filter(|v| v != "overview");
+        if name.is_empty() {
+            out.push(Issue {
+                code: 10,
+                severity: "info",
+                title: "Zone sans nom",
+                detail: "Une zone n'a pas de nom.".into(),
+                cables: vec![],
+                nodes: vec![],
+                view: view.clone(),
+            });
+        }
+        let layout = st.store.layout(&pid, &z.view).await?;
+        let inside = layout.values().any(|(x, y)| {
+            *x >= f("x") && *x <= f("x") + f("w") && *y >= f("y") && *y <= f("y") + f("h")
+        });
+        if !inside {
+            out.push(Issue {
+                code: 11,
+                severity: "info",
+                title: "Zone vide",
+                detail: format!(
+                    "{} : aucun nœud dedans.",
+                    if name.is_empty() {
+                        "Zone sans nom"
+                    } else {
+                        name.as_str()
+                    }
+                ),
+                cables: vec![],
+                nodes: vec![],
+                view,
+            });
+        }
+    }
     out.sort_by_key(|i| {
         (
             match i.severity {
