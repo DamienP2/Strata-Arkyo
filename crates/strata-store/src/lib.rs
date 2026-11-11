@@ -18,9 +18,11 @@ use strata_domain::{Level, Permissions, RoleInfo, builtin};
 pub mod catalog;
 pub mod projects;
 pub mod racks;
+pub mod templates;
 pub use catalog::*;
 pub use projects::*;
 pub use racks::*;
+pub use templates::*;
 
 /// Migrations du schéma. Une base écrite par une version plus récente porte des
 /// migrations que cette version ne connaît pas : elles sont ignorées, ce qui permet

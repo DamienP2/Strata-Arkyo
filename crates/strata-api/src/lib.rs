@@ -12,6 +12,7 @@ pub mod live;
 pub mod ops;
 pub mod projects;
 pub mod racks;
+pub mod templates;
 pub mod web;
 
 use crate::auth::{
@@ -91,6 +92,7 @@ pub fn router(state: AppState) -> Router {
         .nest("/catalog", catalog::routes())
         .merge(projects::routes())
         .merge(racks::routes())
+        .merge(templates::routes())
         .route("/live", get(live::socket))
         .layer(middleware::from_fn(csrf));
     Router::new()

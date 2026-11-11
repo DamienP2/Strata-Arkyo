@@ -365,6 +365,8 @@ struct PlaceBody {
     #[serde(default)]
     col: i64,
     circuit_id: Option<String>,
+    /// Étagère qui recevra un équipement hors format rack.
+    shelf_id: Option<String>,
 }
 
 fn place_error(e: PlaceError) -> ApiError {
@@ -427,13 +429,12 @@ async fn place(
         )));
     }
     let ctx = Ctx::load(&st.store, &c).await?;
-    let Some((h, w)) = ctx.geometry(&a) else {
-        return Err(ApiError::Invalid(if a.nature == ArticleNature::Adapter {
-            "Un adaptateur ne se pose pas dans le rack.".into()
-        } else {
-            "Cet équipement se pose sur une étagère.".into()
-        }));
-    };
+    let geo = ctx.geometry(&a);
+    if a.nature == ArticleNature::Adapter {
+        return Err(ApiError::Invalid(
+            "Un adaptateur ne se pose pas dans le rack.".into(),
+        ));
+    }
     // Exemplaire : celui demandé, sinon le premier non posé.
     let placements = st.store.placements(&cid).await?;
     let instance_id = if a.nature == ArticleNature::Equipment {
@@ -466,24 +467,75 @@ async fn place(
     } else {
         None
     };
-    let width = b.width.unwrap_or(w);
-    let others: Vec<Slot> = placements.iter().filter_map(|p| ctx.slot(p)).collect();
-    let slot = Slot {
-        id: String::new(),
-        label: article_label(&a, &ctx.items),
-        face: b.face,
-        u_start: b.u_start,
-        height_u: h,
-        width,
-        col: b.col.max(0) as u32,
-    };
-    let u = adjust(c.data.height_u.unwrap_or(0.0), &slot, &others).map_err(place_error)?;
-    let spec = PlaceSpec {
-        face: b.face,
-        u_start: u,
-        width,
-        col: b.col.max(0),
-        circuit_id: b.circuit_id,
+    let (spec, adjusted) = match &b.shelf_id {
+        // Sur une étagère : l'équipement prend la position de l'étagère.
+        Some(sid) => {
+            let shelf = st
+                .store
+                .placement(sid)
+                .await?
+                .filter(|p| p.container_id == cid)
+                .ok_or_else(|| one("shelf_id", "Étagère inconnue dans ce contenant."))?;
+            let is_shelf = ctx
+                .article(&shelf.article_id)
+                .and_then(|x| x.accessory.as_ref())
+                .is_some_and(|acc| matches!(acc, strata_domain::project::Accessory::Shelf { .. }));
+            if !is_shelf {
+                return Err(one("shelf_id", "Choisissez une étagère."));
+            }
+            if geo.is_some() {
+                return Err(ApiError::Invalid(
+                    "Un équipement au format rack se pose dans la baie, pas sur une étagère."
+                        .into(),
+                ));
+            }
+            if st.store.shelf_load(sid).await? >= 10 {
+                return Err(ApiError::Conflict(
+                    "Une étagère porte 10 équipements au plus.".into(),
+                ));
+            }
+            (
+                PlaceSpec {
+                    face: shelf.face,
+                    u_start: shelf.u_start,
+                    width: Width::Full,
+                    col: 0,
+                    circuit_id: b.circuit_id.clone(),
+                    shelf_id: Some(sid.clone()),
+                },
+                false,
+            )
+        }
+        None => {
+            let Some((h, w)) = geo else {
+                return Err(ApiError::Invalid(
+                    "Cet équipement se pose sur une étagère.".into(),
+                ));
+            };
+            let width = b.width.unwrap_or(w);
+            let others: Vec<Slot> = placements.iter().filter_map(|p| ctx.slot(p)).collect();
+            let slot = Slot {
+                id: String::new(),
+                label: article_label(&a, &ctx.items),
+                face: b.face,
+                u_start: b.u_start,
+                height_u: h,
+                width,
+                col: b.col.max(0) as u32,
+            };
+            let u = adjust(c.data.height_u.unwrap_or(0.0), &slot, &others).map_err(place_error)?;
+            (
+                PlaceSpec {
+                    face: b.face,
+                    u_start: u,
+                    width,
+                    col: b.col.max(0),
+                    circuit_id: b.circuit_id.clone(),
+                    shelf_id: None,
+                },
+                u != b.u_start,
+            )
+        }
     };
     let p = st
         .store
@@ -514,7 +566,7 @@ async fn place(
     });
     Ok((
         StatusCode::CREATED,
-        Json(json!({ "placement": p, "adjusted": u != b.u_start, "warning": warning })),
+        Json(json!({ "placement": p, "adjusted": adjusted, "warning": warning })),
     ))
 }
 
@@ -551,6 +603,25 @@ async fn move_placement(
         .filter(|p| p.id != id)
         .filter_map(|p| ctx.slot(p))
         .collect();
+    if before.shelf_id.is_some() {
+        let after = st
+            .store
+            .update_placement(
+                &id,
+                b.rev,
+                &PlaceSpec {
+                    face: before.face,
+                    u_start: before.u_start,
+                    width: before.width,
+                    col: before.col,
+                    circuit_id: b.circuit_id,
+                    shelf_id: before.shelf_id.clone(),
+                },
+            )
+            .await?;
+        saved(&st, &m, &origin, &c);
+        return Ok(Json(json!({ "placement": after })));
+    }
     let mut slot = ctx
         .slot(&before)
         .ok_or(ApiError::NotFound("Élément posé"))?;
@@ -570,6 +641,7 @@ async fn move_placement(
                 width: b.width,
                 col: b.col.max(0),
                 circuit_id: b.circuit_id,
+                shelf_id: None,
             },
         )
         .await?;

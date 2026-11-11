@@ -19,6 +19,8 @@ pub struct Placement {
     pub width: Width,
     pub col: i64,
     pub circuit_id: Option<String>,
+    /// Étagère qui porte l'élément, s'il est posé sur une étagère.
+    pub shelf_id: Option<String>,
     pub rev: i64,
 }
 
@@ -69,6 +71,7 @@ impl Placement {
             width: de(r.get("width")).unwrap_or(Width::Full),
             col: r.get("col"),
             circuit_id: r.get("circuit_id"),
+            shelf_id: r.get("shelf_id"),
             rev: r.get("rev"),
         }
     }
@@ -109,6 +112,7 @@ pub struct PlaceSpec {
     pub width: Width,
     pub col: i64,
     pub circuit_id: Option<String>,
+    pub shelf_id: Option<String>,
 }
 
 pub enum LockOutcome {
@@ -155,7 +159,7 @@ impl Store {
     ) -> Result<Placement> {
         let id = new_id();
         let t = now();
-        sqlx::query("INSERT INTO placements (id, project_id, container_id, article_id, instance_id, face, u_start, width, col, circuit_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        sqlx::query("INSERT INTO placements (id, project_id, container_id, article_id, instance_id, face, u_start, width, col, circuit_id, shelf_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
             .bind(&id)
             .bind(project_id)
             .bind(container_id)
@@ -166,6 +170,7 @@ impl Store {
             .bind(ser(&p.width))
             .bind(p.col)
             .bind(&p.circuit_id)
+            .bind(&p.shelf_id)
             .bind(&t)
             .bind(&t)
             .execute(&self.pool)
@@ -196,7 +201,24 @@ impl Store {
                 StoreError::NotFound
             });
         }
+        // Ce que porte une étagère la suit.
+        sqlx::query("UPDATE placements SET face = ?, u_start = ? WHERE shelf_id = ?")
+            .bind(ser(&p.face))
+            .bind(p.u_start)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
         self.placement(id).await?.ok_or(StoreError::NotFound)
+    }
+
+    /// Nombre d'éléments posés sur une étagère.
+    pub async fn shelf_load(&self, shelf_id: &str) -> Result<i64> {
+        Ok(
+            sqlx::query_scalar("SELECT COUNT(*) FROM placements WHERE shelf_id = ?")
+                .bind(shelf_id)
+                .fetch_one(&self.pool)
+                .await?,
+        )
     }
 
     pub async fn delete_placements(&self, ids: &[String]) -> Result<u64> {
@@ -498,6 +520,7 @@ mod tests {
             width: Width::Full,
             col: 0,
             circuit_id: None,
+            shelf_id: None,
         };
         // Le dernier exemplaire créé est posé : une baisse de quantité retire d'abord les autres.
         s.insert_placement(&p.id, &c.id, &a.id, Some(&inst[2].id), &spec)

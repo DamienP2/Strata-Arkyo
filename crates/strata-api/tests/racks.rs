@@ -603,3 +603,305 @@ async fn one_editor_at_a_time() {
         StatusCode::FORBIDDEN
     );
 }
+
+#[tokio::test]
+async fn shelves_carry_non_rack_equipment() {
+    let Setup {
+        app, o, cid, free, ..
+    } = setup().await;
+    let rack = call(
+        &app,
+        "GET",
+        &format!("/api/containers/{cid}/rack"),
+        None,
+        Some(&o),
+    )
+    .await;
+    let pid = rack.body["container"]["project_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let shelf = call(&app, "POST", &format!("/api/projects/{pid}/articles"), Some(json!({"container_id": cid, "nature": "accessory", "accessory": {"kind": "shelf", "depth_mm": 450, "height_u": 1}})), Some(&o)).await;
+    let shelf_art = shelf.body["article"]["id"].as_str().unwrap().to_string();
+    call(
+        &app,
+        "POST",
+        &format!("/api/containers/{cid}/rack/lock"),
+        None,
+        Some(&o),
+    )
+    .await;
+    let s = call(
+        &app,
+        "POST",
+        &format!("/api/containers/{cid}/placements"),
+        Some(place(&shelf_art, 8)),
+        Some(&o),
+    )
+    .await;
+    let sid = s.body["placement"]["id"].as_str().unwrap().to_string();
+    let m = call(
+        &app,
+        "POST",
+        &format!("/api/containers/{cid}/placements"),
+        Some(json!({"article_id": free, "face": "front", "u_start": 1, "shelf_id": sid})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(m.status, StatusCode::CREATED, "{}", m.body);
+    assert_eq!(
+        m.body["placement"]["u_start"], 8,
+        "l'équipement prend la position de l'étagère"
+    );
+    // L'étagère monte : ce qu'elle porte la suit.
+    let r = call(
+        &app,
+        "PATCH",
+        &format!("/api/placements/{sid}"),
+        Some(json!({"rev": 1, "face": "front", "u_start": 9, "width": "full"})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.body);
+    let rack = call(
+        &app,
+        "GET",
+        &format!("/api/containers/{cid}/rack"),
+        None,
+        Some(&o),
+    )
+    .await;
+    let on_shelf = rack.body["elements"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["label"] == "Moniteur de table")
+        .unwrap();
+    assert_eq!(
+        (
+            on_shelf["placement"]["u_start"].as_i64(),
+            on_shelf["placement"]["shelf_id"].as_str()
+        ),
+        (Some(9), Some(sid.as_str()))
+    );
+    // Retirer l'étagère retire ce qu'elle porte.
+    call(
+        &app,
+        "DELETE",
+        &format!("/api/placements/{sid}"),
+        None,
+        Some(&o),
+    )
+    .await;
+    let rack = call(
+        &app,
+        "GET",
+        &format!("/api/containers/{cid}/rack"),
+        None,
+        Some(&o),
+    )
+    .await;
+    assert!(rack.body["elements"].as_array().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn templates_round_trip() {
+    let Setup {
+        app,
+        o,
+        cid,
+        mixer,
+        half,
+        ..
+    } = setup().await;
+    call(
+        &app,
+        "POST",
+        &format!("/api/containers/{cid}/rack/lock"),
+        None,
+        Some(&o),
+    )
+    .await;
+    call(
+        &app,
+        "POST",
+        &format!("/api/containers/{cid}/placements"),
+        Some(place(&mixer, 1)),
+        Some(&o),
+    )
+    .await;
+    call(
+        &app,
+        "POST",
+        &format!("/api/containers/{cid}/placements"),
+        Some(json!({"article_id": half, "face": "rear", "u_start": 5, "col": 1})),
+        Some(&o),
+    )
+    .await;
+    call(
+        &app,
+        "POST",
+        &format!("/api/containers/{cid}/circuits"),
+        Some(json!({"name": "PDU A", "phase": "L2", "rating_a": 16})),
+        Some(&o),
+    )
+    .await;
+
+    let t = call(
+        &app,
+        "POST",
+        &format!("/api/containers/{cid}/save-as-template"),
+        Some(json!({"name": "Baie vidéo type"})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(t.status, StatusCode::CREATED, "{}", t.body);
+    assert_eq!(
+        (t.body["status"].as_str(), t.body["cable_digit"].as_i64()),
+        (Some("draft"), Some(1))
+    );
+    assert_eq!(t.body["summary"]["front_pct"], 17.0, "2 U sur 12");
+    let tid = t.body["id"].as_str().unwrap().to_string();
+    // Même nom : suffixe automatique.
+    let t2 = call(
+        &app,
+        "POST",
+        &format!("/api/containers/{cid}/save-as-template"),
+        Some(json!({"name": "baie vidéo TYPE"})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(t2.body["name"], "baie vidéo TYPE 2");
+
+    // Un brouillon ne se copie pas.
+    let rack = call(
+        &app,
+        "GET",
+        &format!("/api/containers/{cid}/rack"),
+        None,
+        Some(&o),
+    )
+    .await;
+    let pid = rack.body["container"]["project_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let lid = rack.body["container"]["location_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let body = json!({"template_id": tid, "location_id": lid});
+    assert_eq!(
+        call(
+            &app,
+            "POST",
+            &format!("/api/projects/{pid}/containers/from-template"),
+            Some(body.clone()),
+            Some(&o)
+        )
+        .await
+        .status,
+        StatusCode::CONFLICT
+    );
+    call(
+        &app,
+        "PATCH",
+        &format!("/api/templates/{tid}"),
+        Some(json!({"rev": 1, "status": "active"})),
+        Some(&o),
+    )
+    .await;
+    let list = call(&app, "GET", "/api/templates?status=active", None, Some(&o)).await;
+    assert_eq!(list.body["templates"].as_array().unwrap().len(), 1);
+
+    // Copie : contenant, articles, exemplaires, circuits et placements.
+    let made = call(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid}/containers/from-template"),
+        Some(body),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(made.status, StatusCode::CREATED, "{}", made.body);
+    assert_eq!(made.body["container"]["name"], "Baie vidéo type");
+    let ncid = made.body["container"]["id"].as_str().unwrap();
+    let copy = call(
+        &app,
+        "GET",
+        &format!("/api/containers/{ncid}/rack"),
+        None,
+        Some(&o),
+    )
+    .await;
+    let els = copy.body["elements"].as_array().unwrap();
+    assert_eq!(els.len(), 2);
+    assert!(els.iter().any(|e| e["placement"]["face"] == "rear"
+        && e["placement"]["col"] == 1
+        && e["placement"]["u_start"] == 5));
+    assert_eq!(copy.body["circuits"][0]["phase"], "L2");
+    assert_eq!(
+        copy.body["pending"].as_array().unwrap().len(),
+        5,
+        "les autres exemplaires restent à placer"
+    );
+    // L'original n'a pas bougé.
+    assert_eq!(
+        call(
+            &app,
+            "GET",
+            &format!("/api/containers/{cid}/rack"),
+            None,
+            Some(&o)
+        )
+        .await
+        .body["elements"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    // Technicien : catalogue en lecture, la bibliothèque est en lecture seule.
+    let lea = {
+        let r = call(
+            &app,
+            "POST",
+            "/api/members",
+            Some(json!({"email": "x@studio.fr", "role_id": "technician"})),
+            Some(&o),
+        )
+        .await;
+        let temp = r.body["temporary_password"].as_str().unwrap().to_string();
+        let c = call(
+            &app,
+            "POST",
+            "/api/auth/login",
+            Some(json!({"login": "x@studio.fr", "password": temp})),
+            None,
+        )
+        .await
+        .cookie
+        .unwrap();
+        call(
+            &app,
+            "POST",
+            "/api/me/password",
+            Some(json!({"current": temp, "new": "nouveau-secret"})),
+            Some(&c),
+        )
+        .await;
+        c
+    };
+    assert_eq!(
+        call(
+            &app,
+            "DELETE",
+            &format!("/api/templates/{tid}"),
+            None,
+            Some(&lea)
+        )
+        .await
+        .status,
+        StatusCode::FORBIDDEN
+    );
+}
