@@ -15,7 +15,7 @@
   --st-prep:#4B57D6; --st-pret:#08839A; --st-cours:#D06A0C; --st-fini:#0C7A4B; --st-annule:#8A919B;
   --sig-v:#2459E0; --sig-a:#0E8550; --sig-l:#B78400; --sig-c:#7A44C9; --sig-p:#CF3A2F; --sig-n:#0A8797; --sig-s:#BD3489; --sig-i:#69788C; --sig-f:#D06006;
   --rack-metal:#1F2329; --rack-rail:#323943; --rack-hole:#121519; --rack-text:#EEF1F4; --rack-muted:#97A1AD;
-  --canvas:#F7F8F9; --dot:#D9DDE2;
+  --canvas:#F7F8F9; --dot:#D9DDE2; --seg-on:#FFFFFF;
   --scrim:rgba(11,12,14,.32);
   --shadow-lg:0 24px 64px rgba(11,12,14,.16),0 2px 8px rgba(11,12,14,.06);
   --display:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;
@@ -32,7 +32,7 @@
   --st-prep:#97A0FF; --st-pret:#3CC7DA; --st-cours:#FF9E4F; --st-fini:#45CF92; --st-annule:#8E96A1;
   --sig-v:#6E9BFF; --sig-a:#45CB87; --sig-l:#F4C53A; --sig-c:#B18CF5; --sig-p:#FF7468; --sig-n:#35C8D8; --sig-s:#F370C0; --sig-i:#A0AEC0; --sig-f:#FF9A4A;
   --rack-metal:#1A1D22; --rack-rail:#2D333C; --rack-hole:#0B0D10;
-  --canvas:#131417; --dot:#2A2D33;
+  --canvas:#131417; --dot:#2A2D33; --seg-on:#34373D;
   --scrim:rgba(0,0,0,.6);
   --shadow-lg:0 24px 64px rgba(0,0,0,.6);
   color-scheme:dark;
@@ -47,7 +47,7 @@
   --st-prep:#97A0FF; --st-pret:#3CC7DA; --st-cours:#FF9E4F; --st-fini:#45CF92; --st-annule:#8E96A1;
   --sig-v:#6E9BFF; --sig-a:#45CB87; --sig-l:#F4C53A; --sig-c:#B18CF5; --sig-p:#FF7468; --sig-n:#35C8D8; --sig-s:#F370C0; --sig-i:#A0AEC0; --sig-f:#FF9A4A;
   --rack-metal:#1A1D22; --rack-rail:#2D333C; --rack-hole:#0B0D10;
-  --canvas:#131417; --dot:#2A2D33;
+  --canvas:#131417; --dot:#2A2D33; --seg-on:#34373D;
   --scrim:rgba(0,0,0,.6);
   --shadow-lg:0 24px 64px rgba(0,0,0,.6);
   color-scheme:dark;
@@ -116,6 +116,7 @@ kbd{margin-left:auto;font:500 12px var(--mono);padding:2px 7px;border-radius:999
 .menu-links button.on{color:var(--fg)}
 .menu-sub button{border:0;background:none;padding:6px 0;font-size:20px;font-weight:500;color:var(--fg-2)}
 .menu-sub button.on{color:var(--fg);font-weight:700}
+.menu-sub .sn-label{padding:14px 0 2px}
 .side-foot{margin-top:auto;display:flex;align-items:center;gap:12px;padding-top:18px;border-top:1px solid var(--line)}
 .side-foot b{display:block} .side-foot span{font-size:14px;color:var(--fg-3)}
 
@@ -153,10 +154,11 @@ kbd{margin-left:auto;font:500 12px var(--mono);padding:2px 7px;border-radius:999
 .bar.ok>i{background:var(--ok)} .bar.warn>i{background:var(--soon)} .bar.err>i{background:var(--urg)}
 .sw{display:inline-block;width:11px;height:11px;border-radius:50%;background:var(--c);flex:none}
 .grid-2{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:72px;align-items:start}
-.seg{display:inline-flex;gap:24px;flex:none;border-bottom:1px solid var(--line)}
-.seg button{border:0;background:none;height:42px;padding:0;font-size:16px;font-weight:500;color:var(--fg-3);white-space:nowrap;border-bottom:2px solid transparent;margin-bottom:-1px}
+.seg{display:inline-flex;gap:2px;padding:3px;flex:none;max-width:100%;overflow-x:auto;scrollbar-width:none;background:var(--sunken);border-radius:10px;align-self:flex-start}
+.seg::-webkit-scrollbar{display:none}
+.seg button{border:0;background:none;height:34px;padding:0 14px;border-radius:7px;font-size:14.5px;font-weight:500;color:var(--fg-2);white-space:nowrap}
 .seg button:hover{color:var(--fg)}
-.seg button.on{color:var(--fg);border-bottom-color:var(--fg)}
+.seg button.on{background:var(--seg-on);color:var(--fg);font-weight:600;box-shadow:0 1px 2px rgba(11,12,14,.14),0 0 0 1px var(--line)}
 .seg button[disabled]{opacity:.4;cursor:not-allowed}
 .input{height:46px;border:0;border-bottom:1.5px solid var(--line-2);border-radius:0;background:transparent;padding:0 2px;min-width:0;width:100%;font-size:16px}
 .input:focus{outline:none;border-bottom-color:var(--fg)}
@@ -245,14 +247,34 @@ select.input{cursor:pointer}
 .st-select .dot{width:10px;height:10px;border-radius:50%;background:var(--c)}
 .st-select select{border:0;background:none;color:inherit;font-weight:600;height:100%;cursor:pointer;font-size:15.5px;padding-right:6px}
 .st-select select option{color:var(--fg);background:var(--bg)}
-.subnav{display:flex;gap:30px;overflow-x:auto;border-bottom:1px solid var(--line);scrollbar-width:none;margin-top:-24px}
-.subnav::-webkit-scrollbar{display:none}
-.subnav button{border:0;background:none;padding:14px 0;font-size:16px;font-weight:500;color:var(--fg-3);border-bottom:2px solid transparent;white-space:nowrap;display:flex;gap:6px;align-items:center;margin-bottom:-1px}
+.subnav{position:relative;border-bottom:1px solid var(--line);margin-top:-24px}
+.sn-row{display:flex;overflow-x:auto;scrollbar-width:none}
+.sn-row::-webkit-scrollbar{display:none}
+.sn-group{display:flex;flex-direction:column;gap:2px;padding-left:28px;margin-left:28px;border-left:1px solid var(--line);flex:none}
+.sn-group:first-child{padding-left:0;margin-left:0;border-left:0}
+.sn-label{display:flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--fg-3);white-space:nowrap;padding-top:6px}
+.sn-label .ic{width:12px;height:12px}
+.sn-label.lock{color:var(--soon)}
+.sn-items{display:flex;gap:26px}
+.subnav button{border:0;background:none;padding:10px 0 13px;font-size:16px;font-weight:500;color:var(--fg-3);border-bottom:3px solid transparent;white-space:nowrap;margin-bottom:-1px}
 .subnav button:hover{color:var(--fg)}
-.subnav button.on{color:var(--fg);border-color:var(--fg)}
+.subnav button.on{color:var(--fg);font-weight:650;border-color:var(--fg)}
 .subnav button.soon{opacity:.4}
-.subnav .dz{display:inline-flex;color:var(--fg-3)}
-.subnav .dz .ic{width:13px;height:13px}
+.subnav.flat .sn-group{gap:0}
+.sn-pick{display:none}
+.sn-pick summary{list-style:none;display:flex;align-items:center;gap:10px;height:52px;cursor:pointer}
+.sn-pick summary::-webkit-details-marker{display:none}
+.sn-pick summary .sn-label{padding:0}
+.sn-pick summary b{font-size:17px}
+.sn-pick summary .pos{margin-left:auto;font-size:13px;color:var(--fg-3);font-family:var(--mono)}
+.sn-pick summary .chev{display:inline-grid;transition:transform .15s}
+.sn-pick[open] summary .chev{transform:rotate(180deg)}
+.sn-panel{position:absolute;left:0;right:0;top:100%;z-index:60;background:var(--bg);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow-lg);padding:8px 8px 12px;display:flex;flex-direction:column;gap:8px}
+.sn-panel .sn-label{padding:10px 12px 2px}
+.sn-panel button{display:flex;width:100%;text-align:left;padding:11px 12px;border-radius:9px;border-bottom:0;margin:0;color:var(--fg-2)}
+.sn-panel button.on{background:var(--sunken);color:var(--fg);font-weight:650}
+.crumb{border:0;background:none;padding:0;font:inherit;color:var(--fg-3);text-decoration:underline;text-decoration-color:var(--line-2);text-underline-offset:3px}
+.crumb:hover{color:var(--fg)}
 .dom{display:grid;grid-template-columns:140px minmax(0,1fr) 60px;gap:18px;align-items:center;padding:18px 0;border-bottom:1px solid var(--line)}
 .dom b{font:600 19px var(--display);letter-spacing:-.01em}
 .dom .d-sub{grid-column:2/4;margin-top:-10px;font-size:14.5px;color:var(--fg-3)}
@@ -631,6 +653,9 @@ input[type=range]{accent-color:var(--fg);width:100%}
   .prow .r-col{display:none}
 }
 @media (max-width:860px){
+  .sn-row{display:none}
+  .sn-pick{display:block}
+  .subnav{border-bottom:1px solid var(--line)}
   .mast{height:64px;gap:8px;padding-left:max(8px,env(safe-area-inset-left,0px));padding-right:max(8px,env(safe-area-inset-right,0px))}
   .topnav{display:none}
   .icon-btn.menu-btn{display:inline-grid}
@@ -937,15 +962,15 @@ const soon=l=>toast(`« ${l} » sera maquetté dans une prochaine itération.`,'
 function sidebar(r){
  const L=(k,l)=>`<button class="${r===k?'on':''}" data-go="${k}">${l}</button>`;
  return `<div class="menu-top"><span class="word">Strata Arkyo</span><button class="icon-btn" data-act="menuclose" aria-label="Fermer le menu">${ic('x')}</button></div>
- <nav class="menu-links">${L('accueil','Accueil')}${L('projets','Projets')}${L('catalogue','Catalogue')}${L('admin','Administration')}</nav>
+ <nav class="menu-links">${L('accueil','Accueil')}<button class="${r==='projets'||PROJ_ROUTES.has(r)?'on':''}" data-go="projets">Projets</button>${L('catalogue','Catalogue')}${L('admin','Administration')}</nav>
  <p class="eyebrow">Projet ouvert · ${esc(P.nom)}</p>
- <nav class="menu-sub">${L('projet','Vue d’ensemble')}${L('inventaire','Inventaire')}${L('racks','Racks')}${L('synoptique','Synoptique')}${L('plans','Plans')}${L('reseau','Réseau')}${L('preparation','Préparation')}${L('recette','Recette')}</nav>
+ ${PROJ_GROUPS.map(g=>`<nav class="menu-sub"><span class="sn-label ${g.lock?'lock':''}">${g.g}${g.lock?ic('lock'):''}</span>${g.items.map(([k,l])=>L(k,l)).join('')}</nav>`).join('')}
  <div class="side-foot">${av('dp','lg')}<div><b>Damien P.</b><span>Propriétaire · Studio Ouest Broadcast</span></div><button class="btn sm" style="margin-left:auto" data-act="theme">Thème</button></div>`;
 }
 function chrome(r){
  $('#sidebar').innerHTML=sidebar(r);
  const pr=PROJ_ROUTES.has(r);
- $('#topnav').innerHTML=[['accueil','Accueil'],['projets','Projets'],['catalogue','Catalogue'],['admin','Site']].map(([k,l])=>`<button class="${(k===r||(k==='projets'&&pr))?'on':''}" data-go="${k}">${l}</button>`).join('');
+ $('#topnav').innerHTML=[['accueil','Accueil'],['projets','Projets'],['catalogue','Catalogue'],['admin','Administration']].map(([k,l])=>`<button class="${(k===r||(k==='projets'&&pr))?'on':''}" data-go="${k}">${l}</button>`).join('');
  $('#mode').innerHTML=DESIGN.has(r)?`<span class="mode design" title="Écran de conception : un seul éditeur à la fois, pas de diffusion en direct">${ic('lock')}<span>Une personne à la fois</span></span>`:`<span class="mode live" title="Les modifications des autres membres s’affichent en direct"><i></i><span>En direct</span></span>`;
  $('#presence').innerHTML=(DESIGN.has(r)?(S.lockOther?['dp']:['sr']):(PRES[r]||[])).map(k=>av(k)).join('');
  const unread=NOTIFS.filter(n=>n.un).length;
@@ -1028,14 +1053,29 @@ function vProjets(){
 }
 
 /* ================= Projet : en-tête ================= */
-function subnav(a){
- const t=[['projet','Vue d’ensemble','home'],['inventaire','Inventaire','layers'],['racks','Racks','server',1],['synoptique','Synoptique','syn',1],['plans','Plans','map',1],['reseau','Réseau','network'],['preparation','Préparation','truck'],['recette','Recette','check']];
- return `<nav class="subnav" aria-label="Sections du projet">${t.map(([r,l,i,d,s])=>`<button class="${r===a?'on':''} ${s?'soon':''}" ${s?`data-soon="${l}"`:`data-go="${r}"`}>${l}${d?`<span class="dz" title="Écran de conception : une personne à la fois">${ic('lock')}</span>`:''}</button>`).join('')}</nav>`;
+/* Sections : groupes nommés en ligne sur grand écran, sélecteur déroulant sur mobile.
+   Chaque entrée : [clé, libellé, attribut de navigation (data-go par défaut), pastille]. */
+const PROJ_GROUPS=[
+ {g:'Organiser',items:[['projet','Vue d’ensemble'],['inventaire','Inventaire'],['reseau','Réseau']]},
+ {g:'Dessiner',lock:1,items:[['racks','Racks'],['synoptique','Synoptique'],['plans','Plans']]},
+ {g:'Sur le terrain',items:[['preparation','Préparation'],['recette','Recette']]},
+];
+function secnav(groups,a,label,attr='data-go'){
+ const all=groups.flatMap(g=>g.items), cur=all.find(x=>x[0]===a)||all[0], pos=all.indexOf(cur)+1;
+ const lbl=g=>g.g?`<span class="sn-label ${g.lock?'lock':''}" ${g.lock?'title="Écrans de conception : une seule personne modifie à la fois, les autres voient en lecture seule"':''}>${g.g}${g.lock?ic('lock'):''}</span>`:'';
+ const btn=([k,l,at,badge])=>`<button class="${k===a?'on':''}" ${at||attr}="${at==='data-soon'?l:k}" ${k===a?'aria-current="page"':''}>${l}${badge||''}</button>`;
+ const flat=groups.length===1&&!groups[0].g;
+ return `<nav class="subnav ${flat?'flat':''}" aria-label="${label}">
+ <div class="sn-row">${groups.map(g=>`<div class="sn-group">${lbl(g)}<div class="sn-items">${g.items.map(btn).join('')}</div></div>`).join('')}</div>
+ <details class="sn-pick"><summary>${groups.length>1?`<span class="sn-label">${(groups.find(g=>g.items.includes(cur))||{}).g||''}</span>`:''}<b>${cur[1]}</b><span class="pos">${pos} / ${all.length}</span><span class="chev">${ic('chevd')}</span></summary>
+ <div class="sn-panel">${groups.map(g=>`${lbl(g)}${g.items.map(btn).join('')}`).join('')}</div></details>
+ </nav>`;
 }
+function subnav(a){return secnav(PROJ_GROUPS,a,'Sections du projet')}
 function projTop(a,compact){
  const d=days(P.date);
  const sel=`<label class="st-select" style="--c:var(${ST[P.statut]})"><i class="dot"></i><select id="pStatut" aria-label="Statut du projet">${Object.keys(ST).map(s=>`<option ${s===P.statut?'selected':''}>${s}</option>`).join('')}</select></label>`;
- return `<header class="ptop ${compact?'compact':''}"><div class="ptop-main"><p class="eyebrow">${P.inter} · ${P.regie} · ${P.tp}</p><h1 class="${compact?'':'display'}">${esc(P.nom)}</h1>
+ return `<header class="ptop ${compact?'compact':''}"><div class="ptop-main"><p class="eyebrow"><button class="crumb" data-go="projets">Projets</button> › ${P.inter} · ${P.regie} · ${P.tp}</p><h1 class="${compact?'':'display'}">${esc(P.nom)}</h1>
  ${compact?'':`<p class="pmeta"><span class="urg">J-${d}</span><span>Tournage ${fdate(P.date)} → ${fdate(P.date2)}</span><span>${esc(P.lieu)}</span><span>${esc(P.client)}</span></p>`}</div>${sel}</header>${subnav(a)}`;
 }
 
@@ -1477,7 +1517,7 @@ function vCatalogue(){
  const fs=[['all','Tous'],['v','Vidéo'],['a','Audio'],['n','Réseau'],['s','Synchro'],['i','Intercom'],['p','Énergie']];
  return `<div class="page">
  <div class="page-head"><div><p class="eyebrow">Propre au site · ${CAT.length} fiches actives</p><h1 class="display">Catalogue</h1></div><div class="head-actions"><button class="btn" data-soon="Import et échange de fiches">${ic('upload','sm')}Importer ou échanger</button><button class="btn primary" data-act="newcat">${ic('plus')}Nouvel équipement</button></div></div>
- <div class="seg"><button class="on">Équipements</button><button data-soon="Câbles">Câbles</button><button data-soon="Adaptateurs">Adaptateurs</button><button data-soon="Référentiels">Référentiels</button></div>
+ ${secnav([{items:[['equip','Équipements'],['cables','Câbles','data-soon'],['models','Modèles de câble','data-soon'],['adapt','Adaptateurs','data-soon'],['refs','Référentiels','data-soon']]}],'equip','Sections du catalogue')}
  <div class="toolbar"><label class="search">${ic('search')}<input class="input" id="cq" placeholder="Nom, marque, catégorie…" value="${esc(S.cat.q)}" aria-label="Rechercher dans le catalogue"></label>${fs.map(([k,l])=>`<button class="fchip ${S.cat.f===k?'on':''}" ${k!=='all'?`style="--c:${sigc(k)}"`:''} data-cf="${k}">${l}</button>`).join('')}</div>
  <section class="card" style="padding:6px 14px"><div class="tbl-wrap"><table class="tbl stack"><thead><tr><th>Équipement</th><th>Catégorie</th><th>Format</th><th class="num">Poids</th><th class="num">Puissance</th><th>Ports</th><th class="num">Utilisé dans</th></tr></thead><tbody id="catBody">${catRows()}</tbody></table></div></section>
  </div>`;
@@ -1558,7 +1598,7 @@ function admBody(){
 const sys=(i,t,s,kv)=>`<section class="card sys-card"><header><span class="si">${ic(i)}</span><span><b>${t}</b><span>${s}</span></span></header><dl class="kv">${kv.map(([a,b])=>`<dt>${a}</dt><dd>${b}</dd>`).join('')}</dl></section>`;
 function vAdmin(){
  return `<div class="page"><div class="page-head"><div><p class="eyebrow">Site · Studio Ouest Broadcast</p><h1 class="display">Administration</h1></div></div>
- <div class="seg" style="align-self:flex-start;max-width:100%;overflow-x:auto">${[['maj','Mises à jour'],['systeme','Système'],['sauv','Sauvegardes'],['membres','Membres']].map(([k,l])=>`<button class="${S.adm===k?'on':''}" data-adm="${k}">${l}${k==='maj'&&S.ota.cur!==S.ota.next?' <span class="chip accent" style="height:18px;padding:0 6px;font-size:10.5px">1</span>':''}</button>`).join('')}</div>
+ ${secnav([{items:[['maj','Mises à jour','data-adm',S.ota.cur!==S.ota.next?' <span class="chip accent" style="height:18px;padding:0 6px;font-size:10.5px;margin-left:6px">1</span>':''],['systeme','Système','data-adm'],['sauv','Sauvegardes','data-adm'],['membres','Membres','data-adm']]}],S.adm,'Sections de l’administration')}
  <div id="admBody" style="display:flex;flex-direction:column;gap:16px">${admBody()}</div></div>`;
 }
 function runOta(){
@@ -1961,7 +2001,7 @@ const VIEWS={
 document.addEventListener('click',e=>{
  const t=e.target;
  const g=t.closest('[data-go]');if(g){e.preventDefault();closeAll();go(g.dataset.go);return}
- const sn=t.closest('[data-soon]');if(sn){soon(sn.dataset.soon);return}
+ const sn=t.closest('[data-soon]');if(sn){const d=sn.closest('details');if(d)d.open=false;soon(sn.dataset.soon);return}
  const pj=t.closest('[data-proj]');if(pj){openProj(+pj.dataset.proj);return}
  const a=t.closest('[data-act]');
  if(a){const k=a.dataset.act;
@@ -2036,7 +2076,7 @@ document.addEventListener('click',e=>{
  const rf=t.closest('[data-rf]');if(rf){S.rc.f=rf.dataset.rf;$$('[data-rf]').forEach(b=>b.classList.toggle('on',b===rf));$('#rcBody').innerHTML=rcBody();return}
  const cr=t.closest('[data-cat]');if(cr){catDrawer(cr.dataset.cat);return}
  const cf=t.closest('[data-cf]');if(cf){S.cat.f=cf.dataset.cf;$$('[data-cf]').forEach(b=>b.classList.toggle('on',b===cf));$('#catBody').innerHTML=catRows();return}
- const ad=t.closest('[data-adm]');if(ad){S.adm=ad.dataset.adm;$$('[data-adm]').forEach(b=>b.classList.toggle('on',b===ad));$('#admBody').innerHTML=admBody();return}
+ const ad=t.closest('[data-adm]');if(ad){S.adm=ad.dataset.adm;render();return}
  const cn=t.closest('[data-canal]');if(cn){S.ota.canal=cn.dataset.canal;$('#admBody').innerHTML=admBody();return}
  const wz=t.closest('[data-wz]');if(wz){WZ.d[wz.dataset.wz]=wz.dataset.v;if(wz.dataset.wz==='inter'&&WZ.d.inter==='Prestation'&&WZ.d.regie==='Installation fixe')WZ.d.regie='';wzRender();return}
  const wg=t.closest('[data-wzgo]');if(wg){WZ.i=+wg.dataset.wzgo;wzRender();return}

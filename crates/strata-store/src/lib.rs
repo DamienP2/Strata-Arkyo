@@ -18,7 +18,14 @@ use strata_domain::{Level, Permissions, RoleInfo, builtin};
 pub mod catalog;
 pub use catalog::*;
 
-static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
+/// Migrations du schéma. Une base écrite par une version plus récente porte des
+/// migrations que cette version ne connaît pas : elles sont ignorées, ce qui permet
+/// le retour arrière d'une mise à jour (les migrations étant additives).
+fn migrator() -> sqlx::migrate::Migrator {
+    let mut m = sqlx::migrate!("./migrations");
+    m.set_ignore_missing(true);
+    m
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
@@ -239,7 +246,7 @@ impl Store {
     }
 
     pub async fn migrate(&self) -> Result<()> {
-        MIGRATOR.run(&self.pool).await?;
+        migrator().run(&self.pool).await?;
         self.seed_catalog().await?;
         Ok(())
     }
@@ -814,6 +821,28 @@ mod tests {
         let e = &s.audit_entries(10).await.unwrap()[0];
         assert_eq!(e.before.as_ref().unwrap()["active"], true);
         assert_eq!(e.after.as_ref().unwrap()["active"], false);
+    }
+
+    /// Retour arrière : une version plus ancienne rouvre une base migrée par une plus récente.
+    #[tokio::test]
+    async fn newer_database_reopens() {
+        let dir = std::env::temp_dir().join(format!("strata-test-{}", new_id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let s = Store::open(&dir.join("strata.db")).await.unwrap();
+        sqlx::query("INSERT INTO _sqlx_migrations (version, description, installed_on, success, checksum, execution_time) VALUES (999, 'futur', CURRENT_TIMESTAMP, 1, x'00', 0)")
+            .execute(&s.pool)
+            .await
+            .unwrap();
+        sqlx::query("CREATE TABLE futur (id INTEGER)")
+            .execute(&s.pool)
+            .await
+            .unwrap();
+        s.close().await;
+        let s = Store::open(&dir.join("strata.db")).await.unwrap();
+        assert_eq!(s.schema_version().await.unwrap(), 999);
+        assert!(s.integrity_ok().await.unwrap());
+        s.close().await;
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[tokio::test]

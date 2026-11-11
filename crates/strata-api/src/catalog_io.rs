@@ -86,7 +86,9 @@ pub fn read_table(filename: &str, bytes: &[u8]) -> Result<(Vec<String>, Vec<Vec<
         "xlsx" | "xlsm" | "xls" | "ods" => read_workbook(bytes)?,
         "csv" | "txt" | "tsv" => read_csv(bytes)?,
         _ => {
-            return Err("Format non reconnu : déposez un fichier .csv, .xlsx, .xls ou .ods.".into());
+            return Err(
+                "Format non reconnu : déposez un fichier .csv, .xlsx, .xls ou .ods.".into(),
+            );
         }
     };
     rows.retain(|r| r.iter().any(|c| !c.trim().is_empty()));
