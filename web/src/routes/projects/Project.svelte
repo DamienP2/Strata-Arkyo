@@ -15,6 +15,7 @@
   import Workshop from './Workshop.svelte';
   import RackSheet from './RackSheet.svelte';
   import Synoptic from './Synoptic.svelte';
+  import CableTable from './CableTable.svelte';
   import Tasks from './Tasks.svelte';
   import History from './History.svelte';
   import Racks from './Racks.svelte';
@@ -51,6 +52,7 @@
     { key: 'racks', label: 'Racks', href: `/projets/${id}/racks` },
     { key: 'planche', label: 'Planche d’élévations', href: `/projets/${id}/planche` },
     { key: 'synoptique', label: 'Synoptique', href: `/projets/${id}/synoptique` },
+    { key: 'cables', label: 'Câbles', href: `/projets/${id}/cables` },
   ] }, { label: 'Sur le terrain', items: [
     { key: 'atelier', label: 'Atelier', href: `/projets/${id}/atelier` },
   ] }]);
@@ -93,6 +95,7 @@
     {:else if sub === 'atelier'}<Workshop {view} />
     {:else if sub === 'planche'}<RackSheet {view} />
     {:else if sub === 'synoptique'}<Synoptic {view} />
+    {:else if sub === 'cables'}<CableTable {view} />
     {:else if sub === 'taches'}<Tasks bind:view reload={load} />
     {:else if sub === 'historique'}<History projectId={id} />
     {:else if sub === 'racks'}<Racks {view} />

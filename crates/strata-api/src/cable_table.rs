@@ -6,7 +6,7 @@
 
 use crate::AppState;
 use crate::auth::Member;
-use crate::catalog_io::{Cell, file_response, to_csv, to_xlsx_named, today};
+use crate::catalog_io::{Cell, file_response, to_csv, to_xlsx_named};
 use crate::error::{ApiError, ApiResult};
 use crate::live::Origin;
 use crate::projects::{one, read, room};
@@ -359,7 +359,7 @@ async fn export(
             }
         })
         .collect();
-    let stem = format!("Cables_{safe}_{}", today());
+    let stem = format!("Cables_{safe}_{}", chrono::Local::now().format("%Y-%m-%d"));
     match q.format.as_str() {
         "csv" => Ok(file_response(
             to_csv(&headers, &data).map_err(ApiError::Internal)?,
