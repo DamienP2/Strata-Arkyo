@@ -489,6 +489,20 @@ select.input{cursor:pointer}
 @keyframes spin{to{transform:rotate(360deg)}}
 .drop{border:1.5px dashed var(--line-2);border-radius:16px;padding:28px;text-align:center;color:var(--fg-3);font-size:15.5px;display:flex;flex-direction:column;align-items:center;gap:10px;margin-top:16px}
 
+/* ---------- Préparation & réseau ---------- */
+.scanbox{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.5fr);gap:56px;align-items:end;margin-top:-16px}
+.scanbox .eyebrow{margin-bottom:10px}
+.scan-big{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.scan-big b{font:700 76px/.95 var(--display);letter-spacing:-.045em}
+.scan-big span{font-size:17px;color:var(--fg-2)}
+.scan-f{display:flex;flex-direction:column;gap:10px;min-width:0}
+.scan-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.scan-row .input{flex:1;min-width:200px;font-size:22px;height:54px}
+#scanMsg:empty{display:none}
+.hf-in{width:130px;font-family:var(--mono)}
+.spinner{display:inline-block;vertical-align:middle}
+.btn .spinner{width:16px;height:16px}
+
 /* ---------- Superpositions ---------- */
 .scrim{position:fixed;inset:0;background:var(--scrim);opacity:0;pointer-events:none;transition:opacity .2s;z-index:55}
 .scrim.open{opacity:1;pointer-events:auto}
@@ -552,6 +566,7 @@ select.input{cursor:pointer}
 @media (max-width:1240px){
   .design-body{grid-template-columns:240px minmax(0,1fr) 300px}
   .figs{grid-template-columns:repeat(2,minmax(0,1fr));gap:36px 40px}
+  .scanbox{grid-template-columns:minmax(0,1fr);gap:28px}
   .cols,.grid-2{gap:56px}
   .mast{gap:24px}
   .search-btn{min-width:0;width:42px;padding:0;justify-content:center;border-color:transparent;background:none}
@@ -704,6 +719,8 @@ hand:'M8 13V5.5a1.5 1.5 0 0 1 3 0V12M11 11V4.5a1.5 1.5 0 0 1 3 0V12M14 11.5V6a1.
 file:'M6 3h8l4 4v14H6zM14 3v4h4M9 13h6M9 17h6',
 terminal:'M4 5h16v14H4zM8 10l2 2-2 2M12 14h4',
 arrowr:'M5 12h14M13 6l6 6-6 6',
+scan:'M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M7 12h10',
+radio:'M12 13a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM8.5 15.5a5 5 0 0 1 0-7M15.5 8.5a5 5 0 0 1 0 7M5.6 18.4a9 9 0 0 1 0-12.8M18.4 5.6a9 9 0 0 1 0 12.8',
 undo:'M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3',
 };
 const ic=(n,c='')=>`<svg class="ic ${c}" viewBox="0 0 24 24" aria-hidden="true"><path d="${I[n]}"/></svg>`;
@@ -774,6 +791,7 @@ const RACK={u:42,prof:600,reserve:150,vide:68,maxP:250,maxW:3500,face:'avant',mo
  ]};
 let uid=0;
 [...RACK.items,...RACK.pending].forEach(i=>{i.id='r'+(++uid); if(i.kind!=='acc') i.rep=nextRep();});
+[...RACK.items,...RACK.pending].forEach((i,k)=>{if(i.kind!=='acc'){i.sn='S/N '+(240117+k*137);if(['v','n','s'].includes(i.sig))i.mac='00:1E:C0:'+[k*7%256,k*13%256,(k*29+11)%256].map(x=>x.toString(16).padStart(2,'0').toUpperCase()).join(':')}if(i.w>0)i.ph=['L1','L2','L3'][k%3]});
 
 const LOCS=[
  {id:'cr2',nom:'Car régie CR-2',code:'CR2',conts:['bv1','ba1','bn1']},
@@ -815,7 +833,8 @@ const SYN={k:1,x:0,y:0,sel:null,pend:null,hl:null,hidden:new Set(),nextId:100,fi
  ['deemb','o',0,'cons','i',0,'BV1-A20001'],['deemb','o',1,'cons','i',1,''],
  ['sync','o',0,'grille','i',4,'BV1-S20001'],['sync','o',1,'mel','i',4,'BV1-S20001'],
  ['grille','o',3,'cons','i',2,'BV1-V20007'],
-].forEach((c,i)=>SYN.cables.push({id:i+1,a:[c[0],c[1],c[2]],b:[c[3],c[4],c[5]],num:c[6],model:i<4?'Coax 75 Ω 12G':''}));
+].forEach((c,i)=>SYN.cables.push({id:i+1,a:[c[0],c[1],c[2]],b:[c[3],c[4],c[5]],num:c[6],num0:c[6],model:i<4?'Coax 75 Ω 12G':'',real:i<4?[12,12,15,9][i]:null}));
+SYN.rev='A';SYN.del=0;
 
 const TASKS=[
  {t:'Valider le synoptique vidéo',u:'dp',due:'2026-11-12',prio:'Urgente',st:'À faire'},
@@ -846,9 +865,9 @@ let NOTIFS=[
 const S={pf:{inter:'Prestation',q:'',st:[]},inv:{loc:'cr2',cont:'bv1'},lockOther:false,cat:{q:'',f:'all'},adm:'maj',rc:{st:{},by:{},open:null,f:'all',q:''},
  ota:{cur:'1.4.2',next:'1.5.0',phase:'idle',step:0,pct:0,canal:'Stable'}};
 const DESIGN=new Set(['racks','synoptique']);
-const PROJ_ROUTES=new Set(['projet','inventaire','racks','synoptique','recette']);
-const ROUTE_NAME={accueil:'Accueil',projets:'Projets',projet:'Vue d’ensemble',inventaire:'Inventaire',racks:'Racks',synoptique:'Synoptique',recette:'Recette',catalogue:'Catalogue',admin:'Administration'};
-const PRES={accueil:['lm','hb'],projets:['lm'],projet:['lm','hb','sr'],inventaire:['lm','sr'],recette:['hb','sr'],catalogue:['sr'],admin:[]};
+const PROJ_ROUTES=new Set(['projet','inventaire','racks','synoptique','recette','preparation','reseau']);
+const ROUTE_NAME={accueil:'Accueil',projets:'Projets',projet:'Vue d’ensemble',inventaire:'Inventaire',racks:'Racks',synoptique:'Synoptique',preparation:'Préparation',reseau:'Réseau',recette:'Recette',catalogue:'Catalogue',admin:'Administration'};
+const PRES={accueil:['lm','hb'],projets:['lm'],projet:['lm','hb','sr'],inventaire:['lm','sr'],recette:['hb','sr'],preparation:['hb'],reseau:['lm'],catalogue:['sr'],admin:[]};
 const route=()=>{const r=location.hash.slice(1);return VIEWS[r]?r:'accueil'};
 const go=r=>{ if(location.hash.slice(1)===r) render(); else location.hash=r; };
 
@@ -866,7 +885,7 @@ function sidebar(r){
  return `<div class="menu-top"><span class="word">Strata Arkyo</span><button class="icon-btn" data-act="menuclose" aria-label="Fermer le menu">${ic('x')}</button></div>
  <nav class="menu-links">${L('accueil','Accueil')}${L('projets','Projets')}${L('catalogue','Catalogue')}${L('admin','Administration')}</nav>
  <p class="eyebrow">Projet ouvert · ${esc(P.nom)}</p>
- <nav class="menu-sub">${L('projet','Vue d’ensemble')}${L('inventaire','Inventaire')}${L('racks','Racks')}${L('synoptique','Synoptique')}${L('recette','Recette')}</nav>
+ <nav class="menu-sub">${L('projet','Vue d’ensemble')}${L('inventaire','Inventaire')}${L('racks','Racks')}${L('synoptique','Synoptique')}${L('reseau','Réseau')}${L('preparation','Préparation')}${L('recette','Recette')}</nav>
  <div class="side-foot">${av('dp','lg')}<div><b>Damien P.</b><span>Propriétaire · Studio Ouest Broadcast</span></div><button class="btn sm" style="margin-left:auto" data-act="theme">Thème</button></div>`;
 }
 function chrome(r){
@@ -956,7 +975,7 @@ function vProjets(){
 
 /* ================= Projet : en-tête ================= */
 function subnav(a){
- const t=[['projet','Vue d’ensemble','home'],['inventaire','Inventaire','layers'],['racks','Racks','server',1],['synoptique','Synoptique','syn',1],['plans','Plans','map',1,1],['reseau','Réseau','network',0,1],['preparation','Préparation','truck',0,1],['recette','Recette','check']];
+ const t=[['projet','Vue d’ensemble','home'],['inventaire','Inventaire','layers'],['racks','Racks','server',1],['synoptique','Synoptique','syn',1],['plans','Plans','map',1,1],['reseau','Réseau','network'],['preparation','Préparation','truck'],['recette','Recette','check']];
  return `<nav class="subnav" aria-label="Sections du projet">${t.map(([r,l,i,d,s])=>`<button class="${r===a?'on':''} ${s?'soon':''}" ${s?`data-soon="${l}"`:`data-go="${r}"`}>${l}${d?`<span class="dz" title="Écran de conception : une personne à la fois">${ic('lock')}</span>`:''}</button>`).join('')}</nav>`;
 }
 function projTop(a,compact){
@@ -1111,13 +1130,14 @@ function rackInsp(){
   const ov=depthOver(it);
   return `<section><h2>Élément</h2><div class="card" style="padding:14px;display:flex;flex-direction:column;gap:12px">
    <div class="art-name"><span class="sw" style="--c:${sigc(it.sig)}"></span><b>${esc(it.nom)}</b></div>
-   <dl class="kv"><dt>Repère</dt><dd class="mono">${it.rep||'—'}</dd><dt>Position</dt><dd>U${it.pos}${it.h>1?'–U'+(it.pos+it.h-1):''} · ${it.face==='avant'?'avant':'arrière'}</dd><dt>Largeur</dt><dd>${it.larg===1?'pleine':'½, colonne '+(it.col+1)}</dd><dt>Profondeur</dt><dd>${it.prof} mm</dd><dt>Poids</dt><dd>${nf(it.poids,1)} kg</dd><dt>Puissance</dt><dd>${nf(it.w)} W</dd></dl>
+   <dl class="kv"><dt>Repère</dt><dd class="mono">${it.rep||'—'}</dd><dt>Position</dt><dd>U${it.pos}${it.h>1?'–U'+(it.pos+it.h-1):''} · ${it.face==='avant'?'avant':'arrière'}</dd><dt>Largeur</dt><dd>${it.larg===1?'pleine':'½, colonne '+(it.col+1)}</dd><dt>Profondeur</dt><dd>${it.prof} mm</dd><dt>Poids</dt><dd>${nf(it.poids,1)} kg</dd><dt>Puissance</dt><dd>${nf(it.w)} W</dd><dt>N° de série</dt><dd class="mono">${it.sn||'—'}</dd>${it.mac?`<dt>MAC</dt><dd class="mono">${it.mac}</dd>`:''}</dl>
+   ${it.w>0?`<div class="field"><label for="rph">Circuit</label><select class="input" id="rph" data-phase="${it.id}" ${editable()?'':'disabled'}>${['L1','L2','L3'].map(ph=>`<option value="${ph}" ${it.ph===ph?'selected':''}>PDU A · phase ${ph}</option>`).join('')}</select></div>`:''}
    ${ov?`<div class="alert warn">${ic('alert')}<span>${it.prof} mm + ${RACK.reserve} mm câbles = ${it.prof+RACK.reserve} mm dépasse la profondeur de la baie (${RACK.prof} mm).</span></div>`:''}
    ${editable()?`<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm" data-act="rmove">${ic('fit','sm')}Déplacer</button><button class="btn sm danger" data-act="rremove">${ic('trash','sm')}Retirer</button></div>`:''}
   </div></section>`;
  }
  const warns=RACK.items.filter(depthOver);
- return `<section><h2>Totaux</h2><dl class="kv"><dt>Hauteur</dt><dd>${t.U} / ${RACK.u} U</dd><dt>Poids</dt><dd>${nf(t.P,1)} / ${RACK.maxP} kg</dd><dt>Puissance</dt><dd>${nf(t.W)} / ${nf(RACK.maxW)} W</dd><dt>Dissipation</dt><dd>${nf(Math.round(t.W*3.412))} BTU/h</dd></dl></section>
+ return `<section><h2>Totaux</h2><dl class="kv"><dt>Hauteur</dt><dd>${t.U} / ${RACK.u} U</dd><dt>Poids</dt><dd>${nf(t.P,1)} / ${RACK.maxP} kg</dd><dt>Puissance</dt><dd>${nf(t.W)} / ${nf(RACK.maxW)} W</dd><dt>Dissipation</dt><dd>${nf(Math.round(t.W*3.412))} BTU/h</dd></dl></section>${phaseHtml()}
  <section><h2>Contrôles</h2>${warns.length?warns.map(i=>`<div class="alert warn">${ic('alert')}<span><b>${esc(i.nom)}</b> : ${i.prof} mm + ${RACK.reserve} mm câbles = ${i.prof+RACK.reserve} mm dépasse la profondeur.</span></div>`).join(''):''}<div class="alert info">${ic('info')}<span>Les collisions et dépassements sont aussi vérifiés par le moteur à l’enregistrement.</span></div></section>
  <section><h2>Légende</h2>${['v','a','n','s','p','i'].map(k=>`<div class="layer"><span class="sw" style="--c:${sigc(k)}"></span>${SIG[k].n}</div>`).join('')}</section>`;
 }
@@ -1237,6 +1257,7 @@ function synSide(){
    <div class="field"><label for="cnum">Numéro</label><div class="insp-num"><input class="input" id="cnum" value="${esc(sel.num)}" placeholder="Sans numéro" ${ro}><span class="chip" style="color:${sigc(s)}"><span class="sw" style="--c:${sigc(s)}"></span>${SIG[s].n}</span></div></div>
    <div class="ends"><div><span>De</span><b>${esc(pName(sel.a))}</b></div><div><span>Vers</span><b>${esc(pName(sel.b))}</b></div></div>
    <div class="field"><label for="cmodel">Modèle de câble</label><select class="input" id="cmodel" ${ro}>${['','Coax 75 Ω 12G','Coax 75 Ω HD','Paire AES 110 Ω','Cat 6a S/FTP'].map(m=>`<option ${m===sel.model?'selected':''} value="${m}">${m||'À choisir'}</option>`).join('')}</select>${modelHelp(sel)}</div>
+   <div class="field"><label for="creal">Longueur réelle (m)</label><input class="input mono" id="creal" type="number" min="0" step="0.5" value="${sel.real??''}" placeholder="À saisir" ${ro}><span class="help">Sert à la commande et à la confection. Estimée : ${nf(len,1)} m.</span></div>
    <dl class="kv"><dt>Longueur estimée</dt><dd>${nf(len,1)} m</dd><dt>Tracé</dt><dd>Orthogonal</dd></dl>
    ${editable()?`<button class="btn sm danger" data-act="cdel">${ic('trash','sm')}Supprimer le câble</button>`:''}
   </div></section>`;
@@ -1261,7 +1282,9 @@ function vSynoptique(){
    <div class="seg"><button class="on">Baie vidéo V1</button><button data-soon="Vue par lieu">Car régie CR-2</button><button data-soon="Vue générale">Vue générale</button></div>
    <span class="gap"></span>
    <button class="btn sm" data-act="autonum" ${editable()?'':'disabled'}>${ic('hash','sm')}Numéroter</button>
-   <button class="btn sm" data-soon="Export du synoptique">${ic('download','sm')}Exporter</button>
+   <span class="muted small">Indice ${SYN.rev}</span>
+   <button class="btn sm" data-act="cimport" ${editable()?'':'disabled'}>${ic('upload','sm')}Importer une liste</button>
+   <button class="btn sm" data-act="cexport">${ic('download','sm')}Exporter</button>
   </div>
  </div>
  <div class="design-body two">
@@ -1339,8 +1362,9 @@ function mountSyn(){
   const c=SYN.sel&&SYN.cables.find(x=>x.id===SYN.sel.id);if(!c)return;
   if(e.target.id==='cnum'){c.num=e.target.value.trim().toUpperCase();synAll();toast('Numéro enregistré')}
   if(e.target.id==='cmodel'){c.model=e.target.value;$('#synSide').innerHTML=synSide()}
+  if(e.target.id==='creal'){c.real=e.target.value===''?null:+e.target.value;toast(c.real?`Longueur réelle : ${nf(c.real,1)} m`:'Longueur réelle effacée')}
  });
- requestAnimationFrame(()=>{if(SYN.userMoved)return applyView();const w=$('#synWrap').clientWidth;SYN.k=w<700?.72:1;SYN.x=16;SYN.y=64;applyView()});
+ requestAnimationFrame(()=>{if(!$('#synWrap'))return;if(SYN.userMoved)return applyView();const w=$('#synWrap').clientWidth;SYN.k=w<700?.72:1;SYN.x=16;SYN.y=64;applyView()});
 }
 
 /* ================= Recette ================= */
@@ -1398,7 +1422,7 @@ function catRows(){
 function vCatalogue(){
  const fs=[['all','Tous'],['v','Vidéo'],['a','Audio'],['n','Réseau'],['s','Synchro'],['i','Intercom'],['p','Énergie']];
  return `<div class="page">
- <div class="page-head"><div><p class="eyebrow">Propre au site · ${CAT.length} fiches actives</p><h1 class="display">Catalogue</h1></div><div class="head-actions"><button class="btn" data-soon="Import CSV ou XLSX">${ic('upload','sm')}Importer</button><button class="btn primary" data-act="newcat">${ic('plus')}Nouvel équipement</button></div></div>
+ <div class="page-head"><div><p class="eyebrow">Propre au site · ${CAT.length} fiches actives</p><h1 class="display">Catalogue</h1></div><div class="head-actions"><button class="btn" data-soon="Import et échange de fiches">${ic('upload','sm')}Importer ou échanger</button><button class="btn primary" data-act="newcat">${ic('plus')}Nouvel équipement</button></div></div>
  <div class="seg"><button class="on">Équipements</button><button data-soon="Câbles">Câbles</button><button data-soon="Adaptateurs">Adaptateurs</button><button data-soon="Référentiels">Référentiels</button></div>
  <div class="toolbar"><label class="search">${ic('search')}<input class="input" id="cq" placeholder="Nom, marque, catégorie…" value="${esc(S.cat.q)}" aria-label="Rechercher dans le catalogue"></label>${fs.map(([k,l])=>`<button class="fchip ${S.cat.f===k?'on':''}" ${k!=='all'?`style="--c:${sigc(k)}"`:''} data-cf="${k}">${l}</button>`).join('')}</div>
  <section class="card" style="padding:6px 14px"><div class="tbl-wrap"><table class="tbl stack"><thead><tr><th>Équipement</th><th>Catégorie</th><th>Format</th><th class="num">Poids</th><th class="num">Puissance</th><th>Ports</th><th class="num">Utilisé dans</th></tr></thead><tbody id="catBody">${catRows()}</tbody></table></div></section>
@@ -1539,7 +1563,7 @@ function wzCreate(){
 /* ================= Palette ================= */
 let PAL={q:'',i:0,items:[]};
 function palItems(){
- const r=[['accueil','Accueil','home'],['projets','Projets','folder'],['projet','Vue d’ensemble du projet','home'],['inventaire','Inventaire','layers'],['racks','Racks','server'],['synoptique','Synoptique','syn'],['recette','Recette','check'],['catalogue','Catalogue','box'],['admin','Administration','sliders']].map(([g,t,i])=>({t,k:'Aller à',i,run:()=>go(g)}));
+ const r=[['accueil','Accueil','home'],['projets','Projets','folder'],['projet','Vue d’ensemble du projet','home'],['inventaire','Inventaire','layers'],['racks','Racks','server'],['synoptique','Synoptique','syn'],['recette','Recette','check'],['preparation','Préparation','truck'],['reseau','Réseau et fréquences HF','network'],['catalogue','Catalogue','box'],['admin','Administration','sliders']].map(([g,t,i])=>({t,k:'Aller à',i,run:()=>go(g)}));
  const a=[{t:'Nouveau projet',k:'Action',i:'plus',run:()=>openWizard()},{t:'Ajouter du matériel',k:'Action',i:'plus',run:()=>{go('inventaire');setTimeout(addMatDrawer,50)}},{t:'Valider le synoptique',k:'Action',i:'check',run:()=>go('synoptique')},{t:'Nouvel équipement au catalogue',k:'Action',i:'box',run:()=>{go('catalogue');setTimeout(newCatDrawer,50)}},{t:'Changer de thème',k:'Action',i:'moon',run:toggleTheme}];
  const p=PROJ.map(x=>({t:x.nom,k:'Projet',i:'folder',run:()=>openProj(x.id)}));
  const c=CAT.map(x=>({t:x.nom,k:'Catalogue',i:'box',run:()=>{go('catalogue');setTimeout(()=>catDrawer(x.id),50)}}));
@@ -1564,10 +1588,90 @@ function notifs(){
 }
 
 /* ================= Vues ================= */
+/* ================= Énergie par phase ================= */
+function phases(){const p={L1:0,L2:0,L3:0};[...RACK.items,...RACK.pending].forEach(i=>{if(i.w>0)p[i.ph||'L1']+=i.w});return Object.entries(p).map(([k,w])=>({k,w,a:w/230}))}
+function phaseHtml(){
+ const ps=phases(),mx=ps.reduce((a,b)=>b.a>a.a?b:a),mn=ps.reduce((a,b)=>b.a<a.a?b:a),d=mx.a?Math.round(100*(mx.a-mn.a)/mx.a):0;
+ return `<section><h2>Énergie par phase</h2><p class="small muted">Triphasé 16 A par phase, PDU A. Choisissez la phase d’un équipement dans sa fiche.</p>${ps.map(x=>meter(x.k,x.a,16,'A',1)).join('')}
+ ${d>20?`<div class="alert warn">${ic('alert')}<span>Déséquilibre de ${d} % : la phase ${mx.k} porte ${nf(mx.w)} W, la phase ${mn.k} ${nf(mn.w)} W. Passez un équipement de ${mx.k} vers ${mn.k}.</span></div>`:`<div class="alert info">${ic('ok')}<span>Phases équilibrées : écart de ${d} %.</span></div>`}</section>`;
+}
+
+/* ================= Préparation ================= */
+const PREP={phase:'prep',done:{prep:new Set(['#K7Q2','#M3T6','#G5H2','#R8V4','#K8Q2']),load:new Set(),ret:new Set()},last:'',flash:null};
+const PHL={prep:'Préparation au dépôt',load:'Chargement du camion',ret:'Retour au dépôt'};
+function prepItems(){
+ const r=[...RACK.items,...RACK.pending].filter(i=>i.kind!=='acc').map(i=>({code:i.rep,nom:i.nom,sn:i.sn,cont:'Baie vidéo V1',sig:i.sig}));
+ const cam=['#K8Q2','#K8Q3','#K8Q4'].map((c,k)=>({code:c,nom:'CCU caméra système',sn:'S/N '+(512210+k),cont:'Flight-case caméras',sig:'v'}));
+ return [...r,...cam];
+}
+function vPreparation(){
+ const it=prepItems(),set=PREP.done[PREP.phase],n=it.filter(x=>set.has(x.code)).length,pct=Math.round(100*n/it.length);
+ const conts=[...new Set(it.map(x=>x.cont))];
+ return `<div class="page">${projTop('preparation')}
+ <div class="seg">${[['prep','Préparation'],['load','Chargement'],['ret','Retour']].map(([k,l])=>`<button class="${PREP.phase===k?'on':''}" data-pphase="${k}">${l} <span class="muted">${it.filter(x=>PREP.done[k].has(x.code)).length}/${it.length}</span></button>`).join('')}</div>
+ <section class="scanbox">
+  <div><p class="eyebrow">${PHL[PREP.phase]}</p><div class="scan-big"><b>${n}</b><span>sur ${it.length} exemplaires scannés</span></div><div class="bar ${n===it.length?'ok':''}"><i style="width:${pct}%"></i></div></div>
+  <form id="scanForm" class="scan-f" novalidate><label class="flabel" for="scanIn">Scannez le code-barres ou le QR, ou saisissez un repère ou un numéro de série</label>
+   <div class="scan-row"><input class="input mono" id="scanIn" placeholder="#K7Q2 ou S/N 240117" autocomplete="off" autocapitalize="characters"><button class="btn primary" type="submit">Valider</button><button class="btn" type="button" data-act="scansim">${ic('scan','sm')}Simuler un scan</button></div>
+   <div id="scanMsg">${PREP.last}</div></form>
+ </section>
+ ${conts.map(c=>{const l=it.filter(x=>x.cont===c);return `<section class="card"><div class="card-head"><h2>${c}</h2><span class="muted mono">${l.filter(x=>set.has(x.code)).length} / ${l.length}</span></div><div class="tbl-wrap"><table class="tbl stack"><tbody>${l.map(x=>`<tr class="${PREP.flash===x.code?'flash':''}"><td class="first"><div class="art-name"><span class="sw" style="--c:${sigc(x.sig)}"></span><b>${esc(x.nom)}</b></div></td><td data-l="Repère"><span class="tape">${x.code}</span></td><td data-l="Série" class="mono">${x.sn||'—'}</td><td>${set.has(x.code)?`<span class="chip ok">${ic('ok')}Scanné</span>`:'<span class="chip">À scanner</span>'}</td></tr>`).join('')}</tbody></table></div></section>`}).join('')}
+ </div>`;
+}
+function prepRefresh(keep){const y=$('#view').scrollTop;$('#view').innerHTML=vPreparation();$('#view').scrollTop=y;PREP.flash=null;if(!keep){const i=$('#scanIn');i&&i.focus()}}
+function doScan(raw){
+ const code=String(raw||'').trim().toUpperCase();if(!code)return;
+ const it=prepItems(),set=PREP.done[PREP.phase];
+ const x=it.find(i=>i.code===code||(i.sn||'').toUpperCase()===code||(i.sn||'').toUpperCase()==='S/N '+code);
+ if(!x)PREP.last=`<div class="alert err">${ic('alert')}<span><b>${esc(code)}</b> ne fait pas partie de ce projet. Mettez-le de côté.</span></div>`;
+ else if(set.has(x.code))PREP.last=`<div class="alert warn">${ic('alert')}<span><b>${esc(x.nom)}</b> ${x.code} est déjà scanné.</span></div>`;
+ else{set.add(x.code);PREP.flash=x.code;const left=it.filter(i=>!set.has(i.code)).length;PREP.last=`<div class="alert info">${ic('ok')}<span><b>${esc(x.nom)}</b> ${x.code} · ${x.cont}. ${left?left+' restant'+(left>1?'s':''):'Tout est scanné.'}</span></div>`}
+ prepRefresh();
+}
+
+/* ================= Réseau et fréquences HF ================= */
+const NET={tab:'flux',read:false,fixed:new Set(),at:''};
+const FLUX=[{src:'CCU Caméra 1',ess:'Vidéo 2110-20',mc:'239.20.1.1',port:50020},{src:'CCU Caméra 1',ess:'Audio 2110-30',mc:'239.30.1.1',port:50030},{src:'CCU Caméra 2',ess:'Vidéo 2110-20',mc:'239.20.1.2',port:50020},{src:'CCU Caméra 3',ess:'Vidéo 2110-20',mc:'239.20.1.3',port:50020},{src:'Mélangeur 4 M/E 4K · PGM',ess:'Vidéo 2110-20',mc:'239.20.2.1',port:50020},{src:'Mélangeur 4 M/E 4K · PVW',ess:'Vidéo 2110-20',mc:'239.20.2.2',port:50020},{src:'Désembeddeur audio',ess:'Audio 2110-30',mc:'239.30.2.1',port:50030}];
+const NMOS_DIFF=[{k:'d1',src:'Mélangeur 4 M/E 4K · PVW',t:'Adresse différente',d:'Mélangeur 4 M/E 4K · PVW : 239.20.2.2 au plan, 239.20.2.9 sur le réseau',act:'Reprendre l’adresse du réseau'},{k:'d2',src:'',t:'Absent du plan',d:'Émetteur « CCU Caméra 4 » (Vidéo 2110-20, 239.20.1.4) annoncé par le registre',act:'Ajouter au plan'}];
+const HF=[{eq:'Micro main HF 1',type:'Micro',lieu:'Bord terrain',f:'606.125'},{eq:'Micro main HF 2',type:'Micro',lieu:'Bord terrain',f:'606.425'},{eq:'Micro cravate 1',type:'Micro',lieu:'Bord terrain',f:'614.000'},{eq:'Micro cravate 2',type:'Micro',lieu:'Bord terrain',f:'614.150'},{eq:'Écoute HF journaliste',type:'Écoute',lieu:'Bord terrain',f:'865.500'},{eq:'Micro commentateur',type:'Micro',lieu:'Cabine commentateurs',f:'614.100'}];
+function fluxHtml(){
+ const diffs=NMOS_DIFF.filter(d=>!NET.fixed.has(d.k));
+ return `<section class="card"><div class="card-head"><div><h2>Flux du plan</h2><span class="small muted">${FLUX.length} émetteurs · VLAN 20 média principal</span></div><div class="head-actions"><button class="btn sm" data-act="sdp">${ic('download','sm')}Exporter les SDP</button><button class="btn sm primary" data-act="nmos">${ic('refresh','sm')}${NET.read?'Relire':'Lire'} le registre NMOS</button></div></div>
+ <div class="tbl-wrap"><table class="tbl stack"><thead><tr><th>Émetteur</th><th>Essence</th><th>Multicast</th><th class="num">Port UDP</th><th>Registre IS-04</th></tr></thead><tbody>${FLUX.map(f=>{const d=NET.read&&diffs.find(x=>x.src===f.src);return `<tr class="${f.fresh?'flash':''}"><td class="first"><b>${esc(f.src)}</b></td><td data-l="Essence">${f.ess}</td><td data-l="Multicast" class="mono">${f.mc}</td><td class="num" data-l="Port">${f.port}</td><td>${!NET.read?'<span class="muted">Non lu</span>':d?'<span class="chip warn">Écart</span>':'<span class="chip ok">Conforme</span>'}</td></tr>`}).join('')}</tbody></table></div></section>
+ ${NET.read?`<section class="card"><div class="card-head"><h2>Écarts avec le réseau</h2><span class="muted">Registre 10.0.20.40 · lu à ${NET.at}</span></div>${diffs.length?`<div class="todos">${diffs.map(d=>`<div class="todo"><span class="ti warn">${ic('alert','sm')}</span><span><b>${d.t}</b><span>${d.d}</span></span><button class="btn sm" style="margin-left:auto" data-nfix="${d.k}">${d.act}</button></div>`).join('')}</div>`:`<div class="alert info">${ic('ok')}<span>Le plan et le réseau concordent.</span></div>`}</section>`:''}`;
+}
+function hfConf(i){const a=HF[i];return HF.find((b,j)=>j!==i&&b.lieu===a.lieu&&Math.round(Math.abs(parseFloat(a.f)-parseFloat(b.f))*1000)<300)}
+function hfHtml(){
+ const n=HF.filter((_,i)=>hfConf(i)).length/2;
+ return `<section class="card"><div class="card-head"><div><h2>Plan de fréquences HF</h2><span class="small muted">Écart minimal de 0,300 MHz entre deux liaisons d’un même lieu</span></div><div class="head-actions"><button class="btn sm" data-soon="Import CSV d’un logiciel de coordination">${ic('upload','sm')}Importer CSV</button><button class="btn sm" data-act="hfexp">${ic('download','sm')}Exporter CSV</button></div></div>
+ ${n?`<div class="alert err" style="margin:14px 0 4px">${ic('alert')}<span>${n} conflit${n>1?'s':''} à résoudre : modifiez une des deux fréquences.</span></div>`:`<div class="alert info" style="margin:14px 0 4px">${ic('ok')}<span>Aucun conflit de fréquence.</span></div>`}
+ <div class="tbl-wrap"><table class="tbl stack"><thead><tr><th>Liaison</th><th>Type</th><th>Lieu</th><th>Fréquence (MHz)</th><th>État</th></tr></thead><tbody>${HF.map((h,i)=>{const c=hfConf(i);return `<tr><td class="first"><div class="art-name">${ic('radio','sm')}<b>${h.eq}</b></div></td><td data-l="Type">${h.type}</td><td data-l="Lieu">${h.lieu}</td><td data-l="Fréquence"><input class="input mono hf-in" data-hf="${i}" type="number" step="0.025" value="${h.f}" aria-label="Fréquence de ${h.eq}"></td><td>${c?`<span class="chip err">Trop proche de ${esc(c.eq)}</span>`:'<span class="chip ok">OK</span>'}</td></tr>`}).join('')}</tbody></table></div></section>`;
+}
+function vReseau(){return `<div class="page">${projTop('reseau')}<div class="seg">${[['flux','Flux SMPTE 2110'],['hf','Fréquences HF']].map(([k,l])=>`<button class="${NET.tab===k?'on':''}" data-ntab="${k}">${l}</button>`).join('')}</div><div id="netBody" style="display:flex;flex-direction:column;gap:48px">${NET.tab==='flux'?fluxHtml():hfHtml()}</div></div>`}
+
+/* ================= Import et export du synoptique ================= */
+function importDrawer(){
+ const map=[['N° câble','Numéro'],['Source','De : équipement'],['Port src','De : port'],['Destination','Vers : équipement'],['Port dest','Vers : port'],['Long. (m)','Longueur réelle'],['Type','Modèle de câble']];
+ openDrawer(`<header><div><p class="eyebrow">Synoptique · Baie vidéo V1</p><h2>Importer une liste de câbles</h2></div><button class="icon-btn" data-act="closed" aria-label="Fermer">${ic('x')}</button></header>
+ <div class="dbody"><div class="copyline" style="margin:0"><code>Liste_cables_CR2.xlsx · 42 lignes</code><button class="btn sm" data-soon="Choisir un autre fichier">Changer</button></div>
+ <section style="display:flex;flex-direction:column;gap:6px"><h3>Colonnes reconnues</h3><table class="tbl"><thead><tr><th>Colonne du fichier</th><th>Champ</th></tr></thead><tbody>${map.map(([a,b])=>`<tr><td class="mono">${a}</td><td>${b}</td></tr>`).join('')}</tbody></table></section>
+ <div class="alert warn">${ic('alert')}<span><b>39 lignes reconnues, 3 à corriger.</b> Équipements inconnus : « VTR 2 », « Patch 3B ». Elles restent listées après l’import.</span></div></div>
+ <footer><button class="btn" data-act="closed">Annuler</button><button class="btn primary" data-act="cimpgo">Importer 39 câbles</button></footer>`);
+}
+function exportDrawer(){
+ const add=SYN.cables.filter(c=>c.id>=100&&!c.inRev).length,ren=SYN.cables.filter(c=>c.num!==c.num0&&(c.id<100||c.inRev)).length,del=SYN.del,nx=String.fromCharCode(SYN.rev.charCodeAt(0)+1),pl=(n,w)=>`${n} câble${n>1?'s':''} ${w}${n>1?'s':''}`;
+ const li=[add&&pl(add,'ajouté'),ren&&pl(ren,'renuméroté'),del&&pl(del,'supprimé')].filter(Boolean);
+ openDrawer(`<header><div><p class="eyebrow">Synoptique · Baie vidéo V1</p><h2>Exporter l’indice ${nx}</h2></div><button class="icon-btn" data-act="closed" aria-label="Fermer">${ic('x')}</button></header>
+ <div class="dbody"><dl class="kv"><dt>Indice en vigueur</dt><dd>${SYN.rev}</dd><dt>Nouvel indice</dt><dd>${nx} · 11 nov. 2026</dd></dl>
+ <section style="display:flex;flex-direction:column;gap:8px"><h3>Changements depuis l’indice ${SYN.rev}</h3>${li.length?`<ul class="notes">${li.map(x=>`<li>${x}</li>`).join('')}</ul>`:'<p class="muted">Aucun changement de câblage. Tracez ou numérotez un câble pour voir la liste se remplir.</p>'}<p class="small muted">Cette liste est jointe au dossier et l’indice est repris dans le cartouche.</p></section>
+ <section style="display:flex;flex-direction:column;gap:2px"><h3>Fichiers</h3>${[['Planche PDF A3 avec cartouche',1],['Liste des câbles (XLSX)',1],['Étiquettes pour étiqueteuse (CSV)',1],['Étiquettes sur planche A4 (PDF)',0]].map(([l,c],i)=>`<label class="layer"><input type="checkbox" id="exf${i}" ${c?'checked':''}> ${l}</label>`).join('')}</section></div>
+ <footer><button class="btn" data-act="closed">Annuler</button><button class="btn primary" data-act="cexpgo">Exporter l’indice ${nx}</button></footer>`);
+}
+
 const VIEWS={
  accueil:{html:vAccueil},projets:{html:vProjets},projet:{html:vProjet},inventaire:{html:vInventaire},
  racks:{html:vRacks,full:true,mount:mountRacks},synoptique:{html:vSynoptique,full:true,mount:mountSyn},
- recette:{html:vRecette},catalogue:{html:vCatalogue},admin:{html:vAdmin},
+ recette:{html:vRecette},preparation:{html:vPreparation},reseau:{html:vReseau},catalogue:{html:vCatalogue},admin:{html:vAdmin},
 };
 
 /* ================= Événements ================= */
@@ -1580,6 +1684,14 @@ document.addEventListener('click',e=>{
  if(a){const k=a.dataset.act;
   if(k==='wizard')return openWizard();
   if(k==='menuclose')return closeAll();
+  if(k==='scansim'){const it=prepItems(),set=PREP.done[PREP.phase];PREP.sims=(PREP.sims||0)+1;const nx=it.find(x=>!set.has(x.code));return doScan(PREP.sims%5===0||!nx?'#ZZ97':nx.code)}
+  if(k==='nmos'){a.disabled=true;a.innerHTML='<span class="spinner"></span>Lecture du registre…';setTimeout(()=>{NET.read=true;NET.at=new Date().toTimeString().slice(0,5);$('#netBody').innerHTML=fluxHtml();toast('Registre NMOS lu : 8 émetteurs, 2 écarts avec le plan','warn')},900);return}
+  if(k==='sdp'){toast(`${FLUX.length} fichiers SDP exportés`);return}
+  if(k==='hfexp'){toast('Plan de fréquences exporté en CSV');return}
+  if(k==='cimport')return importDrawer();
+  if(k==='cexport')return exportDrawer();
+  if(k==='cimpgo'){closeDrawer();toast('39 câbles importés depuis Liste_cables_CR2.xlsx. 3 lignes à corriger restent dans la liste.','warn');return}
+  if(k==='cexpgo'){const nx=String.fromCharCode(SYN.rev.charCodeAt(0)+1);SYN.rev=nx;SYN.cables.forEach(c=>{c.num0=c.num;c.inRev=true});SYN.del=0;closeDrawer();render();toast(`Indice ${nx} exporté : planche PDF, liste XLSX et étiquettes CSV.`);return}
   if(k==='theme')return toggleTheme();
   if(k==='closem')return closeModal();
   if(k==='closed')return closeDrawer();
@@ -1592,7 +1704,7 @@ document.addEventListener('click',e=>{
   if(k==='rmove'){RACK.placing=RACK.sel;rackRefresh();toast('Touchez la nouvelle position dans la baie.','info');return}
   if(k==='rremove'){const it=RACK.items.find(i=>i.id===RACK.sel);RACK.items.splice(RACK.items.indexOf(it),1);delete it.pos;RACK.pending.unshift(it);RACK.sel=null;rackRefresh();toast(`${esc(it.nom)} remis à placer. Ses câbles ont été supprimés.`,'warn');return}
   if(k==='fit'){SYN.userMoved=false;return fitSyn()}
-  if(k==='cdel'){const c=SYN.cables.find(x=>x.id===SYN.sel.id);SYN.cables=SYN.cables.filter(x=>x!==c);SYN.sel=null;SYN.hl=null;synAll();toast(`Câble ${c.num||'sans numéro'} supprimé`,'warn');return}
+  if(k==='cdel'){const c=SYN.cables.find(x=>x.id===SYN.sel.id);if(c.id<100||c.inRev)SYN.del++;SYN.cables=SYN.cables.filter(x=>x!==c);SYN.sel=null;SYN.hl=null;synAll();toast(`Câble ${c.num||'sans numéro'} supprimé`,'warn');return}
   if(k==='autonum'){const l=SYN.cables.filter(c=>!c.num).sort((x,y)=>portSig(x.a).localeCompare(portSig(y.a))||node(x.a[0]).y-node(y.a[0]).y);l.forEach(c=>{c.num=nextNum(node(c.a[0]).cont,SIG[portSig(c.a)].L)});synAll();toast(l.length?`${l.length} câble${l.length>1?'s':''} numéroté${l.length>1?'s':''} : ${l.map(c=>c.num).join(', ')}`:'Tous les câbles ont déjà un numéro.',l.length?'ok':'info');return}
   if(k==='rcsave'){const key=S.rc.open;S.rc.by[key]={u:'dp',w:'11/11 '+new Date().toTimeString().slice(0,5),c:$('#rcc').value.trim()};S.rc.open=null;rcRefresh(key);toast('Commentaire enregistré dans le journal du point');return}
   if(k==='rccancel'){S.rc.open=null;rcRefresh();return}
@@ -1615,6 +1727,9 @@ document.addEventListener('click',e=>{
  }
  const ni=t.closest('[data-ni]');if(ni){const n=NOTIFS[+ni.dataset.ni];n.un=false;$('#notifs').hidden=true;go(n.go);return}
  const pi=t.closest('[data-pi]');if(pi){const x=palFiltered()[+pi.dataset.pi];closeModal();x&&x.run();return}
+ const pp=t.closest('[data-pphase]');if(pp){PREP.phase=pp.dataset.pphase;PREP.last='';prepRefresh();return}
+ const nt=t.closest('[data-ntab]');if(nt){NET.tab=nt.dataset.ntab;render();return}
+ const nfx=t.closest('[data-nfix]');if(nfx){const k2=nfx.dataset.nfix;NET.fixed.add(k2);if(k2==='d1'){FLUX.find(f=>f.src.endsWith('PVW')).mc='239.20.2.9'}else{FLUX.push({src:'CCU Caméra 4',ess:'Vidéo 2110-20',mc:'239.20.1.4',port:50020,fresh:true})}$('#netBody').innerHTML=fluxHtml();FLUX.forEach(f=>f.fresh=false);toast(k2==='d1'?'Adresse reprise du réseau':'CCU Caméra 4 ajoutée au plan');return}
  const iv=t.closest('[data-inter]');if(iv){S.pf.inter=iv.dataset.inter;return render()}
  const ps=t.closest('[data-pst]');if(ps){const s=ps.dataset.pst,a2=S.pf.st;a2.includes(s)?a2.splice(a2.indexOf(s),1):a2.push(s);return render()}
  const ts=t.closest('[data-tst]');if(ts){const tk=TASKS[+ts.dataset.tst];tk.st=TST[(TST.indexOf(tk.st)+1)%TST.length];$('#tasks tbody').innerHTML=tasksRows();toast(`« ${esc(tk.t)} » : ${tk.st}`);return}
@@ -1660,14 +1775,17 @@ document.addEventListener('input',e=>{
  if(t.id==='ncW'){const v=Math.round((+t.value||0)*3.412);$('#ncBtu').placeholder=v;$('#ncBtuHelp').textContent=`Suggestion : ${nf(v)} (puissance × 3,412)`}
 });
 document.addEventListener('change',e=>{
+ const ph=e.target.dataset&&e.target.dataset.phase;if(ph){const it=RACK.items.find(i=>i.id===ph);it.ph=e.target.value;rackRefresh();toast(`${esc(it.nom)} passe sur la phase ${it.ph}`);return}
+ const hf=e.target.dataset&&e.target.dataset.hf;if(hf!==undefined){const h=HF[+hf];h.f=(+e.target.value).toFixed(3);$('#netBody').innerHTML=hfHtml();toast(`${esc(h.eq)} : ${h.f.replace('.',',')} MHz`);return}
  if(e.target.id==='pStatut'){P.statut=e.target.value;render();toast(`Statut du projet : ${P.statut}`)}
 });
+document.addEventListener('submit',e=>{if(e.target.id==='scanForm'){e.preventDefault();doScan($('#scanIn').value)}});
 document.addEventListener('keydown',e=>{
  if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();$('#modal').hidden?openPalette():closeModal();return}
  if(e.key==='Escape'){if(SYN.pend){SYN.pend=null;const p=$('#preview');p&&p.setAttribute('d','');synDraw();setHint();return}if(RACK.placing){RACK.placing=null;if(route()==='racks')rackRefresh();return}closeAll();return}
  if($('#palIn')&&document.activeElement===$('#palIn')){const l=palFiltered();if(e.key==='ArrowDown'){PAL.i=Math.min(l.length-1,PAL.i+1);palDraw();e.preventDefault()}if(e.key==='ArrowUp'){PAL.i=Math.max(0,PAL.i-1);palDraw();e.preventDefault()}if(e.key==='Enter'&&l[PAL.i]){const x=l[PAL.i];closeModal();x.run()}return}
  if(e.key==='Enter'&&$('.wz-body')&&!$('#modal').hidden&&e.target.tagName!=='TEXTAREA'){e.preventDefault();wzNext()}
- if((e.key==='Delete'||e.key==='Backspace')&&route()==='synoptique'&&SYN.sel&&SYN.sel.t==='c'&&editable()&&!/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)){const c=SYN.cables.find(x=>x.id===SYN.sel.id);SYN.cables=SYN.cables.filter(x=>x!==c);SYN.sel=null;synAll();toast(`Câble ${c.num||'sans numéro'} supprimé`,'warn')}
+ if((e.key==='Delete'||e.key==='Backspace')&&route()==='synoptique'&&SYN.sel&&SYN.sel.t==='c'&&editable()&&!/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)){const c=SYN.cables.find(x=>x.id===SYN.sel.id);if(c.id<100||c.inRev)SYN.del++;SYN.cables=SYN.cables.filter(x=>x!==c);SYN.sel=null;synAll();toast(`Câble ${c.num||'sans numéro'} supprimé`,'warn')}
 });
 $('#menuBtn').innerHTML=ic('menu');
 $('#menuBtn').onclick=()=>{$('#sidebar').classList.add('open')};
@@ -1693,6 +1811,7 @@ function live(){
   rcRefresh(x.k);toast(`Hugo Bernard a passé ${esc(x.t)} en OK`,'ok','hb');pushFeed('hb',`a passé ${x.t} en OK sur`,P.nom);return;
  }
  if(r==='projet'){const t=TASKS.find(t=>t.st==='À faire'&&t.u!=='dp');if(!t)return;t.st='En cours';const b=$('#tasks tbody');if(b){b.innerHTML=tasksRows();b.querySelector(`[data-ti="${TASKS.indexOf(t)}"]`).classList.add('flash')}toast(`${U[t.u].n} a commencé « ${esc(t.t)} »`,'ok',t.u);return}
+ if(r==='preparation'){const it=prepItems(),set=PREP.done[PREP.phase],x=it.find(i=>!set.has(i.code));if(!x)return;set.add(x.code);PREP.flash=x.code;prepRefresh(true);toast(`Hugo Bernard a scanné ${esc(x.nom)} ${x.code}`,'ok','hb');return}
  if(r==='catalogue'){const c=CAT[Math.floor(Math.random()*CAT.length)];c.w+=5;c.fresh=true;$('#catBody').innerHTML=catRows();c.fresh=false;toast(`Sofia Roux a modifié la fiche « ${esc(c.nom)} »`,'ok','sr');return}
  if(r==='accueil'){const ev=[['sr','a placé 2 × Enregistreur 1U SSD dans','Baie vidéo V1'],['lm','a ajouté le point de recette « Retour PGM caméras » à',P.nom],['hb','a coché 8 contrôles de construction de','Baie audio A1']];const x=ev[Math.floor(Math.random()*ev.length)];pushFeed(...x);const f=$('#feed');f&&(f.innerHTML=feedHtml());FEED[0].fresh=false;}
 }
