@@ -51,6 +51,7 @@ async fn lines(store: &Store, pid: &str) -> ApiResult<(Vec<Line>, Value)> {
         .iter()
         .map(|l| (l.id.as_str(), l.name.as_str()))
         .collect();
+    let routes = crate::plans::route_lengths(store, pid).await?;
     let cont: HashMap<&str, &strata_store::Container> =
         inv.containers.iter().map(|c| (c.id.as_str(), c)).collect();
     let mut out = Vec::new();
@@ -178,7 +179,7 @@ async fn lines(store: &Store, pid: &str) -> ApiResult<(Vec<Line>, Value)> {
         let len = c
             .fields
             .length_m
-            .or_else(|| estimate(ea.as_ref(), eb.as_ref(), &cont));
+            .or_else(|| estimate(ea.as_ref(), eb.as_ref(), &cont, &routes));
         let len_s = len
             .map(|l| format!("{:.1}", (l * 2.0).ceil() / 2.0))
             .unwrap_or_else(|| "?".into());

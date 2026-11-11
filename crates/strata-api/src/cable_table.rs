@@ -68,6 +68,7 @@ async fn rows(store: &Store, pid: &str) -> ApiResult<Vec<Row>> {
         .flat_map(|n| n.ports.iter().map(move |p| (p.r.as_str(), (n, p))))
         .collect();
     let inv = store.inventory(pid).await?;
+    let routes = crate::plans::route_lengths(store, pid).await?;
     let containers: HashMap<&str, &strata_store::Container> =
         inv.containers.iter().map(|c| (c.id.as_str(), c)).collect();
     let locations: HashMap<&str, &str> = inv
@@ -136,7 +137,7 @@ async fn rows(store: &Store, pid: &str) -> ApiResult<Vec<Row>> {
             color: c.fields.color.clone(),
             notes: c.fields.notes.clone(),
             length_m: c.fields.length_m,
-            estimate_m: estimate(ea.as_ref(), eb.as_ref(), &containers),
+            estimate_m: estimate(ea.as_ref(), eb.as_ref(), &containers, &routes),
             signal: sig
                 .as_deref()
                 .map(|s| name_of(RefKind::Signal, s))

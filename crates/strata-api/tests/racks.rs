@@ -2930,7 +2930,14 @@ async fn network_vlans_ip_plan_and_multicast() {
     )
     .await;
     assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
-    let r = call(&app, "POST", &format!("{url}/vlans"), Some(json!({"vid": 5000, "name": "Trop", "cidr": "10.0.0.0/24", "gateway": "10.1.0.1"})), Some(&o)).await;
+    let r = call(
+        &app,
+        "POST",
+        &format!("{url}/vlans"),
+        Some(json!({"vid": 5000, "name": "Trop", "cidr": "10.0.0.0/24", "gateway": "10.1.0.1"})),
+        Some(&o),
+    )
+    .await;
     assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
     let f: Vec<&str> = r.body["fields"]
         .as_array()
@@ -3014,9 +3021,23 @@ async fn network_vlans_ip_plan_and_multicast() {
     assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
 
     // Liaison : VLAN différents aux deux bouts, réseau A relié au B.
-    let r = call(&app, "POST", &format!("{url}/vlans"), Some(json!({"vid": 30, "name": "Contrôle", "color": "#E0A030"})), Some(&o)).await;
+    let r = call(
+        &app,
+        "POST",
+        &format!("{url}/vlans"),
+        Some(json!({"vid": 30, "name": "Contrôle", "color": "#E0A030"})),
+        Some(&o),
+    )
+    .await;
     let v30 = r.body["id"].as_str().unwrap().to_string();
-    call(&app, "POST", &format!("{url}/ports"), Some(json!({"refs": [of("Switch 2110", 0)], "set": {"vlan": 30, "redundancy": "a"}})), Some(&o)).await;
+    call(
+        &app,
+        "POST",
+        &format!("{url}/ports"),
+        Some(json!({"refs": [of("Switch 2110", 0)], "set": {"vlan": 30, "redundancy": "a"}})),
+        Some(&o),
+    )
+    .await;
     call(
         &app,
         "POST",
@@ -3033,7 +3054,14 @@ async fn network_vlans_ip_plan_and_multicast() {
         Some(&o),
     )
     .await;
-    let r = call(&app, "POST", &format!("/api/projects/{pid}/cables"), Some(json!({"cables": [{"a": of("Passerelle SDI/IP", 0), "b": of("Switch 2110", 0)}]})), Some(&o)).await;
+    let r = call(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid}/cables"),
+        Some(json!({"cables": [{"a": of("Passerelle SDI/IP", 0), "b": of("Switch 2110", 0)}]})),
+        Some(&o),
+    )
+    .await;
     assert_eq!(r.status, StatusCode::CREATED, "{:?}", r.body);
     let v = call(&app, "GET", &url, None, Some(&o)).await.body;
     let kinds: Vec<&str> = v["issues"]
@@ -3065,7 +3093,14 @@ async fn network_vlans_ip_plan_and_multicast() {
     assert_eq!(fl[2]["udp"], 50030);
     assert_eq!(fl[2]["essence"], "audio");
     let dante = fl[2]["key"].as_str().unwrap().to_string();
-    let r = call(&app, "POST", &format!("{url}/flows/set"), Some(json!({"key": dante, "address": "239.20.0.1", "udp": 50020})), Some(&o)).await;
+    let r = call(
+        &app,
+        "POST",
+        &format!("{url}/flows/set"),
+        Some(json!({"key": dante, "address": "239.20.0.1", "udp": 50020})),
+        Some(&o),
+    )
+    .await;
     assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
     let r = call(
         &app,
@@ -3139,4 +3174,364 @@ async fn network_vlans_ip_plan_and_multicast() {
     )
     .await;
     assert_eq!(r.status, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn plans_floors_placements_routes_and_lengths() {
+    let Setup {
+        app,
+        o,
+        lea,
+        pid,
+        cid,
+        ..
+    } = setup().await;
+    let p = call(&app, "GET", &format!("/api/projects/{pid}"), None, Some(&o)).await;
+    let loc = p.body["locations"][0]["id"].as_str().unwrap().to_string();
+    let r = call(&app, "POST", &format!("/api/projects/{pid}/containers"), Some(json!({
+        "location_id": loc, "name": "Pupitre", "kind": "desk", "rackable": false, "width_mm": 1800, "length_mm": 900
+    })), Some(&o)).await;
+    assert_eq!(r.status, StatusCode::CREATED, "{:?}", r.body);
+    let desk = r.body["id"].as_str().unwrap().to_string();
+    let item = |name: &str, dir: &str| json!({"kind": "equipment", "data": {"name": name, "functions": ["V"], "format": {"kind": "free", "length_mm": 300, "width_mm": 200, "height_mm": 100}, "ports": [{"connector_id": "bnc", "signal_id": "sdi-3g", "direction": dir, "gender": "F", "quantity": 1}]}});
+    let mut refs = Vec::new();
+    for (name, dir, c) in [("Source", "out", &cid), ("Moniteur", "in", &desk)] {
+        let it = call(
+            &app,
+            "POST",
+            "/api/catalog/items",
+            Some(item(name, dir)),
+            Some(&o),
+        )
+        .await
+        .body["item"]["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let a = call(
+            &app,
+            "POST",
+            &format!("/api/projects/{pid}/articles"),
+            Some(json!({"container_id": c, "nature": "equipment", "item_id": it})),
+            Some(&o),
+        )
+        .await;
+        let inst = a.body["instances"][0]["id"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string();
+        refs.push(if inst.is_empty() {
+            String::new()
+        } else {
+            format!("i:{inst}:0:1")
+        });
+    }
+    if refs.iter().any(String::is_empty) {
+        let nodes = call(
+            &app,
+            "GET",
+            &format!("/api/projects/{pid}/synoptic?view=container:{cid}"),
+            None,
+            Some(&o),
+        )
+        .await
+        .body;
+        let src = nodes["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|n| n["label"] == "Source")
+            .unwrap()["ports"][0]["ref"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let nodes = call(
+            &app,
+            "GET",
+            &format!("/api/projects/{pid}/synoptic?view=container:{desk}"),
+            None,
+            Some(&o),
+        )
+        .await
+        .body;
+        let dst = nodes["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|n| n["label"] == "Moniteur")
+            .unwrap()["ports"][0]["ref"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        refs = vec![src, dst];
+    }
+    call(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid}/synoptic/lock"),
+        None,
+        Some(&o),
+    )
+    .await;
+    let r = call(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid}/cables"),
+        Some(json!({"cables": [{"a": refs[0], "b": refs[1], "number": "V-001"}]})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::CREATED, "{:?}", r.body);
+
+    // Assistant : une carte plate n'a qu'un niveau.
+    let url = format!("/api/projects/{pid}/plans");
+    let r = call(
+        &app,
+        "POST",
+        &url,
+        Some(json!({"name": "Stade", "kind": "flat", "levels": [0, 1]})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let r = call(
+        &app,
+        "POST",
+        &url,
+        Some(json!({"name": "Stade", "kind": "multi_floor", "levels": [1, 0]})),
+        Some(&lea),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    let map = r.body["id"].as_str().unwrap().to_string();
+    let murl = format!("{url}/{map}");
+    let v = call(&app, "GET", &murl, None, Some(&o)).await.body;
+    let floors = v["floors"].as_array().unwrap().clone();
+    assert_eq!(floors.len(), 2);
+    assert_eq!(floors[0]["name"], "Rez-de-chaussée");
+    assert_eq!(floors[1]["base_mm"], 3000.0);
+    let (f0, f1) = (
+        floors[0]["id"].as_str().unwrap().to_string(),
+        floors[1]["id"].as_str().unwrap().to_string(),
+    );
+    assert_eq!(v["unplaced"].as_array().unwrap().len(), 2);
+
+    // Sans la main : refus.
+    let place = |floor: &str, c: &str, x: f64, y: f64, z: f64| json!({"floor_id": floor, "kind": "container", "container_id": c, "x": x, "y": y, "z": z, "rot": 0});
+    let r = call(
+        &app,
+        "POST",
+        &format!("{murl}/objects"),
+        Some(place(&f0, &cid, 0.0, 0.0, 0.0)),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::CONFLICT);
+    let r = call(&app, "POST", &format!("{murl}/lock"), None, Some(&o)).await;
+    assert_eq!(r.body["mine"], true);
+    let r = call(
+        &app,
+        "POST",
+        &format!("{murl}/objects"),
+        Some(place(&f0, &cid, 0.0, 0.0, 0.0)),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    let rack_obj = r.body["id"].as_str().unwrap().to_string();
+    // Un seul placement par contenant sur toutes les cartes.
+    let r = call(
+        &app,
+        "POST",
+        &format!("{murl}/objects"),
+        Some(place(&f1, &cid, 10.0, 0.0, 0.0)),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::CONFLICT);
+    let r = call(&app, "POST", &format!("{murl}/objects"), Some(json!({"floor_id": f1, "kind": "container", "container_id": desk, "x": 4000, "y": 3000, "z": 1000, "rot": 45})), Some(&o)).await;
+    assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
+    call(
+        &app,
+        "POST",
+        &format!("{murl}/objects"),
+        Some(place(&f1, &desk, 4000.0, 3000.0, 1000.0)),
+        Some(&o),
+    )
+    .await;
+    let v = call(&app, "GET", &murl, None, Some(&o)).await.body;
+    let li = v["liaisons"].as_array().unwrap().clone();
+    assert_eq!(li.len(), 1);
+    assert_eq!(li[0]["state"], "ready");
+    assert_eq!(li[0]["count"], 1);
+    assert_eq!(li[0]["length_m"], Value::Null);
+    let key = li[0]["key"].as_str().unwrap().to_string();
+
+    // Tracé : montées verticales automatiques, 3D, arrondi aux 10 cm.
+    let r = call(
+        &app,
+        "PUT",
+        &format!("{murl}/routes"),
+        Some(json!({"key": key, "waypoints": [
+            {"x": 0, "y": 0, "level": 0}, {"x": 4000, "y": 3000, "level": 1}
+        ]})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    let r = call(
+        &app,
+        "PUT",
+        &format!("{murl}/routes"),
+        Some(json!({"key": key, "waypoints": [{"x": 0, "y": 0, "level": 7}]})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let v = call(&app, "GET", &murl, None, Some(&o)).await.body;
+    assert_eq!(v["liaisons"][0]["length_m"], 12.0);
+    assert!(v["liaisons"][0]["points3d"].as_array().unwrap().len() >= 5);
+    // La table des câbles reprend la longueur du tracé.
+    let t = call(
+        &app,
+        "GET",
+        &format!("/api/projects/{pid}/cables/table"),
+        None,
+        Some(&o),
+    )
+    .await
+    .body;
+    let row = t["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["number"] == "V-001")
+        .unwrap()
+        .clone();
+    assert_eq!(row["estimate_m"], 12.0);
+    // Étage plus haut : le tracé s'allonge ; le niveau reste figé.
+    let mut f = floors[0].clone();
+    f["height_mm"] = json!(4000);
+    f["level"] = json!(5);
+    let r = call(&app, "PATCH", &format!("{murl}/floors"), Some(f), Some(&o)).await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    let v = call(&app, "GET", &murl, None, Some(&o)).await.body;
+    assert_eq!(v["floors"][0]["level"], 0);
+    assert_eq!(v["liaisons"][0]["length_m"], 13.0);
+    let r = call(
+        &app,
+        "POST",
+        &format!("{murl}/floors"),
+        Some(json!({"level": 1})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
+
+    // Point de connexion : capacité libre = ports − liens.
+    let r = call(&app, "POST", &format!("{murl}/objects"), Some(json!({"floor_id": f0, "kind": "point", "x": 1000, "y": 0, "z": 300, "label": "Boîtier B12", "signal_id": "sdi-3g", "connector_id": "bnc", "ports": 1})), Some(&o)).await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    let pt = r.body["id"].as_str().unwrap().to_string();
+    let r = call(
+        &app,
+        "POST",
+        &format!("{murl}/links"),
+        Some(json!({"point_id": pt, "target_id": rack_obj})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    let r = call(
+        &app,
+        "POST",
+        &format!("{murl}/links"),
+        Some(json!({"point_id": pt, "target_id": rack_obj})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let v = call(&app, "GET", &murl, None, Some(&o)).await.body;
+    let p = v["objects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|x| x["id"] == pt)
+        .unwrap()
+        .clone();
+    assert_eq!(p["free"], 0);
+    // Mesure : chaîne de segments.
+    let r = call(
+        &app,
+        "POST",
+        &format!("{murl}/objects"),
+        Some(json!({"floor_id": f0, "kind": "measure", "points": [[0, 0], [3000, 4000]]})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK);
+
+    // Fond de plan : PNG accepté, autre chose refusé ; servi au lecteur.
+    let png = b"\x89PNG\r\n\x1a\n0000IHDR".to_vec();
+    let bg = |ct: &str, body: Vec<u8>| {
+        Request::builder()
+            .method("PUT")
+            .uri(format!("{murl}/floors/{f0}/background?w=1200&h=800"))
+            .header(CSRF_HEADER, "1")
+            .header(header::CONTENT_TYPE, ct.to_string())
+            .header(header::COOKIE, o.clone())
+            .body(Body::from(body))
+            .unwrap()
+    };
+    let res = app
+        .clone()
+        .oneshot(bg("image/png", png.clone()))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let res = app
+        .clone()
+        .oneshot(bg("image/png", b"GIF89a".to_vec()))
+        .await
+        .unwrap();
+    assert!(res.status().is_client_error());
+    let v = call(&app, "GET", &murl, None, Some(&lea)).await.body;
+    let file = v["floors"][0]["background"].as_str().unwrap().to_string();
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("{url}/files/{file}"))
+                .header(header::COOKIE, lea.clone())
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    assert_eq!(res.headers()[header::CONTENT_TYPE], "image/png");
+
+    // Supprimer l'étage 1 retire le pupitre de la carte : la liaison n'est plus traçable ici.
+    let r = call(
+        &app,
+        "POST",
+        &format!("{murl}/floors/delete"),
+        Some(json!({"id": f1})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK);
+    let v = call(&app, "GET", &murl, None, Some(&o)).await.body;
+    assert_eq!(v["liaisons"][0]["state"], "unplaced");
+    let idx = call(&app, "GET", &url, None, Some(&o)).await.body;
+    assert_eq!(idx["stats"]["placed"], 1);
+    assert_eq!(idx["maps"][0]["floors"].as_array().unwrap().len(), 1);
+    let r = call(
+        &app,
+        "POST",
+        &format!("{murl}/floors/delete"),
+        Some(json!({"id": f0})),
+        Some(&o),
+    )
+    .await;
+    assert!(r.status.is_client_error());
 }

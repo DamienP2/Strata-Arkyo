@@ -15,6 +15,7 @@ pub mod live;
 pub mod network;
 pub mod ops;
 pub mod panels;
+pub mod plans;
 pub mod prep;
 pub mod projects;
 pub mod racks;
@@ -113,6 +114,7 @@ pub fn router(state: AppState) -> Router {
         .merge(prep::routes())
         .merge(recette::routes())
         .merge(network::routes())
+        .merge(plans::routes())
         .route("/live", get(live::socket))
         .layer(middleware::from_fn(csrf));
     Router::new()

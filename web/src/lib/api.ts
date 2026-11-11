@@ -66,6 +66,7 @@ export const api = {
   patch: <T>(p: string, b?: unknown) => request<T>('PATCH', p, b),
   del: <T>(p: string) => request<T>('DELETE', p),
   upload: <T>(p: string, data: Blob, type?: string) => request<T>('POST', p, undefined, data, type),
+  putRaw: <T>(p: string, data: Blob, type?: string) => request<T>('PUT', p, undefined, data, type),
 };
 
 /** Lien de téléchargement direct (GET) : le navigateur gère le fichier. */

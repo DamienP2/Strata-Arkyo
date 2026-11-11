@@ -11,6 +11,7 @@ pub mod network;
 pub mod numbering;
 pub mod panel;
 pub mod permissions;
+pub mod plan;
 pub mod prep;
 pub mod project;
 pub mod rack;

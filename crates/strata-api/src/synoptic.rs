@@ -453,8 +453,20 @@ pub(crate) fn estimate(
     ea: Option<&(&Node, &Port)>,
     eb: Option<&(&Node, &Port)>,
     containers: &HashMap<&str, &strata_store::Container>,
+    routes: &HashMap<String, f64>,
 ) -> Option<f64> {
     let ((na, pa), (nb, pb)) = (ea?, eb?);
+    // Entre deux contenants : la longueur du tracé sur la carte, s'il existe.
+    if let (Some(a), Some(b)) = (&na.container_id, &nb.container_id) {
+        if a != b {
+            let key = if a < b {
+                format!("{a}|{b}")
+            } else {
+                format!("{b}|{a}")
+            };
+            return routes.get(&key).copied();
+        }
+    }
     if na.container_id.is_none() || na.container_id != nb.container_id {
         return None;
     }
@@ -516,6 +528,7 @@ async fn show(
     let keys: HashSet<&str> = shown.iter().map(|n| n.key.as_str()).collect();
     let containers: HashMap<&str, &strata_store::Container> =
         inv.containers.iter().map(|c| (c.id.as_str(), c)).collect();
+    let routes = crate::plans::route_lengths(&st.store, &pid).await?;
     let mut cables = Vec::new();
     for c in all_cables.iter().filter(|_| overview.is_none()) {
         let ea = port_of.get(c.a.as_str());
@@ -526,7 +539,7 @@ async fn show(
             continue;
         }
         let warnings = cable_warnings(ea.copied(), eb.copied(), &c.fields);
-        let estimate = estimate(ea, eb, &containers);
+        let estimate = estimate(ea, eb, &containers, &routes);
         let far = |e: Option<&(&Node, &Port)>| {
             e.map(|(n, p)| json!({ "node": n.key, "label": n.label, "sub": n.sub, "port": p.label, "connector": p.connector }))
         };

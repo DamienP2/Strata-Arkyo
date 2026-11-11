@@ -134,7 +134,7 @@ async fn health_answers_without_session() {
     let r = call(&app, "GET", "/api/health", None, None).await;
     assert_eq!(r.status, StatusCode::OK);
     assert_eq!(r.body["status"], "ok");
-    assert_eq!(r.body["schema"], 16);
+    assert_eq!(r.body["schema"], 17);
 }
 
 #[tokio::test]

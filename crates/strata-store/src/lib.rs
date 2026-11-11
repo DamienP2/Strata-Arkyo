@@ -20,6 +20,7 @@ pub mod catalog;
 pub mod checks;
 pub mod network;
 pub mod panels;
+pub mod plans;
 pub mod prep;
 pub mod projects;
 pub mod racks;
