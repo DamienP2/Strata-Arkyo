@@ -1063,3 +1063,137 @@ async fn patch_panels_from_library_to_rack() {
     let r = call(&app, "GET", "/api/panels", None, Some(&o)).await;
     assert_eq!(r.body["panels"].as_array().unwrap().len(), 1);
 }
+
+#[tokio::test]
+async fn regies_main_custom_and_library() {
+    let Setup {
+        app,
+        o,
+        lea,
+        pid,
+        cid,
+        ..
+    } = setup().await;
+    let r = call(
+        &app,
+        "GET",
+        &format!("/api/projects/{pid}/regies"),
+        None,
+        Some(&lea),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK);
+    let main = r.body["regies"][0].clone();
+    assert_eq!(main["name"], "Finale — Régie principale");
+    assert_eq!(main["kind"], "car");
+    assert_eq!(main["main"], true);
+    assert_eq!(main["members"][0]["id"], cid.as_str());
+    assert_eq!(main["totals"]["containers"], 1);
+    assert_eq!(main["totals"]["total_u"], 12.0);
+    let main_id = main["id"].as_str().unwrap().to_string();
+
+    // Régie libre : doublon et contenant étranger refusés ; la principale ne se supprime pas.
+    let r = call(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid}/regies"),
+        Some(json!({"name": "Plateau", "kind": "flight_case", "members": [cid, cid]})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let r = call(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid}/regies"),
+        Some(json!({"name": "Plateau", "kind": "flight_case", "members": ["inconnu"]})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let r = call(&app, "POST", &format!("/api/projects/{pid}/regies"), Some(json!({"name": "Plateau", "kind": "flight_case", "service_type": "Sport", "members": [cid]})), Some(&o)).await;
+    assert_eq!(r.status, StatusCode::CREATED, "{:?}", r.body);
+    let plateau = r.body["id"].as_str().unwrap().to_string();
+    let r = call(
+        &app,
+        "PATCH",
+        &format!("/api/regies/{plateau}"),
+        Some(json!({"rev": 1, "name": "Plateau B", "members": []})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.body["name"], "Plateau B");
+    assert_eq!(r.body["totals"]["containers"], 0);
+    let r = call(
+        &app,
+        "PATCH",
+        &format!("/api/regies/{plateau}"),
+        Some(json!({"rev": 1, "name": "X"})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::CONFLICT, "révision dépassée");
+    let r = call(
+        &app,
+        "DELETE",
+        &format!("/api/regies/{main_id}"),
+        None,
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::CONFLICT);
+
+    // Modèle de régie : Léa n'écrit pas dans la bibliothèque.
+    let r = call(
+        &app,
+        "POST",
+        &format!("/api/regies/{main_id}/save-as-template"),
+        Some(json!({})),
+        Some(&lea),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::FORBIDDEN);
+    let r = call(
+        &app,
+        "POST",
+        &format!("/api/regies/{main_id}/save-as-template"),
+        Some(json!({})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::CREATED, "{:?}", r.body);
+    assert_eq!(r.body["name"], "Finale");
+    assert_eq!(r.body["project_id"], Value::Null);
+    assert_eq!(r.body["members"][0]["name"], "Baie V1");
+    let lib = r.body["id"].as_str().unwrap().to_string();
+    let r = call(&app, "GET", "/api/regies", None, Some(&o)).await;
+    assert_eq!(r.body["regies"].as_array().unwrap().len(), 1);
+
+    // Copie dans le projet : un nouveau contenant, une nouvelle régie, la principale grandit.
+    let p = call(&app, "GET", &format!("/api/projects/{pid}"), None, Some(&o)).await;
+    let loc = p.body["inventory"]["locations"][0]["id"]
+        .as_str()
+        .or(p.body["locations"][0]["id"].as_str())
+        .unwrap()
+        .to_string();
+    let r = call(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid}/regies/from-template"),
+        Some(json!({"regie_id": lib, "location_id": loc})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::CREATED, "{:?}", r.body);
+    assert_eq!(r.body["regie"]["members"][0]["name"], "Baie V1 2");
+    let r = call(
+        &app,
+        "GET",
+        &format!("/api/projects/{pid}/regies"),
+        None,
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.body["regies"][0]["totals"]["containers"], 2);
+    assert_eq!(r.body["regies"].as_array().unwrap().len(), 3);
+}

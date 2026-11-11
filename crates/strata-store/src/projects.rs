@@ -517,6 +517,7 @@ impl Store {
             .execute(&mut *tx)
             .await
             .map_err(map_unique)?;
+        crate::regies::attach_to_main(&mut tx, project_id, &id).await?;
         touch_project(&mut tx, project_id).await?;
         tx.commit().await?;
         self.container(&id).await?.ok_or(StoreError::NotFound)

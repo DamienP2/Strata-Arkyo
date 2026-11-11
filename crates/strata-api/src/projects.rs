@@ -246,7 +246,7 @@ pub(crate) fn article_label(a: &Article, items: &HashMap<String, ItemView>) -> S
 }
 
 /// Inventaire enrichi : totaux par contenant et par emplacement, libellés des articles.
-async fn inventory_view(
+pub(crate) async fn inventory_view(
     store: &Store,
     pid: &str,
 ) -> ApiResult<(Inventory, HashMap<String, ItemView>, Value)> {

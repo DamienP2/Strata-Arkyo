@@ -809,3 +809,45 @@ mod tests {
         );
     }
 }
+
+// ----- Régies (section 6.2) -----
+
+/// Champs d'une régie : nom, type, type de prestation, notes.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RegieFields {
+    pub name: String,
+    pub kind: Regie,
+    pub service_type: Option<String>,
+    pub notes: Option<String>,
+}
+
+pub fn validate_regie(f: &mut RegieFields) -> Vec<FieldError> {
+    let mut e = Vec::new();
+    f.name = f.name.trim().to_string();
+    if f.name.is_empty() || f.name.chars().count() > 120 {
+        e.push(err("name", "Le nom compte de 1 à 120 caractères."));
+    }
+    let clean = |s: &Option<String>| {
+        s.as_ref()
+            .map(|x| x.trim().to_string())
+            .filter(|x| !x.is_empty())
+    };
+    f.service_type = clean(&f.service_type);
+    f.notes = clean(&f.notes);
+    if f.service_type
+        .as_ref()
+        .is_some_and(|s| s.chars().count() > 80)
+    {
+        e.push(err("service_type", "80 caractères au plus."));
+    }
+    if f.notes.as_ref().is_some_and(|s| s.chars().count() > 2000) {
+        e.push(err("notes", "2 000 caractères au plus."));
+    }
+    e
+}
+
+/// Nom de la régie principale d'un projet.
+pub fn main_regie_name(project: &str) -> String {
+    format!("{project} — Régie principale")
+}

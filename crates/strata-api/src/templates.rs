@@ -70,7 +70,7 @@ struct TPlacement {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct Content {
+pub(crate) struct Content {
     container: ContainerData,
     articles: Vec<TArticle>,
     circuits: Vec<TCircuit>,
@@ -170,6 +170,18 @@ struct ListQuery {
     status: Option<TemplateStatus>,
 }
 
+/// Tous les modèles de contenants, avec leurs résumés.
+pub(crate) async fn views(store: &Store) -> ApiResult<Vec<Value>> {
+    let all: Vec<(ContainerTemplate, Content)> = store
+        .templates()
+        .await?
+        .into_iter()
+        .filter_map(|t| content(&t).ok().map(|c| (t, c)))
+        .collect();
+    let items = items_of(store, &all.iter().map(|(_, c)| c).collect::<Vec<_>>()).await?;
+    Ok(all.iter().map(|(t, c)| view(t, c, &items)).collect())
+}
+
 async fn list(
     State(st): State<AppState>,
     m: Member,
@@ -225,41 +237,26 @@ struct SaveAs {
 }
 
 /// « Enregistrer en tant que modèle » : photographie du contenant et de son contenu.
-async fn save_as(
-    State(st): State<AppState>,
-    m: Member,
-    Path(cid): Path<String>,
-    Json(b): Json<SaveAs>,
-) -> ApiResult<(StatusCode, Json<Value>)> {
-    m.0.require(Domain::Catalogue, Level::Ecriture, LIB_WRITE)?;
-    m.0.require(
-        Domain::Projets,
-        Level::Lecture,
-        "Vous n'avez pas accès aux projets.",
-    )?;
-    let c = st
-        .store
-        .container(&cid)
-        .await?
-        .ok_or(ApiError::NotFound("Contenant"))?;
-    let inv = st.store.inventory(&c.project_id).await?;
+/// Photographie d'un contenant de projet et de son contenu, au format d'un modèle.
+pub(crate) async fn snapshot(store: &Store, c: &Container) -> ApiResult<Content> {
+    let inv = store.inventory(&c.project_id).await?;
     let arts: Vec<_> = inv
         .articles
         .iter()
-        .filter(|a| a.container_id.as_deref() == Some(&cid))
+        .filter(|a| a.container_id.as_deref() == Some(&c.id))
         .collect();
     let key_of: HashMap<&str, usize> = arts
         .iter()
         .enumerate()
         .map(|(i, a)| (a.id.as_str(), i))
         .collect();
-    let circuits = st.store.circuits(&cid).await?;
+    let circuits = store.circuits(&c.id).await?;
     let circ_key: HashMap<&str, usize> = circuits
         .iter()
         .enumerate()
         .map(|(i, x)| (x.id.as_str(), i))
         .collect();
-    let mut placements = st.store.placements(&cid).await?;
+    let mut placements = store.placements(&c.id).await?;
     // Les étagères avant ce qu'elles portent.
     placements.sort_by_key(|p| p.shelf_id.is_some());
     let index: HashMap<String, usize> = placements
@@ -321,6 +318,27 @@ async fn save_as(
             })
             .collect(),
     };
+    Ok(data)
+}
+
+async fn save_as(
+    State(st): State<AppState>,
+    m: Member,
+    Path(cid): Path<String>,
+    Json(b): Json<SaveAs>,
+) -> ApiResult<(StatusCode, Json<Value>)> {
+    m.0.require(Domain::Catalogue, Level::Ecriture, LIB_WRITE)?;
+    m.0.require(
+        Domain::Projets,
+        Level::Lecture,
+        "Vous n'avez pas accès aux projets.",
+    )?;
+    let c = st
+        .store
+        .container(&cid)
+        .await?
+        .ok_or(ApiError::NotFound("Contenant"))?;
+    let data = snapshot(&st.store, &c).await?;
     let taken: Vec<String> = st
         .store
         .templates()
@@ -454,6 +472,100 @@ struct FromTemplate {
 
 /// Recopie un modèle actif dans un projet : contenant, articles et leurs exemplaires,
 /// circuits, placements. Les fiches disparues du catalogue sont ignorées et signalées.
+/// Recopie un modèle de contenant dans un projet : contenant, articles, circuits et
+/// placements. Renvoie le contenant et le nombre de fiches disparues du catalogue.
+pub(crate) async fn instantiate(
+    store: &Store,
+    pid: &str,
+    lid: &str,
+    t: &ContainerTemplate,
+    name: Option<&str>,
+) -> ApiResult<(Container, usize)> {
+    let c = content(t)?;
+    let mut name = name
+        .map(str::trim)
+        .filter(|n| !n.is_empty())
+        .unwrap_or(&t.name)
+        .to_string();
+    let mut data = c.container.clone();
+    let errs: Vec<FieldError> = validate_container(&mut name, &mut data);
+    fields(errs)?;
+    let taken: Vec<String> = store
+        .inventory(pid)
+        .await?
+        .containers
+        .into_iter()
+        .map(|x| x.name)
+        .collect();
+    let name = unique_name(&name, &taken);
+    let container: Container = store.insert_container(pid, lid, &name, &data).await?;
+    // Articles : une fiche disparue du catalogue est ignorée.
+    let mut skipped = 0;
+    let mut art_ids: HashMap<usize, String> = HashMap::new();
+    for a in &c.articles {
+        if let Some(item) = &a.item_id {
+            if store.item(item).await?.is_none() {
+                skipped += 1;
+                continue;
+            }
+        }
+        let (made, _) = store
+            .add_article(
+                pid,
+                lid,
+                Some(&container.id),
+                a.nature,
+                a.item_id.as_deref(),
+                a.quantity,
+                a.accessory.as_ref(),
+                false,
+            )
+            .await?;
+        art_ids.insert(a.key, made.id);
+    }
+    let mut circ_ids: HashMap<usize, String> = HashMap::new();
+    for x in &c.circuits {
+        circ_ids.insert(
+            x.key,
+            store
+                .insert_circuit(pid, &container.id, &x.name, x.phase, x.rating_a)
+                .await?
+                .id,
+        );
+    }
+    let mut placed: Vec<Option<String>> = Vec::new();
+    for p in &c.placements {
+        let Some(aid) = art_ids.get(&p.article) else {
+            placed.push(None);
+            continue;
+        };
+        let instance = match p.nth {
+            Some(n) => store
+                .article_instances(aid)
+                .await?
+                .get(n)
+                .map(|i| i.id.clone()),
+            None => None,
+        };
+        let spec = PlaceSpec {
+            face: p.face,
+            u_start: p.u_start,
+            width: p.width,
+            col: p.col,
+            circuit_id: p.circuit.and_then(|k| circ_ids.get(&k).cloned()),
+            shelf_id: p.shelf.and_then(|s| placed.get(s).cloned().flatten()),
+        };
+        placed.push(
+            store
+                .insert_placement(pid, &container.id, aid, instance.as_deref(), &spec)
+                .await
+                .ok()
+                .map(|x| x.id),
+        );
+    }
+    Ok((container, skipped))
+}
+
 async fn from_template(
     State(st): State<AppState>,
     m: Member,
@@ -486,93 +598,7 @@ async fn from_template(
             "Seuls les modèles actifs se copient dans un projet.".into(),
         ));
     }
-    let c = content(&t)?;
-    let mut name = b
-        .name
-        .as_deref()
-        .map(str::trim)
-        .filter(|n| !n.is_empty())
-        .unwrap_or(&t.name)
-        .to_string();
-    let mut data = c.container.clone();
-    let errs: Vec<FieldError> = validate_container(&mut name, &mut data);
-    fields(errs)?;
-    let taken: Vec<String> = st
-        .store
-        .inventory(&pid)
-        .await?
-        .containers
-        .into_iter()
-        .map(|x| x.name)
-        .collect();
-    let name = unique_name(&name, &taken);
-    let container: Container = st.store.insert_container(&pid, &l.id, &name, &data).await?;
-    // Articles : une fiche disparue du catalogue est ignorée.
-    let mut skipped = 0;
-    let mut art_ids: HashMap<usize, String> = HashMap::new();
-    for a in &c.articles {
-        if let Some(item) = &a.item_id {
-            if st.store.item(item).await?.is_none() {
-                skipped += 1;
-                continue;
-            }
-        }
-        let (made, _) = st
-            .store
-            .add_article(
-                &pid,
-                &l.id,
-                Some(&container.id),
-                a.nature,
-                a.item_id.as_deref(),
-                a.quantity,
-                a.accessory.as_ref(),
-                false,
-            )
-            .await?;
-        art_ids.insert(a.key, made.id);
-    }
-    let mut circ_ids: HashMap<usize, String> = HashMap::new();
-    for x in &c.circuits {
-        circ_ids.insert(
-            x.key,
-            st.store
-                .insert_circuit(&pid, &container.id, &x.name, x.phase, x.rating_a)
-                .await?
-                .id,
-        );
-    }
-    let mut placed: Vec<Option<String>> = Vec::new();
-    for p in &c.placements {
-        let Some(aid) = art_ids.get(&p.article) else {
-            placed.push(None);
-            continue;
-        };
-        let instance = match p.nth {
-            Some(n) => st
-                .store
-                .article_instances(aid)
-                .await?
-                .get(n)
-                .map(|i| i.id.clone()),
-            None => None,
-        };
-        let spec = PlaceSpec {
-            face: p.face,
-            u_start: p.u_start,
-            width: p.width,
-            col: p.col,
-            circuit_id: p.circuit.and_then(|k| circ_ids.get(&k).cloned()),
-            shelf_id: p.shelf.and_then(|s| placed.get(s).cloned().flatten()),
-        };
-        placed.push(
-            st.store
-                .insert_placement(&pid, &container.id, aid, instance.as_deref(), &spec)
-                .await
-                .ok()
-                .map(|x| x.id),
-        );
-    }
+    let (container, skipped) = instantiate(&st.store, &pid, &l.id, &t, b.name.as_deref()).await?;
     st.store
         .audit_project(
             &pid,
