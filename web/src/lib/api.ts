@@ -18,6 +18,9 @@ export class ApiError extends Error {
   }
 }
 
+/** Identifiant de cet onglet, propre à la page chargée. */
+export const CLIENT_ID = Math.random().toString(36).slice(2) + Date.now().toString(36);
+
 type Listener = (e: ApiError) => void;
 const unauthenticated: Listener[] = [];
 /** Appelé quand la session a expiré : l'application revient à l'écran de connexion. */
@@ -25,7 +28,11 @@ export function onUnauthenticated(f: Listener) { unauthenticated.push(f); }
 
 async function request<T>(method: string, path: string, body?: unknown, raw?: BodyInit, rawType?: string): Promise<T> {
   const headers: Record<string, string> = {};
-  if (method !== 'GET') headers['X-Strata-Request'] = '1';
+  if (method !== 'GET') {
+    headers['X-Strata-Request'] = '1';
+    // Les événements temps réel reprennent cet identifiant : l'onglet ignore ses propres écritures.
+    headers['X-Strata-Client'] = CLIENT_ID;
+  }
   let payload: BodyInit | undefined;
   if (raw !== undefined) {
     payload = raw;

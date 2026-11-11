@@ -63,3 +63,11 @@ a.btn.primary { color: var(--primary-fg); }
   .show-m { display: block; }
 }
 @media (max-width: 560px) { .savebar .grow:not(.has-err) { display: none; } .savebar { justify-content: flex-end; } }
+
+/* Accueil : lignes de projets */
+.urow { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto; gap: 16px; align-items: center; padding: 12px 6px; border-bottom: 1px solid var(--line); text-decoration: none; color: var(--fg); border-radius: 10px; }
+.urow:last-child { border-bottom: 0; }
+.urow:hover { background: var(--surface-2); }
+a.pcard, a.cont { color: var(--fg); }
+.pmeta { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center; color: var(--fg-2); font-size: 17px; }
+.sw { width: 10px; height: 10px; border-radius: 3px; background: var(--c); display: inline-block; }

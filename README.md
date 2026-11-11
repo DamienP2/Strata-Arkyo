@@ -15,8 +15,9 @@ Strata Arkyo est un seul programme Rust installé sur un serveur Ubuntu du site.
 | 1 | Socle : binaire, ligne de commande, service systemd, paquet .deb, SQLite et migrations, comptes, rôles, journal d'audit | Fait |
 | 2 | Mises à jour OTA signées avec retour arrière, paquet hors ligne, sauvegardes du site, restauration | Fait (points de restauration par projet : avec les projets, lot 4) |
 | 3 | Catalogue : référentiels et pack de départ, fiches équipements, câbles, modèles de câble, adaptateurs, doublons, compatibilité câble et signal, import CSV/XLSX, export, échange entre sites, retour arrière | Fait |
-| Interface | Web app Svelte embarquée : connexion et premier compte, administration (mises à jour, sauvegardes, membres, rôles, journal), catalogue complet | Fait pour les lots 1 à 3 |
-| 4 à 10 | Projets, racks, synoptique, livrables, terrain, réseau, plans | À venir |
+| 4 | Projets et inventaire : assistant de création, liste et tableau de bord, fiche, emplacements, contenants, articles, exemplaires (repère, série, MAC, étiquette), tâches, historique, nomenclature ; temps réel et présence par WebSocket | Fait (modèles de contenants et panels : lot 5) |
+| Interface | Web app Svelte embarquée : connexion, administration, catalogue, projets et inventaire en temps réel | Fait pour les lots 1 à 4 |
+| 5 à 10 | Racks, synoptique, livrables, terrain, réseau, plans | À venir |
 
 ## Organisation du dépôt
 
@@ -123,6 +124,23 @@ Lire demande « Catalogue : lecture ». Écrire une fiche demande « Catalogue :
 | `GET /api/catalog/export?format=csv\|xlsx&full=` | Export des équipements ; la version simple se réimporte telle quelle, `full=true` donne une ligne par groupe de ports |
 | `GET`/`POST /api/catalog/exchange` | Catalogue JSON entre sites, par sections ; fusion (le plus récent l'emporte) ou remplacement |
 | `GET /api/catalog/snapshots`, `POST /api/catalog/snapshots/{id}/restore` | Instantanés pris avant chaque import ou échange, et retour arrière |
+
+## API des projets
+
+Lire demande « Projets : lecture », écrire « Projets : écriture ». Chaque écriture est diffusée en temps réel dans la salle du projet ; l'en-tête facultatif `X-Strata-Client` permet à l'onglet auteur de reconnaître ses propres modifications.
+
+| Route | Effet |
+| --- | --- |
+| `GET /api/dashboard` | Tableau de bord : projets actifs, tâches, complétion, prochaine captation, 30 prochains jours, activité |
+| `GET`/`POST /api/projects`, `GET /api/projects/check-name` | Liste ; assistant de création (projet, premier emplacement, premier contenant) ; unicité du nom |
+| `GET`/`PATCH`/`DELETE /api/projects/{id}`, `GET /api/projects/{id}/history` | Fiche et inventaire complet avec totaux ; modification avec `rev` ; suppression en cascade ; historique agrégé |
+| `POST /api/projects/{id}/locations`, `PATCH`/`DELETE /api/locations/{id}` | Emplacements et codes câble ; suppression refusée s'il reste du matériel |
+| `POST /api/projects/{id}/containers`, `PATCH`/`DELETE /api/containers/{id}` | Contenants : nom unique dans le projet (suffixe automatique), bornes, totaux et alertes |
+| `POST /api/projects/{id}/articles`, `PATCH`/`DELETE /api/articles/{id}`, `POST /api/articles/{id}/move` | Articles : équipement, adaptateur, accessoire ; fusion des références ; avertissements de place et de profondeur ; déplacement d'un exemplaire |
+| `PATCH /api/instances/{id}` | Exemplaire : numéro de série, adresse MAC, étiquette d'inventaire |
+| `GET`/`POST /api/projects/{id}/tasks`, `PATCH`/`DELETE /api/tasks/{id}` | Tâches |
+| `GET /api/projects/{id}/inventory/export?format=&group=&free=` | Nomenclature CSV ou XLSX, sous-totaux par emplacement ou contenant |
+| `GET /api/live` (WebSocket) | Temps réel : `{"type":"join","room":"project:<id>"}`, battement `{"type":"ping"}` toutes les 30 s ; événements `change` et `presence` |
 
 ## Mises à jour OTA
 

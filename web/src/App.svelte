@@ -10,6 +10,8 @@
   import Admin from './routes/admin/Admin.svelte';
   import Catalogue from './routes/catalogue/Catalogue.svelte';
   import NotFound from './routes/NotFound.svelte';
+  import Projects from './routes/projects/Projects.svelte';
+  import Project from './routes/projects/Project.svelte';
 
   loadSession();
 
@@ -31,6 +33,8 @@
 {:else}
   <Shell>
     {#if top === ''}<Home />
+    {:else if top === 'projets' && route.path.split('/')[2]}{#key route.path.split('/')[2]}<Project id={route.path.split('/')[2]!} />{/key}
+    {:else if top === 'projets'}<Projects />
     {:else if top === 'catalogue'}<Catalogue />
     {:else if top === 'admin'}<Admin />
     {:else}<NotFound />{/if}

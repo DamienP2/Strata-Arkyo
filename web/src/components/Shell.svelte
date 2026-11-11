@@ -18,6 +18,7 @@
   const top = $derived(route.path.split('/')[1] ?? '');
   const links = $derived([
     { key: '', label: 'Accueil', href: '/', show: true },
+    { key: 'projets', label: 'Projets', href: '/projets', show: can('projets', 'lecture') },
     { key: 'catalogue', label: 'Catalogue', href: '/catalogue', show: can('catalogue', 'lecture') },
     { key: 'admin', label: 'Administration', href: '/admin', show: can('membres', 'admin') || can('parametres', 'admin') },
   ].filter((l) => l.show));
