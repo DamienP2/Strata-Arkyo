@@ -13,18 +13,26 @@ repository = "https://github.com/DamienP2/Strata-Arkyo"
 strata-domain = { path = "crates/strata-domain" }
 strata-store = { path = "crates/strata-store" }
 strata-api = { path = "crates/strata-api" }
+strata-backup = { path = "crates/strata-backup" }
+strata-update = { path = "crates/strata-update" }
 
 anyhow = "1"
 argon2 = "0.5"
 axum = { version = "0.8", features = ["macros"] }
 axum-extra = { version = "0.10", features = ["cookie"] }
+base64 = "0.22"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 clap = { version = "4.5", features = ["derive", "env"] }
+ed25519-dalek = { version = "2", features = ["rand_core"] }
 hex = "0.4"
 rand = "0.9"
+rand_core = { version = "0.6", features = ["getrandom"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
+tar = "0.4"
+tempfile = "3"
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "migrate", "macros"] }
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }
@@ -33,6 +41,7 @@ tower-http = { version = "0.6", features = ["trace", "compression-br", "compress
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v7"] }
+zstd = "0.13"
 
 [profile.release]
 lto = "thin"

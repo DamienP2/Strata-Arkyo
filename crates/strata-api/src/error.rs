@@ -14,9 +14,11 @@ pub enum ApiError {
     PasswordChangeRequired,
     Forbidden(String),
     NotFound(&'static str),
+    Missing(String),
     Conflict(String),
     Invalid(String),
     Csrf,
+    Unavailable(String),
     Internal(String),
 }
 
@@ -44,6 +46,8 @@ impl ApiError {
                 "not_found",
                 format!("{what} introuvable."),
             ),
+            ApiError::Missing(m) => (StatusCode::NOT_FOUND, "not_found", m.clone()),
+            ApiError::Unavailable(m) => (StatusCode::SERVICE_UNAVAILABLE, "unavailable", m.clone()),
             ApiError::Conflict(m) => (StatusCode::CONFLICT, "conflict", m.clone()),
             ApiError::Invalid(m) => (StatusCode::UNPROCESSABLE_ENTITY, "invalid", m.clone()),
             ApiError::Csrf => (

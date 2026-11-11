@@ -17,11 +17,17 @@ serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 strata-domain.workspace = true
+strata-backup.workspace = true
 strata-store.workspace = true
+strata-update.workspace = true
 time = "0.3"
+tokio.workspace = true
+tokio-util = { version = "0.7", features = ["io"] }
 tower-http.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
-tokio.workspace = true
+ed25519-dalek.workspace = true
+rand_core.workspace = true
+tempfile.workspace = true
 tower.workspace = true

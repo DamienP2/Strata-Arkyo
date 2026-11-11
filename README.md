@@ -13,7 +13,7 @@ Strata Arkyo est un seul programme Rust installé sur un serveur Ubuntu du site.
 | Lot | Contenu | État |
 | --- | --- | --- |
 | 1 | Socle : binaire, ligne de commande, service systemd, paquet .deb, SQLite et migrations, comptes, rôles, journal d'audit | Fait |
-| 2 | Mises à jour OTA, sauvegardes, points de restauration | À venir |
+| 2 | Mises à jour OTA signées avec retour arrière, paquet hors ligne, sauvegardes du site, restauration | Fait (points de restauration par projet : avec les projets, lot 4) |
 | 3 à 10 | Catalogue, projets, racks, synoptique, livrables, terrain, réseau, plans | À venir |
 
 ## Organisation du dépôt
@@ -24,6 +24,9 @@ Strata Arkyo est un seul programme Rust installé sur un serveur Ubuntu du site.
 | `crates/strata-api` | API REST : sessions, membres, rôles, journal |
 | `crates/strata-domain` | Règles métier sans entrée-sortie : droits, garde-fous, validations |
 | `crates/strata-store` | Base SQLite, migrations additives, sessions, audit |
+| `crates/strata-update` | Paquets signés, versions côte à côte, bascule, garde de démarrage, retour arrière |
+| `crates/strata-backup` | Sauvegardes vérifiées du site, restauration au démarrage |
+| `crates/strata-release` | Outil de l'éditeur : clés, paquets `.saupd`, manifestes de canal |
 | `packaging/` | Service systemd, réglages, scripts du paquet Debian |
 | `maquette/` | Maquette interactive de l'interface |
 
@@ -57,11 +60,16 @@ Le mot de passe affiché par `user add` est temporaire : il doit être changé �
 | `strata user list [--all]` | Liste les comptes, retirés compris avec `--all` |
 | `strata user passwd <login>` | Nouveau mot de passe temporaire, sessions fermées |
 | `strata user remove <login>` | Retire un compte en gardant son historique |
+| `strata backup [--label …]`, `strata backup --list` | Sauvegarde complète vérifiée, ou liste des sauvegardes |
+| `strata restore <nom>`, `strata restore --cancel` | Prépare une restauration, appliquée au prochain démarrage ; ou l'annule |
+| `strata update status` | Versions installées, bascule en attente, dernier retour arrière |
+| `strata update install <paquet.saupd>` | Installation hors ligne : vérification, essai à blanc, sauvegarde, bascule |
+| `strata update rollback` | Retour à la version précédente |
 | `strata migrate` | Applique les migrations |
 | `strata selftest` | Vérifie la base : ouverture, migrations, intégrité |
 | `strata version [--short]` | Affiche la version |
 
-Réglages par variables d'environnement : `STRATA_DATA_DIR`, `STRATA_LISTEN`, `STRATA_SECURE_COOKIES`, `RUST_LOG`.
+Réglages par variables d'environnement : `STRATA_DATA_DIR`, `STRATA_LISTEN`, `STRATA_SECURE_COOKIES`, `STRATA_UPDATE_URL`, `STRATA_UPDATE_COUNTDOWN`, `STRATA_INSTALL_DIR`, `RUST_LOG`.
 
 ## API du socle
 
@@ -77,12 +85,53 @@ Toute requête d'écriture doit porter l'en-tête `X-Strata-Request: 1`. La sess
 | `POST /api/members`, `PATCH`/`DELETE /api/members/{id}`, `POST /api/members/{id}/reset-password` | Gestion des comptes | Membres et rôles : admin |
 | `GET /api/roles`, `POST /api/roles`, `PATCH`/`DELETE /api/roles/{id}`, `POST /api/roles/{id}/duplicate` | Rôles et permissions | Lecture : membre ; écriture : Membres et rôles admin |
 | `GET /api/audit` | Journal d'audit | Membres et rôles : admin |
+| `GET /api/admin/system`, `PATCH /api/admin/settings` | État du serveur ; dossier de sauvegarde, canal, recherche automatique | Paramètres et site : admin |
+| `GET /api/admin/update`, `POST /api/admin/update/check`, `POST /api/admin/update/install` (`now` ou `night`), `POST /api/admin/update/upload`, `DELETE /api/admin/update/schedule`, `POST /api/admin/update/rollback` | Mises à jour | Paramètres et site : admin |
+| `GET`/`POST /api/admin/backups`, `GET /api/admin/backups/{nom}/download`, `DELETE /api/admin/backups/{nom}`, `POST /api/admin/backups/{nom}/restore`, `DELETE /api/admin/restore` | Sauvegardes et restauration | Paramètres et site : admin |
 
 Les garde-fous de la section 3.3 du cahier des charges sont appliqués par le moteur :
 - personne n'accorde un niveau supérieur au sien ;
 - un non-propriétaire ne modifie pas son propre rôle ;
 - seul un propriétaire touche un propriétaire ;
 - il reste toujours un propriétaire actif.
+
+## Mises à jour OTA
+
+1. Chaque version s'installe dans `/opt/strata-arkyo/versions/<version>/` ; le lien `current` désigne celle qui tourne.
+2. Le moteur lit le manifeste signé du canal (`<STRATA_UPDATE_URL>/<stable|beta>/manifest.json`). La recherche automatique, quotidienne, ne fait que signaler.
+3. Sur décision de l'administrateur, immédiate ou la nuit à 03:30, il exécute dans l'ordre :
+   - téléchargement du paquet, vérification de son empreinte et de sa signature Ed25519 ;
+   - installation de la nouvelle version à côté de l'actuelle ;
+   - essai à blanc sur une copie de la base ;
+   - sauvegarde du site ;
+   - bascule du lien et arrêt avec le code 75.
+4. systemd relance le service sur la nouvelle version.
+5. Avant chaque démarrage, `strata boot-guard` (programme du paquet Debian, que l'OTA ne remplace jamais) compte les démarrages. Au troisième échec, il rétablit l'ancienne version.
+
+Sans Internet, le même paquet signé se dépose dans l'administration (`POST /api/admin/update/upload`) ou s'installe avec `strata update install`.
+
+### Publier une version (éditeur)
+
+```sh
+cargo run -p strata-release -- keygen --out ~/strata-keys          # une seule fois ; garder release.key hors du dépôt
+export STRATA_RELEASE_PUBKEY=$(cat ~/strata-keys/release.pub)       # clé publique intégrée au moteur
+cargo deb -p strata
+cargo run -p strata-release -- pack --binary target/release/strata --key ~/strata-keys/release.key --out dist
+cargo run -p strata-release -- publish --package dist/strata-arkyo_<version>_x86_64.saupd \
+    --channel stable --key ~/strata-keys/release.key --site site --note "…"
+```
+
+Le dossier `site/` se sert tel quel par n'importe quel serveur web, ou se copie sur une clé USB (`STRATA_UPDATE_URL=file:///media/usb/site`). Un moteur compilé sans `STRATA_RELEASE_PUBKEY` refuse toute mise à jour signée.
+
+## Sauvegardes
+
+La sauvegarde complète du site se fait chaque jour à 03:00 (les 7 dernières sont gardées), à la demande, et automatiquement avant chaque mise à jour.
+- **Contenu :** base copiée à chaud, fichiers déposés et réglages.
+- **Vérification :** chaque archive est relue après écriture.
+- **Emplacement :** `/var/lib/strata-arkyo/backups` par défaut, réglable dans l'administration. Un dossier hors du dossier de données doit aussi être ajouté à `ReadWritePaths` du service (`sudo systemctl edit strata-arkyo`).
+- **Échec :** une sauvegarde automatique ratée reste signalée jusqu'au succès suivant.
+
+Une restauration est préparée (archive vérifiée, extraite), annulable, puis appliquée au démarrage suivant. Les données actuelles sont alors mises de côté dans `set-aside/<date>/`, jamais effacées. Si la restauration échoue sans pouvoir remettre les données d'origine, le moteur refuse de démarrer sur une base vide et indique le dossier à remettre en place.
 
 ## Paquet Debian
 

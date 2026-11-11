@@ -17,6 +17,7 @@ async fn app_from(addr: &str) -> Router {
     router(AppState {
         store,
         secure_cookies: false,
+        ops: None,
     })
     .layer(MockConnectInfo(addr.parse::<SocketAddr>().unwrap()))
 }

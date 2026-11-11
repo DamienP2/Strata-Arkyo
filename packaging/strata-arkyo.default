@@ -7,6 +7,13 @@ STRATA_DATA_DIR=/var/lib/strata-arkyo
 # Adresse et port d'écoute.
 STRATA_LISTEN=0.0.0.0:8090
 
+# Serveur de publication des mises à jour : https://… ou file:///chemin/vers/miroir.
+# Sans cette adresse, seule la mise à jour hors ligne (dépôt d'un paquet) est possible.
+#STRATA_UPDATE_URL=https://updates.exemple.fr/strata-arkyo
+
+# Secondes entre l'annonce d'un redémarrage aux utilisateurs et la bascule.
+#STRATA_UPDATE_COUNTDOWN=60
+
 # Cookies marqués Secure : à activer seulement si le site est servi en HTTPS.
 #STRATA_SECURE_COOKIES=true
 

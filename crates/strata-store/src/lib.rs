@@ -174,6 +174,25 @@ pub struct AuditEntry {
     pub after: Option<serde_json::Value>,
 }
 
+/// Ouvre un fichier de base en lecture seule et renvoie (intégrité correcte, version de schéma).
+pub async fn check_database_file(path: &Path) -> Result<(bool, i64)> {
+    let opts = SqliteConnectOptions::new().filename(path).read_only(true);
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect_with(opts)
+        .await?;
+    let integrity: String = sqlx::query_scalar("PRAGMA integrity_check")
+        .fetch_one(&pool)
+        .await?;
+    let schema: Option<i64> =
+        sqlx::query_scalar("SELECT MAX(version) FROM _sqlx_migrations WHERE success = 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap_or(None);
+    pool.close().await;
+    Ok((integrity == "ok", schema.unwrap_or(0)))
+}
+
 #[derive(Clone)]
 pub struct Store {
     pool: SqlitePool,
@@ -235,8 +254,46 @@ impl Store {
         Ok(r == "ok")
     }
 
+    /// Copie cohérente de la base, à chaud (`VACUUM INTO`), vers un fichier qui n'existe pas encore.
+    pub async fn vacuum_into(&self, dest: &Path) -> Result<()> {
+        sqlx::query("VACUUM INTO ?")
+            .bind(dest.to_string_lossy().to_string())
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
     pub async fn close(&self) {
         self.pool.close().await;
+    }
+
+    // ----- Réglages du site -----
+
+    pub async fn meta(&self, key: &str) -> Result<Option<String>> {
+        Ok(sqlx::query_scalar("SELECT value FROM meta WHERE key = ?")
+            .bind(key)
+            .fetch_optional(&self.pool)
+            .await?)
+    }
+
+    /// Enregistre un réglage ; `None` le remet à sa valeur par défaut.
+    pub async fn set_meta(&self, key: &str, value: Option<&str>) -> Result<()> {
+        match value {
+            Some(v) => {
+                sqlx::query("INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value")
+                    .bind(key)
+                    .bind(v)
+                    .execute(&self.pool)
+                    .await?;
+            }
+            None => {
+                sqlx::query("DELETE FROM meta WHERE key = ?")
+                    .bind(key)
+                    .execute(&self.pool)
+                    .await?;
+            }
+        }
+        Ok(())
     }
 
     // ----- Comptes -----

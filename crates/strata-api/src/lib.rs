@@ -3,8 +3,10 @@
 //! Toutes les écritures passent par ici ; chaque route vérifie la session, puis
 //! le droit du rôle sur le domaine concerné, puis les garde-fous métier.
 
+pub mod admin;
 pub mod auth;
 pub mod error;
+pub mod ops;
 
 use crate::auth::{
     Member, Session, burn_verification, hash_password, new_token, removal_cookie, session_cookie,
@@ -21,6 +23,7 @@ use axum_extra::extract::cookie::CookieJar;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::net::SocketAddr;
+use std::sync::Arc;
 use strata_domain::{
     Domain, Level, Permissions, builtin, check_account_creation, check_deactivation,
     check_password_reset, check_role_assignment, check_role_definition, check_role_deletion,
@@ -29,7 +32,12 @@ use strata_domain::{
 };
 use strata_store::{Account, NewAccount, Role, Store};
 
-pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+/// Version du moteur. `STRATA_BUILD_VERSION` permet, à la compilation, de fabriquer
+/// une version d'essai sans toucher aux fichiers du dépôt.
+pub const VERSION: &str = match option_env!("STRATA_BUILD_VERSION") {
+    Some(v) => v,
+    None => env!("CARGO_PKG_VERSION"),
+};
 
 /// En-tête exigé sur toute requête d'écriture (protection contre les requêtes intersites).
 pub const CSRF_HEADER: &str = "x-strata-request";
@@ -41,6 +49,8 @@ pub struct AppState {
     pub store: Store,
     /// Cookies marqués Secure (à activer quand le site est servi en HTTPS).
     pub secure_cookies: bool,
+    /// Exploitation du site (sauvegardes, mises à jour) ; absente dans les tests unitaires de l'API.
+    pub ops: Option<Arc<ops::Ops>>,
 }
 
 pub fn router(state: AppState) -> Router {
@@ -58,6 +68,7 @@ pub fn router(state: AppState) -> Router {
         .route("/roles/{id}", patch(update_role).delete(delete_role))
         .route("/roles/{id}/duplicate", post(duplicate_role))
         .route("/audit", get(audit))
+        .nest("/admin", admin::routes())
         .layer(middleware::from_fn(csrf));
     Router::new()
         .route("/", get(index))

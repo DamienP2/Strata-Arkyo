@@ -3,19 +3,28 @@ Description=Strata Arkyo
 Documentation=https://github.com/DamienP2/Strata-Arkyo
 After=network-online.target
 Wants=network-online.target
+# Après une bascule ratée, trois démarrages rapprochés puis le retour arrière :
+# la limite de systemd doit les laisser passer.
+StartLimitIntervalSec=300
+StartLimitBurst=10
 
 [Service]
 Type=simple
 User=strata
 Group=strata
 EnvironmentFile=-/etc/default/strata-arkyo
+# Garde de démarrage : programme du paquet Debian, jamais remplacé par une mise à jour OTA.
+ExecStartPre=/usr/lib/strata-arkyo/strata boot-guard
 ExecStart=/opt/strata-arkyo/current/strata serve
+# Code 75 : arrêt volontaire pour redémarrer (mise à jour, restauration, retour arrière).
 Restart=on-failure
 RestartSec=3
 TimeoutStopSec=20
 
-# Durcissement : le service n'écrit que dans son dossier de données.
-# Le lot 2 (mises à jour OTA) ajoutera /opt/strata-arkyo aux chemins inscriptibles.
+# Durcissement : le service n'écrit que dans son dossier de données et dans
+# /opt/strata-arkyo, où il dépose les nouvelles versions et bascule le lien current.
+# Un dossier de sauvegarde sur un autre disque ou un partage réseau doit être ajouté ici
+# (sudo systemctl edit strata-arkyo, puis ReadWritePaths=/mnt/nas/strata-arkyo).
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
@@ -26,7 +35,7 @@ ProtectKernelModules=yes
 ProtectControlGroups=yes
 RestrictSUIDSGID=yes
 LockPersonality=yes
-ReadWritePaths=/var/lib/strata-arkyo
+ReadWritePaths=/var/lib/strata-arkyo /opt/strata-arkyo
 
 [Install]
 WantedBy=multi-user.target

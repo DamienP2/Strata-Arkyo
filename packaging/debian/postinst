@@ -15,6 +15,10 @@ if [ "$1" = "configure" ]; then
     install -m 0755 /usr/lib/strata-arkyo/strata "/opt/strata-arkyo/versions/$VERSION/strata"
     ln -sfn "/opt/strata-arkyo/versions/$VERSION" /opt/strata-arkyo/current
     ln -sfn /opt/strata-arkyo/current/strata /usr/bin/strata
+    # Une installation par apt désigne elle-même la version : pas de bascule OTA en attente.
+    rm -f /opt/strata-arkyo/update-state.json
+    # Le service dépose les versions OTA et bascule le lien lui-même.
+    chown -R strata:strata /opt/strata-arkyo
 
     # Ouvre le port si le pare-feu ufw est actif.
     if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then
