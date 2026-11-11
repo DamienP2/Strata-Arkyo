@@ -14,7 +14,8 @@ Strata Arkyo est un seul programme Rust installé sur un serveur Ubuntu du site.
 | --- | --- | --- |
 | 1 | Socle : binaire, ligne de commande, service systemd, paquet .deb, SQLite et migrations, comptes, rôles, journal d'audit | Fait |
 | 2 | Mises à jour OTA signées avec retour arrière, paquet hors ligne, sauvegardes du site, restauration | Fait (points de restauration par projet : avec les projets, lot 4) |
-| 3 | Catalogue : référentiels et pack de départ, fiches équipements, câbles, modèles de câble, adaptateurs, doublons, compatibilité câble et signal, import CSV/XLSX, export, échange entre sites, retour arrière | Fait (API ; écrans web à venir) |
+| 3 | Catalogue : référentiels et pack de départ, fiches équipements, câbles, modèles de câble, adaptateurs, doublons, compatibilité câble et signal, import CSV/XLSX, export, échange entre sites, retour arrière | Fait |
+| Interface | Web app Svelte embarquée : connexion et premier compte, administration (mises à jour, sauvegardes, membres, rôles, journal), catalogue complet | Fait pour les lots 1 à 3 |
 | 4 à 10 | Projets, racks, synoptique, livrables, terrain, réseau, plans | À venir |
 
 ## Organisation du dépôt

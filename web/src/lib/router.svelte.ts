@@ -13,7 +13,8 @@ export function navigate(to: string, replace = false) {
   if (replace) history.replaceState(null, '', to);
   else history.pushState(null, '', to);
   sync();
-  window.scrollTo(0, 0);
+  // La page défile dans <main id="view"> (la coque reste fixe).
+  document.getElementById('view')?.scrollTo(0, 0);
 }
 
 addEventListener('popstate', sync);
