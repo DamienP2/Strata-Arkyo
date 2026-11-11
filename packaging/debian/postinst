@@ -1,0 +1,38 @@
+#!/bin/sh
+# Installe la version livrée à côté des précédentes et la désigne par le lien
+# /opt/strata-arkyo/current : c'est ce lien que les mises à jour basculeront.
+set -e
+
+if [ "$1" = "configure" ]; then
+    if ! getent passwd strata >/dev/null; then
+        adduser --system --group --home /var/lib/strata-arkyo --no-create-home \
+            --gecos "Strata Arkyo" strata >/dev/null
+    fi
+    install -d -o strata -g strata -m 0750 /var/lib/strata-arkyo
+
+    VERSION="$(/usr/lib/strata-arkyo/strata version --short)"
+    install -d -m 0755 "/opt/strata-arkyo/versions/$VERSION"
+    install -m 0755 /usr/lib/strata-arkyo/strata "/opt/strata-arkyo/versions/$VERSION/strata"
+    ln -sfn "/opt/strata-arkyo/versions/$VERSION" /opt/strata-arkyo/current
+    ln -sfn /opt/strata-arkyo/current/strata /usr/bin/strata
+
+    # Ouvre le port si le pare-feu ufw est actif.
+    if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then
+        ufw allow 8090/tcp comment "Strata Arkyo" >/dev/null || true
+    fi
+
+    # La base est migrée par le service lui-même, sous l'utilisateur strata.
+    if [ -d /run/systemd/system ]; then
+        systemctl daemon-reload
+        systemctl enable strata-arkyo.service >/dev/null
+        systemctl restart strata-arkyo.service
+        echo "Strata Arkyo $VERSION est installé et écoute sur le port 8090."
+    else
+        echo "Strata Arkyo $VERSION est installé (systemd absent : lancez « strata serve »)."
+    fi
+
+    echo "Premier compte : sudo -u strata strata user add --email vous@exemple.fr"
+fi
+
+#DEBHELPER#
+exit 0

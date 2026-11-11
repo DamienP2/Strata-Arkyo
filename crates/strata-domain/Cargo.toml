@@ -1,0 +1,12 @@
+[package]
+name = "strata-domain"
+description = "Modèle métier de Strata Arkyo : droits, rôles, comptes. Aucune entrée-sortie."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+rand.workspace = true
+serde.workspace = true
+thiserror.workspace = true

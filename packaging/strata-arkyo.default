@@ -1,0 +1,14 @@
+# Réglages du service Strata Arkyo, lus par systemd au démarrage.
+# Après modification : sudo systemctl restart strata-arkyo
+
+# Dossier de données : base, fichiers déposés, sauvegardes.
+STRATA_DATA_DIR=/var/lib/strata-arkyo
+
+# Adresse et port d'écoute.
+STRATA_LISTEN=0.0.0.0:8090
+
+# Cookies marqués Secure : à activer seulement si le site est servi en HTTPS.
+#STRATA_SECURE_COOKIES=true
+
+# Niveau de détail du journal (journalctl -u strata-arkyo).
+#RUST_LOG=info

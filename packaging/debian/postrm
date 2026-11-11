@@ -1,0 +1,18 @@
+#!/bin/sh
+# La désinstallation laisse les données en place (cahier des charges, section 14).
+set -e
+
+case "$1" in
+    remove|purge)
+        rm -f /usr/bin/strata
+        rm -rf /opt/strata-arkyo
+        if [ -d /run/systemd/system ]; then
+            systemctl daemon-reload >/dev/null 2>&1 || true
+        fi
+        echo "Les données de Strata Arkyo restent dans /var/lib/strata-arkyo."
+        echo "Pour les effacer : sudo rm -rf /var/lib/strata-arkyo"
+        ;;
+esac
+
+#DEBHELPER#
+exit 0

@@ -1,0 +1,27 @@
+[package]
+name = "strata-api"
+description = "API REST de Strata Arkyo : sessions, membres, rôles."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+argon2.workspace = true
+axum.workspace = true
+axum-extra.workspace = true
+chrono.workspace = true
+hex.workspace = true
+rand.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+strata-domain.workspace = true
+strata-store.workspace = true
+time = "0.3"
+tower-http.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+tower.workspace = true

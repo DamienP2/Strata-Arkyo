@@ -1,0 +1,40 @@
+[package]
+name = "strata"
+description = "Strata Arkyo : moteur et ligne de commande d'administration."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "strata"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+axum.workspace = true
+clap.workspace = true
+strata-api.workspace = true
+strata-domain.workspace = true
+strata-store.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[package.metadata.deb]
+name = "strata-arkyo"
+maintainer = "Strata Arkyo <contact@strata-arkyo.invalid>"
+copyright = "Strata Arkyo"
+extended-description = """\
+Conception, câblage, préparation et recette d'installations audiovisuelles. \
+Le service écoute sur le port 8090 ; les données vivent dans /var/lib/strata-arkyo."""
+section = "net"
+priority = "optional"
+depends = "$auto, adduser"
+maintainer-scripts = "../../packaging/debian/"
+conf-files = ["/etc/default/strata-arkyo"]
+assets = [
+    ["target/release/strata", "usr/lib/strata-arkyo/strata", "755"],
+    ["../../packaging/systemd/strata-arkyo.service", "lib/systemd/system/strata-arkyo.service", "644"],
+    ["../../packaging/strata-arkyo.default", "etc/default/strata-arkyo", "644"],
+]
