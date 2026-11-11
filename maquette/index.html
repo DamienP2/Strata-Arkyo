@@ -535,6 +535,27 @@ select.input{cursor:pointer}
 .pane h2 .small{font-family:var(--font);font-weight:500;letter-spacing:0}
 input[type=range]{accent-color:var(--fg);width:100%}
 
+#plan .zrect{fill:color-mix(in srgb,var(--fg) 3%,transparent);stroke:var(--fg-3);stroke-width:1.2;stroke-dasharray:6 4;vector-effect:non-scaling-stroke}
+#plan .zone.sel .zrect{stroke:var(--accent);stroke-width:2}
+#plan .zlbl{font:600 1.7px var(--display);fill:var(--fg-2);letter-spacing:-.02px}
+#plan .blk .shape{fill:var(--bg);stroke:var(--fg);stroke-width:1.4}
+#plan .blk.sel .shape{stroke:var(--accent);stroke-width:3}
+#plan .blbl{font:600 1.45px var(--font);fill:var(--fg);pointer-events:none}
+#plan .slink .vis{fill:none;stroke:var(--c);stroke-width:2.2;vector-effect:non-scaling-stroke}
+#plan .slink .hit{fill:none;stroke:transparent;stroke-width:14;vector-effect:non-scaling-stroke;cursor:pointer}
+#plan .slink polygon{fill:var(--c)}
+#plan .slink.sel .vis{stroke-width:4}
+#plan .slink rect{fill:var(--bg);stroke:var(--c);stroke-width:1;vector-effect:non-scaling-stroke}
+#plan .slink text{font:600 1.2px var(--mono);fill:var(--fg)}
+#plan .truss{stroke:var(--fg-2);stroke-width:5;stroke-dasharray:2 2;vector-effect:non-scaling-stroke}
+#plan .beam{fill:color-mix(in srgb,var(--sig-l) 13%,transparent);stroke:color-mix(in srgb,var(--sig-l) 40%,transparent);stroke-width:1;vector-effect:non-scaling-stroke}
+#plan .fx .shape{fill:var(--bg);stroke:var(--sig-l);stroke-width:2.2}
+#plan .fx.conf .shape{stroke:var(--err);stroke-width:3}
+#plan .fx.sel .shape{stroke:var(--accent);stroke-width:3.5}
+#plan .fx .pl-sym{fill:var(--fg);font-size:1.15px}
+#plan .fxl{font:600 1.3px var(--mono);fill:var(--fg-2);pointer-events:none}
+#plan .fx.conf .fxl{fill:var(--err)}
+
 /* ---------- Superpositions ---------- */
 .scrim{position:fixed;inset:0;background:var(--scrim);opacity:0;pointer-events:none;transition:opacity .2s;z-index:55}
 .scrim.open{opacity:1;pointer-events:auto}
@@ -1623,7 +1644,7 @@ function notifs(){
 /* ================= Vues ================= */
 
 /* ================= Plans et implantations ================= */
-const PLAN={k:1,x:0,y:0,sel:null,placing:null,userMoved:false,lay:{cont:1,cable:1,v:1,a:1,l:1},
+const PLAN={mode:'carto',selLink:null,k:1,x:0,y:0,sel:null,placing:null,userMoved:false,lay:{cont:1,cable:1,v:1,a:1,l:1},
  objs:[
   {id:'cr2',lay:'cont',nom:'Car régie CR-2',x:-18,y:27,w:12,h:2.6},
   {id:'fc1',lay:'cont',nom:'Flight-case caméras',x:5,y:36.5,w:1.4,h:0.9},
@@ -1652,7 +1673,7 @@ const pobj=id=>PLAN.objs.find(o=>o.id===id);
 function routePts(r){const a=pobj(r.a),b=pobj(r.b);return [[a.x,a.y],...r.pts,[b.x,b.y]]}
 function routeLen(r){const P=routePts(r);let d=0;for(let i=1;i<P.length;i++)d+=Math.hypot(P[i][0]-P[i-1][0],P[i][1]-P[i-1][1]);return{plan:d,up:r.up,tot:Math.ceil((d+r.up)*10)/10}}
 function cone(o){const R=14,a1=(o.dir-o.fov/2)*Math.PI/180,a2=(o.dir+o.fov/2)*Math.PI/180;return `M${o.x} ${o.y}L${(o.x+R*Math.cos(a1)).toFixed(2)} ${(o.y+R*Math.sin(a1)).toFixed(2)}A${R} ${R} 0 0 1 ${(o.x+R*Math.cos(a2)).toFixed(2)} ${(o.y+R*Math.sin(a2)).toFixed(2)}Z`}
-function planSvg(){
+function cartoSvg(){
  const L=PLAN.lay;let s=`<rect class="pl-wall" x="0" y="0" width="70" height="46"/>
  <rect class="pl-trib" x="10" y="1" width="50" height="7.5"/><text class="pl-lbl" x="47" y="5.4" text-anchor="middle">Tribune presse</text>
  <rect class="pl-trib" x="10" y="38.5" width="50" height="6.5"/><text class="pl-lbl" x="35" y="42.6" text-anchor="middle">Tribune public</text>
@@ -1668,8 +1689,8 @@ function planSvg(){
  });
  return s;
 }
-function planPend(){const groups=['v','a','l'];return groups.map(g=>{const l=PLAN.todo.filter(o=>o.lay===g),n=PLAN.objs.filter(o=>o.lay===g).length;return `<section><h2>${PLAY[g][0]} <span class="muted small">${n} placés</span></h2>${l.length?l.map(o=>`<button class="pend ${PLAN.placing===o.id?'on':''}" data-plpend="${o.id}"><span class="sw" style="--c:${PLAY[g][1]}"></span><span style="min-width:0"><b>${esc(o.nom)}</b><span>À placer</span></span></button>`).join(''):'<p class="small muted">Tout est placé.</p>'}</section>`}).join('')}
-function planSide(){
+function cartoPend(){const groups=['v','a','l'];return groups.map(g=>{const l=PLAN.todo.filter(o=>o.lay===g),n=PLAN.objs.filter(o=>o.lay===g).length;return `<section><h2>${PLAY[g][0]} <span class="muted small">${n} placés</span></h2>${l.length?l.map(o=>`<button class="pend ${PLAN.placing===o.id?'on':''}" data-plpend="${o.id}"><span class="sw" style="--c:${PLAY[g][1]}"></span><span style="min-width:0"><b>${esc(o.nom)}</b><span>À placer</span></span></button>`).join(''):'<p class="small muted">Tout est placé.</p>'}</section>`}).join('')}
+function cartoSide(){
  const o=pobj(PLAN.sel),ro=editable()?'':'disabled';
  if(o){
   const links=PLAN.routes.filter(r=>r.a===o.id||r.b===o.id);
@@ -1688,10 +1709,11 @@ function vPlans(){
  return `<div class="design ${editable()?'':'ro'}" style="display:flex;flex-direction:column;height:100%;min-height:0">
  <div class="design-top">${projTop('plans',true)}${lockbar('ce plan')}
   <div class="dtool">
-   <div class="seg"><button class="on">Niveau 0 · salle</button><button data-soon="Niveau +1 · tribune presse">Niveau +1 · presse</button></div>
+   <div class="seg">${[['carto','Cartographie'],['schema','Schéma de principe'],['feu','Plan de feu']].map(([k,l])=>`<button class="${PLAN.mode===k?'on':''}" data-pmode="${k}">${l}</button>`).join('')}</div>
+   ${PLAN.mode==='carto'?`<div class="seg"><button class="on">Niveau 0 · salle</button><button data-soon="Niveau +1 · tribune presse">Niveau +1</button></div>`:''}
+   ${PLAN.mode==='feu'?`<span class="muted small">Afficher</span><div class="seg">${[['num','Numéro'],['adr','Adresse'],['canal','Canaux']].map(([k,l])=>`<button class="${FEU.disp===k?'on':''}" data-fdisp="${k}">${l}</button>`).join('')}</div>`:''}
    <span class="gap"></span>
-   <span class="muted small">Échelle calibrée : 2 repères, 40,0 m</span>
-   <button class="btn sm" data-soon="Outil de mesure">${ic('fit','sm')}Mesurer</button>
+   ${PLAN.mode==='carto'?`<span class="muted small">Échelle calibrée : 2 repères, 40,0 m</span><button class="btn sm" data-soon="Outil de mesure">${ic('fit','sm')}Mesurer</button>`:PLAN.mode==='schema'?`<span class="muted small">Page 1 sur 2 · Vue d’ensemble</span>`:`<span class="muted small">Pont nord et pont sud · 7 m</span>`}
    <button class="btn sm" data-soon="Export du plan">${ic('download','sm')}Exporter</button>
   </div>
  </div>
@@ -1699,23 +1721,24 @@ function vPlans(){
   <aside class="pane left" id="planPend">${planPend()}</aside>
   <div class="syn-wrap" id="planWrap">
    <svg id="plan" aria-label="Plan du lieu"><defs><pattern id="pgrid" width="5" height="5" patternUnits="userSpaceOnUse"><path class="pl-grid" d="M5 0H0V5"/></pattern></defs><g id="pworld"><rect x="-200" y="-200" width="500" height="400" fill="url(#pgrid)"/><g id="pcontent">${planSvg()}</g></g></svg>
-   <div class="synhint" id="planHint">${editable()?'Glissez un élément pour le déplacer · touchez-le pour le régler':'Lecture seule : naviguez et inspectez'}</div>
+   <div class="synhint" id="planHint">${planHint()}</div>
    <div class="floatbar"><button class="icon-btn sm" data-pz="-1" aria-label="Zoom arrière">${ic('zout')}</button><span class="zl" id="pzl">100 %</span><button class="icon-btn sm" data-pz="1" aria-label="Zoom avant">${ic('zin')}</button><button class="icon-btn sm" data-act="pfit" aria-label="Tout afficher">${ic('fit')}</button><span class="scalebar" id="pscale"></span></div>
   </div>
   <aside class="pane right" id="planSide">${planSide()}</aside>
  </div></div>`;
 }
-function planView(){const w=$('#pworld');if(!w)return;w.setAttribute('transform',`translate(${PLAN.x},${PLAN.y}) scale(${PLAN.k*10})`);$('#pzl').textContent=Math.round(PLAN.k*100)+' %';const px=PLAN.k*10*10;$('#pscale').innerHTML=`<i style="width:${px}px"></i>10 m`}
-function planAll(){const c=$('#pcontent');if(!c)return;c.innerHTML=planSvg();$('#planSide').innerHTML=planSide();$('#planPend').innerHTML=planPend();const h=$('#planHint');if(h){if(PLAN.placing){const o=PLAN.todo.find(x=>x.id===PLAN.placing);h.className='synhint armed';h.textContent=`Touchez le plan pour poser ${o?o.nom:''} (Échap pour annuler)`}else{h.className='synhint';h.textContent=editable()?'Glissez un élément pour le déplacer · touchez-le pour le régler':'Lecture seule : naviguez et inspectez'}}}
-function planFit(){const w=$('#planWrap');if(!w)return;const W=w.clientWidth,H=w.clientHeight,x0=-26,x1=72,y0=-2,y1=48;PLAN.k=Math.max(.3,Math.min(3,Math.min(W/((x1-x0)*10),(H-60)/((y1-y0)*10))*.96));PLAN.x=(W-(x1-x0)*PLAN.k*10)/2-x0*PLAN.k*10;PLAN.y=40+((H-60)-(y1-y0)*PLAN.k*10)/2-y0*PLAN.k*10;planView()}
+function planView(){const w=$('#pworld');if(!w)return;w.setAttribute('transform',`translate(${PLAN.x},${PLAN.y}) scale(${PLAN.k*10})`);$('#pzl').textContent=Math.round(PLAN.k*100)+' %';const px=PLAN.k*10*10;$('#pscale').innerHTML=PLAN.mode==='schema'?'':`<i style="width:${px}px"></i>10 m`}
+function planAll(){const c=$('#pcontent');if(!c)return;c.innerHTML=planSvg();$('#planSide').innerHTML=planSide();$('#planPend').innerHTML=planPend();const h=$('#planHint');if(h){if(PLAN.placing){const o=curTodo().find(x=>x.id===PLAN.placing);h.className='synhint armed';h.textContent=`Touchez le plan pour poser ${o?oname(o):''} (Échap pour annuler)`}else{h.className='synhint';h.textContent=planHint()}}}
+function planFit(){const w=$('#planWrap');if(!w)return;const W=w.clientWidth,H=w.clientHeight,[x0,x1,y0,y1]={carto:[-26,72,-2,48],schema:[-3,110,-6,46],feu:[8,74,4,42]}[PLAN.mode];PLAN.k=Math.max(.3,Math.min(3,Math.min(W/((x1-x0)*10),(H-60)/((y1-y0)*10))*.96));PLAN.x=(W-(x1-x0)*PLAN.k*10)/2-x0*PLAN.k*10;PLAN.y=40+((H-60)-(y1-y0)*PLAN.k*10)/2-y0*PLAN.k*10;planView()}
 function planZoom(f,cx,cy){const k2=Math.max(.3,Math.min(4,PLAN.k*f));PLAN.x=cx-(cx-PLAN.x)*(k2/PLAN.k);PLAN.y=cy-(cy-PLAN.y)*(k2/PLAN.k);PLAN.k=k2;PLAN.userMoved=true;planView()}
 function mountPlan(){
  const svg=$('#plan'),wrap=$('#planWrap');let drag=null;
  const toW=e=>{const r=svg.getBoundingClientRect();return[(e.clientX-r.left-PLAN.x)/(PLAN.k*10),(e.clientY-r.top-PLAN.y)/(PLAN.k*10)]};
  svg.addEventListener('pointerdown',e=>{
   const g=e.target.closest('[data-obj]');
-  if(PLAN.placing&&editable()){const[x,y]=toW(e);const i=PLAN.todo.findIndex(o=>o.id===PLAN.placing);const o=PLAN.todo.splice(i,1)[0];o.x=Math.round(x*10)/10;o.y=Math.round(y*10)/10;PLAN.objs.push(o);PLAN.placing=null;PLAN.sel=o.id;PLAN.lay[o.lay]=1;planAll();toast(`${esc(o.nom)} posé sur le plan`);return}
-  if(g){const o=pobj(g.dataset.obj);PLAN.sel=o.id;const[x,y]=toW(e);if(editable())drag={t:'obj',o,ox:x-o.x,oy:y-o.y,moved:false};svg.setPointerCapture(e.pointerId);planAll();return}
+  if(PLAN.placing&&editable()){const[x,y]=toW(e);const T=curTodo(),i=T.findIndex(o=>o.id===PLAN.placing);const o=T.splice(i,1)[0];o.x=Math.round(x*10)/10;o.y=Math.round(y*10)/10;curObjs().push(o);PLAN.placing=null;PLAN.sel=o.id;if(o.lay)PLAN.lay[o.lay]=1;planAll();toast(`${esc(oname(o))} posé`);return}
+  const lk=e.target.closest('[data-link]');if(lk&&!g){PLAN.selLink=+lk.dataset.link;PLAN.sel=null;planAll();return}
+  if(g){const o=curObjs().find(x=>x.id===g.dataset.obj);PLAN.sel=o.id;PLAN.selLink=null;const[x,y]=toW(e);if(editable())drag={t:'obj',o,ox:x-o.x,oy:y-o.y,moved:false};svg.setPointerCapture(e.pointerId);planAll();return}
   drag={t:'pan',sx:e.clientX,sy:e.clientY,vx:PLAN.x,vy:PLAN.y,moved:false};svg.setPointerCapture(e.pointerId);svg.classList.add('panning');
  });
  svg.addEventListener('pointermove',e=>{
@@ -1723,12 +1746,129 @@ function mountPlan(){
   if(drag.t==='pan'){const dx=e.clientX-drag.sx,dy=e.clientY-drag.sy;if(Math.abs(dx)+Math.abs(dy)>3){drag.moved=true;PLAN.userMoved=true}PLAN.x=drag.vx+dx;PLAN.y=drag.vy+dy;planView()}
   else{const[x,y]=toW(e);drag.o.x=Math.round((x-drag.ox)*10)/10;drag.o.y=Math.round((y-drag.oy)*10)/10;drag.moved=true;$('#pcontent').innerHTML=planSvg()}
  });
- svg.addEventListener('pointerup',()=>{svg.classList.remove('panning');if(!drag)return;const d=drag;drag=null;if(d.t==='pan'&&!d.moved&&PLAN.sel){PLAN.sel=null;planAll()}if(d.t==='obj'&&d.moved){planAll();if(d.o.lay==='cont'){const rs=PLAN.routes.filter(r=>r.a===d.o.id||r.b===d.o.id);if(rs.length)toast(`Longueurs recalculées : ${rs.map(r=>esc(r.nom)+' '+nf(routeLen(r).tot,1)+' m').join(', ')}`,'info')}}});
+ svg.addEventListener('pointerup',()=>{svg.classList.remove('panning');if(!drag)return;const d=drag;drag=null;if(d.t==='pan'&&!d.moved&&(PLAN.sel||PLAN.selLink)){PLAN.sel=null;PLAN.selLink=null;planAll()}if(d.t==='obj'&&d.moved){planAll();if(d.o.lay==='cont'){const rs=PLAN.routes.filter(r=>r.a===d.o.id||r.b===d.o.id);if(rs.length)toast(`Longueurs recalculées : ${rs.map(r=>esc(r.nom)+' '+nf(routeLen(r).tot,1)+' m').join(', ')}`,'info')}}});
  svg.addEventListener('wheel',e=>{e.preventDefault();const r=svg.getBoundingClientRect();planZoom(Math.exp(-e.deltaY*.0016),e.clientX-r.left,e.clientY-r.top)},{passive:false});
  wrap.addEventListener('click',e=>{const z=e.target.closest('[data-pz]');if(z)planZoom(+z.dataset.pz>0?1.25:0.8,wrap.clientWidth/2,wrap.clientHeight/2)});
- $('#planSide').addEventListener('input',e=>{const k=e.target.dataset.pl;if(!k)return;const o=pobj(PLAN.sel);o[k]=+e.target.value;$('#pcontent').innerHTML=planSvg();const lb=e.target.previousElementSibling;if(lb)lb.textContent=k==='dir'?`Orientation · ${((o.dir%360)+360)%360}°`:`Angle de champ · ${o.fov}°`});
- $('#planSide').addEventListener('change',e=>{const k=e.target.dataset.play;if(k===undefined)return;PLAN.lay[k]=e.target.checked?1:0;$('#pcontent').innerHTML=planSvg()});
+ const redraw=()=>{$('#pcontent').innerHTML=planSvg()};
+ $('#planSide').addEventListener('input',e=>{const t=e.target,d=t.dataset,o=curObjs().find(x=>x.id===PLAN.sel),l=SCH.links.find(x=>x.id===PLAN.selLink);
+  if(d.pl&&o){o[d.pl]=+t.value;redraw();const lb=t.previousElementSibling;if(lb)lb.textContent=d.pl==='dir'?`Orientation · ${((o.dir%360)+360)%360}°`:`Angle de champ · ${o.fov}°`}
+  else if(d.sedit&&o){o.label=t.value;redraw()}
+  else if(d.llbl!==undefined&&l){l.lbl=t.value;redraw()}});
+ $('#planSide').addEventListener('change',e=>{const t=e.target,d=t.dataset,o=curObjs().find(x=>x.id===PLAN.sel),l=SCH.links.find(x=>x.id===PLAN.selLink);
+  if(d.play!==undefined){PLAN.lay[d.play]=t.checked?1:0;redraw();return}
+  if(d.larrow!==undefined&&l){l.arrow=t.checked;redraw();return}
+  if(d.lsig!==undefined&&l){l.sig=t.value;planAll();return}
+  if(d.ssig!==undefined&&o){o.sig=t.value;planAll();return}
+  if(d.fxf&&o){o[d.fxf]=Math.max(1,Math.round(+t.value||1));planAll();const c=fxConf(o);toast(c?`Chevauchement avec #${c.num} ${c.type} dans l’univers ${o.u}`:`#${o.num} : univers ${o.u}, adresse ${o.adr}`,c?'err':'ok');return}
+  if(d.fxm!==undefined&&o){o.mode=t.value;planAll();return}});
  requestAnimationFrame(()=>{if(!$('#planWrap'))return;PLAN.userMoved?planView():planFit()});
+}
+
+
+/* ===== Modes de l'écran Plans ===== */
+const curObjs=()=>PLAN.mode==='schema'?SCH.objs:PLAN.mode==='feu'?FEU.fx:PLAN.objs;
+const curTodo=()=>PLAN.mode==='schema'?SCH.todo:PLAN.mode==='feu'?FEU.todo:PLAN.todo;
+const oname=o=>o.nom||o.label||(o.type+' #'+o.num);
+const planSvg=()=>PLAN.mode==='schema'?schemaSvg():PLAN.mode==='feu'?feuSvg():cartoSvg();
+const planPend=()=>PLAN.mode==='schema'?schemaPend():PLAN.mode==='feu'?feuPend():cartoPend();
+const planSide=()=>PLAN.mode==='schema'?schemaSide():PLAN.mode==='feu'?feuSide():cartoSide();
+function planHint(){if(!editable())return 'Lecture seule : naviguez et inspectez';return PLAN.mode==='schema'?'Glissez un bloc · touchez une liaison pour changer son tracé':PLAN.mode==='feu'?'Glissez un appareil sur le pont · touchez-le pour son adressage':'Glissez un élément pour le déplacer · touchez-le pour le régler'}
+
+/* Schéma de principe */
+const SCH={objs:[
+ {id:'zt',kind:'zone',label:'Bord terrain',x:9,y:20,w:20,h:46},
+ {id:'zc',kind:'zone',label:'Car régie CR-2',x:66,y:20,w:84,h:46},
+ {id:'cam',kind:'blk',label:'Caméras ×4',sig:'v',x:9,y:8},
+ {id:'mic',kind:'blk',label:'Micros terrain ×3',sig:'a',x:9,y:22},
+ {id:'hf',kind:'blk',label:'Récepteurs HF ×4',sig:'a',x:9,y:33},
+ {id:'ccu',kind:'blk',label:'CCU ×4',sig:'v',x:35,y:8},
+ {id:'sb',kind:'blk',label:'Stagebox 32/16',sig:'a',x:35,y:27.5},
+ {id:'gr',kind:'blk',label:'Grille 40×40',sig:'v',x:57,y:8},
+ {id:'mel',kind:'blk',label:'Mélangeur 4 M/E',sig:'v',x:79,y:8},
+ {id:'cons',kind:'blk',label:'Console audio',sig:'a',x:66,y:27.5},
+ {id:'ic',kind:'blk',label:'Matrice intercom',sig:'i',x:66,y:38},
+ {id:'mv',kind:'blk',label:'Multiviewer',sig:'v',x:99,y:1},
+ {id:'rec',kind:'blk',label:'Enregistreurs ×2',sig:'v',x:99,y:10},
+ {id:'ant',kind:'blk',label:'Sortie antenne',sig:'f',x:99,y:22}],
+ links:[[1,'cam','ccu','v','Fibre SMPTE'],[2,'ccu','gr','v','12G-SDI'],[3,'gr','mel','v',''],[4,'mel','mv','v',''],[5,'mel','rec','v',''],[6,'mel','ant','v','PGM'],[7,'mic','sb','a',''],[8,'hf','sb','a',''],[9,'sb','cons','a','Dante'],[10,'cons','ant','a','AES'],[11,'cons','ic','i','']].map(([id,a,b,sig,lbl])=>({id,a,b,sig,lbl,style:'ortho',arrow:true})),
+ todo:[{id:'sync',kind:'blk',label:'Générateur de synchro',sig:'s'},{id:'deemb',kind:'blk',label:'Désembeddeur audio',sig:'a'}]};
+const BW=16,BH=5;
+function linkGeo(l){
+ const a=SCH.objs.find(o=>o.id===l.a),b=SCH.objs.find(o=>o.id===l.b);if(!a||!b)return null;
+ const hor=b.x-a.x>BW;let x1,y1,x2,y2,d,lx,ly,dir;
+ if(hor){x1=a.x+BW/2;y1=a.y;x2=b.x-BW/2;y2=b.y;dir=[1,0];const mx=(x1+x2)/2;
+  d=l.style==='droit'?`M${x1} ${y1}L${x2} ${y2}`:l.style==='courbe'?`M${x1} ${y1}C${mx} ${y1} ${mx} ${y2} ${x2} ${y2}`:`M${x1} ${y1}H${mx}V${y2}H${x2}`;lx=mx;ly=(y1+y2)/2}
+ else{const dn=b.y>a.y;x1=a.x;y1=a.y+(dn?BH/2:-BH/2);x2=b.x;y2=b.y+(dn?-BH/2:BH/2);dir=[0,dn?1:-1];const my=(y1+y2)/2;
+  d=l.style==='droit'?`M${x1} ${y1}L${x2} ${y2}`:l.style==='courbe'?`M${x1} ${y1}C${x1} ${my} ${x2} ${my} ${x2} ${y2}`:`M${x1} ${y1}V${my}H${x2}V${y2}`;lx=(x1+x2)/2;ly=my}
+ if(l.style==='droit'){const L=Math.hypot(x2-x1,y2-y1)||1;dir=[(x2-x1)/L,(y2-y1)/L]}
+ const bx=x2-dir[0]*1.3,by=y2-dir[1]*1.3,arrow=`${x2},${y2} ${bx-dir[1]*.65},${by+dir[0]*.65} ${bx+dir[1]*.65},${by-dir[0]*.65}`;
+ return{d,lx,ly,arrow};
+}
+function schemaSvg(){
+ let s='';
+ SCH.objs.filter(o=>o.kind==='zone').forEach(o=>{s+=`<g class="obj zone ${PLAN.sel===o.id?'sel':''}" data-obj="${o.id}"><rect class="zrect" x="${o.x-o.w/2}" y="${o.y-o.h/2}" width="${o.w}" height="${o.h}" rx="1"/><text class="zlbl" x="${o.x-o.w/2+1.2}" y="${o.y-o.h/2+2.4}">${esc(o.label)}</text></g>`});
+ SCH.links.forEach(l=>{const g=linkGeo(l);if(!g)return;const t=l.lbl?l.lbl:'',w=t.length*.78+1.4;s+=`<g class="slink ${PLAN.selLink===l.id?'sel':''}" data-link="${l.id}" style="--c:${sigc(l.sig)}"><path class="hit" d="${g.d}"/><path class="vis" d="${g.d}"/>${l.arrow?`<polygon points="${g.arrow}"/>`:''}${t?`<g transform="translate(${g.lx-w/2},${g.ly-1})"><rect width="${w}" height="2" rx=".4"/><text x="${w/2}" y="1.42" text-anchor="middle">${esc(t)}</text></g>`:''}</g>`});
+ SCH.objs.filter(o=>o.kind==='blk').forEach(o=>{s+=`<g class="obj blk ${PLAN.sel===o.id?'sel':''}" data-obj="${o.id}" style="--c:${sigc(o.sig)}"><rect class="shape" x="${o.x-BW/2}" y="${o.y-BH/2}" width="${BW}" height="${BH}" rx=".8"/><circle cx="${o.x-BW/2+1.3}" cy="${o.y}" r=".55" style="fill:var(--c)"/><text class="blbl" x="${o.x-BW/2+2.4}" y="${o.y+.55}">${esc(o.label)}</text></g>`});
+ return s;
+}
+function schemaPend(){return `<section><h2>À placer</h2><p class="small muted">Équipements de la nomenclature absents du schéma.</p>${SCH.todo.length?SCH.todo.map(o=>`<button class="pend ${PLAN.placing===o.id?'on':''}" data-plpend="${o.id}"><span class="sw" style="--c:${sigc(o.sig)}"></span><span style="min-width:0"><b>${esc(o.label)}</b><span>${SIG[o.sig].n}</span></span></button>`).join(''):'<p class="small muted">Tout est placé.</p>'}</section>
+ <section><h2>Éléments libres</h2><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm" data-soon="Texte libre">${ic('plus','sm')}Texte</button><button class="btn sm" data-soon="Zone">${ic('plus','sm')}Zone</button><button class="btn sm" data-soon="Image">${ic('plus','sm')}Image</button></div></section>
+ <section><h2>Pages</h2><div class="layer"><b style="margin:0;color:var(--fg)">1 · Vue d’ensemble</b></div><div class="layer" style="color:var(--fg-3)">2 · Détail audio</div></section>`}
+function schemaSide(){
+ const ro=editable()?'':'disabled';
+ const l=SCH.links.find(x=>x.id===PLAN.selLink);
+ if(l){const a=SCH.objs.find(o=>o.id===l.a),b=SCH.objs.find(o=>o.id===l.b);return `<section><h2>Liaison</h2><p>${esc(a.label)} → ${esc(b.label)}</p>
+  <div class="field"><span class="flabel">Tracé</span><div class="seg">${[['droit','Droit'],['ortho','Orthogonal'],['courbe','Courbe']].map(([k,n])=>`<button class="${l.style===k?'on':''}" data-lstyle="${k}" ${ro}>${n}</button>`).join('')}</div></div>
+  <div class="field"><label for="llbl">Étiquette</label><input class="input" id="llbl" data-llbl="" value="${esc(l.lbl)}" placeholder="Aucune" ${ro}></div>
+  <div class="field"><label for="lsig">Signal</label><select class="input" id="lsig" data-lsig="" ${ro}>${['v','a','i','s','n','f'].map(k=>`<option value="${k}" ${l.sig===k?'selected':''}>${SIG[k].n}</option>`).join('')}</select></div>
+  <label class="layer"><input type="checkbox" data-larrow="" ${l.arrow?'checked':''} ${ro}> Flèche à l’arrivée</label></section>`}
+ const o=SCH.objs.find(x=>x.id===PLAN.sel);
+ if(o)return `<section><h2>${o.kind==='zone'?'Zone':'Bloc équipement'}</h2>
+  <div class="field"><label for="sed">Libellé</label><input class="input" id="sed" data-sedit="1" value="${esc(o.label)}" ${ro}></div>
+  ${o.kind==='blk'?`<div class="field"><label for="ssig">Couleur du cadre</label><select class="input" id="ssig" data-ssig="" ${ro}>${['v','a','i','s','n','f'].map(k=>`<option value="${k}" ${o.sig===k?'selected':''}>${SIG[k].n}</option>`).join('')}</select></div>
+  <dl class="kv"><dt>Liaisons</dt><dd>${SCH.links.filter(x=>x.a===o.id||x.b===o.id).length}</dd><dt>Source</dt><dd>Nomenclature</dd></dl>`:''}
+  ${editable()&&o.kind==='blk'?`<button class="btn sm danger" data-act="plremove">${ic('trash','sm')}Retirer du schéma</button>`:''}</section>`;
+ return `<section><h2>Schéma de principe</h2><p class="small muted">Les blocs viennent de la nomenclature ; le libellé, le cadre et les liaisons sont propres au schéma.</p>
+  <button class="btn sm" data-act="ssync" ${ro}>${ic('refresh','sm')}Synchroniser avec la nomenclature</button></section>
+  <section><h2>Légende</h2>${[...new Set(SCH.links.map(l=>l.sig))].map(k=>`<div class="layer"><span class="sw" style="--c:${sigc(k)}"></span>${SIG[k].n}<b>${SCH.links.filter(l=>l.sig===k).length}</b></div>`).join('')}</section>
+  <section><h2>Document</h2><dl class="kv"><dt>Format</dt><dd>A3 paysage</dd><dt>Grille</dt><dd>Aimantée, 1 unité</dd><dt>Cartouche</dt><dd>Standard</dd></dl></section>`;
+}
+
+/* Plan de feu */
+const FTYPES={'PAR LED':{'4 canaux':4,'8 canaux':8},'Lyre wash':{'16 canaux':16,'24 canaux':24},'Découpe':{'5 canaux':5}};
+const FEU={disp:'num',fx:[
+ {id:'p1',num:1,type:'PAR LED',mode:'8 canaux',u:1,adr:1,x:21,y:11},{id:'p2',num:2,type:'PAR LED',mode:'8 canaux',u:1,adr:9,x:28,y:11},
+ {id:'p3',num:3,type:'PAR LED',mode:'8 canaux',u:1,adr:17,x:42,y:11},{id:'p4',num:4,type:'PAR LED',mode:'8 canaux',u:1,adr:25,x:49,y:11},
+ {id:'w1',num:11,type:'Lyre wash',mode:'16 canaux',u:1,adr:33,x:26,y:35},{id:'w2',num:12,type:'Lyre wash',mode:'16 canaux',u:1,adr:49,x:44,y:35},
+ {id:'d1',num:21,type:'Découpe',mode:'5 canaux',u:1,adr:65,x:13,y:11},{id:'d2',num:22,type:'Découpe',mode:'5 canaux',u:1,adr:68,x:57,y:11}],
+ todo:[{id:'w3',num:13,type:'Lyre wash',mode:'16 canaux',u:2,adr:1}]};
+const nch=f=>FTYPES[f.type][f.mode]||1;
+function fxConf(f){return FEU.fx.find(g=>g!==f&&g.u===f.u&&f.adr<=g.adr+nch(g)-1&&g.adr<=f.adr+nch(f)-1)}
+const fxLbl=f=>FEU.disp==='adr'?`${f.u}.${String(f.adr).padStart(3,'0')}`:FEU.disp==='canal'?`${f.adr}–${f.adr+nch(f)-1}`:`#${f.num}`;
+function feuSvg(){
+ let s=`<rect class="pl-trib" x="10" y="1" width="50" height="7.5"/><rect class="pl-trib" x="10" y="38.5" width="50" height="6.5"/>
+ <rect class="pl-court" x="15" y="13" width="40" height="20"/><line class="pl-line" x1="35" y1="13" x2="35" y2="33"/>
+ <line class="truss" x1="12" y1="11" x2="58" y2="11"/><line class="truss" x1="12" y1="35" x2="58" y2="35"/>
+ <text class="pl-lbl" x="59.5" y="11.5">Pont nord · 7 m</text><text class="pl-lbl" x="59.5" y="35.5">Pont sud · 7 m</text>`;
+ FEU.fx.forEach(f=>{if(f.type!=='Découpe')s+=`<circle class="beam" cx="${f.x}" cy="${f.y+(f.y<20?8:-8)}" r="${f.type==='Lyre wash'?7:5}"/>`});
+ FEU.fx.forEach(f=>{const c=fxConf(f),sel=PLAN.sel===f.id?'sel':'';const sh=f.type==='PAR LED'?`<circle class="shape" cx="${f.x}" cy="${f.y}" r="1.25"/>`:f.type==='Lyre wash'?`<rect class="shape" x="${f.x-1.3}" y="${f.y-1.3}" width="2.6" height="2.6" rx=".5"/>`:`<path class="shape" d="M${f.x-1.4} ${f.y-1}H${f.x+1.4}L${f.x+.7} ${f.y+1.3}H${f.x-.7}Z"/>`;
+  s+=`<g class="obj fx ${sel} ${c?'conf':''}" data-obj="${f.id}" style="--c:var(--sig-l)">${sh}<text class="pl-sym" x="${f.x}" y="${f.y+.4}" text-anchor="middle">${f.num}</text><text class="fxl" x="${f.x}" y="${f.y+(f.y<20?-2:3.1)}" text-anchor="middle">${fxLbl(f)}</text></g>`});
+ return s;
+}
+function feuPend(){return Object.keys(FTYPES).map(t=>{const l=FEU.todo.filter(f=>f.type===t),n=FEU.fx.filter(f=>f.type===t).length;return `<section><h2>${t} <span class="muted small">${n} placés</span></h2>${l.length?l.map(f=>`<button class="pend ${PLAN.placing===f.id?'on':''}" data-plpend="${f.id}"><span class="sw" style="--c:var(--sig-l)"></span><span style="min-width:0"><b>${t} #${f.num}</b><span>${f.mode} · univers ${f.u}</span></span></button>`).join(''):'<p class="small muted">Tout est placé.</p>'}</section>`}).join('')}
+function feuSide(){
+ const ro=editable()?'':'disabled',f=FEU.fx.find(x=>x.id===PLAN.sel);
+ if(f){const c=fxConf(f);return `<section><h2>${f.type} #${f.num}</h2>
+  <div class="form-grid"><div class="field"><label for="fxu">Univers</label><input class="input mono" id="fxu" type="number" min="1" max="65535" data-fxf="u" value="${f.u}" ${ro}></div><div class="field"><label for="fxa">Adresse</label><input class="input mono" id="fxa" type="number" min="1" max="512" data-fxf="adr" value="${f.adr}" ${ro}></div>
+  <div class="field span"><label for="fxm">Mode</label><select class="input" id="fxm" data-fxm="" ${ro}>${Object.keys(FTYPES[f.type]).map(m=>`<option ${m===f.mode?'selected':''}>${m}</option>`).join('')}</select></div></div>
+  <dl class="kv"><dt>Canaux occupés</dt><dd class="mono">U${f.u} · ${f.adr} → ${f.adr+nch(f)-1}</dd><dt>Numéro console</dt><dd>${f.num}</dd><dt>Position</dt><dd>${f.y<20?'Pont nord':'Pont sud'}</dd></dl>
+  ${c?`<div class="alert err">${ic('alert')}<span>Chevauche ${c.type} #${c.num} (${c.adr} → ${c.adr+nch(c)-1}) dans l’univers ${f.u}.</span></div>`:`<div class="alert info">${ic('ok')}<span>Aucun chevauchement.</span></div>`}
+  ${editable()?`<button class="btn sm danger" data-act="plremove">${ic('trash','sm')}Retirer du plan</button>`:''}</section>`}
+ const rows=[...FEU.fx].sort((a,b)=>a.u-b.u||a.adr-b.adr),nc=FEU.fx.filter(fxConf).length;
+ return `<section><h2>Patch DMX</h2>${nc?`<div class="alert err">${ic('alert')}<span>${nc} appareils se chevauchent. Touchez-en un pour corriger son adresse.</span></div>`:`<div class="alert info">${ic('ok')}<span>Aucun chevauchement d’adresses.</span></div>`}
+  <table class="tbl"><thead><tr><th>N°</th><th>Appareil</th><th class="num">Canaux</th></tr></thead><tbody>${rows.map(f=>`<tr class="click" data-fxsel="${f.id}"><td class="mono">${f.num}</td><td>${f.type}<span class="small muted" style="display:block">${f.mode}</span></td><td class="num mono" style="${fxConf(f)?'color:var(--err);font-weight:600':''}">${f.u}.${String(f.adr).padStart(3,'0')}–${f.adr+nch(f)-1}</td></tr>`).join('')}</tbody></table>
+  <p class="small muted">L’éclairagiste adresse ses appareils ; Strata Arkyo vérifie les chevauchements et échange le patch en CSV.</p>
+  <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm" data-soon="Import CSV du patch">${ic('upload','sm')}Importer CSV</button><button class="btn sm" data-act="fxexp">${ic('download','sm')}Exporter CSV</button></div></section>`;
 }
 
 /* ================= Énergie par phase ================= */
@@ -1828,7 +1968,9 @@ document.addEventListener('click',e=>{
   if(k==='wizard')return openWizard();
   if(k==='menuclose')return closeAll();
   if(k==='pfit'){PLAN.userMoved=false;return planFit()}
-  if(k==='plremove'){const i=PLAN.objs.findIndex(o=>o.id===PLAN.sel);const o=PLAN.objs.splice(i,1)[0];PLAN.todo.push(o);PLAN.sel=null;planAll();toast(`${esc(o.nom)} remis à placer`,'warn');return}
+  if(k==='plremove'){const O=curObjs(),i=O.findIndex(o=>o.id===PLAN.sel);const o=O.splice(i,1)[0];curTodo().push(o);if(PLAN.mode==='schema')SCH.links=SCH.links.filter(l=>l.a!==o.id&&l.b!==o.id);PLAN.sel=null;planAll();toast(`${esc(oname(o))} remis à placer`,'warn');return}
+  if(k==='ssync'){toast('Synchronisé avec la nomenclature : 2 libellés mis à jour, aucun orphelin.');return}
+  if(k==='fxexp'){toast(`Patch DMX exporté en CSV : ${FEU.fx.length} appareils`);return}
   if(k==='scansim'){const it=prepItems(),set=PREP.done[PREP.phase];PREP.sims=(PREP.sims||0)+1;const nx=it.find(x=>!set.has(x.code));return doScan(PREP.sims%5===0||!nx?'#ZZ97':nx.code)}
   if(k==='nmos'){a.disabled=true;a.innerHTML='<span class="spinner"></span>Lecture du registre…';setTimeout(()=>{NET.read=true;NET.at=new Date().toTimeString().slice(0,5);$('#netBody').innerHTML=fluxHtml();toast('Registre NMOS lu : 8 émetteurs, 2 écarts avec le plan','warn')},900);return}
   if(k==='sdp'){toast(`${FLUX.length} fichiers SDP exportés`);return}
@@ -1872,6 +2014,10 @@ document.addEventListener('click',e=>{
  }
  const ni=t.closest('[data-ni]');if(ni){const n=NOTIFS[+ni.dataset.ni];n.un=false;$('#notifs').hidden=true;go(n.go);return}
  const pi=t.closest('[data-pi]');if(pi){const x=palFiltered()[+pi.dataset.pi];closeModal();x&&x.run();return}
+ const fxs=t.closest('[data-fxsel]');if(fxs){PLAN.sel=fxs.dataset.fxsel;planAll();return}
+ const pm=t.closest('[data-pmode]');if(pm){PLAN.mode=pm.dataset.pmode;PLAN.sel=null;PLAN.selLink=null;PLAN.placing=null;PLAN.userMoved=false;render();return}
+ const fd=t.closest('[data-fdisp]');if(fd){FEU.disp=fd.dataset.fdisp;$$('[data-fdisp]').forEach(b=>b.classList.toggle('on',b===fd));planAll();return}
+ const ls=t.closest('[data-lstyle]');if(ls&&editable()){SCH.links.find(x=>x.id===PLAN.selLink).style=ls.dataset.lstyle;planAll();return}
  const plp=t.closest('[data-plpend]');if(plp&&editable()){PLAN.placing=PLAN.placing===plp.dataset.plpend?null:plp.dataset.plpend;PLAN.sel=null;planAll();return}
  const pp=t.closest('[data-pphase]');if(pp){PREP.phase=pp.dataset.pphase;PREP.last='';prepRefresh();return}
  const nt=t.closest('[data-ntab]');if(nt){NET.tab=nt.dataset.ntab;render();return}
