@@ -20,6 +20,7 @@ Strata Arkyo est un seul programme Rust installé sur un serveur Ubuntu du site.
 | 5 | Racks : élévations (avant, arrière, arrière intérieure, côté ; réel ou schématique), placement au demi-U contrôlé par le serveur, profondeur utile, bilan électrique par circuit et par phase, verrou « une personne à la fois » | Fait : étagères, modèles d'éléments, panels de brassage, régies, contrôles de construction, planche d'élévations (PDF vectoriel, PNG, JPG, A4 à A0, cartouche). Le dossier de construction viendra avec le câblage (lot 6) |
 | Éléments | Le contenant devient un élément : baies et valises, mur d'écrans (grille, écrans et sources), pupitre et poste opérateur (postes et matériel affecté), emplacement libre, position caméra, boîtier de terrain, mât HF, point de raccordement, énergie, arrivée externe, diffusion, touret | Fait |
 | 6 | Synoptique : vues par élément et par lieu, nœuds et ports tirés du catalogue, câblage de port à port (multi-câbles), un câble par port, compatibilité, longueur estimée en rack, verrou | Fait : numérotation, validation (11 contrôles), mode tableau, attaches d'adaptateurs, ports externes, faisceaux, vue générale, zones et étiquettes, calques par famille, annuler/rétablir (50 états), décâbler, export PNG/JPG/PDF avec cartouche |
+| Terrain | Préparation et livraison : lignes par élément, modèle, type de câble, statuts par famille, approvisionnement, réserve, état câblé par liaison, colisage, export | Fait |
 | 7 à 10 | Livrables, terrain, réseau, plans | À venir |
 
 ## Organisation du dépôt
@@ -160,6 +161,7 @@ Lire demande « Projets : lecture », écrire « Projets : écriture ». Chaque 
 | `GET /api/projects/{id}/synoptic/validate` | Validation du câblage : anomalies par sévérité avec câbles et nœuds concernés |
 | `GET /api/projects/{id}/cables/table`, `POST …/cables/bulk`, `GET …/cables/export?format=csv\|xlsx` | Mode tableau : tous les câbles avec leurs extrémités ; saisie en série avec révision par ligne ; export de la liste |
 | `POST /api/projects/{id}/attach`, `POST …/external`, `POST …/harnesses`, `POST …/harnesses/assign`, `PATCH`/`DELETE /api/harnesses/{id}` | Attache d'adaptateur sur un port, port externe (autre lieu ou hors projet), faisceaux ; `?view=overview` pour la vue générale |
+| `GET /api/projects/{id}/prep`, `PATCH …/prep/line`, `POST …/prep/cable-model`, `POST …/prep/cabled`, `GET …/prep/export` | Préparation et livraison |
 | `GET /api/live` (WebSocket) | Temps réel : `{"type":"join","room":"project:<id>"}`, battement `{"type":"ping"}` toutes les 30 s ; événements `change` et `presence` |
 
 ## Mises à jour OTA
