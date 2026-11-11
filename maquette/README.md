@@ -1,6 +1,6 @@
 # Maquette interactive — Strata Arkyo
 
-Prototype cliquable de la web app (HTML/CSS/JS sans dépendance), réalisé à partir du cahier des charges fonctionnel.
+Prototype cliquable de la web app (HTML/CSS/JS sans dépendance), réalisé à partir du cahier des charges fonctionnel. Direction visuelle : éditorial clair (page blanche, navigation par onglets, grands titres, listes sans cadres).
 
 Décisions intégrées :
 - Serveur **Ubuntu uniquement**, service systemd, moteur **Rust** (`strata-engine`).
