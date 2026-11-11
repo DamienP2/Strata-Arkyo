@@ -8,6 +8,7 @@
   import Refs from './Refs.svelte';
   import Import from './Import.svelte';
   import Exchange from './Exchange.svelte';
+  import Templates from './Templates.svelte';
 
   loadRefs();
   const seg = $derived(route.path.split('/').slice(2));
@@ -15,6 +16,7 @@
   const kind = $derived(ITEM_KINDS.find((k) => k.path === sub));
   const groups = $derived.by(() => {
     const g: SecGroup[] = [{ label: 'Fiches', items: ITEM_KINDS.map((k) => ({ key: k.path, label: k.label, href: `/catalogue/${k.path}` })) }];
+    g.push({ label: 'Bibliothèque', items: [{ key: 'modeles', label: 'Modèles de contenants', href: '/catalogue/modeles' }] });
     const tools = [{ key: 'referentiels', label: 'Référentiels', href: '/catalogue/referentiels' }];
     if (can('catalogue', 'ecriture')) tools.push({ key: 'import', label: 'Import', href: '/catalogue/import' });
     tools.push({ key: 'echange', label: 'Export et échange', href: '/catalogue/echange' });
@@ -35,6 +37,7 @@
     {:else if sub === 'referentiels'}<Refs />
     {:else if sub === 'import'}<Import />
     {:else if sub === 'echange'}<Exchange />
+    {:else if sub === 'modeles'}<Templates />
     {:else}<p class="lead">Section introuvable.</p>{/if}
   </div>
 {/if}

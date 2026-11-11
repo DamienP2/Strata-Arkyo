@@ -17,7 +17,7 @@
   let { view }: { view: ProjectView } = $props();
   type Face = 'front' | 'rear' | 'rear_inner';
   type W = 'full' | 'half' | 'third' | 'quarter';
-  interface Placement { id: string; article_id: string; instance_id: string | null; face: Face; u_start: number; width: W; col: number; circuit_id: string | null; rev: number }
+  interface Placement { id: string; article_id: string; instance_id: string | null; face: Face; u_start: number; width: W; col: number; circuit_id: string | null; shelf_id: string | null; rev: number }
   interface RackEl { placement: Placement; label: string; tag: string | null; nature: string; height_u: number; depth_mm: number | null; rear_reserve_mm: number | null; weight_kg: number | null; power_w: number | null; function: string | null; category: string | null; brand: string | null }
   interface Pending { article_id: string; instance_id?: string; tag?: string; label: string; nature: string; height_u: number | null; width: W | null; rackable: boolean; function: string | null }
   interface Circuit { id: string; name: string; phase: 'L1' | 'L2' | 'L3'; rating_a: number; rev: number }
@@ -103,7 +103,15 @@
   onDestroy(() => { stopBeat(); if (current) release(current); });
 
   // ----- Pose et déplacement -----
-  const faceEls = $derived(rack?.elements.filter((e) => e.placement.face === face) ?? []);
+  const faceEls = $derived(rack?.elements.filter((e) => e.placement.face === face && !e.placement.shelf_id) ?? []);
+  const onShelf = (id: string) => rack?.elements.filter((e) => e.placement.shelf_id === id) ?? [];
+  const isShelf = (e: RackEl) => e.nature === 'accessory' && /^Étagère/.test(e.label);
+  const shelfOf = (e: RackEl) => rack?.elements.find((x) => x.placement.id === e.placement.shelf_id);
+  async function putOnShelf(shelf: RackEl, p: Pending) {
+    lastAction = Date.now();
+    try { await api.post(`/containers/${cid}/placements`, { article_id: p.article_id, instance_id: p.instance_id ?? null, face: shelf.placement.face, u_start: shelf.placement.u_start, shelf_id: shelf.placement.id }); await load(); }
+    catch (e) { fail(e); }
+  }
   const selected = $derived(rack?.elements.find((e) => e.placement.id === sel) ?? null);
   let placing = false;
   async function placeAt(u: number, col: number) {
@@ -230,7 +238,11 @@
               <span class="pend-row"><span class="ph">{p.height_u} U{p.width && p.width !== 'full' ? ` · ${p.width === 'half' ? '1/2' : p.width === 'third' ? '1/3' : '1/4'}` : ''}</span><span class="pend-t"><b>{p.label}</b><span>{p.tag ?? 'Accessoire'}</span></span></span>
             </button>
           {:else}<p class="small muted">Tout est posé.</p>{/each}
-          {#if notRackable.length}<p class="small muted">{notRackable.length} équipement(s) hors format rack : ils se poseront sur une étagère (prochaine étape).</p>{/if}
+          {#if notRackable.length}
+            <h2 style="margin-top:8px">Sur étagère <span class="muted">· {notRackable.length}</span></h2>
+            <p class="small muted">Hors format rack : choisissez une étagère posée dans la baie, puis « Poser ».</p>
+            {#each notRackable as p (p.instance_id ?? p.article_id)}<div class="pend" style="cursor:default"><span class="ph">—</span><span class="pend-t"><b>{p.label}</b><span>{p.tag ?? ''}</span></span></div>{/each}
+          {/if}
         </section>
       </aside>
 
@@ -268,7 +280,7 @@
                     style={style(e)} role="button" tabindex="0" draggable={mine} title="{e.label}{e.tag ? ` · ${e.tag}` : ''} · U{e.placement.u_start}"
                     onclick={() => (sel = e.placement.id)} onkeydown={(k) => { if (k.key === 'Enter') sel = e.placement.id; }}
                     ondragstart={() => (dragging = e)} ondragend={() => (dragging = null)}>
-                    {#if e.nature !== 'accessory'}<i class="led"></i>{/if}<span class="rn">{e.label}</span>{#if mode === 'real'}<span class="dec">{@html decor(typeOf(e))}</span>{:else}<span class="dec"></span>{/if}{#if e.tag}<span class="rr">{e.tag}</span>{/if}
+                    {#if e.nature !== 'accessory'}<i class="led"></i>{/if}<span class="rn">{e.label}</span>{#if isShelf(e) && onShelf(e.placement.id).length}<span class="shelf-load">{#each onShelf(e.placement.id) as x (x.placement.id)}<span class="sh-it" style="--c:{fnColor(x.function)}">{x.label}</span>{/each}</span>{:else if mode === 'real'}<span class="dec">{@html decor(typeOf(e))}</span>{:else}<span class="dec"></span>{/if}{#if e.tag}<span class="rr">{e.tag}</span>{/if}
                   </div>
                 {/each}
                 {#if armed && hoverU}
@@ -290,7 +302,22 @@
             <dl class="kv"><dt>Repère</dt><dd class="mono">{selected.tag ?? '—'}</dd><dt>Position</dt><dd>U{p.u_start}{selected.height_u > 1 ? `–${p.u_start + Math.ceil(selected.height_u) - 1}` : ''} · {FACES[p.face]}</dd>
               <dt>Profondeur</dt><dd>{selected.depth_mm ? `${nf(selected.depth_mm)} mm` : '—'}</dd><dt>Puissance</dt><dd>{selected.power_w ? `${nf(selected.power_w)} W` : '—'}</dd></dl>
             {#each rack.warnings.filter((w) => w.placement_id === p.id) as w}<div class="alert warn"><Icon name="alert" /><span>{w.message}</span></div>{/each}
-            {#if mine}
+            {#if isShelf(selected)}
+              <div class="stack" style="gap:8px">
+                <span class="flabel">Sur l’étagère · {onShelf(p.id).length} / 10</span>
+                {#each onShelf(p.id) as x (x.placement.id)}<button class="pend" style="padding:8px 10px" onclick={() => (sel = x.placement.id)}><span class="pend-t"><b>{x.label}</b><span>{x.tag ?? ''}</span></span></button>{/each}
+                {#if mine && notRackable.length && onShelf(p.id).length < 10}
+                  {#each notRackable as np (np.instance_id ?? np.article_id)}<button class="btn sm" style="justify-content:flex-start" onclick={() => putOnShelf(selected, np)}><Icon name="plus" size="sm" />Poser {np.label}{np.tag ? ` · ${np.tag}` : ''}</button>{/each}
+                {/if}
+              </div>
+            {/if}
+            {#if selected.placement.shelf_id}
+              <p class="small muted">Posé sur {shelfOf(selected)?.label ?? 'une étagère'} : il en suit la position.</p>
+              {#if mine}
+                <div class="field"><label for="rk-c2">Circuit</label><select class="input" id="rk-c2" value={p.circuit_id ?? ''} onchange={(e) => patch(selected, { circuit_id: (e.target as HTMLSelectElement).value || null })}><option value="">Non branché</option>{#each rack.circuits as c}<option value={c.id}>{c.name} · {c.phase} · {c.rating_a} A</option>{/each}</select></div>
+                <button class="btn sm ghost danger" style="align-self:flex-start" onclick={() => unplace(selected)}><Icon name="x" size="sm" />Retirer de l’étagère</button>
+              {/if}
+            {:else if mine}
               <div style="display:flex;gap:6px;flex-wrap:wrap">
                 <button class="btn sm" onclick={() => patch(selected, { u_start: p.u_start + 1 })} disabled={p.u_start + selected.height_u > units}>▲ Monter</button>
                 <button class="btn sm" onclick={() => patch(selected, { u_start: p.u_start - 1 })} disabled={p.u_start <= 1}>▼ Descendre</button>
@@ -347,6 +374,8 @@
 
 <style>
   .rack-screen .design-body { min-height: 640px; }
+  .shelf-load { flex: 1 1 0; min-width: 0; display: flex; gap: 4px; justify-content: flex-end; overflow: hidden; }
+  .sh-it { flex: none; font: 600 10px/1 var(--font); padding: 3px 6px; border-radius: 3px; color: #fff; background: color-mix(in srgb, var(--c) 70%, #1C1F23); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .15); max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .circ { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 8px 10px; border-radius: 10px; background: var(--surface-2); font-size: 14px; }
   .circ.over { background: var(--err-soft); }
   .circ.over .mono { color: var(--err); font-weight: 700; }

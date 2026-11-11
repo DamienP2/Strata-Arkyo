@@ -7,6 +7,7 @@
   import FieldError from '../../components/FieldError.svelte';
   import ContainerDialog from './ContainerDialog.svelte';
   import AddArticle from './AddArticle.svelte';
+  import TemplatePick from './TemplatePick.svelte';
   import { api, ApiError, download } from '../../lib/api';
   import { can } from '../../lib/session.svelte';
   import { toast, fail } from '../../lib/toast.svelte';
@@ -36,6 +37,11 @@
   let locErr = $state<Record<string, string>>({});
   let contEdit = $state<{ c: Container | null } | null>(null);
   let adding = $state(false);
+  let fromTemplate = $state(false);
+  async function saveAsTemplate(c: Container) {
+    try { const r = await api.post<{ name: string }>(`/containers/${c.id}/save-as-template`, { name: c.name }); toast(`Modèle « ${r.name} » enregistré en brouillon. Activez-le dans Catalogue › Modèles.`); }
+    catch (e) { fail(e); }
+  }
   let moving = $state<{ a: Article; target: string; instance: string | null } | null>(null);
   let confirmDel = $state<{ kind: 'container' | 'article' | 'location'; id: string; name: string } | null>(null);
   let open = $state<Set<string>>(new Set());
@@ -118,6 +124,7 @@
         {#if writable}<div class="head-actions">
           <button class="btn sm" onclick={() => (locEdit = { id: loc.id, rev: loc.rev, name: loc.name, code: loc.code })}><Icon name="pen" size="sm" />Renommer</button>
           <button class="btn sm ghost danger" onclick={() => (confirmDel = { kind: 'location', id: loc.id, name: loc.name })}><Icon name="trash" size="sm" /></button>
+          <button class="btn sm" onclick={() => (fromTemplate = true)}><Icon name="copy" size="sm" />Depuis un modèle</button>
           <button class="btn sm primary" onclick={() => (contEdit = { c: null })}><Icon name="plus" size="sm" />Contenant</button>
         </div>{/if}
       </div>
@@ -150,6 +157,7 @@
         <div class="card-head">
           <div><h2>{cont ? cont.name : 'Équipements libres'}</h2><span class="small muted">{arts.reduce((s, a) => s + a.quantity, 0)} article{arts.length > 1 ? 's' : ''}{cont ? ` · code câble ${cont.cable_code}` : ''}{cont?.totals.volume_m3 ? ` · ${nf(cont.totals.volume_m3, 2)} m³` : ''}</span></div>
           {#if writable}<div class="head-actions">
+            {#if cont && can('catalogue', 'ecriture')}<button class="btn sm ghost" onclick={() => saveAsTemplate(cont)} title="Copie le contenant et son contenu dans la bibliothèque"><Icon name="copy" size="sm" />Enregistrer comme modèle</button>{/if}
             {#if cont}<button class="btn sm" onclick={() => (contEdit = { c: cont })}><Icon name="pen" size="sm" />Modifier</button><button class="btn sm ghost danger" onclick={() => (confirmDel = { kind: 'container', id: cont.id, name: cont.name })}><Icon name="trash" size="sm" /></button>{/if}
             <button class="btn sm primary" onclick={() => (adding = true)}><Icon name="plus" size="sm" />Ajouter du matériel</button>
           </div>{/if}
@@ -205,6 +213,7 @@
   </Dialog>
 {/if}
 {#if contEdit && selLoc}<ContainerDialog {view} container={contEdit.c} locationId={selLoc} onclose={() => (contEdit = null)} ondone={async (id) => { contEdit = null; await reload(); const c = view.containers.find((x) => x.id === id); if (c) { selLoc = c.location_id; selCont = id; } }} />{/if}
+{#if fromTemplate && selLoc}<TemplatePick {view} locationId={selLoc} onclose={() => (fromTemplate = false)} ondone={async (id) => { fromTemplate = false; await reload(); selCont = id; }} />{/if}
 {#if adding && selLoc}<AddArticle {view} container={cont} locationId={selLoc} onclose={() => (adding = false)} ondone={async () => { await reload(); }} />{/if}
 {#if moving}
   <Dialog title="Déplacer « {moving.a.label} »" eyebrow={view.project.name} onclose={() => (moving = null)}>
