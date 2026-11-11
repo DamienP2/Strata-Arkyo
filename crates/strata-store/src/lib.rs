@@ -16,6 +16,7 @@ use std::time::Duration;
 use strata_domain::{Level, Permissions, RoleInfo, builtin};
 
 pub mod catalog;
+pub mod panels;
 pub mod projects;
 pub mod racks;
 pub mod templates;

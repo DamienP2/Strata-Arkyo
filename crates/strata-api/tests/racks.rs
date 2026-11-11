@@ -70,6 +70,7 @@ struct Setup {
     app: Router,
     o: String,
     lea: String,
+    pid: String,
     cid: String,
     mixer: String,
     half: String,
@@ -167,6 +168,7 @@ async fn setup() -> Setup {
         app,
         o,
         lea,
+        pid,
         cid,
         mixer: arts[0].clone(),
         half: arts[1].clone(),
@@ -904,4 +906,160 @@ async fn templates_round_trip() {
         .status,
         StatusCode::FORBIDDEN
     );
+}
+
+#[tokio::test]
+async fn patch_panels_from_library_to_rack() {
+    let Setup {
+        app,
+        o,
+        lea,
+        pid,
+        cid,
+        ..
+    } = setup().await;
+    let slot = |i: u32, c: &str, d: bool| json!({"index": i, "connector": c, "label": format!("IN {i}"), "d_format": d});
+    let panel = json!({"name": "Patch vidéo", "height_u": 1, "per_u": 16, "rear_depth_mm": 80,
+        "slots": [slot(1, "bnc", true), slot(2, "bnc", true), slot(3, "dsub9", true)],
+        "groups": [{"row": 1, "start": 1, "len": 2, "label": "Caméras", "color": "#2459E0"}]});
+
+    // Léa (technicienne) n'écrit pas dans la bibliothèque.
+    let r = call(
+        &app,
+        "POST",
+        "/api/panels",
+        Some(json!({"panel": panel})),
+        Some(&lea),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::FORBIDDEN);
+    let r = call(
+        &app,
+        "POST",
+        "/api/panels",
+        Some(json!({"panel": panel})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::CREATED, "{:?}", r.body);
+    let lib = r.body.clone();
+    let id = lib["id"].as_str().unwrap();
+    assert_eq!(lib["stats"]["used"], 3);
+    // Le D-Sub 9 n'existe pas en format D : le format est retiré.
+    assert_eq!(lib["panel"]["slots"][2]["d_format"], false);
+    assert_eq!(lib["panel"]["slots"][0]["d_format"], true);
+
+    // Chevauchement et nom pris.
+    let mut bad = panel.clone();
+    bad["slots"][1]["index"] = json!(1);
+    let r = call(
+        &app,
+        "PUT",
+        &format!("/api/panels/{id}"),
+        Some(json!({"rev": lib["rev"], "panel": bad})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let r = call(
+        &app,
+        "POST",
+        "/api/panels",
+        Some(json!({"panel": panel})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.body["fields"][0]["field"], "name");
+    let r = call(
+        &app,
+        "POST",
+        &format!("/api/panels/{id}/duplicate"),
+        None,
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.body["panel"]["name"], "Patch vidéo (copie)");
+
+    // Copie dans le projet, pose dans la baie, modification sans toucher la bibliothèque.
+    let r = call(&app, "POST", &format!("/api/projects/{pid}/articles"),
+        Some(json!({"container_id": cid, "nature": "accessory", "accessory": {"kind": "panel", "panel": lib["panel"]}})), Some(&o)).await;
+    assert_eq!(r.status, StatusCode::CREATED, "{:?}", r.body);
+    let art = r.body["article"]["id"].as_str().unwrap().to_string();
+    call(
+        &app,
+        "POST",
+        &format!("/api/containers/{cid}/rack/lock"),
+        None,
+        Some(&o),
+    )
+    .await;
+    let r = call(
+        &app,
+        "POST",
+        &format!("/api/containers/{cid}/placements"),
+        Some(place(&art, 12)),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::CREATED, "{:?}", r.body);
+    let rack = call(
+        &app,
+        "GET",
+        &format!("/api/containers/{cid}/rack"),
+        None,
+        Some(&o),
+    )
+    .await;
+    let el = rack.body["elements"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["placement"]["article_id"] == art)
+        .unwrap()
+        .clone();
+    assert_eq!(el["label"], "Patch vidéo");
+    assert_eq!(
+        el["accessory"]["panel"]["slots"].as_array().unwrap().len(),
+        3
+    );
+
+    let mut edited = lib["panel"].clone();
+    edited["slots"][0]["label"] = json!("CAM 1");
+    let r = call(
+        &app,
+        "PUT",
+        &format!("/api/articles/{art}/panel"),
+        Some(json!({"rev": 1, "panel": edited})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    assert_eq!(
+        r.body["article"]["accessory"]["panel"]["slots"][0]["label"],
+        "CAM 1"
+    );
+    let mut taller = edited.clone();
+    taller["height_u"] = json!(2);
+    let r = call(
+        &app,
+        "PUT",
+        &format!("/api/articles/{art}/panel"),
+        Some(json!({"rev": 2, "panel": taller})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(
+        r.body["fields"][0]["field"], "height_u",
+        "posé : la hauteur ne change pas"
+    );
+    let r = call(&app, "GET", &format!("/api/panels/{id}"), None, Some(&o)).await;
+    assert_eq!(
+        r.body["panel"]["slots"][0]["label"], "IN 1",
+        "la bibliothèque n'a pas bougé"
+    );
+
+    let r = call(&app, "DELETE", &format!("/api/panels/{id}"), None, Some(&o)).await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT);
+    let r = call(&app, "GET", "/api/panels", None, Some(&o)).await;
+    assert_eq!(r.body["panels"].as_array().unwrap().len(), 1);
 }

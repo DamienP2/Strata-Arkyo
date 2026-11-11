@@ -10,6 +10,7 @@ pub mod catalog_io;
 pub mod error;
 pub mod live;
 pub mod ops;
+pub mod panels;
 pub mod projects;
 pub mod racks;
 pub mod templates;
@@ -93,6 +94,7 @@ pub fn router(state: AppState) -> Router {
         .merge(projects::routes())
         .merge(racks::routes())
         .merge(templates::routes())
+        .merge(panels::routes())
         .route("/live", get(live::socket))
         .layer(middleware::from_fn(csrf));
     Router::new()

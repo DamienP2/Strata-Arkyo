@@ -127,6 +127,8 @@ pub struct ConnectorData {
     pub symbol: String,
     pub color: String,
     pub functions: Vec<String>,
+    /// Existe en coque standard (format D) pour les panels.
+    pub d_format: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

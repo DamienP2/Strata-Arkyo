@@ -66,6 +66,27 @@ type ConnectorRow = (
     &'static str,
     &'static [&'static str],
 );
+/// Connecteurs vendus en coque standard (format D) pour les panels.
+const D_FORMAT: &[&str] = &[
+    "bnc",
+    "hd-bnc",
+    "xlr3",
+    "xlr4",
+    "xlr5",
+    "jack635",
+    "rca",
+    "rj45",
+    "ethercon",
+    "lc",
+    "hdmi",
+    "usb",
+    "powercon",
+    "powercon-true1",
+    "opticalcon-duo",
+    "sc",
+    "toslink",
+];
+
 const CONNECTORS: &[ConnectorRow] = &[
     (
         "bnc",
@@ -528,7 +549,7 @@ pub fn defaults() -> Vec<DefaultRef> {
             RefKind::Connector,
             id,
             name,
-            json!({ "variants": variants, "symbol": id, "color": color, "functions": functions }),
+            json!({ "variants": variants, "symbol": id, "color": color, "functions": functions, "d_format": D_FORMAT.contains(id) }),
         ));
     }
     for (id, name, function, imp, bw, connectors, ip, multicast, redundancy, prefix) in SIGNALS {

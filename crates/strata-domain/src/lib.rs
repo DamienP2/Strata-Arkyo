@@ -6,6 +6,7 @@
 
 pub mod account;
 pub mod catalog;
+pub mod panel;
 pub mod permissions;
 pub mod project;
 pub mod rack;

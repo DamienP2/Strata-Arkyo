@@ -430,6 +430,10 @@ pub enum Accessory {
         depth_mm: u32,
         height_u: u32,
     },
+    /// Panel de brassage : instance propre au projet, copiée depuis la bibliothèque.
+    Panel {
+        panel: crate::panel::PanelData,
+    },
 }
 
 impl Accessory {
@@ -438,6 +442,18 @@ impl Accessory {
             Accessory::Plate { height_u, .. }
             | Accessory::Shelf { height_u, .. }
             | Accessory::Drawer { height_u, .. } => *height_u,
+            Accessory::Panel { panel } => panel.height_u,
+        }
+    }
+
+    /// Profondeur occupée dans la baie (panel : profondeur de câblage arrière).
+    pub fn depth_mm(&self) -> Option<f64> {
+        match self {
+            Accessory::Shelf { depth_mm, .. } | Accessory::Drawer { depth_mm, .. } => {
+                Some(*depth_mm as f64)
+            }
+            Accessory::Panel { panel } => Some(panel.rear_depth_mm as f64),
+            Accessory::Plate { .. } => None,
         }
     }
 
@@ -458,11 +474,18 @@ impl Accessory {
             Accessory::Drawer { depth_mm, height_u } => {
                 format!("Tiroir {height_u}U · {depth_mm}mm")
             }
+            Accessory::Panel { panel } => panel.name.clone(),
         }
     }
 
     pub fn validate(&self) -> Vec<FieldError> {
         let mut e = Vec::new();
+        if let Accessory::Panel { panel } = self {
+            if !(1..=4).contains(&panel.height_u) {
+                e.push(err("accessory.panel.height_u", "De 1 à 4 U."));
+            }
+            return e;
+        }
         if !(1..=8).contains(&self.height_u()) {
             e.push(err("accessory.height_u", "De 1 à 8 U."));
         }

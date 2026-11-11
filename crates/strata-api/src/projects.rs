@@ -80,7 +80,7 @@ pub(crate) fn read(m: &Member) -> ApiResult<()> {
     m.0.require(Domain::Projets, Level::Lecture, READ)
 }
 
-fn write(m: &Member) -> ApiResult<()> {
+pub(crate) fn write(m: &Member) -> ApiResult<()> {
     m.0.require(Domain::Projets, Level::Ecriture, WRITE)
 }
 
@@ -94,7 +94,7 @@ pub(crate) fn room(pid: &str) -> String {
 
 /// Publie un changement dans la salle du projet et l'écrit dans son historique.
 #[allow(clippy::too_many_arguments)]
-async fn record<B: Serialize, A: Serialize>(
+pub(crate) async fn record<B: Serialize, A: Serialize>(
     st: &AppState,
     m: &Member,
     origin: &Origin,
@@ -1034,9 +1034,7 @@ fn fit_warnings(
     }
     let depth = match (item, acc) {
         (Some(i), _) if i.rackable => i.depth_mm,
-        (_, Some(Accessory::Shelf { depth_mm, .. } | Accessory::Drawer { depth_mm, .. })) => {
-            Some(*depth_mm as f64)
-        }
+        (_, Some(acc)) => acc.depth_mm(),
         _ => None,
     };
     if let (Some(d), Some(cd)) = (depth, c.data.depth_mm) {
@@ -1064,7 +1062,7 @@ async fn create_article(
     m: Member,
     origin: Origin,
     Path(pid): Path<String>,
-    Json(b): Json<NewArticle>,
+    Json(mut b): Json<NewArticle>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
     write(&m)?;
     project_of(&st.store, &pid).await?;
@@ -1127,9 +1125,12 @@ async fn create_article(
         ArticleNature::Accessory => {
             let acc = b
                 .accessory
-                .as_ref()
+                .as_mut()
                 .ok_or_else(|| one("accessory", "Décrivez l'accessoire."))?;
             fields(acc.validate())?;
+            if let Accessory::Panel { panel } = acc {
+                crate::panels::check_panel(&st.store, panel).await?;
+            }
             if !container.as_ref().is_some_and(|c| c.data.rackable) {
                 return Err(one(
                     "container_id",

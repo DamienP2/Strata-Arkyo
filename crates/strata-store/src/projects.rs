@@ -663,6 +663,30 @@ impl Store {
 
     /// Change la quantité. Les exemplaires suivent : en baisse, les derniers créés partent
     /// (le placement et le câblage, à venir, fixeront un ordre plus fin).
+    /// Remplace la description d'un accessoire (panel modifié dans le projet).
+    pub async fn set_article_accessory(
+        &self,
+        id: &str,
+        rev: i64,
+        accessory: &Accessory,
+    ) -> Result<Article> {
+        let mut tx = self.pool.begin().await?;
+        check_rev(&mut tx, "articles", id, rev).await?;
+        let pid: String = sqlx::query_scalar("SELECT project_id FROM articles WHERE id = ?")
+            .bind(id)
+            .fetch_one(&mut *tx)
+            .await?;
+        sqlx::query("UPDATE articles SET data = ?, rev = rev + 1, updated_at = ? WHERE id = ?")
+            .bind(serde_json::json!({ "accessory": accessory }).to_string())
+            .bind(now())
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+        touch_project(&mut tx, &pid).await?;
+        tx.commit().await?;
+        self.article(id).await?.ok_or(StoreError::NotFound)
+    }
+
     pub async fn set_article_quantity(&self, id: &str, rev: i64, quantity: i64) -> Result<Article> {
         let mut tx = self.pool.begin().await?;
         check_rev(&mut tx, "articles", id, rev).await?;
