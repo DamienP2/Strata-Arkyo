@@ -15,6 +15,7 @@ use std::str::FromStr;
 use std::time::Duration;
 use strata_domain::{Level, Permissions, RoleInfo, builtin};
 
+pub mod cables;
 pub mod catalog;
 pub mod checks;
 pub mod panels;

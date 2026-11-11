@@ -1519,3 +1519,214 @@ async fn sheet_settings_are_kept_per_project() {
         "Studios Atlantique"
     );
 }
+
+#[tokio::test]
+async fn synoptic_cables_port_to_port() {
+    let Setup {
+        app,
+        o,
+        lea,
+        pid,
+        cid,
+        ..
+    } = setup().await;
+    let item = |name: &str, h: u32, ports: Value| json!({"kind": "equipment", "data": {"name": name, "functions": ["V"], "format": {"kind": "rack", "height_u": h, "depth_mm": 300}, "ports": ports}});
+    let cam = call(&app, "POST", "/api/catalog/items", Some(item("Convertisseur fibre", 1, json!([
+        {"connector_id": "bnc", "signal_id": "sdi-3g", "direction": "out", "gender": "F", "quantity": 2, "label": "SDI OUT"},
+        {"connector_id": "xlr3", "signal_id": "aes3", "direction": "out", "gender": "M", "quantity": 1}
+    ]))), Some(&o)).await.body["item"]["id"].as_str().unwrap().to_string();
+    let mix = call(&app, "POST", "/api/catalog/items", Some(item("Mélangeur 1 M/E", 2, json!([
+        {"connector_id": "bnc", "signal_id": "sdi-3g", "direction": "in", "gender": "F", "quantity": 4, "label": "IN"}
+    ]))), Some(&o)).await.body["item"]["id"].as_str().unwrap().to_string();
+    let mut arts = Vec::new();
+    for it in [&cam, &mix] {
+        arts.push(
+            call(
+                &app,
+                "POST",
+                &format!("/api/projects/{pid}/articles"),
+                Some(json!({"container_id": cid, "nature": "equipment", "item_id": it})),
+                Some(&o),
+            )
+            .await
+            .body["article"]["id"]
+                .as_str()
+                .unwrap()
+                .to_string(),
+        );
+    }
+    let view = format!("container:{cid}");
+    let r = call(
+        &app,
+        "GET",
+        &format!("/api/projects/{pid}/synoptic?view={view}"),
+        None,
+        Some(&lea),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    let nodes = r.body["nodes"].as_array().unwrap();
+    let node = |name: &str| nodes.iter().find(|n| n["label"] == name).unwrap().clone();
+    let conv = node("Convertisseur fibre");
+    let mixer = node("Mélangeur 1 M/E");
+    assert_eq!(conv["ports"].as_array().unwrap().len(), 3);
+    assert_eq!(conv["ports"][1]["label"], "SDI OUT 2");
+    assert_eq!(conv["ports"][0]["side"], "r");
+    assert_eq!(mixer["ports"][0]["side"], "l");
+    let out1 = conv["ports"][0]["ref"].as_str().unwrap().to_string();
+    let aes = conv["ports"][2]["ref"].as_str().unwrap().to_string();
+    let in1 = mixer["ports"][0]["ref"].as_str().unwrap().to_string();
+    let in2 = mixer["ports"][1]["ref"].as_str().unwrap().to_string();
+
+    // Sans la main : refus. Léa (technicienne) n'a pas le droit de conception.
+    let url = format!("/api/projects/{pid}/cables");
+    let r = call(
+        &app,
+        "POST",
+        &url,
+        Some(json!({"cables": [{"a": out1, "b": in1}]})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::CONFLICT);
+    let r = call(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid}/synoptic/lock"),
+        None,
+        Some(&lea),
+    )
+    .await;
+    // Léa (technicienne) prend la main : le chef est en lecture seule jusqu'à ce qu'elle la rende.
+    assert_eq!(r.body["mine"], true);
+    let lock = format!("/api/projects/{pid}/synoptic/lock");
+    let r = call(&app, "POST", &lock, None, Some(&o)).await;
+    assert_eq!(r.body["mine"], false);
+    assert_eq!(r.body["account_name"], "Léa");
+    call(&app, "DELETE", &lock, None, Some(&lea)).await;
+    let r = call(&app, "POST", &lock, None, Some(&o)).await;
+    assert_eq!(r.body["mine"], true);
+
+    let r = call(
+        &app,
+        "POST",
+        &url,
+        Some(json!({"cables": [{"a": out1, "b": in1, "number": "V-0001"}, {"a": aes, "b": in2}]})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::CREATED, "{:?}", r.body);
+    assert!(r.body["warnings"][0].as_array().unwrap().is_empty());
+    let w: Vec<String> = serde_json::from_value(r.body["warnings"][1].clone()).unwrap();
+    assert!(
+        w.iter().any(|m| m.contains("Familles")) && w.iter().any(|m| m.contains("Connecteurs")),
+        "{w:?}"
+    );
+
+    // Port occupé : refus nommé, puis remplacement confirmé.
+    let r = call(
+        &app,
+        "POST",
+        &url,
+        Some(json!({"cables": [{"a": out1, "b": in2}]})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::CONFLICT);
+    assert_eq!(r.body["error"], "occupied");
+    assert_eq!(r.body["ports"].as_array().unwrap().len(), 2);
+    let r = call(
+        &app,
+        "POST",
+        &url,
+        Some(json!({"cables": [{"a": out1, "b": in2}], "replace": true})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.body["replaced"].as_array().unwrap().len(), 2);
+    let r = call(
+        &app,
+        "POST",
+        &url,
+        Some(json!({"cables": [{"a": "i:inconnu:0:1", "b": in1}]})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
+
+    // Longueur estimée une fois les deux équipements posés dans la baie.
+    call(
+        &app,
+        "POST",
+        &format!("/api/containers/{cid}/rack/lock"),
+        None,
+        Some(&o),
+    )
+    .await;
+    call(
+        &app,
+        "POST",
+        &format!("/api/containers/{cid}/placements"),
+        Some(place(&arts[0], 1)),
+        Some(&o),
+    )
+    .await;
+    call(
+        &app,
+        "POST",
+        &format!("/api/containers/{cid}/placements"),
+        Some(place(&arts[1], 8)),
+        Some(&o),
+    )
+    .await;
+    let r = call(
+        &app,
+        "GET",
+        &format!("/api/projects/{pid}/synoptic?view={view}"),
+        None,
+        Some(&o),
+    )
+    .await;
+    let c = r.body["cables"][0].clone();
+    assert_eq!(c["estimate_m"], 1.0, "{c:?}");
+    let id = c["id"].as_str().unwrap();
+    let r = call(
+        &app,
+        "PATCH",
+        &format!("/api/cables/{id}"),
+        Some(json!({"rev": c["rev"], "number": "V-0002", "color": "#2459E0", "notes": "Repris"})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.body["number"], "V-0002");
+    call(
+        &app,
+        "PUT",
+        &format!("/api/projects/{pid}/synoptic/layout"),
+        Some(json!({"view": view, "positions": [{"node": conv["key"], "x": 40.4, "y": 80}]})),
+        Some(&o),
+    )
+    .await;
+    let r = call(
+        &app,
+        "GET",
+        &format!("/api/projects/{pid}/synoptic?view={view}"),
+        None,
+        Some(&o),
+    )
+    .await;
+    assert_eq!(
+        r.body["layout"][conv["key"].as_str().unwrap()],
+        json!({"x": 40.0, "y": 80.0})
+    );
+    assert_eq!(r.body["lock"]["mine"], true);
+    let r = call(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid}/cables/delete"),
+        Some(json!({"ids": [id]})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.body["deleted"], 1);
+}

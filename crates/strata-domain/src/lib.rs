@@ -11,6 +11,7 @@ pub mod panel;
 pub mod permissions;
 pub mod project;
 pub mod rack;
+pub mod synoptic;
 pub mod text;
 
 pub use account::*;
