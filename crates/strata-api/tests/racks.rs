@@ -1633,7 +1633,7 @@ async fn synoptic_cables_port_to_port() {
     )
     .await;
     assert_eq!(r.status, StatusCode::CONFLICT);
-    assert_eq!(r.body["error"], "occupied");
+    assert_eq!(r.body["code"], "occupied");
     assert_eq!(r.body["ports"].as_array().unwrap().len(), 2);
     let r = call(
         &app,

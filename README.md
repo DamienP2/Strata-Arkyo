@@ -19,7 +19,8 @@ Strata Arkyo est un seul programme Rust installé sur un serveur Ubuntu du site.
 | Interface | Web app Svelte embarquée : connexion, administration, catalogue, projets et inventaire en temps réel | Fait pour les lots 1 à 4 |
 | 5 | Racks : élévations (avant, arrière, arrière intérieure, côté ; réel ou schématique), placement au demi-U contrôlé par le serveur, profondeur utile, bilan électrique par circuit et par phase, verrou « une personne à la fois » | Fait : étagères, modèles d'éléments, panels de brassage, régies, contrôles de construction, planche d'élévations (PDF vectoriel, PNG, JPG, A4 à A0, cartouche). Le dossier de construction viendra avec le câblage (lot 6) |
 | Éléments | Le contenant devient un élément : baies et valises, mur d'écrans (grille, écrans et sources), pupitre et poste opérateur (postes et matériel affecté), emplacement libre, position caméra, boîtier de terrain, mât HF, point de raccordement, énergie, arrivée externe, diffusion, touret | Fait |
-| 6 à 10 | Synoptique, livrables, terrain, réseau, plans | À venir |
+| 6 | Synoptique : vues par élément et par lieu, nœuds et ports tirés du catalogue, câblage de port à port (multi-câbles), un câble par port, compatibilité, longueur estimée en rack, verrou | En cours : numérotation, validation, faisceaux, adaptateurs et ports externes, annotations, exports et mode tableau à venir |
+| 7 à 10 | Livrables, terrain, réseau, plans | À venir |
 
 ## Organisation du dépôt
 
@@ -153,6 +154,8 @@ Lire demande « Projets : lecture », écrire « Projets : écriture ». Chaque 
 | `GET`/`POST`/`DELETE /api/containers/{id}/checks`, `GET /api/projects/{id}/checks` | Contrôles de construction : liste à cocher déduite de l'inventaire, coche par lot, tout effacer, avancement par famille et par contenant (en direct) |
 | `GET`/`PUT /api/projects/{id}/settings/rack_sheet` | Planche d'élévations mémorisée par projet (feuilles, composition, cartouche), avec révision |
 | `GET`/`PUT /api/site` | Nom du site, repris dans les cartouches (droit Paramètres : écriture pour le changer) |
+| `GET /api/projects/{id}/synoptic?view=container:{id}\|location:{id}`, `PUT …/synoptic/layout`, `POST`/`DELETE …/synoptic/lock` | Synoptique d'une vue : nœuds, ports, câbles (avertissements, longueur estimée), disposition ; verrou du synoptique |
+| `POST /api/projects/{id}/cables`, `POST …/cables/delete`, `PATCH /api/cables/{id}` | Câbles par lots de 500 ; port occupé : 409 `occupied`, puis `replace` pour confirmer |
 | `GET /api/live` (WebSocket) | Temps réel : `{"type":"join","room":"project:<id>"}`, battement `{"type":"ping"}` toutes les 30 s ; événements `change` et `presence` |
 
 ## Mises à jour OTA

@@ -680,7 +680,7 @@ async fn create(
     match st.store.insert_cables(&pid, &list, b.replace, Some(&m.0.account.id)).await? {
         PlaceCables::Occupied(busy) => Ok((
             StatusCode::CONFLICT,
-            Json(json!({ "error": "occupied", "message": format!("{} port(s) déjà câblé(s) : le câble existant sera remplacé.", busy.len()), "ports": busy })),
+            Json(json!({ "code": "occupied", "message": format!("{} port(s) déjà câblé(s) : le câble existant sera remplacé.", busy.len()), "ports": busy })),
         )
             .into_response()),
         PlaceCables::Done { created, replaced } => {
