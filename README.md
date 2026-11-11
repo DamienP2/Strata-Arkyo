@@ -17,7 +17,7 @@ Strata Arkyo est un seul programme Rust installé sur un serveur Ubuntu du site.
 | 3 | Catalogue : référentiels et pack de départ, fiches équipements, câbles, modèles de câble, adaptateurs, doublons, compatibilité câble et signal, import CSV/XLSX, export, échange entre sites, retour arrière | Fait |
 | 4 | Projets et inventaire : assistant de création, liste et tableau de bord, fiche, emplacements, contenants, articles, exemplaires (repère, série, MAC, étiquette), tâches, historique, nomenclature ; temps réel et présence par WebSocket | Fait (modèles de contenants et panels : lot 5) |
 | Interface | Web app Svelte embarquée : connexion, administration, catalogue, projets et inventaire en temps réel | Fait pour les lots 1 à 4 |
-| 5 | Racks : élévations (avant, arrière, arrière intérieure, côté ; réel ou schématique), placement au demi-U contrôlé par le serveur, profondeur utile, bilan électrique par circuit et par phase, verrou « une personne à la fois » | En cours : étagères, modèles de contenants, panels de brassage, régies et contrôles de construction faits ; planche d'élévations à venir |
+| 5 | Racks : élévations (avant, arrière, arrière intérieure, côté ; réel ou schématique), placement au demi-U contrôlé par le serveur, profondeur utile, bilan électrique par circuit et par phase, verrou « une personne à la fois » | Fait : étagères, modèles d'éléments, panels de brassage, régies, contrôles de construction, planche d'élévations (PDF vectoriel, PNG, JPG, A4 à A0, cartouche). Le dossier de construction viendra avec le câblage (lot 6) |
 | Éléments | Le contenant devient un élément : baies et valises, mur d'écrans (grille, écrans et sources), pupitre et poste opérateur (postes et matériel affecté), emplacement libre, position caméra, boîtier de terrain, mât HF, point de raccordement, énergie, arrivée externe, diffusion, touret | Fait |
 | 6 à 10 | Synoptique, livrables, terrain, réseau, plans | À venir |
 
@@ -151,6 +151,8 @@ Lire demande « Projets : lecture », écrire « Projets : écriture ». Chaque 
 | `GET`/`POST /api/projects/{id}/regies`, `GET`/`PATCH`/`DELETE /api/regies/{id}` | Régies du projet : ensembles ordonnés de contenants, totaux ; la régie principale (créée au premier contenant) ne se supprime pas |
 | `GET`/`POST /api/regies`, `POST /api/regies/{id}/save-as-template`, `POST /api/projects/{id}/regies/from-template` | Modèles de régies : bibliothèque, enregistrement depuis un projet, copie dans un projet (contenants recréés avec leur contenu) |
 | `GET`/`POST`/`DELETE /api/containers/{id}/checks`, `GET /api/projects/{id}/checks` | Contrôles de construction : liste à cocher déduite de l'inventaire, coche par lot, tout effacer, avancement par famille et par contenant (en direct) |
+| `GET`/`PUT /api/projects/{id}/settings/rack_sheet` | Planche d'élévations mémorisée par projet (feuilles, composition, cartouche), avec révision |
+| `GET`/`PUT /api/site` | Nom du site, repris dans les cartouches (droit Paramètres : écriture pour le changer) |
 | `GET /api/live` (WebSocket) | Temps réel : `{"type":"join","room":"project:<id>"}`, battement `{"type":"ping"}` toutes les 30 s ; événements `change` et `presence` |
 
 ## Mises à jour OTA

@@ -21,6 +21,7 @@ pub mod panels;
 pub mod projects;
 pub mod racks;
 pub mod regies;
+pub mod settings;
 pub mod templates;
 pub use catalog::*;
 pub use projects::*;

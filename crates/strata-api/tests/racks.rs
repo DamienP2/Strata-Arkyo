@@ -1454,3 +1454,68 @@ async fn monitor_wall_element_keeps_its_screens_through_templates() {
             .starts_with("Mur d'écrans 2 × 3")
     );
 }
+
+#[tokio::test]
+async fn sheet_settings_are_kept_per_project() {
+    let Setup {
+        app, o, lea, pid, ..
+    } = setup().await;
+    let url = format!("/api/projects/{pid}/settings/rack_sheet");
+    let r = call(&app, "GET", &url, None, Some(&lea)).await;
+    assert_eq!(r.body, json!({"data": null, "rev": 0}));
+    let r = call(
+        &app,
+        "PUT",
+        &url,
+        Some(json!({"rev": 0, "data": {"paper": "A3"}})),
+        Some(&lea),
+    )
+    .await;
+    assert_eq!(r.body["rev"], 1);
+    let r = call(
+        &app,
+        "PUT",
+        &url,
+        Some(json!({"rev": 0, "data": {"paper": "A1"}})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::CONFLICT, "révision dépassée");
+    let r = call(&app, "GET", &url, None, Some(&o)).await;
+    assert_eq!(r.body["data"]["paper"], "A3");
+    let r = call(
+        &app,
+        "GET",
+        &format!("/api/projects/{pid}/settings/inconnu"),
+        None,
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::NOT_FOUND);
+
+    assert_eq!(
+        call(&app, "GET", "/api/site", None, Some(&lea)).await.body["name"],
+        "Strata Arkyo"
+    );
+    let r = call(
+        &app,
+        "PUT",
+        "/api/site",
+        Some(json!({"name": "Studios Atlantique"})),
+        Some(&lea),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::FORBIDDEN);
+    call(
+        &app,
+        "PUT",
+        "/api/site",
+        Some(json!({"name": "Studios Atlantique"})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(
+        call(&app, "GET", "/api/site", None, Some(&lea)).await.body["name"],
+        "Studios Atlantique"
+    );
+}

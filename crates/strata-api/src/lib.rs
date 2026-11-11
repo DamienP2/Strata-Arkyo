@@ -15,6 +15,7 @@ pub mod panels;
 pub mod projects;
 pub mod racks;
 pub mod regies;
+pub mod settings;
 pub mod templates;
 pub mod web;
 
@@ -99,6 +100,7 @@ pub fn router(state: AppState) -> Router {
         .merge(panels::routes())
         .merge(checks::routes())
         .merge(regies::routes())
+        .merge(settings::routes())
         .route("/live", get(live::socket))
         .layer(middleware::from_fn(csrf));
     Router::new()

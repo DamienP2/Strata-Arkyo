@@ -13,6 +13,7 @@
   import Inventory from './Inventory.svelte';
   import Regies from './Regies.svelte';
   import Workshop from './Workshop.svelte';
+  import RackSheet from './RackSheet.svelte';
   import Tasks from './Tasks.svelte';
   import History from './History.svelte';
   import Racks from './Racks.svelte';
@@ -47,6 +48,7 @@
     { key: 'historique', label: 'Historique', href: `/projets/${id}/historique` },
   ] }, { label: 'Dessiner', lock: true, items: [
     { key: 'racks', label: 'Racks', href: `/projets/${id}/racks` },
+    { key: 'planche', label: 'Planche d’élévations', href: `/projets/${id}/planche` },
   ] }, { label: 'Sur le terrain', items: [
     { key: 'atelier', label: 'Atelier', href: `/projets/${id}/atelier` },
   ] }]);
@@ -87,6 +89,7 @@
     {:else if sub === 'inventaire'}<Inventory bind:view reload={load} />
     {:else if sub === 'regies'}<Regies {view} />
     {:else if sub === 'atelier'}<Workshop {view} />
+    {:else if sub === 'planche'}<RackSheet {view} />
     {:else if sub === 'taches'}<Tasks bind:view reload={load} />
     {:else if sub === 'historique'}<History projectId={id} />
     {:else if sub === 'racks'}<Racks {view} />

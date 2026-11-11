@@ -943,9 +943,7 @@ async fn update_container(
         .update_container(&id, b.rev, &b.location_id, &b.name, &b.data)
         .await
         .map_err(|e| match e {
-            StoreError::Conflict(_) => {
-                one("name", "Un élément porte déjà ce nom dans le projet.")
-            }
+            StoreError::Conflict(_) => one("name", "Un élément porte déjà ce nom dans le projet."),
             e => e.into(),
         })?;
     record(
@@ -1325,10 +1323,7 @@ async fn move_article(
         }
         None => {
             if a.nature == ArticleNature::Accessory {
-                return Err(one(
-                    "container_id",
-                    "Un accessoire reste dans un élément.",
-                ));
+                return Err(one("container_id", "Un accessoire reste dans un élément."));
             }
             let l = b
                 .location_id
