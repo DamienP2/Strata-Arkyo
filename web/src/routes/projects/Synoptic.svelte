@@ -8,6 +8,9 @@
   import Icon from '../../components/Icon.svelte';
   import Confirm from '../../components/Confirm.svelte';
   import NumberingDialog from './NumberingDialog.svelte';
+  import Dialog from '../../components/Dialog.svelte';
+  import { withLightTheme, standalone, raster, pdf as toPdf, save } from '../../lib/svgexport';
+  import { PAPERS, type Paper } from '../../lib/sheet';
   import ConnGlyph from '../../components/ConnGlyph.svelte';
   import { api, ApiError } from '../../lib/api';
   import { can } from '../../lib/session.svelte';
@@ -24,13 +27,14 @@
   interface Far { node: string | null; label: string; sub: string; port: string; connector: string; external?: boolean; location_id?: string | null; resolved?: boolean | null }
   interface Fields { number: string | null; color: string | null; style: string; waypoints: [number, number][]; notes: string | null; tags: string[]; cable_model_id: string | null; harness_id: string | null; length_m: number | null; attach?: boolean; external?: { location_id: string | null; label: string | null } | null }
   interface CableV { id: string; a: string; b: string; rev: number; fields: Fields; a_in_view: boolean; b_in_view: boolean; a_info: Far | null; b_info: Far | null; warnings: string[]; estimate_m: number | null }
+  interface Ann { id: string; view: string; kind: 'zone' | 'label'; data: any; rev: number }
   interface Harness { id: string; name: string; color: string; rev: number }
   interface OvLoc { id: string; name: string; code: string; elements: number; weight_kg: number; power_w: number; outside: number }
   interface Overview { locations: OvLoc[]; links: { a: string; b: string; cables: string[]; external: number }[]; totals: { weight_kg: number; power_w: number } }
   interface Syn {
     view: string; nodes: SNode[]; cables: CableV[]; layout: Record<string, { x: number; y: number }>;
     lock: { account_id: string; account_name: string; taken_at: string; mine: boolean } | null;
-    overview: Overview | null; harnesses: Harness[];
+    overview: Overview | null; harnesses: Harness[]; annotations: Ann[];
     views: { containers: { id: string; name: string; location_id: string; kind: string }[]; locations: { id: string; name: string; code: string }[] };
   }
 
@@ -84,6 +88,11 @@
       multi = new Set([...multi].filter((id) => s.cables.some((c) => c.id === id)));
       if (pendingHl && pendingHl.view === s.view) { const i = pendingHl; pendingHl = null; if (i.cables[0]) { sel = i.cables[0]; multi = new Set(i.cables); } }
       if (tab === 'issues') validate();
+      // La position de chaque nœud est enregistrée une fois : les zones et la validation en dépendent.
+      if (s.lock?.mine && !s.overview) {
+        const missing = s.nodes.filter((n) => !s.layout[n.key] && pos[n.key]).map((n) => ({ node: n.key, ...pos[n.key]! }));
+        if (missing.length) api.put(`/projects/${pid}/synoptic/layout`, { view: s.view, positions: missing }).catch(() => {});
+      }
       if (!wanted && s.view) navigate(viewUrl(s.view), true);
     } catch (e) { fail(e); }
   }
@@ -242,15 +251,98 @@
   }
   $effect(() => { if (syn && svgEl && fitted !== syn.view) { fitted = syn.view; untrack(start); } });
 
-  let drag: { kind: 'pan' | 'node'; key?: string; ox: number; oy: number; moved: boolean } | null = null;
+  // ----- Historique : annuler / rétablir sur 50 états -----
+  interface Step { label: string; undo: () => Promise<unknown>; redo: () => Promise<unknown> }
+  let past = $state<Step[]>([]);
+  let future = $state<Step[]>([]);
+  function push(st: Step) { past = [...past.slice(-49), st]; future = []; }
+  async function undo() {
+    const st = past.at(-1); if (!st || !mine) return;
+    past = past.slice(0, -1);
+    try { await st.undo(); future = [...future, st]; toast(`Annulé : ${st.label}.`, 'info'); }
+    catch (e) { fail(e); past = []; future = []; }
+    await load();
+  }
+  async function redo() {
+    const st = future.at(-1); if (!st || !mine) return;
+    future = future.slice(0, -1);
+    try { await st.redo(); past = [...past, st]; toast(`Rétabli : ${st.label}.`, 'info'); }
+    catch (e) { fail(e); past = []; future = []; }
+    await load();
+  }
+  const findCable = (a: string, b: string) => syn?.cables.find((c) => (c.a === a && c.b === b) || (c.a === b && c.b === a));
+  /** Repose des câbles supprimés (câbles, attaches ou ports externes) avec leurs champs. */
+  async function restore(list: CableV[]) {
+    const plain = list.filter((c) => !c.fields.attach && !c.fields.external);
+    if (plain.length) await api.post(`/projects/${pid}/cables`, { cables: plain.map((c) => ({ ...c.fields, a: c.a, b: c.b })) });
+    for (const c of list.filter((x) => x.fields.attach)) await api.post(`/projects/${pid}/attach`, { adapter: c.b.startsWith('a:') ? c.b : c.a, port: c.b.startsWith('a:') ? c.a : c.b });
+    for (const c of list.filter((x) => x.fields.external)) await api.post(`/projects/${pid}/external`, { port: c.a, ...c.fields.external, number: c.fields.number });
+  }
+
+  // ----- Outils et annotations -----
+  type Tool = 'select' | 'zone' | 'label';
+  let tool = $state<Tool>('select');
+  let selAnn = $state<string | null>(null);
+  const anns = $derived(syn?.annotations ?? []);
+  const annSel = $derived(anns.find((a) => a.id === selAnn) ?? null);
+  let draft = $state<{ x: number; y: number; w: number; h: number } | null>(null);
+  async function createAnn(kind: 'zone' | 'label', data: object) {
+    if (!syn) return;
+    try {
+      const a = await api.post<Ann>(`/projects/${pid}/annotations`, { view: syn.view, kind, data });
+      const keep = { ...a.data };
+      push({ label: kind === 'zone' ? 'zone' : 'étiquette', undo: () => api.post(`/projects/${pid}/annotations/delete`, { ids: [findAnnLike(kind, keep)?.id ?? a.id] }), redo: () => api.post(`/projects/${pid}/annotations`, { view: syn!.view, kind, data: keep }) });
+      await load(); selAnn = (syn?.annotations.find((x) => JSON.stringify(x.data) === JSON.stringify(keep)) ?? a).id; tool = 'select';
+    } catch (e) { fail(e); }
+  }
+  const findAnnLike = (kind: string, data: object) => syn?.annotations.find((x) => x.kind === kind && JSON.stringify(x.data) === JSON.stringify(data));
+  async function patchAnn(a: Ann, data: object, label = 'annotation') {
+    const before = { ...a.data };
+    const after = { ...a.data, ...data };
+    try {
+      await api.patch(`/annotations/${a.id}`, { rev: a.rev, data: after });
+      push({ label, undo: async () => { const cur = findAnnLike(a.kind, after) ?? anns.find((x) => x.id === a.id); if (cur) await api.patch(`/annotations/${cur.id}`, { rev: cur.rev, data: before }); },
+        redo: async () => { const cur = findAnnLike(a.kind, before) ?? anns.find((x) => x.id === a.id); if (cur) await api.patch(`/annotations/${cur.id}`, { rev: cur.rev, data: after }); } });
+      await load();
+    } catch (e) { fail(e); await load(); }
+  }
+  async function deleteAnn(a: Ann) {
+    try {
+      await api.post(`/projects/${pid}/annotations/delete`, { ids: [a.id] });
+      const keep = { ...a.data };
+      push({ label: 'suppression', undo: () => api.post(`/projects/${pid}/annotations`, { view: a.view, kind: a.kind, data: keep }), redo: async () => { const cur = findAnnLike(a.kind, keep); if (cur) await api.post(`/projects/${pid}/annotations/delete`, { ids: [cur.id] }); } });
+      selAnn = null; await load();
+    } catch (e) { fail(e); }
+  }
+
+  // ----- Calques par famille de signal -----
+  let hiddenFam = $state<Set<string>>(new Set((() => { try { return JSON.parse(localStorage.getItem('syn-hidden') ?? '[]'); } catch { return []; } })()));
+  function toggleFam(f: string) { const h = new Set(hiddenFam); if (h.has(f)) h.delete(f); else h.add(f); hiddenFam = h; try { localStorage.setItem('syn-hidden', JSON.stringify([...h])); } catch { /* stockage indisponible */ } }
+  function isolateFam(f: string) { const all = families.filter((x) => x !== f); hiddenFam = new Set(all); try { localStorage.setItem('syn-hidden', JSON.stringify(all)); } catch { /* stockage indisponible */ } }
+  const famOf = (c: CableV) => portByRef(c.a)?.family ?? portByRef(c.b)?.family ?? '—';
+  const families = $derived([...new Set((syn?.cables ?? []).map(famOf))]);
+
+  let drag: { kind: 'pan' | 'node' | 'ann' | 'resize' | 'draft'; key?: string; ox: number; oy: number; moved: boolean; from?: { x: number; y: number; w?: number; h?: number } } | null = null;
   function down(e: PointerEvent) {
     const t = e.target as Element;
     if (t.closest('.port') || t.closest('.cable') || t.closest('.lbl')) return;
     const nodeEl = t.closest<SVGGElement>('[data-node]');
-    if (nodeEl && mine && t.closest('.drag')) {
+    const annEl = t.closest<SVGGElement>('[data-ann]');
+    const [wx0, wy0] = toWorld(e);
+    if (mine && tool === 'zone' && !nodeEl) {
+      drag = { kind: 'draft', ox: wx0, oy: wy0, moved: false }; draft = { x: wx0, y: wy0, w: 0, h: 0 };
+    } else if (mine && tool === 'label' && !nodeEl) {
+      createAnn('label', { x: Math.round(wx0), y: Math.round(wy0), text: 'Étiquette' });
+      return;
+    } else if (annEl) {
+      const a = anns.find((x) => x.id === annEl.dataset.ann); if (!a) return;
+      selAnn = a.id; sel = null; multi = new Set();
+      if (mine) drag = { kind: t.closest('.rs') ? 'resize' : 'ann', key: a.id, ox: wx0 - a.data.x, oy: wy0 - a.data.y, moved: false, from: { x: a.data.x, y: a.data.y, w: a.data.w, h: a.data.h } };
+    } else if (nodeEl && mine && t.closest('.drag')) {
       const key = nodeEl.dataset.node!, [wx, wy] = toWorld(e);
-      drag = { kind: 'node', key, ox: wx - pos[key]!.x, oy: wy - pos[key]!.y, moved: false };
+      drag = { kind: 'node', key, ox: wx - pos[key]!.x, oy: wy - pos[key]!.y, moved: false, from: { ...pos[key]! } };
     } else if (!nodeEl) {
+      selAnn = null;
       drag = { kind: 'pan', ox: e.clientX - tx, oy: e.clientY - ty, moved: false };
       sel = null; multi = new Set();
     }
@@ -262,13 +354,30 @@
     drag.moved = true;
     if (drag.kind === 'pan') { tx = e.clientX - drag.ox; ty = e.clientY - drag.oy; return; }
     const [wx, wy] = toWorld(e);
+    if (drag.kind === 'draft') { draft = { x: Math.min(drag.ox, wx), y: Math.min(drag.oy, wy), w: Math.abs(wx - drag.ox), h: Math.abs(wy - drag.oy) }; return; }
+    if (drag.kind === 'ann' || drag.kind === 'resize') {
+      const a = anns.find((x) => x.id === drag!.key); if (!a) return;
+      if (drag.kind === 'ann') { a.data.x = Math.round((wx - drag.ox) / 10) * 10; a.data.y = Math.round((wy - drag.oy) / 10) * 10; }
+      else { a.data.w = Math.max(40, Math.round((wx - a.data.x) / 10) * 10); a.data.h = Math.max(40, Math.round((wy - a.data.y) / 10) * 10); }
+      return;
+    }
     pos[drag.key!] = { x: Math.round((wx - drag.ox) / 10) * 10, y: Math.round((wy - drag.oy) / 10) * 10 };
   }
   async function up() {
     const d = drag; drag = null;
+    if (d?.kind === 'draft') { const z = draft; draft = null; if (z && z.w >= 20 && z.h >= 20) createAnn('zone', { x: Math.round(z.x), y: Math.round(z.y), w: Math.round(z.w), h: Math.round(z.h) }); return; }
+    if ((d?.kind === 'ann' || d?.kind === 'resize') && d.moved) {
+      const a = anns.find((x) => x.id === d.key); if (!a) return;
+      const moved = { x: a.data.x, y: a.data.y, w: a.data.w, h: a.data.h };
+      Object.assign(a.data, d.from);
+      patchAnn(a, d.kind === 'ann' ? { x: moved.x, y: moved.y } : { w: moved.w, h: moved.h }, d.kind === 'ann' ? 'déplacement' : 'taille');
+      return;
+    }
     if (d?.kind === 'node' && d.moved && syn) {
       lastAction = Date.now();
-      try { await api.put(`/projects/${pid}/synoptic/layout`, { view: syn.view, positions: [{ node: d.key, ...pos[d.key!] }] }); } catch (e) { fail(e); await load(); }
+      const view = syn.view, key = d.key!, to = { ...pos[key]! }, from = d.from!;
+      const put = (p: { x: number; y: number }) => api.put(`/projects/${pid}/synoptic/layout`, { view, positions: [{ node: key, ...p }] });
+      try { await put(to); push({ label: 'déplacement', undo: () => put(from), redo: () => put(to) }); } catch (e) { fail(e); await load(); }
     }
   }
 
@@ -308,6 +417,7 @@
   async function place(body: { cables: { a: string; b: string }[] }, replace: boolean) {
     try {
       const r = await api.post<{ created: { id: string }[]; warnings: string[][] }>(`/projects/${pid}/cables`, { ...body, replace });
+      push({ label: `${body.cables.length} câble(s)`, undo: async () => { const ids = body.cables.map((c) => findCable(c.a, c.b)?.id).filter(Boolean); if (ids.length) await api.post(`/projects/${pid}/cables/delete`, { ids }); }, redo: () => api.post(`/projects/${pid}/cables`, { ...body, replace: true }) });
       const w = r.warnings.flat();
       if (w.length) toast(`${r.created.length} câble(s) posé(s) · ${[...new Set(w)].join(' ')}`, 'warn');
       await load();
@@ -333,17 +443,66 @@
   async function patchSel(f: Partial<Fields>) {
     const c = selected; if (!c) return;
     lastAction = Date.now();
-    try { await api.patch(`/cables/${c.id}`, { rev: c.rev, ...c.fields, ...f }); await load(); } catch (e) { fail(e); await load(); }
+    const before = { ...c.fields }, after = { ...c.fields, ...f }, a = c.a, b = c.b;
+    const apply = async (fields: Fields) => { const cur = findCable(a, b); if (cur) await api.patch(`/cables/${cur.id}`, { rev: cur.rev, ...fields }); };
+    try { await api.patch(`/cables/${c.id}`, { rev: c.rev, ...after }); push({ label: 'modification du câble', undo: () => apply(before), redo: () => apply(after) }); await load(); } catch (e) { fail(e); await load(); }
   }
   async function deleteSel() {
     const ids = multi.size > 1 ? [...multi] : selected ? [selected.id] : [];
     if (!ids.length) return;
-    try { await api.post(`/projects/${pid}/cables/delete`, { ids }); sel = null; multi = new Set(); confirmDelete = false; await load(); } catch (e) { fail(e); }
+    const gone = (syn?.cables ?? []).filter((c) => ids.includes(c.id)).map((c) => ({ ...c, fields: { ...c.fields } }));
+    try {
+      await api.post(`/projects/${pid}/cables/delete`, { ids }); sel = null; multi = new Set(); confirmDelete = false;
+      push({ label: `suppression de ${gone.length} câble(s)`, undo: () => restore(gone), redo: async () => { const again = gone.map((g) => findCable(g.a, g.b)?.id).filter(Boolean); if (again.length) await api.post(`/projects/${pid}/cables/delete`, { ids: again }); } });
+      await load();
+    } catch (e) { fail(e); }
+  }
+  // Décâbler la vue (irréversible) et supprimer sa numérotation.
+  let unplug = $state(false);
+  async function unplugView() {
+    const ids = (syn?.cables ?? []).map((c) => c.id);
+    try { for (let i = 0; i < ids.length; i += 500) await api.post(`/projects/${pid}/cables/delete`, { ids: ids.slice(i, i + 500) }); toast(`${ids.length} câble(s) retiré(s).`); past = []; future = []; unplug = false; await load(); } catch (e) { fail(e); await load(); }
+  }
+  let unnumber = $state(false);
+  async function unnumberView() {
+    try { const r = await api.post<{ changed: number }>(`/projects/${pid}/numbering`, { mode: 'clear', view: syn?.view }); toast(`${r.changed} numéro(s) effacé(s).`); unnumber = false; await load(); } catch (e) { fail(e); }
   }
   function key(e: KeyboardEvent) {
     if ((e.target as Element).closest('input,textarea,select')) return;
     if (e.key === 'Escape') { armed = []; mouse = null; sel = null; multi = new Set(); hl = { cables: new Set(), nodes: new Set() }; }
-    if ((e.key === 'Delete' || e.key === 'Backspace') && selected && mine) { e.preventDefault(); confirmDelete = true; }
+    if ((e.key === 'Delete' || e.key === 'Backspace') && mine) {
+      if (annSel) { e.preventDefault(); deleteAnn(annSel); }
+      else if (selected || multi.size) { e.preventDefault(); confirmDelete = true; }
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }
+  }
+  let exp = $state<{ format: 'pdf' | 'png' | 'jpg'; paper: Paper; landscape: boolean; frame: 'all' | 'view'; revision: string; title: string; busy: boolean } | null>(null);
+  async function doExport() {
+    if (!exp || !syn || !svgEl) return;
+    exp.busy = true;
+    const keep = { sel, multi, hl, armed, selAnn };
+    sel = null; multi = new Set(); hl = { cables: new Set(), nodes: new Set() }; armed = []; selAnn = null;
+    try {
+      const site = (await api.get<{ name: string }>('/site')).name;
+      await withLightTheme(async () => {
+        const world = svgEl.querySelector('g.world') as SVGGElement;
+        let vb: [number, number, number, number];
+        if (exp!.frame === 'all') { const b = world.getBBox(); vb = [b.x - 30, b.y - 30, b.width + 60, b.height + 60]; }
+        else { const r = svgEl.getBoundingClientRect(); vb = [-tx / k, -ty / k, r.width / k, r.height / k]; }
+        const svg = standalone(svgEl, vb, (el) => el.classList.contains('gridbg') || el.classList.contains('hit') || el.classList.contains('preview') || el.classList.contains('rs') || el.classList.contains('off'));
+        svg.querySelector('g')?.removeAttribute('transform');
+        for (const g of svg.querySelectorAll('g')) if (g.getAttribute('transform')?.startsWith('translate(') && g.getAttribute('transform')?.includes('scale(')) g.removeAttribute('transform');
+        const viewName = syn!.view === 'overview' ? 'Vue générale' : syn!.views.containers.find((c) => syn!.view === `container:${c.id}`)?.name ?? syn!.views.locations.find((l) => syn!.view === `location:${l.id}`)?.name ?? '';
+        const day = new Date().toISOString().slice(0, 10);
+        const stem = `Synoptique_${project.project.name}_${viewName}`.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9]+/g, '_') + `_${day}`;
+        if (exp!.format === 'pdf') save(await toPdf(svg, vb[2], vb[3], exp!.paper, exp!.landscape, { title: exp!.title, project: project.project.name, client: project.project.client ?? 'Projet interne', view: viewName, revision: exp!.revision, site, date: new Date().toLocaleDateString('fr-FR') }), `${stem}.pdf`);
+        else save(await raster(svg, vb[2], vb[3], exp!.format === 'png' ? 'image/png' : 'image/jpeg'), `${stem}.${exp!.format}`);
+      });
+      toast('Synoptique exporté.');
+      exp = null;
+    } catch (e) { fail(e); if (exp) exp.busy = false; }
+    finally { ({ sel, multi, hl, armed, selAnn } = keep); }
   }
   const armedPreview = $derived.by(() => {
     if (!armed.length || !mouse) return '';
@@ -382,7 +541,19 @@
       <button class="icon-btn sm" title="Zoom arrière" aria-label="Zoom arrière" onclick={() => (k = Math.max(0.2, k / 1.2))}><Icon name="zout" size="sm" /></button>
       <span class="mono small">{Math.round(k * 100)} %</span>
       <button class="icon-btn sm" title="Zoom avant" aria-label="Zoom avant" onclick={() => (k = Math.min(2.5, k * 1.2))}><Icon name="zin" size="sm" /></button>
+      {#if mine && !syn.overview}
+        <div class="seg" role="group" aria-label="Outil">{#each [['select', 'Sélection'], ['zone', 'Zone'], ['label', 'Étiquette']] as [k, l]}<button class:on={tool === k} onclick={() => (tool = k as Tool)}>{l}</button>{/each}</div>
+        <button class="icon-btn sm" title="Annuler (Ctrl+Z)" aria-label="Annuler" disabled={!past.length} onclick={undo}><Icon name="undo" size="sm" /></button>
+        <button class="icon-btn sm flip" title="Rétablir (Ctrl+Maj+Z)" aria-label="Rétablir" disabled={!future.length} onclick={redo}><Icon name="undo" size="sm" /></button>
+      {/if}
       <button class="btn sm" onclick={fit}><Icon name="fit" size="sm" />Tout afficher</button>
+      <button class="btn sm" onclick={() => (exp = { format: 'pdf', paper: 'A3', landscape: true, frame: 'all', revision: '', title: 'Synoptique', busy: false })}><Icon name="download" size="sm" />Exporter</button>
+      {#if mine && !syn.overview}
+        <details class="more"><summary class="btn sm ghost">Plus</summary><div class="more-m">
+          <button onclick={() => (unnumber = true)}>Supprimer la numérotation de la vue</button>
+          <button class="danger" onclick={() => (unplug = true)}>Décâbler la vue…</button>
+        </div></details>
+      {/if}
       <button class="btn sm" class:on={tab === 'issues'} onclick={() => { tab = tab === 'issues' ? 'cable' : 'issues'; if (tab === 'issues') validate(); }}><Icon name="check" size="sm" />Anomalies{#if issues} <span class="mono">{issues.counts.error + issues.counts.warning}</span>{/if}</button>
       {#if mine}<button class="btn sm primary" onclick={() => (numbering = true)}><Icon name="hash" size="sm" />Numéroter</button>{/if}
     </div>
@@ -390,8 +561,17 @@
       <svg bind:this={svgEl} class="syn-canvas" class:arming={armed.length > 0} role="application" aria-label="Synoptique"
         onwheel={wheel} onpointerdown={down} onpointermove={move} onpointerup={up}>
         <defs><pattern id="syn-grid" width="20" height="20" patternUnits="userSpaceOnUse" patternTransform="translate({tx} {ty}) scale({k})"><circle cx="1" cy="1" r="1" fill="var(--grid-dot, rgba(120,130,140,.25))" /></pattern></defs>
-        <rect width="100%" height="100%" fill="url(#syn-grid)" />
-        <g transform="translate({tx} {ty}) scale({k})">
+        <rect class="gridbg" width="100%" height="100%" fill="url(#syn-grid)" />
+        <g class="world" transform="translate({tx} {ty}) scale({k})">
+          {#each anns.filter((a) => a.kind === 'zone') as a (a.id)}
+            {@const d = a.data}
+            <g class="zone" class:sel={selAnn === a.id} data-ann={a.id} style="--z:{d.color}">
+              <rect class="zbody" x={d.x} y={d.y} width={d.w} height={d.h} rx={d.radius} style="fill-opacity:{d.opacity};stroke-width:{d.width}" stroke-dasharray={d.stroke === 'dashed' ? '10 6' : d.stroke === 'dotted' ? '2 5' : undefined} />
+              <text class="zname" x={d.x + 6} y={d.y - 8}>{d.name || 'Zone sans nom'}</text>
+              {#if selAnn === a.id && mine}<rect class="rs" x={d.x + d.w - 9} y={d.y + d.h - 9} width="14" height="14" rx="3" />{/if}
+            </g>
+          {/each}
+          {#if draft}<rect class="draft" x={draft.x} y={draft.y} width={draft.w} height={draft.h} rx="12" />{/if}
           {#if syn.overview}
             {@const ov = syn.overview}
             <g class="ov-links">
@@ -421,7 +601,7 @@
               {#if c.a_in_view && c.b_in_view}
                 {@const g = cPath(c)}
                 {#if g}
-                  <g class="cable" class:attach={c.fields.attach} class:harnessed={!!harnessOf(c)} class:sel={multi.has(c.id) || sel === c.id} class:hl={hl.cables.has(c.id)} class:warn={c.warnings.length > 0} style="--c:{cableColor(c)};--h:{harnessOf(c)?.color ?? 'transparent'}" role="button" tabindex="-1" onclick={(e) => pickCable(c.id, e)} onkeydown={() => {}}>
+                  <g class="cable" class:off={hiddenFam.has(famOf(c))} class:attach={c.fields.attach} class:harnessed={!!harnessOf(c)} class:sel={multi.has(c.id) || sel === c.id} class:hl={hl.cables.has(c.id)} class:warn={c.warnings.length > 0} style="--c:{cableColor(c)};--h:{harnessOf(c)?.color ?? 'transparent'}" role="button" tabindex="-1" onclick={(e) => pickCable(c.id, e)} onkeydown={() => {}}>
                     <title>{c.fields.number ?? 'Sans numéro'} · {endName(c.a, c.a_info)} → {endName(c.b, c.b_info)}</title>
                     <path class="case" d={g.d} /><path class="vis" d={g.d} /><path class="hit" d={g.d} />
                   </g>
@@ -429,7 +609,7 @@
               {:else}
                 {@const s = stub(c)}
                 {#if s}
-                  <g class="cable stub" class:sel={multi.has(c.id) || sel === c.id} class:hl={hl.cables.has(c.id)} class:warn={c.warnings.length > 0} style="--c:{cableColor(c)}" role="button" tabindex="-1" onclick={(e) => pickCable(c.id, e)} onkeydown={() => {}}>
+                  <g class="cable stub" class:off={hiddenFam.has(famOf(c))} class:sel={multi.has(c.id) || sel === c.id} class:hl={hl.cables.has(c.id)} class:warn={c.warnings.length > 0} style="--c:{cableColor(c)}" role="button" tabindex="-1" onclick={(e) => pickCable(c.id, e)} onkeydown={() => {}}>
                     <path class="case" d={s.d} /><path class="vis" d={s.d} /><path class="hit" d={s.d} />
                     <g class="far" transform="translate({s.dx > 0 ? s.ex + 4 : s.ex - 4} {s.ey - 11})"><rect x={s.dx > 0 ? 0 : -190} width="190" height="22" rx="6" /><text x={s.dx > 0 ? 8 : -182} y="15">{s.far?.external ? '↗' : '→'} {(s.far ? (s.far.external ? s.far.label : `${s.far.label} › ${s.far.port}`) : 'Extrémité manquante').slice(0, 30)}</text></g>
                   </g>
@@ -479,19 +659,54 @@
               {@const g = both ? cPath(c) : null}
               {@const s = both ? null : stub(c)}
               {#each (g ? [g.t1, g.t2] : s ? [s.t] : []) as t}
-                <g class="lbl" class:none={!c.fields.number} class:sel={multi.has(c.id) || sel === c.id} class:hl={hl.cables.has(c.id)} style="--c:{cableColor(c)}" transform="translate({t[0]} {t[1] - 9})" role="button" tabindex="-1" onclick={(e) => pickCable(c.id, e)} onkeydown={() => {}}>
+                <g class="lbl" class:off={hiddenFam.has(famOf(c))} class:none={!c.fields.number} class:sel={multi.has(c.id) || sel === c.id} class:hl={hl.cables.has(c.id)} style="--c:{cableColor(c)}" transform="translate({t[0]} {t[1] - 9})" role="button" tabindex="-1" onclick={(e) => pickCable(c.id, e)} onkeydown={() => {}}>
                   <rect class="tag" width={tagW(c)} height="18" rx="4" />
                   {#if c.fields.number}<rect class="bandc" x="3.5" y="3.5" width="3" height="11" rx="1" /><text x="10.5" y="13">{c.fields.number}</text>{:else}<text x="7.5" y="13.5">?</text>{/if}
                 </g>
               {/each}
             {/each}
           </g>
+          {#each anns.filter((a) => a.kind === 'label') as a (a.id)}
+            {@const d = a.data}
+            {@const fam = d.font === 'mono' ? 'var(--mono)' : d.font === 'serif' ? 'Georgia, serif' : 'var(--font)'}
+            <g class="alabel" class:sel={selAnn === a.id} data-ann={a.id}>
+              {#if d.pill}<rect x={d.x - 8} y={d.y - d.size} width={d.text.length * d.size * 0.58 + 16} height={d.size * 1.45} rx={d.size * 0.72} fill={d.color === '#15171A' ? 'var(--fg)' : d.color} opacity="0.14" />{/if}
+              <text x={d.x} y={d.y} fill={d.color === '#15171A' ? 'var(--fg)' : d.color} style="font-family:{fam};font-size:{d.size}px;font-weight:{d.bold ? 700 : 400};font-style:{d.italic ? 'italic' : 'normal'};text-decoration:{d.underline ? 'underline' : 'none'}">{d.text}</text>
+            </g>
+          {/each}
           {#if armedPreview}<path class="preview" d={armedPreview} />{/if}
         </g>
       </svg>
 
       <aside class="syn-side">
-        {#if tab === 'issues'}
+        {#if annSel && tab !== 'issues'}
+          {@const a = annSel}
+          {@const d = a.data}
+          <section>
+            <span class="lbl-t">{a.kind === 'zone' ? 'Zone' : 'Étiquette'}</span>
+            {#if a.kind === 'zone'}
+              <div class="field"><label for="an">Nom</label><input class="input" id="an" value={d.name} maxlength="120" disabled={!mine} onchange={(e) => patchAnn(a, { name: (e.target as HTMLInputElement).value })}></div>
+              <div class="sh2">
+                <div class="field"><label for="ac">Couleur</label><input class="input" id="ac" type="color" style="padding:4px;height:40px" value={d.color} disabled={!mine} onchange={(e) => patchAnn(a, { color: (e.target as HTMLInputElement).value })}></div>
+                <div class="field"><label for="ar">Rayon</label><input class="input mono" id="ar" type="number" min="0" max="200" value={d.radius} disabled={!mine} onchange={(e) => patchAnn(a, { radius: Number((e.target as HTMLInputElement).value) })}></div>
+              </div>
+              <div class="field"><span class="flabel">Trait</span><div class="seg">{#each [['solid', 'Plein'], ['dashed', 'Tirets'], ['dotted', 'Pointillés']] as [v, l]}<button class:on={d.stroke === v} disabled={!mine} onclick={() => patchAnn(a, { stroke: v })}>{l}</button>{/each}</div></div>
+              <div class="sh2">
+                <div class="field"><label for="aw">Épaisseur</label><input class="input mono" id="aw" type="number" min="0.5" max="12" step="0.5" value={d.width} disabled={!mine} onchange={(e) => patchAnn(a, { width: Number((e.target as HTMLInputElement).value) })}></div>
+                <div class="field"><label for="ao">Opacité du fond</label><input id="ao" type="range" min="0" max="0.6" step="0.02" value={d.opacity} disabled={!mine} onchange={(e) => patchAnn(a, { opacity: Number((e.target as HTMLInputElement).value) })}></div>
+              </div>
+            {:else}
+              <div class="field"><label for="at">Texte</label><textarea class="input" id="at" rows="2" maxlength="500" value={d.text} disabled={!mine} onchange={(e) => patchAnn(a, { text: (e.target as HTMLTextAreaElement).value })}></textarea></div>
+              <div class="sh2">
+                <div class="field"><label for="af">Police</label><select class="input" id="af" value={d.font} disabled={!mine} onchange={(e) => patchAnn(a, { font: (e.target as HTMLSelectElement).value })}><option value="sans">Sans</option><option value="serif">Serif</option><option value="mono">Mono</option></select></div>
+                <div class="field"><label for="as">Taille</label><input class="input mono" id="as" type="number" min="8" max="96" value={d.size} disabled={!mine} onchange={(e) => patchAnn(a, { size: Number((e.target as HTMLInputElement).value) })}></div>
+              </div>
+              <div class="seg wrap">{#each [['bold', 'Gras'], ['italic', 'Italique'], ['underline', 'Souligné'], ['pill', 'Pastille']] as [k, l]}<button class:on={d[k]} disabled={!mine} onclick={() => patchAnn(a, { [k]: !d[k] })}>{l}</button>{/each}</div>
+              <div class="field"><label for="alc">Couleur</label><input class="input" id="alc" type="color" style="padding:4px;height:40px" value={d.color} disabled={!mine} onchange={(e) => patchAnn(a, { color: (e.target as HTMLInputElement).value })}></div>
+            {/if}
+            {#if mine}<button class="btn sm ghost danger" onclick={() => deleteAnn(a)}><Icon name="trash" size="sm" />Supprimer</button>{/if}
+          </section>
+        {:else if tab === 'issues'}
           <section>
             <span class="lbl-t">Validation</span>
             {#if !issues}<span class="spin"></span>
@@ -562,6 +777,13 @@
                 <button class="warn-row" onclick={() => (sel = w.id)}><Icon name="alert" size="sm" /><span><b>{w.fields.number ?? 'Sans numéro'}</b><span class="muted small">{w.warnings.join(' ')}</span></span></button>
               {/each}
             {/if}
+            {#if families.length}
+              <span class="lbl-t" style="margin-top:8px">Calques</span>
+              {#each families as f (f)}
+                <div class="hrow"><label class="toggle-row small" style="flex:1"><input type="checkbox" checked={!hiddenFam.has(f)} onchange={() => toggleFam(f)}><i class="dot" style="--c:{f === '—' ? 'var(--fg-3)' : fnColor(f)}"></i>{f === '—' ? 'Sans famille' : refById('functions', f)?.name ?? f}</label><button class="btn sm ghost" onclick={() => isolateFam(f)} title="Isoler">Isoler</button></div>
+              {/each}
+              {#if hiddenFam.size}<button class="btn sm ghost" onclick={() => { hiddenFam = new Set(); try { localStorage.removeItem('syn-hidden'); } catch { /* */ } }}>Tout afficher</button>{/if}
+            {/if}
             <span class="lbl-t" style="margin-top:8px">Faisceaux</span>
             {#each syn.harnesses as h (h.id)}
               {@const n = syn.cables.filter((c) => c.fields.harness_id === h.id).length}
@@ -575,6 +797,36 @@
   </div>
 {/if}
 
+{#if unplug && syn}
+  <Confirm title="Décâbler la vue ?" confirmLabel="Décâbler" danger onconfirm={unplugView} onclose={() => (unplug = false)}>
+    <p>Les {syn.cables.length} câbles, attaches et ports externes de cette vue sont supprimés. C’est irréversible : l’historique d’annulation est vidé.</p>
+  </Confirm>
+{/if}
+{#if unnumber}
+  <Confirm title="Supprimer la numérotation de la vue ?" confirmLabel="Supprimer les numéros" danger onconfirm={unnumberView} onclose={() => (unnumber = false)}>
+    <p>Les câbles de la vue perdent leur numéro. Les compteurs ne reculent pas : les numéros ne seront pas réattribués.</p>
+  </Confirm>
+{/if}
+{#if exp && syn}
+  <Dialog title="Exporter le synoptique" eyebrow={project.project.name} onclose={() => (exp = null)}>
+    <div class="stack">
+      <div class="field"><span class="flabel">Format</span><div class="seg">{#each [['pdf', 'PDF'], ['png', 'PNG'], ['jpg', 'JPG']] as [k, l]}<button class:on={exp.format === k} onclick={() => (exp!.format = k as 'pdf')}>{l}</button>{/each}</div></div>
+      <div class="field"><span class="flabel">Cadrage</span><div class="seg"><button class:on={exp.frame === 'all'} onclick={() => (exp!.frame = 'all')}>Tout le dessin</button><button class:on={exp.frame === 'view'} onclick={() => (exp!.frame = 'view')}>Vue affichée</button></div></div>
+      {#if exp.format === 'pdf'}
+        <div class="sh2">
+          <div class="field"><label for="ep">Papier</label><select class="input" id="ep" bind:value={exp.paper}>{#each Object.keys(PAPERS).filter((p) => p.startsWith('A')) as p}<option value={p}>{p}</option>{/each}</select></div>
+          <div class="field"><span class="flabel">Orientation</span><div class="seg"><button class:on={exp.landscape} onclick={() => (exp!.landscape = true)}>Paysage</button><button class:on={!exp.landscape} onclick={() => (exp!.landscape = false)}>Portrait</button></div></div>
+        </div>
+        <div class="sh2">
+          <div class="field"><label for="et">Titre</label><input class="input" id="et" bind:value={exp.title} maxlength="80"></div>
+          <div class="field"><label for="er">Révision</label><input class="input mono" id="er" bind:value={exp.revision} maxlength="20" placeholder="A"></div>
+        </div>
+      {/if}
+      <p class="muted small" style="margin:0">Rendu sur fond blanc avec la palette claire, même en thème sombre ; câbles et textes vectoriels dans le PDF.</p>
+    </div>
+    {#snippet footer()}<button class="btn ghost" onclick={() => (exp = null)}>Annuler</button><button class="btn primary" disabled={exp!.busy} onclick={doExport}>{#if exp!.busy}<span class="spin"></span>{/if}Exporter</button>{/snippet}
+  </Dialog>
+{/if}
 {#if newHarness}
   <Confirm title="Nouveau faisceau" confirmLabel="Créer" onconfirm={createHarness} onclose={() => (newHarness = null)}>
     <div class="sh2"><div class="field"><label for="hn">Nom</label><input class="input" id="hn" bind:value={newHarness.name} maxlength="120" placeholder="Multi vidéo plateau"></div><div class="field"><label for="hc">Couleur</label><input class="input" id="hc" type="color" style="padding:4px;height:40px" bind:value={newHarness.color}></div></div>
@@ -675,6 +927,23 @@
   .ov-line.ext { stroke-dasharray: 10 6; }
   .ov-count rect { fill: var(--surface); stroke: var(--line); }
   .ov-count text { font: 700 12px var(--mono); fill: var(--fg); }
+  .zone .zbody { fill: var(--z); stroke: var(--z); cursor: move; }
+  .zone.sel .zbody { filter: drop-shadow(0 0 4px var(--z)); }
+  .zone .zname { font: 700 15px var(--font); fill: var(--z); pointer-events: none; }
+  .zone .rs { fill: var(--surface); stroke: var(--z); stroke-width: 2; cursor: nwse-resize; }
+  .draft { fill: color-mix(in srgb, var(--accent, #4F6BFF) 8%, transparent); stroke: var(--accent, #4F6BFF); stroke-width: 2; stroke-dasharray: 8 5; }
+  .alabel { cursor: move; }
+  .alabel.sel text { paint-order: stroke; stroke: color-mix(in srgb, var(--accent, #4F6BFF) 40%, transparent); stroke-width: 4px; }
+  .cable.off, .lbl.off { display: none; }
+  .flip :global(svg) { transform: scaleX(-1); }
+  .more { position: relative; }
+  .more summary { list-style: none; cursor: pointer; }
+  .more summary::-webkit-details-marker { display: none; }
+  .more-m { position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; min-width: 260px; display: grid; padding: 6px; border-radius: 12px; background: var(--surface); box-shadow: 0 12px 30px -10px rgba(0, 0, 0, .35), 0 0 0 1px var(--line); }
+  .more-m button { text-align: left; padding: 9px 10px; border: 0; border-radius: 8px; background: none; font: inherit; color: inherit; cursor: pointer; }
+  .more-m button:hover { background: var(--surface-2); }
+  .more-m button.danger { color: var(--err); }
+  .seg.wrap { flex-wrap: wrap; }
   .preview { fill: none; stroke: var(--accent, #4F6BFF); stroke-width: 2; stroke-dasharray: 6 4; pointer-events: none; }
   @media (max-width: 1000px) { .syn-body { grid-template-columns: 1fr; height: auto; } .syn-canvas { height: 70vh; } .syn-side { border-left: 0; border-top: 1px solid var(--line); } }
 </style>
