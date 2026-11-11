@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Bibliothèque des modèles de contenants (section 6.1).
+  // Bibliothèque des modèles d’éléments (section 6.1).
   import Icon from '../../components/Icon.svelte';
   import Vu from '../../components/Vu.svelte';
   import Dialog from '../../components/Dialog.svelte';
@@ -37,7 +37,7 @@
   async function open(t: any) { try { detail = await api.get(`/templates/${t.id}`); } catch (e) { fail(e); } }
 </script>
 
-<p class="muted" style="max-width:70ch">Un modèle garde un contenant et tout son contenu : matériel, accessoires, circuits et disposition dans la baie. Créez-en un depuis l’inventaire d’un projet (« Enregistrer comme modèle »), activez-le ici, puis ajoutez-le à n’importe quel projet. Seuls les modèles actifs sont proposés.</p>
+<p class="muted" style="max-width:70ch">Un modèle garde un élément et tout son contenu : matériel, accessoires, circuits et disposition dans la baie. Créez-en un depuis l’inventaire d’un projet (« Enregistrer comme modèle »), activez-le ici, puis ajoutez-le à n’importe quel projet. Seuls les modèles actifs sont proposés.</p>
 <div class="toolbar" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
   <label class="search" style="flex:1;min-width:220px"><Icon name="search" /><input class="input" bind:value={q} placeholder="Nom du modèle…" aria-label="Rechercher un modèle"></label>
   <div class="seg">{#each [['', 'Tous'], ['active', 'Actifs'], ['draft', 'Brouillons'], ['inactive', 'Inactifs']] as [k, l]}<button class:on={f === k} onclick={() => (f = k as typeof f)}>{l}</button>{/each}</div>
@@ -58,16 +58,16 @@
           <td class="num" class:urg={s.over_power}>{nf(s.power_w)} W</td>
           <td>{#if writable}<div class="dl-actions"><button class="btn sm ghost" title="Renommer" onclick={() => { renaming = t; newName = t.name; }}><Icon name="pen" size="sm" /></button><button class="btn sm ghost danger" title="Supprimer" onclick={() => (deleting = t)}><Icon name="trash" size="sm" /></button></div>{/if}</td>
         </tr>
-      {:else}<tr><td colspan="6" class="empty">Aucun modèle. Enregistrez un contenant comme modèle depuis l’inventaire d’un projet.</td></tr>{/each}
+      {:else}<tr><td colspan="6" class="empty">Aucun modèle. Enregistrez un élément comme modèle depuis l’inventaire d’un projet.</td></tr>{/each}
     </tbody>
   </table></div>
 </section>
 
 {#if detail}
-  <Dialog title={detail.name} eyebrow="Modèle de contenant" onclose={() => (detail = null)}>
+  <Dialog title={detail.name} eyebrow="Modèle d’élément" onclose={() => (detail = null)}>
     <dl class="kv"><dt>Type</dt><dd>{CONTAINER_KINDS[detail.container.kind as keyof typeof CONTAINER_KINDS]?.label}</dd><dt>Format</dt><dd>{detail.container.rackable ? `${detail.container.height_u} U · ${detail.container.depth_mm} mm` : 'Non rackable'}</dd><dt>Poids</dt><dd>{nf(detail.summary.weight_kg, 1)} kg</dd><dt>Consommation</dt><dd>{nf(detail.summary.power_w)} W</dd></dl>
     {#if detail.summary.missing_items}<div class="alert warn"><Icon name="alert" /><span>{detail.summary.missing_items} fiche(s) n’existent plus au catalogue : elles seront ignorées à la copie.</span></div>{/if}
-    <ul class="notes">{#each detail.articles as a}<li>{a.quantity} × {a.label}</li>{:else}<li>Contenant vide.</li>{/each}</ul>
+    <ul class="notes">{#each detail.articles as a}<li>{a.quantity} × {a.label}</li>{:else}<li>Élément vide.</li>{/each}</ul>
   </Dialog>
 {/if}
 {#if renaming}
@@ -78,6 +78,6 @@
 {/if}
 {#if deleting}
   <Confirm title="Supprimer « {deleting.name} » ?" eyebrow="Modèle" confirmLabel="Supprimer" danger onconfirm={remove} onclose={() => (deleting = null)}>
-    <p>Les contenants déjà copiés dans des projets ne changent pas.</p>
+    <p>Les éléments déjà copiés dans des projets ne changent pas.</p>
   </Confirm>
 {/if}

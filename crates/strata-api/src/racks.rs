@@ -52,7 +52,7 @@ async fn container_of(store: &Store, id: &str) -> ApiResult<Container> {
     store
         .container(id)
         .await?
-        .ok_or(ApiError::NotFound("Contenant"))
+        .ok_or(ApiError::NotFound("Élément"))
 }
 
 /// Écriture sur une élévation : droit « Conception : écriture » et main tenue.
@@ -61,7 +61,7 @@ async fn editing(st: &AppState, m: &Member, cid: &str) -> ApiResult<Container> {
     let c = container_of(&st.store, cid).await?;
     if !c.data.rackable {
         return Err(ApiError::Invalid(
-            "Ce contenant n'est pas rackable : il n'a pas d'élévation.".into(),
+            "Cet élément n'est pas rackable : il n'a pas d'élévation.".into(),
         ));
     }
     if !st
@@ -380,7 +380,7 @@ fn check_face(c: &Container, f: RackFace) -> ApiResult<()> {
     if f == RackFace::RearInner && c.data.rear_rails_mm.is_none() {
         return Err(one(
             "face",
-            "Ce contenant n'a pas de rails arrière internes.",
+            "Cet élément n'a pas de rails arrière internes.",
         ));
     }
     Ok(())
@@ -393,7 +393,7 @@ async fn check_circuit(store: &Store, c: &Container, id: &Option<String>) -> Api
             .await?
             .is_some_and(|x| x.container_id == c.id)
         {
-            return Err(one("circuit_id", "Circuit inconnu dans ce contenant."));
+            return Err(one("circuit_id", "Circuit inconnu dans cet élément."));
         }
     }
     Ok(())
@@ -475,7 +475,7 @@ async fn place(
                 .placement(sid)
                 .await?
                 .filter(|p| p.container_id == cid)
-                .ok_or_else(|| one("shelf_id", "Étagère inconnue dans ce contenant."))?;
+                .ok_or_else(|| one("shelf_id", "Étagère inconnue dans cet élément."))?;
             let is_shelf = ctx
                 .article(&shelf.article_id)
                 .and_then(|x| x.accessory.as_ref())

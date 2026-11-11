@@ -1,6 +1,6 @@
 <script lang="ts">
   // Assistant de création (section 7.3) : une question par étape, récapitulatif, puis
-  // création du projet, de l'emplacement et du contenant.
+  // création du projet, de l'emplacement et de l’élément.
   import Icon from '../../components/Icon.svelte';
   import Ill from '../../components/Ill.svelte';
   import NumField from '../../components/NumField.svelte';
@@ -58,7 +58,7 @@
       else if (d.commissioning <= d.planning_end) e.commissioning = 'La mise en service suit la fin de la planification.';
     }
     if (s === 'location' && !d.location.trim()) e.location = 'Le nom de l’emplacement est obligatoire.';
-    if (s === 'container' && !cname.trim()) e.cname = 'Le nom du contenant est obligatoire.';
+    if (s === 'container' && !cname.trim()) e.cname = 'Le nom de l’élément est obligatoire.';
     return e;
   }
   function next() {
@@ -96,7 +96,7 @@
     ['dates', d.intervention === 'prestation' ? 'Tournage' : 'Mise en service', d.intervention === 'prestation' ? `${fdate(d.shoot_start)} → ${fdate(d.shoot_end)}` : fdate(d.commissioning)],
     ['venue', 'Lieu', [d.venue, d.service_type].filter(Boolean).join(' · ') || '—'],
     ['location', 'Emplacement', d.location],
-    ['container', 'Contenant', `${cname} · ${CONTAINER_KINDS[c.kind].label}${c.rackable ? ` · ${c.height_u} U` : ''}`],
+    ['container', 'Élément', `${cname} · ${CONTAINER_KINDS[c.kind].label}${c.rackable ? ` · ${c.height_u} U` : ''}`],
     ['description', 'Description', d.description || '—'],
   ] as [Step, string, string][]);
   function key(e: KeyboardEvent) { if (e.key === 'Escape') onclose(); }
@@ -157,10 +157,10 @@
         </div>
       {:else if cur === 'location'}
         <h2>Premier emplacement</h2>
-        <p class="muted">Un emplacement regroupe des contenants : la régie, le bord du terrain, la cabine commentateurs… Son code entre dans la numérotation des câbles.</p>
+        <p class="muted">Un emplacement regroupe des éléments : la régie, le bord du terrain, la cabine commentateurs… Son code entre dans la numérotation des câbles.</p>
         <div class="field"><label for="wz-loc">Nom</label><input class="input" id="wz-loc" bind:value={d.location} maxlength="120" placeholder="Ex. Car régie CR-2"><FieldError message={errors.location ?? errors['location.name']} /></div>
       {:else if cur === 'container'}
-        <h2>Premier contenant</h2>
+        <h2>Premier élément</h2>
         <div class="choices" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr))">
           {#each Object.entries(CONTAINER_KINDS) as [k, v]}<button type="button" class="choice" class:on={c.kind === k} onclick={() => setKind(k as ContainerKind)}><b style="font-size:17px">{v.label}</b></button>{/each}
         </div>

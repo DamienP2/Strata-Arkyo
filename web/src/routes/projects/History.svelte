@@ -13,7 +13,7 @@
     .catch(fail);
 
   const OBJ: Record<string, [string, string]> = {
-    project: ['du projet', 'le projet'], location: ['d’un emplacement', 'l’emplacement'], container: ['d’un contenant', 'le contenant'],
+    project: ['du projet', 'le projet'], location: ['d’un emplacement', 'l’emplacement'], container: ['d’un élément', 'l’élément'],
     article: ['d’un article', 'l’article'], instance: ['d’un exemplaire', 'l’exemplaire'], task: ['d’une tâche', 'la tâche'],
   };
   const ACT: Record<string, string> = { create: 'Création', update: 'Modification', delete: 'Suppression', move: 'Déplacement' };

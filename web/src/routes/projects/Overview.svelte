@@ -49,7 +49,7 @@
     !(p.planning_start && p.planning_end) && 'la période de planification',
     !(p.intervention === 'prestation' ? p.shoot_start && p.shoot_end : p.commissioning) && (p.intervention === 'prestation' ? 'les dates de tournage' : 'la date de mise en service'),
     !view.locations.length && 'un emplacement',
-    !view.containers.length && 'un contenant',
+    !view.containers.length && 'un élément',
     !view.articles.length && 'du matériel',
   ].filter(Boolean) as string[]);
   const openTasks = $derived(view.tasks.filter((t) => t.status === 'todo' || t.status === 'in_progress').length);
@@ -90,7 +90,7 @@
       <div class="card-head"><h2>Inventaire</h2><a class="btn sm" href="/projets/{p.id}/inventaire">Ouvrir</a></div>
       <dl class="kv" style="margin-top:12px">
         <dt>Emplacements</dt><dd>{view.locations.length}</dd>
-        <dt>Contenants</dt><dd>{view.containers.length}</dd>
+        <dt>Éléments</dt><dd>{view.containers.length}</dd>
         <dt>Articles</dt><dd>{nf(view.articles.reduce((s, a) => s + a.quantity, 0))}</dd>
         <dt>Exemplaires repérés</dt><dd>{units}</dd>
         <dt>Poids total</dt><dd>{nf(view.locations.reduce((s, l) => s + l.totals.weight_kg, 0), 1)} kg</dd>
@@ -107,6 +107,6 @@
 
 {#if deleting}
   <Confirm title="Supprimer « {p.name} » ?" eyebrow="Projet" confirmLabel="Supprimer définitivement" danger onconfirm={remove} onclose={() => (deleting = false)}>
-    <p>Les emplacements, contenants, articles, exemplaires et tâches partent avec lui. Seule une sauvegarde du site permet de le retrouver.</p>
+    <p>Les emplacements, éléments, articles, exemplaires et tâches partent avec lui. Seule une sauvegarde du site permet de le retrouver.</p>
   </Confirm>
 {/if}

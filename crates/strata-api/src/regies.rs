@@ -179,16 +179,16 @@ async fn check_members(store: &Store, pid: Option<&str>, members: &[String]) -> 
         return Err(one(
             "members",
             if pid.is_some() {
-                "Un contenant n'appartient pas au projet."
+                "Un élément n'appartient pas au projet."
             } else {
-                "Un modèle de contenant est introuvable."
+                "Un modèle d'élément est introuvable."
             },
         ));
     }
     if pid.is_some() && members.iter().collect::<HashSet<_>>().len() != members.len() {
         return Err(one(
             "members",
-            "Un contenant ne figure qu'une fois dans une régie.",
+            "Un élément ne figure qu'une fois dans une régie.",
         ));
     }
     Ok(())
@@ -284,7 +284,7 @@ async fn from_template(
     }
     if tpl.members.is_empty() {
         return Err(ApiError::Conflict(
-            "Ce modèle de régie ne contient aucun contenant.".into(),
+            "Ce modèle de régie ne contient aucun élément.".into(),
         ));
     }
     let mut made = Vec::new();
@@ -403,7 +403,7 @@ async fn save_as(
     }
     if r.members.is_empty() {
         return Err(ApiError::Conflict(
-            "Ajoutez au moins un contenant avant d'en faire un modèle.".into(),
+            "Ajoutez au moins un élément avant d'en faire un modèle.".into(),
         ));
     }
     let mut taken: Vec<String> = st

@@ -18,6 +18,7 @@ Strata Arkyo est un seul programme Rust installé sur un serveur Ubuntu du site.
 | 4 | Projets et inventaire : assistant de création, liste et tableau de bord, fiche, emplacements, contenants, articles, exemplaires (repère, série, MAC, étiquette), tâches, historique, nomenclature ; temps réel et présence par WebSocket | Fait (modèles de contenants et panels : lot 5) |
 | Interface | Web app Svelte embarquée : connexion, administration, catalogue, projets et inventaire en temps réel | Fait pour les lots 1 à 4 |
 | 5 | Racks : élévations (avant, arrière, arrière intérieure, côté ; réel ou schématique), placement au demi-U contrôlé par le serveur, profondeur utile, bilan électrique par circuit et par phase, verrou « une personne à la fois » | En cours : étagères, modèles de contenants, panels de brassage, régies et contrôles de construction faits ; planche d'élévations à venir |
+| Éléments | Le contenant devient un élément : baies et valises, mur d'écrans (grille, écrans et sources), pupitre et poste opérateur (postes et matériel affecté), emplacement libre, position caméra, boîtier de terrain, mât HF, point de raccordement, énergie, arrivée externe, diffusion, touret | Fait |
 | 6 à 10 | Synoptique, livrables, terrain, réseau, plans | À venir |
 
 ## Organisation du dépôt

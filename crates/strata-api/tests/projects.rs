@@ -405,7 +405,7 @@ async fn inventory_articles_instances_and_totals() {
         Some(&o),
     )
     .await;
-    assert!(r.body["message"].as_str().unwrap().contains("contenants"));
+    assert!(r.body["message"].as_str().unwrap().contains("éléments"));
 
     // Nom de contenant unique : suffixe automatique.
     let r = call(&app, "POST", &format!("/api/projects/{pid}/containers"), Some(json!({"location_id": lid, "name": "baie vidéo v1", "kind": "flight_case", "rackable": true, "height_u": 12, "depth_mm": 500})), Some(&o)).await;

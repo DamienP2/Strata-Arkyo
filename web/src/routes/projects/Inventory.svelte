@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Inventaire (section 8) : emplacements, contenants, articles, exemplaires.
+  // Inventaire (section 8) : emplacements, éléments, articles, exemplaires.
   import Icon from '../../components/Icon.svelte';
   import Vu from '../../components/Vu.svelte';
   import Dialog from '../../components/Dialog.svelte';
@@ -9,18 +9,21 @@
   import AddArticle from './AddArticle.svelte';
   import TemplatePick from './TemplatePick.svelte';
   import ProjectPanel from './ProjectPanel.svelte';
+  import WallView from './WallView.svelte';
+  import DeskView from './DeskView.svelte';
+  import KindIll from '../../components/KindIll.svelte';
   import { api, ApiError, download } from '../../lib/api';
   import { can } from '../../lib/session.svelte';
   import { toast, fail } from '../../lib/toast.svelte';
   import { nf } from '../../lib/format';
-  import { CONTAINER_KINDS, type Article, type Container, type Instance, type Location, type ProjectView } from '../../lib/projects';
+  import { CONTAINER_KINDS, type Article, type ElementDetails, type Container, type Instance, type Location, type ProjectView } from '../../lib/projects';
 
   let { view = $bindable(), reload }: { view: ProjectView; reload: () => Promise<void> } = $props();
   const writable = $derived(can('projets', 'ecriture'));
 
   let selLoc = $state<string | null>(null);
   let panelOf = $state<Article | null>(null);
-  let selCont = $state<string | null>(null); // id de contenant, ou « free » pour les équipements libres
+  let selCont = $state<string | null>(null); // id d’élément, ou « free » pour les équipements libres
   $effect(() => {
     if (!view.locations.some((l) => l.id === selLoc)) selLoc = view.locations[0]?.id ?? null;
     const conts = view.containers.filter((c) => c.location_id === selLoc);
@@ -40,6 +43,36 @@
   let contEdit = $state<{ c: Container | null } | null>(null);
   let adding = $state(false);
   let fromTemplate = $state(false);
+  /** Exemplaires du matériel d'un élément, pour les tuiles du mur et les postes du pupitre. */
+  const gearOf = (c: Container) => {
+    const own = new Map(view.articles.filter((a) => a.container_id === c.id).map((a) => [a.id, a.label]));
+    return view.instances.filter((i) => own.has(i.article_id)).map((i) => ({ id: i.id, tag: i.tag, label: own.get(i.article_id)! }));
+  };
+  /** Enregistre les caractéristiques propres d'un élément (mur, postes). */
+  async function saveDetails(c: Container, details: ElementDetails): Promise<boolean> {
+    const { id, project_id: _p, position: _o, rev, totals: _t, ...data } = c;
+    try { await api.patch(`/containers/${id}`, { ...data, details, rev }); await reload(); return true; }
+    catch (e) { fail(e); await reload(); return false; }
+  }
+  /** Ligne de résumé d'un élément selon son type. */
+  function specLine(c: Container): string {
+    const d = c.details ?? {};
+    if (c.rackable) return `${c.height_u} U · ${c.depth_mm ?? '—'} mm`;
+    switch (c.kind) {
+      case 'monitor_wall': return `${d.wall?.rows ?? 0} × ${d.wall?.cols ?? 0} · ${d.wall?.tiles.length ?? 0} tuile(s)`;
+      case 'desk': case 'operator_position': return `${d.positions?.length ?? 0} poste(s)${d.positions?.[0]?.role && c.kind === 'operator_position' ? ` · ${d.positions[0].role}` : ''}`;
+      case 'zone': return [d.surface, d.area_m2 ? `${nf(d.area_m2, 1)} m²` : ''].filter(Boolean).join(' · ') || 'Emplacement libre';
+      case 'camera_position': return [d.camera_number ? `CAM ${d.camera_number}` : '', d.mount, d.link].filter(Boolean).join(' · ') || 'Caméra';
+      case 'rf_mast': return d.mast_height_m ? `${nf(d.mast_height_m, 1)} m` : 'Mât';
+      case 'power': return [d.power_kva ? `${nf(d.power_kva)} kVA` : '', d.phases === 3 ? 'tri' : d.phases === 1 ? 'mono' : '', d.outlet].filter(Boolean).join(' · ') || 'Énergie';
+      case 'external_feed': return [d.feed, d.provider].filter(Boolean).join(' · ') || 'Liaison';
+      case 'site_point': case 'field_box': return d.point_kind || CONTAINER_KINDS[c.kind].label;
+      case 'display': return [d.display_kind, d.diagonal_in ? `${d.diagonal_in}″` : '', d.resolution].filter(Boolean).join(' · ') || 'Écran';
+      case 'cable_drum': return [d.drum_count ? `${d.drum_count} ×` : '', d.cable_length_m ? `${nf(d.cable_length_m)} m` : ''].filter(Boolean).join(' ') || 'Touret';
+      default: return `${c.length_mm ?? '—'} × ${c.width_mm ?? '—'} mm`;
+    }
+  }
+
   async function saveAsTemplate(c: Container) {
     try { const r = await api.post<{ name: string }>(`/containers/${c.id}/save-as-template`, { name: c.name }); toast(`Modèle « ${r.name} » enregistré en brouillon. Activez-le dans Catalogue › Modèles.`); }
     catch (e) { fail(e); }
@@ -109,7 +142,7 @@
   <div class="card loc-list" style="align-items:center">
     {#each view.locations as l (l.id)}
       <button class="loc" class:on={l.id === selLoc} onclick={() => { selLoc = l.id; selCont = null; }}>
-        <span class="code mono">{l.code || '—'}</span><span class="ln"><b>{l.name}</b><span class="small muted">{l.totals.containers} contenant{l.totals.containers > 1 ? 's' : ''}{l.totals.free_items ? ` · ${l.totals.free_items} libre${l.totals.free_items > 1 ? 's' : ''}` : ''}</span></span>
+        <span class="code mono">{l.code || '—'}</span><span class="ln"><b>{l.name}</b><span class="small muted">{l.totals.containers} élément{l.totals.containers > 1 ? 's' : ''}{l.totals.free_items ? ` · ${l.totals.free_items} libre${l.totals.free_items > 1 ? 's' : ''}` : ''}</span></span>
       </button>
     {/each}
     {#if writable}<button class="btn sm" onclick={() => (locEdit = { id: null, rev: 0, name: '', code: '' })}><Icon name="plus" size="sm" />Emplacement</button>{/if}
@@ -127,7 +160,7 @@
           <button class="btn sm" onclick={() => (locEdit = { id: loc.id, rev: loc.rev, name: loc.name, code: loc.code })}><Icon name="pen" size="sm" />Renommer</button>
           <button class="btn sm ghost danger" onclick={() => (confirmDel = { kind: 'location', id: loc.id, name: loc.name })}><Icon name="trash" size="sm" /></button>
           <button class="btn sm" onclick={() => (fromTemplate = true)}><Icon name="copy" size="sm" />Depuis un modèle</button>
-          <button class="btn sm primary" onclick={() => (contEdit = { c: null })}><Icon name="plus" size="sm" />Contenant</button>
+          <button class="btn sm primary" onclick={() => (contEdit = { c: null })}><Icon name="plus" size="sm" />Ajouter un élément</button>
         </div>{/if}
       </div>
 
@@ -136,12 +169,12 @@
           {@const t = c.totals}
           <button class="cont" class:on={c.id === selCont} onclick={() => (selCont = c.id)}>
             <span class="cont-vis">
-              {#if c.rackable}<span class="mini-rack" class:case={c.kind !== 'rack'}>{#each blocks(c) as b}<i style="height:{b.h}%;--c:{b.color}"></i>{/each}</span>{:else}<span class="mini-case" style="position:relative"></span>{/if}
+              {#if c.rackable}<span class="mini-rack" class:case={c.kind !== 'rack'}>{#each blocks(c) as b}<i style="height:{b.h}%;--c:{b.color}"></i>{/each}</span>{:else}<span class="kind-vis"><KindIll kind={c.kind} size={78} /></span>{/if}
             </span>
             <span class="cont-info">
               <span class="cont-top"><span class="chip">{CONTAINER_KINDS[c.kind].label}</span>{#if c.wheels}<span class="chip">Roulettes</span>{/if}{#if t.over_weight || t.over_power || t.over_u}<span class="chip err"><Icon name="alert" />Alerte</span>{/if}</span>
               <b class="cont-name">{c.name}</b>
-              <span class="mono small muted">{c.cable_code} · {c.rackable ? `${c.height_u} U · ${c.depth_mm ?? '—'} mm` : `${c.length_mm ?? '—'} × ${c.width_mm ?? '—'} mm`}</span>
+              <span class="mono small muted">{c.cable_code} · {specLine(c)}</span>
               <span class="meters">
                 {#if c.rackable}<span class="meter" class:err={t.over_u}><span>Hauteur</span><span class="mono">{nf(t.used_u, t.used_u % 1 ? 1 : 0)} / {c.height_u} U</span><Vu value={pct(t.used_u, t.total_u)} mode="load" n={24} /></span>{/if}
                 <span class="meter" class:err={t.over_weight}><span>Poids</span><span class="mono">{nf(t.weight_kg, 1)}{c.max_weight_kg ? ` / ${nf(c.max_weight_kg)}` : ''} kg</span>{#if c.max_weight_kg}<Vu value={pct(t.weight_kg, c.max_weight_kg)} mode="load" n={24} />{/if}</span>
@@ -151,19 +184,24 @@
           </button>
         {/each}
         <button class="cont" class:on={selCont === 'free'} onclick={() => (selCont = 'free')} style="grid-template-columns:1fr">
-          <span class="cont-info"><span class="cont-top"><span class="chip">Hors contenant</span></span><b class="cont-name">Équipements libres</b><span class="small muted">{loc.totals.free_items} article{loc.totals.free_items > 1 ? 's' : ''}, comptés dans la nomenclature et les totaux.</span></span>
+          <span class="cont-info"><span class="cont-top"><span class="chip">Sans élément</span></span><b class="cont-name">Équipements libres</b><span class="small muted">{loc.totals.free_items} article{loc.totals.free_items > 1 ? 's' : ''}, comptés dans la nomenclature et les totaux.</span></span>
         </button>
       </div>
 
       <section class="card">
         <div class="card-head">
-          <div><h2>{cont ? cont.name : 'Équipements libres'}</h2><span class="small muted">{arts.reduce((s, a) => s + a.quantity, 0)} article{arts.length > 1 ? 's' : ''}{cont ? ` · code câble ${cont.cable_code}` : ''}{cont?.totals.volume_m3 ? ` · ${nf(cont.totals.volume_m3, 2)} m³` : ''}</span></div>
+          <div><h2>{cont ? cont.name : 'Équipements libres'}</h2><span class="small muted">{arts.reduce((s, a) => s + a.quantity, 0)} article{arts.reduce((s, a) => s + a.quantity, 0) > 1 ? 's' : ''}{cont ? ` · code câble ${cont.cable_code}` : ''}{cont?.totals.volume_m3 ? ` · ${nf(cont.totals.volume_m3, 2)} m³` : ''}</span></div>
           {#if writable}<div class="head-actions">
-            {#if cont && can('catalogue', 'ecriture')}<button class="btn sm ghost" onclick={() => saveAsTemplate(cont)} title="Copie le contenant et son contenu dans la bibliothèque"><Icon name="copy" size="sm" />Enregistrer comme modèle</button>{/if}
+            {#if cont && can('catalogue', 'ecriture')}<button class="btn sm ghost" onclick={() => saveAsTemplate(cont)} title="Copie l’élément et son contenu dans la bibliothèque"><Icon name="copy" size="sm" />Enregistrer comme modèle</button>{/if}
             {#if cont}<button class="btn sm" onclick={() => (contEdit = { c: cont })}><Icon name="pen" size="sm" />Modifier</button><button class="btn sm ghost danger" onclick={() => (confirmDel = { kind: 'container', id: cont.id, name: cont.name })}><Icon name="trash" size="sm" /></button>{/if}
             <button class="btn sm primary" onclick={() => (adding = true)}><Icon name="plus" size="sm" />Ajouter du matériel</button>
           </div>{/if}
         </div>
+        {#if cont?.kind === 'monitor_wall' && cont.details?.wall}
+          <WallView wall={cont.details.wall} screens={gearOf(cont)} {writable} onsave={(w) => saveDetails(cont, { ...cont.details, wall: w })} />
+        {:else if (cont?.kind === 'desk' || cont?.kind === 'operator_position') && cont.details?.positions?.length}
+          <DeskView positions={cont.details.positions} gear={gearOf(cont)} {writable} onsave={(ps) => saveDetails(cont, { ...cont.details, positions: ps })} />
+        {/if}
         {#if cont && (cont.totals.over_u || cont.totals.over_weight || cont.totals.over_power)}
           <div class="alert err" style="margin-top:12px"><Icon name="alert" /><span>{[cont.totals.over_u && 'la hauteur disponible', cont.totals.over_weight && 'le poids maximum', cont.totals.over_power && 'la puissance maximum'].filter(Boolean).join(', ')} {cont.totals.over_u || cont.totals.over_weight || cont.totals.over_power ? 'dépassé(e)' : ''}.</span></div>
         {/if}
@@ -238,14 +276,15 @@
   </Dialog>
 {/if}
 {#if confirmDel}
-  <Confirm title="Supprimer « {confirmDel.name} » ?" eyebrow={confirmDel.kind === 'container' ? 'Contenant' : confirmDel.kind === 'location' ? 'Emplacement' : 'Article'} confirmLabel="Supprimer" danger onconfirm={del} onclose={() => (confirmDel = null)}>
-    <p>{confirmDel.kind === 'container' ? 'Ses articles et leurs exemplaires partent avec lui.' : confirmDel.kind === 'location' ? 'L’emplacement doit être vide : sans contenant ni équipement libre.' : 'Ses exemplaires et leurs repères partent avec lui.'}</p>
+  <Confirm title="Supprimer « {confirmDel.name} » ?" eyebrow={confirmDel.kind === 'container' ? 'Élément' : confirmDel.kind === 'location' ? 'Emplacement' : 'Article'} confirmLabel="Supprimer" danger onconfirm={del} onclose={() => (confirmDel = null)}>
+    <p>{confirmDel.kind === 'container' ? 'Ses articles et leurs exemplaires partent avec lui.' : confirmDel.kind === 'location' ? 'L’emplacement doit être vide : sans élément ni équipement libre.' : 'Ses exemplaires et leurs repères partent avec lui.'}</p>
   </Confirm>
 {/if}
 
 {#if panelOf}<ProjectPanel article={panelOf} readonly={!writable} eyebrow="Panel du projet" onclose={() => (panelOf = null)} ondone={reload} />{/if}
 
 <style>
+  .kind-vis { display: grid; place-items: center; width: 84px; height: 148px; --ki: var(--sig-v); }
   .inst-grid { display: grid; grid-template-columns: 80px repeat(3, minmax(0, 1fr)); gap: 8px 10px; align-items: center; padding: 6px 0; }
   .inst-grid .input { height: 36px; font-size: 13.5px; }
   @media (max-width: 860px) { .inst-grid { grid-template-columns: 70px minmax(0, 1fr); } .inst-grid .lbl-t:nth-child(n + 3) { display: none; } }

@@ -90,7 +90,7 @@
   const shown = $derived(sheet ? sheet.items.filter((i) => filter === 'all' || (filter === 'done') === !!i.checked) : []);
   const pct = (d: number, t: number) => (t ? Math.round((d / t) * 100) : 0);
   const KIND: Record<string, { label: string; icon: string }> = {
-    rack: { label: 'Baie', icon: 'server' }, equipment: { label: 'Équipements', icon: 'cpu' }, panel: { label: 'Panel', icon: 'grid' },
+    rack: { label: 'Élément', icon: 'server' }, equipment: { label: 'Équipements', icon: 'cpu' }, panel: { label: 'Panel', icon: 'grid' },
     accessory: { label: 'Accessoire', icon: 'layers' }, adapter: { label: 'Adaptateurs', icon: 'zap' },
   };
   const locName = (id: string) => view.locations.find((l) => l.id === id)?.name ?? '';
@@ -100,14 +100,14 @@
 {#if sums === null}<span class="spin"></span>
 {:else if !sums.length}
   <section class="card" style="padding:28px;display:grid;gap:12px;justify-items:start">
-    <p class="lead" style="margin:0">Aucun contenant à préparer pour l’instant.</p>
-    <a class="btn primary" href="/projets/{pid}/inventaire"><Icon name="box" size="sm" />Ajouter un contenant</a>
+    <p class="lead" style="margin:0">Aucun élément à préparer pour l’instant.</p>
+    <a class="btn primary" href="/projets/{pid}/inventaire"><Icon name="box" size="sm" />Ajouter un élément</a>
   </section>
 {:else}
   <div class="ws">
     <aside class="ws-side card">
       <div class="ws-all"><span class="flabel">Projet</span><b class="mono">{total.d} / {total.t}</b><span class="bar"><i style="width:{pct(total.d, total.t)}%"></i></span></div>
-      <nav aria-label="Contenants">
+      <nav aria-label="Éléments">
         {#each sums as s (s.id)}
           <button class="ws-c" class:on={s.id === cur} onclick={() => (cur = s.id)} aria-current={s.id === cur ? 'true' : undefined}>
             <span class="ring" style="--p:{pct(s.done, s.total)}" class:full={s.total > 0 && s.done === s.total}>{#if s.total > 0 && s.done === s.total}<Icon name="ok" size="sm" />{:else}<span class="mono">{pct(s.done, s.total)}</span>{/if}</span>

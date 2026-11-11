@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Ajouter un contenant depuis un modèle actif de la bibliothèque.
+  // Ajouter un élément depuis un modèle actif de la bibliothèque.
   import Dialog from '../../components/Dialog.svelte';
   import Vu from '../../components/Vu.svelte';
   import { api } from '../../lib/api';
@@ -25,7 +25,7 @@
 
 <Dialog title="Ajouter depuis un modèle" eyebrow={view.locations.find((l) => l.id === locationId)?.name ?? ''} {onclose} wide>
   {#if !list}<span class="spin"></span>
-  {:else if !list.length}<p class="muted">Aucun modèle actif. Enregistrez un contenant comme modèle depuis l’inventaire d’un projet, puis activez-le dans Catalogue › Modèles.</p>
+  {:else if !list.length}<p class="muted">Aucun modèle actif. Enregistrez un élément comme modèle depuis l’inventaire d’un projet, puis activez-le dans Catalogue › Modèles.</p>
   {:else}
     <div class="tbl-wrap"><table class="tbl"><tbody>
       {#each list as t (t.id)}

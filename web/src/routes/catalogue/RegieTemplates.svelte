@@ -1,6 +1,6 @@
 <script lang="ts">
   // Bibliothèque des modèles de régies (section 6.2) : chaque modèle assemble des modèles de
-  // contenants dans un ordre donné ; on le recopie dans un projet depuis l'onglet Régies.
+  // éléments dans un ordre donné ; on le recopie dans un projet depuis l'onglet Régies.
   import Icon from '../../components/Icon.svelte';
   import Ill from '../../components/Ill.svelte';
   import Dialog from '../../components/Dialog.svelte';
@@ -33,7 +33,7 @@
   load();
   const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
   const shown = $derived((list ?? []).filter((r) => !q || norm(r.name).includes(norm(q))));
-  /** Nom du modèle de contenant sans le préfixe « {régie} · » qu'il reçoit à l'enregistrement. */
+  /** Nom du modèle d’élément sans le préfixe « {régie} · » qu'il reçoit à l'enregistrement. */
   const short = (r: { name: string }, n: string) => (n.startsWith(`${r.name} · `) ? n.slice(r.name.length + 3) : n);
   const tName = (id: string) => templates.find((t) => t.id === id)?.name ?? 'Modèle supprimé';
 
@@ -60,7 +60,7 @@
   async function remove() { try { await api.del(`/regies/${deleting!.id}`); toast('Modèle supprimé.'); deleting = null; await load(); } catch (e) { fail(e); } }
 </script>
 
-<p class="muted" style="max-width:70ch">Un modèle de régie assemble des modèles de contenants dans un ordre donné. Créez-en un ici ou depuis l’onglet Régies d’un projet (« Enregistrer comme modèle »), puis recopiez-le dans n’importe quel projet : chaque contenant est recréé avec son contenu.</p>
+<p class="muted" style="max-width:70ch">Un modèle de régie assemble des modèles d’éléments dans un ordre donné. Créez-en un ici ou depuis l’onglet Régies d’un projet (« Enregistrer comme modèle »), puis recopiez-le dans n’importe quel projet : chaque élément est recréé avec son contenu.</p>
 <div class="toolbar" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
   <label class="search" style="flex:1;min-width:220px"><Icon name="search" /><input class="input" bind:value={q} placeholder="Nom du modèle…" aria-label="Rechercher un modèle de régie"></label>
   {#if writable}<button class="btn primary" onclick={() => openEdit(null)}><Icon name="plus" />Nouveau modèle</button>{/if}
@@ -77,8 +77,8 @@
         <div class="rt-body">
           <div class="cont-top"><span class="chip">{REGIE[r.kind].label}</span>{#if r.service_type}<span class="chip">{r.service_type}</span>{/if}</div>
           <b class="rt-name">{r.name}</b>
-          <ol class="rt-members">{#each r.members as m, i (m.id + i)}<li title={m.name}><span class="mono">{i + 1}</span><span class="rt-mn">{short(r, m.name)}</span>{#if m.status !== 'active'}<span class="muted small">{STATUS[m.status]}</span>{/if}</li>{:else}<li class="muted">Aucun contenant</li>{/each}</ol>
-          <span class="muted small mono">{r.totals.containers} contenant{r.totals.containers > 1 ? 's' : ''} · {nf(r.totals.total_u)} U · {nf(r.totals.weight_kg, 1)} kg · {nf(r.totals.power_w)} W · modifié {relative(r.updated_at)}</span>
+          <ol class="rt-members">{#each r.members as m, i (m.id + i)}<li title={m.name}><span class="mono">{i + 1}</span><span class="rt-mn">{short(r, m.name)}</span>{#if m.status !== 'active'}<span class="muted small">{STATUS[m.status]}</span>{/if}</li>{:else}<li class="muted">Aucun élément</li>{/each}</ol>
+          <span class="muted small mono">{r.totals.containers} élément{r.totals.containers > 1 ? 's' : ''} · {nf(r.totals.total_u)} U · {nf(r.totals.weight_kg, 1)} kg · {nf(r.totals.power_w)} W · modifié {relative(r.updated_at)}</span>
         </div>
         {#if writable}<div class="dl-actions"><button class="btn sm ghost" title="Modifier" aria-label="Modifier {r.name}" onclick={() => openEdit(r)}><Icon name="pen" size="sm" /></button><button class="btn sm ghost danger" title="Supprimer" aria-label="Supprimer {r.name}" onclick={() => (deleting = r)}><Icon name="trash" size="sm" /></button></div>{/if}
       </article>
@@ -94,7 +94,7 @@
         <div class="field"><label for="rt-s">Type de prestation</label><input class="input" id="rt-s" bind:value={edit.service_type} maxlength="80" placeholder="Sport, concert, TV…"></div>
       </div>
       <div class="field"><span class="flabel">Type</span><div class="seg">{#each Object.entries(REGIE) as [k, v]}<button type="button" class:on={edit.kind === k} onclick={() => (edit!.kind = k as RegieKind)}>{v.label}</button>{/each}</div></div>
-      <div class="field"><span class="flabel">Contenants, dans l’ordre</span>
+      <div class="field"><span class="flabel">Éléments, dans l’ordre</span>
         <ol class="rt-edit">
           {#each edit.members as id, i (id + i)}
             <li><span class="mono">{i + 1}</span><b>{tName(id)}</b><span style="flex:1"></span>
@@ -104,11 +104,11 @@
           {/each}
         </ol>
         {#if templates.length}
-          <select class="input" style="max-width:360px" aria-label="Ajouter un modèle de contenant" onchange={(e) => { const s = e.target as HTMLSelectElement; if (s.value) edit!.members.push(s.value); s.value = ''; }}>
-            <option value="">+ Ajouter un modèle de contenant…</option>
+          <select class="input" style="max-width:360px" aria-label="Ajouter un modèle d’élément" onchange={(e) => { const s = e.target as HTMLSelectElement; if (s.value) edit!.members.push(s.value); s.value = ''; }}>
+            <option value="">+ Ajouter un modèle d’élément…</option>
             {#each templates as t}<option value={t.id}>{t.name} · {CONTAINER_KINDS[t.container.kind as keyof typeof CONTAINER_KINDS]?.label}{t.status !== 'active' ? ` (${STATUS[t.status]})` : ''}</option>{/each}
           </select>
-        {:else}<p class="muted small">Aucun modèle de contenant : créez-en depuis l’inventaire d’un projet.</p>{/if}
+        {:else}<p class="muted small">Aucun modèle d’élément : créez-en depuis l’inventaire d’un projet.</p>{/if}
         {#if errs.members}<span class="ferr">{errs.members}</span>{/if}
       </div>
       <div class="field"><label for="rt-no">Notes</label><textarea class="input" id="rt-no" rows="2" bind:value={edit.notes} maxlength="2000"></textarea></div>
@@ -119,7 +119,7 @@
 
 {#if deleting}
   <Confirm title="Supprimer « {deleting.name} » ?" confirmLabel="Supprimer" danger onconfirm={remove} onclose={() => (deleting = null)}>
-    <p>Le modèle de régie quitte la bibliothèque. Ses modèles de contenants restent, ainsi que les régies déjà recopiées dans les projets.</p>
+    <p>Le modèle de régie quitte la bibliothèque. Ses modèles d’éléments restent, ainsi que les régies déjà recopiées dans les projets.</p>
   </Confirm>
 {/if}
 

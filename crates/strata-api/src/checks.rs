@@ -212,7 +212,7 @@ async fn container(store: &Store, id: &str) -> ApiResult<Container> {
     store
         .container(id)
         .await?
-        .ok_or(ApiError::NotFound("Contenant"))
+        .ok_or(ApiError::NotFound("Élément"))
 }
 
 async fn show(

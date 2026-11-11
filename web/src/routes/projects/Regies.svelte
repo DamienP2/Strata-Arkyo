@@ -1,6 +1,6 @@
 <script lang="ts">
-  // Régies du projet (section 6.2) : ensembles ordonnés de contenants, avec leurs totaux.
-  // La régie principale est créée au premier contenant et reçoit chaque nouveau contenant.
+  // Régies du projet (section 6.2) : ensembles ordonnés d’éléments, avec leurs totaux.
+  // La régie principale est créée au premier élément et reçoit chaque nouveà l’élément.
   import { untrack } from 'svelte';
   import Icon from '../../components/Icon.svelte';
   import Ill from '../../components/Ill.svelte';
@@ -68,7 +68,7 @@
   async function remove() { try { await api.del(`/regies/${deleting!.id}`); toast('Régie supprimée.'); deleting = null; await load(); } catch (e) { fail(e); } }
   async function saveAsModel(r: R) {
     busy = r.id;
-    try { const m = await api.post<R>(`/regies/${r.id}/save-as-template`, {}); toast(`Modèle « ${m.name} » créé avec ${m.members.length} contenant${m.members.length > 1 ? 's' : ''} (en brouillon).`); }
+    try { const m = await api.post<R>(`/regies/${r.id}/save-as-template`, {}); toast(`Modèle « ${m.name} » créé avec ${m.members.length} élément${m.members.length > 1 ? 's' : ''} (en brouillon).`); }
     catch (e) { fail(e); } finally { busy = ''; }
   }
   async function openPick() {
@@ -80,7 +80,7 @@
     busy = 'pick';
     try {
       const r = await api.post<{ regie: R; skipped_items: number }>(`/projects/${pid}/regies/from-template`, { regie_id: pick.regie, location_id: pick.location });
-      toast(`« ${r.regie.name} » ajoutée : ${r.regie.members.length} contenant${r.regie.members.length > 1 ? 's' : ''} recréé${r.regie.members.length > 1 ? 's' : ''}.`);
+      toast(`« ${r.regie.name} » ajoutée : ${r.regie.members.length} élément${r.regie.members.length > 1 ? 's' : ''} recréé${r.regie.members.length > 1 ? 's' : ''}.`);
       if (r.skipped_items) toast(`${r.skipped_items} fiche(s) disparue(s) du catalogue ignorée(s).`, 'warn');
       pick = null; await load();
     } catch (e) { fail(e); } finally { busy = ''; }
@@ -90,7 +90,7 @@
 </script>
 
 <div class="rg-head">
-  <p class="muted" style="max-width:68ch;margin:0">Une régie assemble des contenants dans un ordre donné. La régie principale reçoit chaque nouveau contenant ; un même contenant peut figurer dans plusieurs régies.</p>
+  <p class="muted" style="max-width:68ch;margin:0">Une régie assemble des éléments dans un ordre donné. La régie principale reçoit chaque nouveà l’élément ; un même élément peut figurer dans plusieurs régies.</p>
   {#if writable}<div class="row-actions" style="margin:0"><button class="btn" onclick={openPick}><Icon name="copy" size="sm" />Depuis un modèle</button><button class="btn primary" onclick={() => openEdit(null)}><Icon name="plus" size="sm" />Nouvelle régie</button></div>{/if}
 </div>
 
@@ -98,8 +98,8 @@
 {:else if !list.length}
   <section class="card empty-card">
     <Ill kind={REGIE[view.project.regie].ill} />
-    <p class="lead">Pas encore de régie : la régie principale apparaît avec le premier contenant.</p>
-    <a class="btn primary" href="/projets/{pid}/inventaire"><Icon name="box" size="sm" />Ajouter un contenant</a>
+    <p class="lead">Pas encore de régie : la régie principale apparaît avec le premier élément.</p>
+    <a class="btn primary" href="/projets/{pid}/inventaire"><Icon name="box" size="sm" />Ajouter un élément</a>
   </section>
 {:else}
   <div class="rg-list">
@@ -114,14 +114,14 @@
             {#if r.notes}<p class="muted small" style="margin:0">{r.notes}</p>{/if}
           </div>
           <dl class="rg-kpi">
-            <div><dt>Contenants</dt><dd class="mono">{t.containers}</dd></div>
+            <div><dt>Éléments</dt><dd class="mono">{t.containers}</dd></div>
             <div><dt>Hauteur</dt><dd class="mono">{nf(t.used_u, 1).replace(',0', '')} / {nf(t.total_u)} U</dd>{#if t.total_u}<Vu value={(t.used_u / t.total_u) * 100} mode="load" n={14} />{/if}</div>
             <div><dt>Poids</dt><dd class="mono">{nf(t.weight_kg, 1)} kg</dd></div>
             <div><dt>Conso</dt><dd class="mono">{nf(t.power_w)} W</dd></div>
           </dl>
         </div>
 
-        <ol class="rg-strip" aria-label="Contenants de {r.name}, dans l’ordre">
+        <ol class="rg-strip" aria-label="Éléments de {r.name}, dans l’ordre">
           {#each r.members as m, i (m.id)}
             <li class="rg-m" class:alert={over(m)}>
               <span class="rg-pos mono">{i + 1}</span>
@@ -146,10 +146,10 @@
             <li class="rg-add">
               {#if adding === r}
                 {@const cand = candidates(r)}
-                {#if cand.length}<select class="input" aria-label="Contenant à ajouter" onchange={(e) => addMember(r, (e.target as HTMLSelectElement).value)}><option value="">Choisir un contenant…</option>{#each cand as c}<option value={c.id}>{c.name}</option>{/each}</select>
-                {:else}<span class="muted small">Tous les contenants y sont déjà.</span>{/if}
+                {#if cand.length}<select class="input" aria-label="Élément à ajouter" onchange={(e) => addMember(r, (e.target as HTMLSelectElement).value)}><option value="">Choisir un élément…</option>{#each cand as c}<option value={c.id}>{c.name}</option>{/each}</select>
+                {:else}<span class="muted small">Tous les éléments y sont déjà.</span>{/if}
                 <button class="btn sm ghost" onclick={() => (adding = null)}>Annuler</button>
-              {:else}<button class="btn ghost" onclick={() => (adding = r)}><Icon name="plus" size="sm" />Ajouter un contenant</button>{/if}
+              {:else}<button class="btn ghost" onclick={() => (adding = r)}><Icon name="plus" size="sm" />Ajouter un élément</button>{/if}
             </li>
           {/if}
         </ol>
@@ -186,17 +186,17 @@
     {#if pick.lib === null}<span class="spin"></span>
     {:else if !pick.lib.length}<p class="muted">La bibliothèque ne compte aucun modèle de régie. Enregistrez une régie comme modèle, ou créez-en un dans <a class="ilink" href="/catalogue/regies">Catalogue › Modèles de régies</a>.</p>
     {:else}
-      <p class="muted small">Chaque contenant du modèle est recréé dans le projet, avec son matériel, ses circuits et sa disposition dans la baie.</p>
+      <p class="muted small">Chaque élément du modèle est recréé dans le projet, avec son matériel, ses circuits et sa disposition dans la baie.</p>
       <div class="pick-list">
         {#each pick.lib as l (l.id)}
           <label class="pick" class:on={pick.regie === l.id}>
             <input type="radio" name="rgm" value={l.id} bind:group={pick.regie}>
             <span class="pick-ill"><Ill kind={REGIE[l.kind].ill} /></span>
-            <span class="rg-mi"><b>{l.name}</b><span class="muted small">{REGIE[l.kind].label}{l.service_type ? ` · ${l.service_type}` : ''} · {l.members.map((m) => m.name).join(', ') || 'vide'}</span><span class="muted small mono">{l.totals.containers} contenant{l.totals.containers > 1 ? 's' : ''} · {nf(l.totals.weight_kg, 1)} kg · {nf(l.totals.power_w)} W</span></span>
+            <span class="rg-mi"><b>{l.name}</b><span class="muted small">{REGIE[l.kind].label}{l.service_type ? ` · ${l.service_type}` : ''} · {l.members.map((m) => m.name).join(', ') || 'vide'}</span><span class="muted small mono">{l.totals.containers} élément{l.totals.containers > 1 ? 's' : ''} · {nf(l.totals.weight_kg, 1)} kg · {nf(l.totals.power_w)} W</span></span>
           </label>
         {/each}
       </div>
-      <div class="field" style="max-width:340px"><label for="rg-l">Emplacement des contenants</label><select class="input" id="rg-l" bind:value={pick.location}>{#each view.locations as l}<option value={l.id}>{l.name}</option>{/each}</select></div>
+      <div class="field" style="max-width:340px"><label for="rg-l">Emplacement des éléments</label><select class="input" id="rg-l" bind:value={pick.location}>{#each view.locations as l}<option value={l.id}>{l.name}</option>{/each}</select></div>
     {/if}
     {#snippet footer()}<button class="btn ghost" onclick={() => (pick = null)}>Annuler</button><button class="btn primary" disabled={!pick?.regie || !pick?.location || busy === 'pick'} onclick={fromModel}>{#if busy === 'pick'}<span class="spin"></span>{/if}Ajouter au projet</button>{/snippet}
   </Dialog>
@@ -204,7 +204,7 @@
 
 {#if deleting}
   <Confirm title="Supprimer « {deleting.name} » ?" confirmLabel="Supprimer" danger onconfirm={remove} onclose={() => (deleting = null)}>
-    <p>Seule la régie disparaît : ses {deleting.members.length} contenant{deleting.members.length > 1 ? 's' : ''} restent dans le projet.</p>
+    <p>Seule la régie disparaît : ses {deleting.members.length} élément{deleting.members.length > 1 ? 's' : ''} restent dans le projet.</p>
   </Confirm>
 {/if}
 

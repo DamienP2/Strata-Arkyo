@@ -39,7 +39,7 @@
   async function remove() { try { await api.del(`/panels/${deleting!.id}`); toast('Panel supprimé.'); deleting = null; await load(); } catch (e) { fail(e); } }
 </script>
 
-<p class="muted" style="max-width:70ch">Panels de brassage du site : hauteur, densité, connecteurs, groupes de ports et libellés. Ajouté à un contenant de projet, un panel y est recopié et se modifie sans toucher la bibliothèque.</p>
+<p class="muted" style="max-width:70ch">Panels de brassage du site : hauteur, densité, connecteurs, groupes de ports et libellés. Ajouté à un élément de projet, un panel y est recopié et se modifie sans toucher la bibliothèque.</p>
 <div class="toolbar" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
   <label class="search" style="flex:1;min-width:220px"><Icon name="search" /><input class="input" bind:value={q} placeholder="Nom du panel…" aria-label="Rechercher un panel"></label>
   {#if writable}<button class="btn primary" onclick={() => { wiz = blankPanel(); wizErr = ''; }}><Icon name="plus" />Nouveau panel</button>{/if}

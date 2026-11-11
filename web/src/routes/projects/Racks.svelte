@@ -199,7 +199,7 @@
 <svelte:window onbeforeunload={leave} onkeydown={(e) => { if (e.key === 'Escape') { armed = null; sel = null; } }} />
 
 {#if !racks.length}
-  <div class="empty">Aucun contenant rackable dans ce projet. Ajoutez une baie ou un flight-case depuis l’<a class="ilink" href="/projets/{view.project.id}/inventaire">inventaire</a>.</div>
+  <div class="empty">Aucun élément rackable dans ce projet. Ajoutez une baie ou un flight-case depuis l’<a class="ilink" href="/projets/{view.project.id}/inventaire">inventaire</a>.</div>
 {:else if rack}
   {@const t = rack.totals}
   <div class="rack-screen card" style="padding:0;overflow:hidden">
@@ -220,7 +220,7 @@
       {/if}
     </div>
     <div class="dtool">
-      <select class="input" value={cid} onchange={(e) => navigate(`/projets/${view.project.id}/racks/${(e.target as HTMLSelectElement).value}`)} aria-label="Contenant">
+      <select class="input" value={cid} onchange={(e) => navigate(`/projets/${view.project.id}/racks/${(e.target as HTMLSelectElement).value}`)} aria-label="Élément">
         {#each racks as c}<option value={c.id}>{c.name} · {c.height_u} U</option>{/each}
       </select>
       <div class="seg" role="group" aria-label="Face">{#each [...rack.faces, 'side'] as f}<button class:on={face === f} onclick={() => { face = f as Face | 'side'; armed = null; }}>{FACES[f as Face]}</button>{/each}</div>

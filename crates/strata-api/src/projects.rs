@@ -499,7 +499,7 @@ async fn create(
                 container = Some(made);
             } else {
                 container_error = Some(
-                    json!({ "message": "Le projet est créé, mais le contenant a été refusé.", "fields": errs }),
+                    json!({ "message": "Le projet est créé, mais l'élément a été refusé.", "fields": errs }),
                 );
             }
         }
@@ -777,7 +777,7 @@ async fn delete_location(
     let inv = st.store.inventory(&l.project_id).await?;
     if inv.containers.iter().any(|c| c.location_id == id) {
         return Err(ApiError::Conflict(
-            "Cet emplacement contient encore des contenants : déplacez-les avant.".into(),
+            "Cet emplacement contient encore des éléments : déplacez-les avant.".into(),
         ));
     }
     if inv.articles.iter().any(|a| a.location_id == id) {
@@ -910,7 +910,7 @@ async fn update_container(
         .store
         .container(&id)
         .await?
-        .ok_or(ApiError::NotFound("Contenant"))?;
+        .ok_or(ApiError::NotFound("Élément"))?;
     location_in(&st.store, &before.project_id, &b.location_id).await?;
     fields(validate_container(&mut b.name, &mut b.data))?;
     // Tuiles et postes ne citent que des exemplaires du matériel de l'élément.
@@ -944,7 +944,7 @@ async fn update_container(
         .await
         .map_err(|e| match e {
             StoreError::Conflict(_) => {
-                one("name", "Un contenant porte déjà ce nom dans le projet.")
+                one("name", "Un élément porte déjà ce nom dans le projet.")
             }
             e => e.into(),
         })?;
@@ -975,7 +975,7 @@ async fn delete_container(
         .store
         .container(&id)
         .await?
-        .ok_or(ApiError::NotFound("Contenant"))?;
+        .ok_or(ApiError::NotFound("Élément"))?;
     st.store.delete_container(&id).await?;
     record(
         &st,
@@ -1068,7 +1068,7 @@ fn fit_warnings(
     if let (Some(d), Some(cd)) = (depth, c.data.depth_mm) {
         if d > cd - 80.0 {
             w.push(format!(
-                "Profondeur : {} mm pour {} mm de contenant, moins 80 mm de marge de câblage.",
+                "Profondeur : {} mm pour {} mm d'élément, moins 80 mm de marge de câblage.",
                 fmt(d),
                 fmt(cd)
             ));
@@ -1100,7 +1100,7 @@ async fn create_article(
                 .container(cid)
                 .await?
                 .filter(|c| c.project_id == pid)
-                .ok_or_else(|| one("container_id", "Contenant inconnu dans ce projet."))?,
+                .ok_or_else(|| one("container_id", "Élément inconnu dans ce projet."))?,
         ),
         None => None,
     };
@@ -1110,7 +1110,7 @@ async fn create_article(
         (None, None) => {
             return Err(one(
                 "location_id",
-                "Choisissez un contenant ou un emplacement.",
+                "Choisissez un élément ou un emplacement.",
             ));
         }
     };
@@ -1162,7 +1162,7 @@ async fn create_article(
             if !container.as_ref().is_some_and(|c| c.data.rackable) {
                 return Err(one(
                     "container_id",
-                    "Un accessoire se pose dans un contenant rackable.",
+                    "Un accessoire se pose dans un élément rackable.",
                 ));
             }
             merge = false;
@@ -1314,11 +1314,11 @@ async fn move_article(
                 .container(cid)
                 .await?
                 .filter(|c| c.project_id == pid)
-                .ok_or_else(|| one("container_id", "Contenant inconnu dans ce projet."))?;
+                .ok_or_else(|| one("container_id", "Élément inconnu dans ce projet."))?;
             if a.nature == ArticleNature::Accessory && !c.data.rackable {
                 return Err(one(
                     "container_id",
-                    "Un accessoire se pose dans un contenant rackable.",
+                    "Un accessoire se pose dans un élément rackable.",
                 ));
             }
             (c.location_id, Some(c.id))
@@ -1327,13 +1327,13 @@ async fn move_article(
             if a.nature == ArticleNature::Accessory {
                 return Err(one(
                     "container_id",
-                    "Un accessoire reste dans un contenant.",
+                    "Un accessoire reste dans un élément.",
                 ));
             }
             let l = b
                 .location_id
                 .as_deref()
-                .ok_or_else(|| one("location_id", "Choisissez un contenant ou un emplacement."))?;
+                .ok_or_else(|| one("location_id", "Choisissez un élément ou un emplacement."))?;
             (location_in(&st.store, &pid, l).await?.id, None)
         }
     };
@@ -1626,7 +1626,7 @@ async fn export(
     let (inv, items, _) = inventory_view(&st.store, &pid).await?;
     let headers: Vec<String> = [
         "Emplacement",
-        "Contenant",
+        "Élément",
         "Type",
         "Désignation",
         "Marque",
