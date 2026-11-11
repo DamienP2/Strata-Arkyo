@@ -5,6 +5,7 @@
 
 pub mod admin;
 pub mod auth;
+pub mod cable_table;
 pub mod cabling;
 pub mod catalog;
 pub mod catalog_io;
@@ -105,6 +106,7 @@ pub fn router(state: AppState) -> Router {
         .merge(settings::routes())
         .merge(synoptic::routes())
         .merge(cabling::routes())
+        .merge(cable_table::routes())
         .route("/live", get(live::socket))
         .layer(middleware::from_fn(csrf));
     Router::new()

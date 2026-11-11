@@ -388,6 +388,41 @@ fn in_view(view: &str, n: &Node) -> bool {
     }
 }
 
+/// Avertissements d'un câble : extrémité disparue, compatibilité.
+pub(crate) fn cable_warnings(
+    ea: Option<(&Node, &Port)>,
+    eb: Option<(&Node, &Port)>,
+) -> Vec<String> {
+    let mut w = Vec::new();
+    if ea.is_none() || eb.is_none() {
+        w.push("Extrémité manquante : l'équipement ou le port a disparu.".to_string());
+    }
+    if let (Some((_, pa)), Some((_, pb))) = (ea, eb) {
+        w.extend(compat(&pa.info(), &pb.info()));
+    }
+    w
+}
+
+/// Longueur estimée quand les deux extrémités sont posées dans le même rack.
+pub(crate) fn estimate(
+    ea: Option<&(&Node, &Port)>,
+    eb: Option<&(&Node, &Port)>,
+    containers: &HashMap<&str, &strata_store::Container>,
+) -> Option<f64> {
+    let ((na, pa), (nb, pb)) = (ea?, eb?);
+    if na.container_id.is_none() || na.container_id != nb.container_id {
+        return None;
+    }
+    let ct = containers.get(na.container_id.as_deref()?)?;
+    Some(estimate_in_rack(
+        na.spot?,
+        nb.spot?,
+        ct.data.depth_mm.unwrap_or(600.0),
+        &pa.connector,
+        &pb.connector,
+    ))
+}
+
 async fn show(
     State(st): State<AppState>,
     m: Member,
@@ -425,33 +460,12 @@ async fn show(
         if !ia && !ib {
             continue;
         }
-        let mut warnings = Vec::new();
-        if ea.is_none() || eb.is_none() {
-            warnings.push("Extrémité manquante : l'équipement ou le port a disparu.".to_string());
-        }
-        if let (Some((_, pa)), Some((_, pb))) = (ea, eb) {
-            warnings.extend(compat(&pa.info(), &pb.info()));
-        }
-        let estimate = match (ea, eb) {
-            (Some((na, pa)), Some((nb, pb)))
-                if na.container_id.is_some() && na.container_id == nb.container_id =>
-            {
-                match (
-                    na.spot,
-                    nb.spot,
-                    na.container_id.as_deref().and_then(|c| containers.get(c)),
-                ) {
-                    (Some(sa), Some(sb), Some(ct)) => Some(estimate_in_rack(
-                        sa,
-                        sb,
-                        ct.data.depth_mm.unwrap_or(600.0),
-                        &pa.connector,
-                        &pb.connector,
-                    )),
-                    _ => None,
-                }
-            }
-            _ => None,
+        let warnings = cable_warnings(ea.copied(), eb.copied());
+        let estimate = estimate(ea, eb, &containers);
+        let warnings = {
+            let mut w = warnings;
+            w.dedup();
+            w
         };
         let far = |e: Option<&(&Node, &Port)>| {
             e.map(|(n, p)| json!({ "node": n.key, "label": n.label, "sub": n.sub, "port": p.label, "connector": p.connector }))

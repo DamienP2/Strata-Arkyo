@@ -1988,3 +1988,135 @@ async fn numbering_and_validation() {
         "sans numéro"
     );
 }
+
+#[tokio::test]
+async fn cable_table_bulk_edit_and_export() {
+    let Setup {
+        app,
+        o,
+        lea,
+        pid,
+        cid,
+        ..
+    } = setup().await;
+    let item = |name: &str, ports: Value| json!({"kind": "equipment", "data": {"name": name, "functions": ["V"], "format": {"kind": "rack", "height_u": 1, "depth_mm": 300}, "ports": ports}});
+    let a = call(&app, "POST", "/api/catalog/items", Some(item("Source", json!([{"connector_id": "bnc", "signal_id": "sdi-3g", "direction": "out", "quantity": 3}]))), Some(&o)).await.body["item"]["id"].as_str().unwrap().to_string();
+    let b = call(&app, "POST", "/api/catalog/items", Some(item("Moniteur", json!([{"connector_id": "bnc", "signal_id": "sdi-3g", "direction": "in", "quantity": 3}]))), Some(&o)).await.body["item"]["id"].as_str().unwrap().to_string();
+    for it in [&a, &b] {
+        call(
+            &app,
+            "POST",
+            &format!("/api/projects/{pid}/articles"),
+            Some(json!({"container_id": cid, "nature": "equipment", "item_id": it})),
+            Some(&o),
+        )
+        .await;
+    }
+    call(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid}/synoptic/lock"),
+        None,
+        Some(&o),
+    )
+    .await;
+    let s = call(
+        &app,
+        "GET",
+        &format!("/api/projects/{pid}/synoptic?view=container:{cid}"),
+        None,
+        Some(&o),
+    )
+    .await
+    .body;
+    let node = |l: &str| {
+        s["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|n| n["label"] == l)
+            .unwrap()
+            .clone()
+    };
+    let (src, dst) = (node("Source"), node("Moniteur"));
+    let p = |n: &Value, i: usize| n["ports"][i]["ref"].as_str().unwrap().to_string();
+    call(&app, "POST", &format!("/api/projects/{pid}/cables"), Some(json!({"cables": [
+        {"a": p(&src, 0), "b": p(&dst, 0), "number": "V-10"}, {"a": p(&src, 1), "b": p(&dst, 1), "number": "V-2"}, {"a": p(&src, 2), "b": p(&dst, 2)}
+    ]})), Some(&o)).await;
+
+    let t = call(
+        &app,
+        "GET",
+        &format!("/api/projects/{pid}/cables/table"),
+        None,
+        Some(&lea),
+    )
+    .await
+    .body;
+    let rows = t["rows"].as_array().unwrap().clone();
+    assert_eq!(
+        rows.iter().map(|r| r["number"].clone()).collect::<Vec<_>>(),
+        vec![json!("V-2"), json!("V-10"), Value::Null],
+        "tri naturel"
+    );
+    assert_eq!(rows[0]["signal"], "SDI 3G");
+    assert_eq!(rows[0]["a"]["element"], "Baie V1");
+    assert_eq!(rows[0]["a"]["port"], "SDI 3G 2");
+    assert_eq!(rows[0]["b"]["equipment"], "Moniteur");
+
+    // Saisie en série : Léa (technicienne) sans prendre la main ; une ligne périmée revient en conflit.
+    let url = format!("/api/projects/{pid}/cables/bulk");
+    let r = call(
+        &app,
+        "POST",
+        &url,
+        Some(json!({"changes": [
+            {"id": rows[2]["id"], "rev": rows[2]["rev"], "number": "V-11", "notes": "Retour réal"},
+            {"id": rows[0]["id"], "rev": rows[0]["rev"], "color": "#0E8550"},
+            {"id": rows[1]["id"], "rev": 99, "number": "X"}
+        ]})),
+        Some(&lea),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    assert_eq!(r.body["updated"].as_array().unwrap().len(), 2);
+    assert_eq!(r.body["conflicts"][0]["reason"], "stale");
+    let r = call(&app, "POST", &url, Some(json!({"changes": [{"id": rows[0]["id"], "rev": rows[0]["rev"].as_i64().unwrap() + 1, "color": "vert"}]})), Some(&lea)).await;
+    assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let t = call(
+        &app,
+        "GET",
+        &format!("/api/projects/{pid}/cables/table"),
+        None,
+        Some(&o),
+    )
+    .await
+    .body;
+    let row = t["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|x| x["number"] == "V-11")
+        .unwrap()
+        .clone();
+    assert_eq!(row["notes"], "Retour réal");
+
+    let r = call(
+        &app,
+        "GET",
+        &format!("/api/projects/{pid}/cables/export?format=xlsx"),
+        None,
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK);
+    let r = call(
+        &app,
+        "GET",
+        &format!("/api/projects/{pid}/cables/export?format=pdf"),
+        None,
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
+}
