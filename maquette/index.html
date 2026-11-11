@@ -503,6 +503,38 @@ select.input{cursor:pointer}
 .spinner{display:inline-block;vertical-align:middle}
 .btn .spinner{width:16px;height:16px}
 
+/* Plan */
+#plan{width:100%;height:100%;display:block;cursor:grab;user-select:none;-webkit-user-select:none}
+#plan.panning{cursor:grabbing}
+#plan .pl-grid{fill:none;stroke:var(--line);stroke-width:.06}
+#plan .pl-wall{fill:var(--bg);stroke:var(--fg);stroke-width:2.5;vector-effect:non-scaling-stroke}
+#plan .pl-trib{fill:var(--sunken)}
+#plan .pl-court{fill:color-mix(in srgb,var(--sig-n) 7%,var(--bg));stroke:var(--fg-3);stroke-width:1.2;vector-effect:non-scaling-stroke}
+#plan .pl-line{fill:none;stroke:var(--fg-3);stroke-width:1;vector-effect:non-scaling-stroke}
+#plan .pl-door{fill:var(--bg)}
+#plan .pl-lbl{font:500 1.6px var(--font);fill:var(--fg-3)}
+#plan .pl-lbl.sm{font-size:1.2px}
+#plan .obj{cursor:pointer}
+#plan .obj .shape{fill:var(--bg);stroke:var(--c);stroke-width:2;vector-effect:non-scaling-stroke}
+#plan .obj.cont .shape{fill:color-mix(in srgb,var(--fg) 8%,var(--bg))}
+#plan .obj.sel .shape{stroke:var(--accent);stroke-width:3.5}
+#plan .cone{fill:color-mix(in srgb,var(--sig-v) 12%,transparent);stroke:color-mix(in srgb,var(--sig-v) 55%,transparent);stroke-width:1;vector-effect:non-scaling-stroke}
+#plan .obj.sel .cone{fill:color-mix(in srgb,var(--accent) 18%,transparent)}
+#plan .pl-name{font:600 1.5px var(--font);fill:var(--fg);pointer-events:none}
+#plan .pl-sym{font:700 1.05px var(--font);fill:var(--c);pointer-events:none}
+#plan .route path{fill:none;stroke:var(--c);stroke-width:3;stroke-linejoin:round;vector-effect:non-scaling-stroke}
+#plan .route rect{fill:var(--bg);stroke:var(--c);stroke-width:1;vector-effect:non-scaling-stroke}
+#plan .route text{font:600 1.3px var(--mono);fill:var(--fg)}
+.scalebar{display:inline-flex;align-items:center;gap:6px;font:500 12.5px var(--mono);color:var(--fg-2);padding:0 10px 0 6px}
+.scalebar i{display:inline-block;height:6px;border:1.5px solid var(--fg);border-top:0}
+.lenrow{display:flex;align-items:flex-start;gap:14px;padding:12px 0;border-bottom:1px solid var(--line)}
+.lenrow>div{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.lenrow b{font-weight:600}
+.lenrow span{font-size:13.5px;color:var(--fg-3)}
+.lenrow strong{font-size:18px;font-weight:600;white-space:nowrap}
+.pane h2 .small{font-family:var(--font);font-weight:500;letter-spacing:0}
+input[type=range]{accent-color:var(--fg);width:100%}
+
 /* ---------- Superpositions ---------- */
 .scrim{position:fixed;inset:0;background:var(--scrim);opacity:0;pointer-events:none;transition:opacity .2s;z-index:55}
 .scrim.open{opacity:1;pointer-events:auto}
@@ -602,6 +634,7 @@ select.input{cursor:pointer}
   .ritem{font-size:12.5px}
   .ritem::after{display:none}
   .syn-wrap{height:64vh;height:64dvh}
+  .design-body #planWrap{order:1}
   .dtool .gap{display:none}
   .lockbar .sp{margin-left:0}
   .ptop.compact{padding-left:max(20px,env(safe-area-inset-left,0px));padding-right:max(20px,env(safe-area-inset-right,0px))}
@@ -864,9 +897,9 @@ let NOTIFS=[
 /* ================= État ================= */
 const S={pf:{inter:'Prestation',q:'',st:[]},inv:{loc:'cr2',cont:'bv1'},lockOther:false,cat:{q:'',f:'all'},adm:'maj',rc:{st:{},by:{},open:null,f:'all',q:''},
  ota:{cur:'1.4.2',next:'1.5.0',phase:'idle',step:0,pct:0,canal:'Stable'}};
-const DESIGN=new Set(['racks','synoptique']);
-const PROJ_ROUTES=new Set(['projet','inventaire','racks','synoptique','recette','preparation','reseau']);
-const ROUTE_NAME={accueil:'Accueil',projets:'Projets',projet:'Vue d’ensemble',inventaire:'Inventaire',racks:'Racks',synoptique:'Synoptique',preparation:'Préparation',reseau:'Réseau',recette:'Recette',catalogue:'Catalogue',admin:'Administration'};
+const DESIGN=new Set(['racks','synoptique','plans']);
+const PROJ_ROUTES=new Set(['projet','inventaire','racks','synoptique','plans','recette','preparation','reseau']);
+const ROUTE_NAME={accueil:'Accueil',projets:'Projets',projet:'Vue d’ensemble',inventaire:'Inventaire',racks:'Racks',synoptique:'Synoptique',plans:'Plans',preparation:'Préparation',reseau:'Réseau',recette:'Recette',catalogue:'Catalogue',admin:'Administration'};
 const PRES={accueil:['lm','hb'],projets:['lm'],projet:['lm','hb','sr'],inventaire:['lm','sr'],recette:['hb','sr'],preparation:['hb'],reseau:['lm'],catalogue:['sr'],admin:[]};
 const route=()=>{const r=location.hash.slice(1);return VIEWS[r]?r:'accueil'};
 const go=r=>{ if(location.hash.slice(1)===r) render(); else location.hash=r; };
@@ -885,7 +918,7 @@ function sidebar(r){
  return `<div class="menu-top"><span class="word">Strata Arkyo</span><button class="icon-btn" data-act="menuclose" aria-label="Fermer le menu">${ic('x')}</button></div>
  <nav class="menu-links">${L('accueil','Accueil')}${L('projets','Projets')}${L('catalogue','Catalogue')}${L('admin','Administration')}</nav>
  <p class="eyebrow">Projet ouvert · ${esc(P.nom)}</p>
- <nav class="menu-sub">${L('projet','Vue d’ensemble')}${L('inventaire','Inventaire')}${L('racks','Racks')}${L('synoptique','Synoptique')}${L('reseau','Réseau')}${L('preparation','Préparation')}${L('recette','Recette')}</nav>
+ <nav class="menu-sub">${L('projet','Vue d’ensemble')}${L('inventaire','Inventaire')}${L('racks','Racks')}${L('synoptique','Synoptique')}${L('plans','Plans')}${L('reseau','Réseau')}${L('preparation','Préparation')}${L('recette','Recette')}</nav>
  <div class="side-foot">${av('dp','lg')}<div><b>Damien P.</b><span>Propriétaire · Studio Ouest Broadcast</span></div><button class="btn sm" style="margin-left:auto" data-act="theme">Thème</button></div>`;
 }
 function chrome(r){
@@ -975,7 +1008,7 @@ function vProjets(){
 
 /* ================= Projet : en-tête ================= */
 function subnav(a){
- const t=[['projet','Vue d’ensemble','home'],['inventaire','Inventaire','layers'],['racks','Racks','server',1],['synoptique','Synoptique','syn',1],['plans','Plans','map',1,1],['reseau','Réseau','network'],['preparation','Préparation','truck'],['recette','Recette','check']];
+ const t=[['projet','Vue d’ensemble','home'],['inventaire','Inventaire','layers'],['racks','Racks','server',1],['synoptique','Synoptique','syn',1],['plans','Plans','map',1],['reseau','Réseau','network'],['preparation','Préparation','truck'],['recette','Recette','check']];
  return `<nav class="subnav" aria-label="Sections du projet">${t.map(([r,l,i,d,s])=>`<button class="${r===a?'on':''} ${s?'soon':''}" ${s?`data-soon="${l}"`:`data-go="${r}"`}>${l}${d?`<span class="dz" title="Écran de conception : une personne à la fois">${ic('lock')}</span>`:''}</button>`).join('')}</nav>`;
 }
 function projTop(a,compact){
@@ -1563,7 +1596,7 @@ function wzCreate(){
 /* ================= Palette ================= */
 let PAL={q:'',i:0,items:[]};
 function palItems(){
- const r=[['accueil','Accueil','home'],['projets','Projets','folder'],['projet','Vue d’ensemble du projet','home'],['inventaire','Inventaire','layers'],['racks','Racks','server'],['synoptique','Synoptique','syn'],['recette','Recette','check'],['preparation','Préparation','truck'],['reseau','Réseau et fréquences HF','network'],['catalogue','Catalogue','box'],['admin','Administration','sliders']].map(([g,t,i])=>({t,k:'Aller à',i,run:()=>go(g)}));
+ const r=[['accueil','Accueil','home'],['projets','Projets','folder'],['projet','Vue d’ensemble du projet','home'],['inventaire','Inventaire','layers'],['racks','Racks','server'],['synoptique','Synoptique','syn'],['plans','Plans et implantations','map'],['recette','Recette','check'],['preparation','Préparation','truck'],['reseau','Réseau et fréquences HF','network'],['catalogue','Catalogue','box'],['admin','Administration','sliders']].map(([g,t,i])=>({t,k:'Aller à',i,run:()=>go(g)}));
  const a=[{t:'Nouveau projet',k:'Action',i:'plus',run:()=>openWizard()},{t:'Ajouter du matériel',k:'Action',i:'plus',run:()=>{go('inventaire');setTimeout(addMatDrawer,50)}},{t:'Valider le synoptique',k:'Action',i:'check',run:()=>go('synoptique')},{t:'Nouvel équipement au catalogue',k:'Action',i:'box',run:()=>{go('catalogue');setTimeout(newCatDrawer,50)}},{t:'Changer de thème',k:'Action',i:'moon',run:toggleTheme}];
  const p=PROJ.map(x=>({t:x.nom,k:'Projet',i:'folder',run:()=>openProj(x.id)}));
  const c=CAT.map(x=>({t:x.nom,k:'Catalogue',i:'box',run:()=>{go('catalogue');setTimeout(()=>catDrawer(x.id),50)}}));
@@ -1588,6 +1621,116 @@ function notifs(){
 }
 
 /* ================= Vues ================= */
+
+/* ================= Plans et implantations ================= */
+const PLAN={k:1,x:0,y:0,sel:null,placing:null,userMoved:false,lay:{cont:1,cable:1,v:1,a:1,l:1},
+ objs:[
+  {id:'cr2',lay:'cont',nom:'Car régie CR-2',x:-18,y:27,w:12,h:2.6},
+  {id:'fc1',lay:'cont',nom:'Flight-case caméras',x:5,y:36.5,w:1.4,h:0.9},
+  {id:'fc2',lay:'cont',nom:'Flight-case HF',x:8.5,y:38.5,w:1,h:0.7},
+  {id:'vc1',lay:'cont',nom:'Valise commentateurs',x:31.5,y:4.5,w:0.8,h:0.5},
+  {id:'cam1',lay:'v',nom:'CAM 1 · tribune',x:35,y:10.2,dir:90,fov:34,z:6},
+  {id:'cam2',lay:'v',nom:'CAM 2 · but ouest',x:13,y:35,dir:-50,fov:44,z:1.6},
+  {id:'cam3',lay:'v',nom:'CAM 3 · but est',x:57,y:35,dir:-130,fov:44,z:1.6},
+  {id:'mic1',lay:'a',nom:'Micro canon 1',x:25,y:12.2},
+  {id:'mic2',lay:'a',nom:'Micro canon 2',x:45,y:12.2},
+  {id:'hp1',lay:'a',nom:'Enceinte salle G',x:2.5,y:23},
+  {id:'hp2',lay:'a',nom:'Enceinte salle D',x:67.5,y:23},
+  {id:'led1',lay:'l',nom:'Projecteur LED 1',x:14,y:9.6},
+  {id:'led2',lay:'l',nom:'Projecteur LED 2',x:56,y:9.6},
+  {id:'led3',lay:'l',nom:'Projecteur LED 3',x:14,y:37.2},
+  {id:'led4',lay:'l',nom:'Projecteur LED 4',x:56,y:37.2},
+ ],
+ todo:[{id:'cam4',lay:'v',nom:'CAM 4 · HF épaule',dir:-90,fov:50,z:1.7},{id:'mon1',lay:'v',nom:'Moniteur retour terrain'},{id:'mic3',lay:'a',nom:'Micro d’ambiance tribune'}],
+ routes:[
+  {id:'r1',a:'cr2',b:'fc1',sig:'v',nom:'Fibre SMPTE ×3',pts:[[-6,28.3],[0,32]],up:0},
+  {id:'r2',a:'cr2',b:'vc1',sig:'i',nom:'Multipaire audio et intercom',pts:[[-6,28.3],[0,30],[0,4.5]],up:8},
+  {id:'r3',a:'fc1',b:'fc2',sig:'a',nom:'Antennes HF',pts:[],up:0},
+ ]};
+const PLAY={cont:['Contenants','var(--fg)'],cable:['Câbles','var(--fg-3)'],v:['Vidéo','var(--sig-v)'],a:['Audio','var(--sig-a)'],l:['Éclairage','var(--sig-l)']};
+const pobj=id=>PLAN.objs.find(o=>o.id===id);
+function routePts(r){const a=pobj(r.a),b=pobj(r.b);return [[a.x,a.y],...r.pts,[b.x,b.y]]}
+function routeLen(r){const P=routePts(r);let d=0;for(let i=1;i<P.length;i++)d+=Math.hypot(P[i][0]-P[i-1][0],P[i][1]-P[i-1][1]);return{plan:d,up:r.up,tot:Math.ceil((d+r.up)*10)/10}}
+function cone(o){const R=14,a1=(o.dir-o.fov/2)*Math.PI/180,a2=(o.dir+o.fov/2)*Math.PI/180;return `M${o.x} ${o.y}L${(o.x+R*Math.cos(a1)).toFixed(2)} ${(o.y+R*Math.sin(a1)).toFixed(2)}A${R} ${R} 0 0 1 ${(o.x+R*Math.cos(a2)).toFixed(2)} ${(o.y+R*Math.sin(a2)).toFixed(2)}Z`}
+function planSvg(){
+ const L=PLAN.lay;let s=`<rect class="pl-wall" x="0" y="0" width="70" height="46"/>
+ <rect class="pl-trib" x="10" y="1" width="50" height="7.5"/><text class="pl-lbl" x="47" y="5.4" text-anchor="middle">Tribune presse</text>
+ <rect class="pl-trib" x="10" y="38.5" width="50" height="6.5"/><text class="pl-lbl" x="35" y="42.6" text-anchor="middle">Tribune public</text>
+ <rect class="pl-court" x="15" y="13" width="40" height="20"/><line class="pl-line" x1="35" y1="13" x2="35" y2="33"/><path class="pl-line" d="M15 17A6 6 0 0 1 21 23A6 6 0 0 1 15 29M55 17A6 6 0 0 0 49 23A6 6 0 0 0 55 29"/>
+ <text class="pl-lbl" x="35" y="24.4" text-anchor="middle">Terrain 40 × 20 m</text>
+ <rect class="pl-door" x="-0.5" y="29" width="1" height="6"/><text class="pl-lbl sm" x="-1.2" y="37" text-anchor="end">Accès technique</text>
+ <text class="pl-lbl" x="-12" y="22" text-anchor="middle">Parking cars régie</text>`;
+ if(L.cable)PLAN.routes.forEach(r=>{const P=routePts(r),l=routeLen(r);let bi=1,bl=0;for(let i=1;i<P.length;i++){const d=Math.hypot(P[i][0]-P[i-1][0],P[i][1]-P[i-1][1]);if(d>bl){bl=d;bi=i}}const mx=(P[bi][0]+P[bi-1][0])/2,my=(P[bi][1]+P[bi-1][1])/2,txt=nf(l.tot,1)+' m',w=txt.length*0.82+1.2;s+=`<g class="route" style="--c:${sigc(r.sig)}"><path d="M${P.map(p=>p.join(' ')).join('L')}"/><g transform="translate(${mx-w/2},${my-1})"><rect width="${w}" height="2" rx="0.4"/><text x="${w/2}" y="1.45" text-anchor="middle">${txt}</text></g></g>`});
+ PLAN.objs.forEach(o=>{if(!L[o.lay])return;const sel=PLAN.sel===o.id?'sel':'',c=PLAY[o.lay][1];
+  if(o.lay==='cont')s+=`<g class="obj cont ${sel}" data-obj="${o.id}" style="--c:${c}"><rect class="shape" x="${o.x-o.w/2}" y="${o.y-o.h/2}" width="${o.w}" height="${o.h}" rx="${Math.min(.4,o.h/4)}"/><text class="pl-name" x="${o.x}" y="${o.y+o.h/2+1.9}" text-anchor="middle">${esc(o.nom)}</text></g>`;
+  else if(o.lay==='v'&&o.dir!==undefined)s+=`<g class="obj ${sel}" data-obj="${o.id}" style="--c:${c}"><path class="cone" d="${cone(o)}"/><circle class="shape" cx="${o.x}" cy="${o.y}" r="1"/><text class="pl-name" x="${o.x}" y="${o.y-1.7}" text-anchor="middle">${esc(o.nom.split(' · ')[0])}</text></g>`;
+  else s+=`<g class="obj ${sel}" data-obj="${o.id}" style="--c:${c}"><circle class="shape" cx="${o.x}" cy="${o.y}" r="0.9"/><text class="pl-sym" x="${o.x}" y="${o.y+0.38}" text-anchor="middle">${o.lay==='a'?(o.id.startsWith('hp')?'E':'M'):o.lay==='l'?'L':'V'}</text></g>`;
+ });
+ return s;
+}
+function planPend(){const groups=['v','a','l'];return groups.map(g=>{const l=PLAN.todo.filter(o=>o.lay===g),n=PLAN.objs.filter(o=>o.lay===g).length;return `<section><h2>${PLAY[g][0]} <span class="muted small">${n} placés</span></h2>${l.length?l.map(o=>`<button class="pend ${PLAN.placing===o.id?'on':''}" data-plpend="${o.id}"><span class="sw" style="--c:${PLAY[g][1]}"></span><span style="min-width:0"><b>${esc(o.nom)}</b><span>À placer</span></span></button>`).join(''):'<p class="small muted">Tout est placé.</p>'}</section>`}).join('')}
+function planSide(){
+ const o=pobj(PLAN.sel),ro=editable()?'':'disabled';
+ if(o){
+  const links=PLAN.routes.filter(r=>r.a===o.id||r.b===o.id);
+  return `<section><h2>${esc(o.nom)}</h2><span class="chip" style="align-self:flex-start"><span class="sw" style="--c:${PLAY[o.lay][1]}"></span>${PLAY[o.lay][0]}</span>
+  <dl class="kv"><dt>Position</dt><dd class="mono">x ${nf(o.x,1)} m · y ${nf(o.y,1)} m</dd>${o.z!==undefined?`<dt>Hauteur</dt><dd>${nf(o.z,1)} m</dd>`:''}<dt>Étage</dt><dd>Niveau 0 · salle</dd></dl>
+  ${o.dir!==undefined?`<div class="field"><label for="pdir">Orientation · ${((o.dir%360)+360)%360}°</label><input type="range" id="pdir" data-pl="dir" min="-180" max="180" value="${o.dir}" ${ro}></div><div class="field"><label for="pfov">Angle de champ · ${o.fov}°</label><input type="range" id="pfov" data-pl="fov" min="8" max="90" value="${o.fov}" ${ro}></div>`:''}
+  ${links.length?`<section><h3>Liaisons</h3>${links.map(r=>{const l=routeLen(r);return `<div class="layer"><span class="sw" style="--c:${sigc(r.sig)}"></span>${esc(r.nom)}<b>${nf(l.tot,1)} m</b></div>`}).join('')}</section>`:''}
+  ${editable()&&o.lay!=='cont'?`<button class="btn sm danger" data-act="plremove">${ic('trash','sm')}Retirer du plan</button>`:''}</section>`;
+ }
+ return `<section><h2>Longueurs de tirage</h2>${PLAN.routes.map(r=>{const l=routeLen(r);return `<div class="lenrow"><div><b>${esc(r.nom)}</b><span>${esc(pobj(r.a).nom)} → ${esc(pobj(r.b).nom)}</span><span>plan ${nf(l.plan,1)} m${l.up?` + montées ${nf(l.up,1)} m`:''}</span></div><strong class="mono">${nf(l.tot,1)} m</strong></div>`}).join('')}
+ <p class="small muted">Somme des segments et des montées, arrondie aux 10 cm supérieurs. Déplacez un contenant : les longueurs suivent.</p></section>
+ <section><h2>À tracer</h2><div class="todo" style="padding-top:4px"><span class="ti warn">${ic('alert','sm')}</span><span><b>CR-2 → Tribune presse</b><span>Le niveau +1 n'a pas encore de fond de plan.</span></span></div></section>
+ <section><h2>Calques</h2>${Object.entries(PLAY).map(([k,[n,c]])=>`<label class="layer"><input type="checkbox" data-play="${k}" ${PLAN.lay[k]?'checked':''}><span class="sw" style="--c:${c}"></span>${n}<b>${k==='cable'?PLAN.routes.length:PLAN.objs.filter(o=>o.lay===k).length}</b></label>`).join('')}</section>`;
+}
+function vPlans(){
+ return `<div class="design ${editable()?'':'ro'}" style="display:flex;flex-direction:column;height:100%;min-height:0">
+ <div class="design-top">${projTop('plans',true)}${lockbar('ce plan')}
+  <div class="dtool">
+   <div class="seg"><button class="on">Niveau 0 · salle</button><button data-soon="Niveau +1 · tribune presse">Niveau +1 · presse</button></div>
+   <span class="gap"></span>
+   <span class="muted small">Échelle calibrée : 2 repères, 40,0 m</span>
+   <button class="btn sm" data-soon="Outil de mesure">${ic('fit','sm')}Mesurer</button>
+   <button class="btn sm" data-soon="Export du plan">${ic('download','sm')}Exporter</button>
+  </div>
+ </div>
+ <div class="design-body">
+  <aside class="pane left" id="planPend">${planPend()}</aside>
+  <div class="syn-wrap" id="planWrap">
+   <svg id="plan" aria-label="Plan du lieu"><defs><pattern id="pgrid" width="5" height="5" patternUnits="userSpaceOnUse"><path class="pl-grid" d="M5 0H0V5"/></pattern></defs><g id="pworld"><rect x="-200" y="-200" width="500" height="400" fill="url(#pgrid)"/><g id="pcontent">${planSvg()}</g></g></svg>
+   <div class="synhint" id="planHint">${editable()?'Glissez un élément pour le déplacer · touchez-le pour le régler':'Lecture seule : naviguez et inspectez'}</div>
+   <div class="floatbar"><button class="icon-btn sm" data-pz="-1" aria-label="Zoom arrière">${ic('zout')}</button><span class="zl" id="pzl">100 %</span><button class="icon-btn sm" data-pz="1" aria-label="Zoom avant">${ic('zin')}</button><button class="icon-btn sm" data-act="pfit" aria-label="Tout afficher">${ic('fit')}</button><span class="scalebar" id="pscale"></span></div>
+  </div>
+  <aside class="pane right" id="planSide">${planSide()}</aside>
+ </div></div>`;
+}
+function planView(){const w=$('#pworld');if(!w)return;w.setAttribute('transform',`translate(${PLAN.x},${PLAN.y}) scale(${PLAN.k*10})`);$('#pzl').textContent=Math.round(PLAN.k*100)+' %';const px=PLAN.k*10*10;$('#pscale').innerHTML=`<i style="width:${px}px"></i>10 m`}
+function planAll(){const c=$('#pcontent');if(!c)return;c.innerHTML=planSvg();$('#planSide').innerHTML=planSide();$('#planPend').innerHTML=planPend();const h=$('#planHint');if(h){if(PLAN.placing){const o=PLAN.todo.find(x=>x.id===PLAN.placing);h.className='synhint armed';h.textContent=`Touchez le plan pour poser ${o?o.nom:''} (Échap pour annuler)`}else{h.className='synhint';h.textContent=editable()?'Glissez un élément pour le déplacer · touchez-le pour le régler':'Lecture seule : naviguez et inspectez'}}}
+function planFit(){const w=$('#planWrap');if(!w)return;const W=w.clientWidth,H=w.clientHeight,x0=-26,x1=72,y0=-2,y1=48;PLAN.k=Math.max(.3,Math.min(3,Math.min(W/((x1-x0)*10),(H-60)/((y1-y0)*10))*.96));PLAN.x=(W-(x1-x0)*PLAN.k*10)/2-x0*PLAN.k*10;PLAN.y=40+((H-60)-(y1-y0)*PLAN.k*10)/2-y0*PLAN.k*10;planView()}
+function planZoom(f,cx,cy){const k2=Math.max(.3,Math.min(4,PLAN.k*f));PLAN.x=cx-(cx-PLAN.x)*(k2/PLAN.k);PLAN.y=cy-(cy-PLAN.y)*(k2/PLAN.k);PLAN.k=k2;PLAN.userMoved=true;planView()}
+function mountPlan(){
+ const svg=$('#plan'),wrap=$('#planWrap');let drag=null;
+ const toW=e=>{const r=svg.getBoundingClientRect();return[(e.clientX-r.left-PLAN.x)/(PLAN.k*10),(e.clientY-r.top-PLAN.y)/(PLAN.k*10)]};
+ svg.addEventListener('pointerdown',e=>{
+  const g=e.target.closest('[data-obj]');
+  if(PLAN.placing&&editable()){const[x,y]=toW(e);const i=PLAN.todo.findIndex(o=>o.id===PLAN.placing);const o=PLAN.todo.splice(i,1)[0];o.x=Math.round(x*10)/10;o.y=Math.round(y*10)/10;PLAN.objs.push(o);PLAN.placing=null;PLAN.sel=o.id;PLAN.lay[o.lay]=1;planAll();toast(`${esc(o.nom)} posé sur le plan`);return}
+  if(g){const o=pobj(g.dataset.obj);PLAN.sel=o.id;const[x,y]=toW(e);if(editable())drag={t:'obj',o,ox:x-o.x,oy:y-o.y,moved:false};svg.setPointerCapture(e.pointerId);planAll();return}
+  drag={t:'pan',sx:e.clientX,sy:e.clientY,vx:PLAN.x,vy:PLAN.y,moved:false};svg.setPointerCapture(e.pointerId);svg.classList.add('panning');
+ });
+ svg.addEventListener('pointermove',e=>{
+  if(!drag)return;
+  if(drag.t==='pan'){const dx=e.clientX-drag.sx,dy=e.clientY-drag.sy;if(Math.abs(dx)+Math.abs(dy)>3){drag.moved=true;PLAN.userMoved=true}PLAN.x=drag.vx+dx;PLAN.y=drag.vy+dy;planView()}
+  else{const[x,y]=toW(e);drag.o.x=Math.round((x-drag.ox)*10)/10;drag.o.y=Math.round((y-drag.oy)*10)/10;drag.moved=true;$('#pcontent').innerHTML=planSvg()}
+ });
+ svg.addEventListener('pointerup',()=>{svg.classList.remove('panning');if(!drag)return;const d=drag;drag=null;if(d.t==='pan'&&!d.moved&&PLAN.sel){PLAN.sel=null;planAll()}if(d.t==='obj'&&d.moved){planAll();if(d.o.lay==='cont'){const rs=PLAN.routes.filter(r=>r.a===d.o.id||r.b===d.o.id);if(rs.length)toast(`Longueurs recalculées : ${rs.map(r=>esc(r.nom)+' '+nf(routeLen(r).tot,1)+' m').join(', ')}`,'info')}}});
+ svg.addEventListener('wheel',e=>{e.preventDefault();const r=svg.getBoundingClientRect();planZoom(Math.exp(-e.deltaY*.0016),e.clientX-r.left,e.clientY-r.top)},{passive:false});
+ wrap.addEventListener('click',e=>{const z=e.target.closest('[data-pz]');if(z)planZoom(+z.dataset.pz>0?1.25:0.8,wrap.clientWidth/2,wrap.clientHeight/2)});
+ $('#planSide').addEventListener('input',e=>{const k=e.target.dataset.pl;if(!k)return;const o=pobj(PLAN.sel);o[k]=+e.target.value;$('#pcontent').innerHTML=planSvg();const lb=e.target.previousElementSibling;if(lb)lb.textContent=k==='dir'?`Orientation · ${((o.dir%360)+360)%360}°`:`Angle de champ · ${o.fov}°`});
+ $('#planSide').addEventListener('change',e=>{const k=e.target.dataset.play;if(k===undefined)return;PLAN.lay[k]=e.target.checked?1:0;$('#pcontent').innerHTML=planSvg()});
+ requestAnimationFrame(()=>{if(!$('#planWrap'))return;PLAN.userMoved?planView():planFit()});
+}
+
 /* ================= Énergie par phase ================= */
 function phases(){const p={L1:0,L2:0,L3:0};[...RACK.items,...RACK.pending].forEach(i=>{if(i.w>0)p[i.ph||'L1']+=i.w});return Object.entries(p).map(([k,w])=>({k,w,a:w/230}))}
 function phaseHtml(){
@@ -1670,7 +1813,7 @@ function exportDrawer(){
 
 const VIEWS={
  accueil:{html:vAccueil},projets:{html:vProjets},projet:{html:vProjet},inventaire:{html:vInventaire},
- racks:{html:vRacks,full:true,mount:mountRacks},synoptique:{html:vSynoptique,full:true,mount:mountSyn},
+ racks:{html:vRacks,full:true,mount:mountRacks},synoptique:{html:vSynoptique,full:true,mount:mountSyn},plans:{html:vPlans,full:true,mount:mountPlan},
  recette:{html:vRecette},preparation:{html:vPreparation},reseau:{html:vReseau},catalogue:{html:vCatalogue},admin:{html:vAdmin},
 };
 
@@ -1684,6 +1827,8 @@ document.addEventListener('click',e=>{
  if(a){const k=a.dataset.act;
   if(k==='wizard')return openWizard();
   if(k==='menuclose')return closeAll();
+  if(k==='pfit'){PLAN.userMoved=false;return planFit()}
+  if(k==='plremove'){const i=PLAN.objs.findIndex(o=>o.id===PLAN.sel);const o=PLAN.objs.splice(i,1)[0];PLAN.todo.push(o);PLAN.sel=null;planAll();toast(`${esc(o.nom)} remis à placer`,'warn');return}
   if(k==='scansim'){const it=prepItems(),set=PREP.done[PREP.phase];PREP.sims=(PREP.sims||0)+1;const nx=it.find(x=>!set.has(x.code));return doScan(PREP.sims%5===0||!nx?'#ZZ97':nx.code)}
   if(k==='nmos'){a.disabled=true;a.innerHTML='<span class="spinner"></span>Lecture du registre…';setTimeout(()=>{NET.read=true;NET.at=new Date().toTimeString().slice(0,5);$('#netBody').innerHTML=fluxHtml();toast('Registre NMOS lu : 8 émetteurs, 2 écarts avec le plan','warn')},900);return}
   if(k==='sdp'){toast(`${FLUX.length} fichiers SDP exportés`);return}
@@ -1727,6 +1872,7 @@ document.addEventListener('click',e=>{
  }
  const ni=t.closest('[data-ni]');if(ni){const n=NOTIFS[+ni.dataset.ni];n.un=false;$('#notifs').hidden=true;go(n.go);return}
  const pi=t.closest('[data-pi]');if(pi){const x=palFiltered()[+pi.dataset.pi];closeModal();x&&x.run();return}
+ const plp=t.closest('[data-plpend]');if(plp&&editable()){PLAN.placing=PLAN.placing===plp.dataset.plpend?null:plp.dataset.plpend;PLAN.sel=null;planAll();return}
  const pp=t.closest('[data-pphase]');if(pp){PREP.phase=pp.dataset.pphase;PREP.last='';prepRefresh();return}
  const nt=t.closest('[data-ntab]');if(nt){NET.tab=nt.dataset.ntab;render();return}
  const nfx=t.closest('[data-nfix]');if(nfx){const k2=nfx.dataset.nfix;NET.fixed.add(k2);if(k2==='d1'){FLUX.find(f=>f.src.endsWith('PVW')).mc='239.20.2.9'}else{FLUX.push({src:'CCU Caméra 4',ess:'Vidéo 2110-20',mc:'239.20.1.4',port:50020,fresh:true})}$('#netBody').innerHTML=fluxHtml();FLUX.forEach(f=>f.fresh=false);toast(k2==='d1'?'Adresse reprise du réseau':'CCU Caméra 4 ajoutée au plan');return}
@@ -1782,7 +1928,7 @@ document.addEventListener('change',e=>{
 document.addEventListener('submit',e=>{if(e.target.id==='scanForm'){e.preventDefault();doScan($('#scanIn').value)}});
 document.addEventListener('keydown',e=>{
  if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();$('#modal').hidden?openPalette():closeModal();return}
- if(e.key==='Escape'){if(SYN.pend){SYN.pend=null;const p=$('#preview');p&&p.setAttribute('d','');synDraw();setHint();return}if(RACK.placing){RACK.placing=null;if(route()==='racks')rackRefresh();return}closeAll();return}
+ if(e.key==='Escape'){if(PLAN.placing){PLAN.placing=null;planAll();return}if(SYN.pend){SYN.pend=null;const p=$('#preview');p&&p.setAttribute('d','');synDraw();setHint();return}if(RACK.placing){RACK.placing=null;if(route()==='racks')rackRefresh();return}closeAll();return}
  if($('#palIn')&&document.activeElement===$('#palIn')){const l=palFiltered();if(e.key==='ArrowDown'){PAL.i=Math.min(l.length-1,PAL.i+1);palDraw();e.preventDefault()}if(e.key==='ArrowUp'){PAL.i=Math.max(0,PAL.i-1);palDraw();e.preventDefault()}if(e.key==='Enter'&&l[PAL.i]){const x=l[PAL.i];closeModal();x.run()}return}
  if(e.key==='Enter'&&$('.wz-body')&&!$('#modal').hidden&&e.target.tagName!=='TEXTAREA'){e.preventDefault();wzNext()}
  if((e.key==='Delete'||e.key==='Backspace')&&route()==='synoptique'&&SYN.sel&&SYN.sel.t==='c'&&editable()&&!/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)){const c=SYN.cables.find(x=>x.id===SYN.sel.id);if(c.id<100||c.inRev)SYN.del++;SYN.cables=SYN.cables.filter(x=>x!==c);SYN.sel=null;synAll();toast(`Câble ${c.num||'sans numéro'} supprimé`,'warn')}
