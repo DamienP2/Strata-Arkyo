@@ -485,7 +485,7 @@ async fn show(
 }
 
 /// Écriture : droit « Conception : écriture » et main tenue sur le synoptique du projet.
-async fn editing(st: &AppState, m: &Member, pid: &str) -> ApiResult<()> {
+pub(crate) async fn editing(st: &AppState, m: &Member, pid: &str) -> ApiResult<()> {
     m.0.require(Domain::Conception, Level::Ecriture, DESIGN)?;
     if !st
         .store

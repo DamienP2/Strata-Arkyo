@@ -339,6 +339,8 @@ pub struct ContainerData {
     pub notes: Option<String>,
     /// Caractéristiques propres au type d'élément (mur d'écrans, pupitre, caméra…).
     pub details: crate::element::ElementDetails,
+    /// Règles de numérotation des câbles propres à l'élément ; sinon celles du site.
+    pub numbering: Option<crate::numbering::NumberingRules>,
 }
 
 impl Default for ContainerData {
@@ -359,6 +361,7 @@ impl Default for ContainerData {
             cable_code: String::new(),
             notes: None,
             details: Default::default(),
+            numbering: None,
         }
     }
 }
@@ -386,6 +389,16 @@ pub fn validate_container(name: &mut String, c: &mut ContainerData) -> Vec<Field
         c.rackable = false;
     }
     e.extend(crate::element::validate_details(c.kind, &mut c.details));
+    if let Some(r) = &mut c.numbering {
+        e.extend(
+            crate::numbering::validate_rules(r)
+                .into_iter()
+                .map(|mut f| {
+                    f.field = format!("numbering.{}", f.field);
+                    f
+                }),
+        );
+    }
     if c.rackable {
         if c.height_u.is_none() {
             e.push(err("height_u", "Indiquez la hauteur en U."));

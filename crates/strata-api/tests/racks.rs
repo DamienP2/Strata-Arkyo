@@ -1730,3 +1730,261 @@ async fn synoptic_cables_port_to_port() {
     .await;
     assert_eq!(r.body["deleted"], 1);
 }
+
+#[tokio::test]
+async fn numbering_and_validation() {
+    let Setup {
+        app, o, pid, cid, ..
+    } = setup().await;
+    let item = |name: &str, ports: Value| json!({"kind": "equipment", "data": {"name": name, "functions": ["V"], "format": {"kind": "rack", "height_u": 1, "depth_mm": 300}, "ports": ports}});
+    let conv = call(
+        &app,
+        "POST",
+        "/api/catalog/items",
+        Some(item(
+            "Convertisseur",
+            json!([
+                {"connector_id": "bnc", "signal_id": "sdi-3g", "direction": "out", "quantity": 3},
+                {"connector_id": "xlr3", "signal_id": "aes3", "direction": "out", "gender": "M"}
+            ]),
+        )),
+        Some(&o),
+    )
+    .await
+    .body["item"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let rec = call(
+        &app,
+        "POST",
+        "/api/catalog/items",
+        Some(item(
+            "Enregistreur",
+            json!([
+                {"connector_id": "bnc", "signal_id": "sdi-3g", "direction": "in", "quantity": 6}
+            ]),
+        )),
+        Some(&o),
+    )
+    .await
+    .body["item"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    for it in [&conv, &rec] {
+        call(
+            &app,
+            "POST",
+            &format!("/api/projects/{pid}/articles"),
+            Some(json!({"container_id": cid, "nature": "equipment", "item_id": it})),
+            Some(&o),
+        )
+        .await;
+    }
+    call(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid}/synoptic/lock"),
+        None,
+        Some(&o),
+    )
+    .await;
+    let view = format!("container:{cid}");
+    let s = call(
+        &app,
+        "GET",
+        &format!("/api/projects/{pid}/synoptic?view={view}"),
+        None,
+        Some(&o),
+    )
+    .await
+    .body;
+    let node = |l: &str| {
+        s["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|n| n["label"] == l)
+            .unwrap()
+            .clone()
+    };
+    let (c, r) = (node("Convertisseur"), node("Enregistreur"));
+    let p = |n: &Value, i: usize| n["ports"][i]["ref"].as_str().unwrap().to_string();
+    let made = call(&app, "POST", &format!("/api/projects/{pid}/cables"), Some(json!({"cables": [
+        {"a": p(&c, 0), "b": p(&r, 0)}, {"a": p(&r, 1), "b": p(&c, 1)}, {"a": p(&c, 3), "b": p(&r, 2)}
+    ]})), Some(&o)).await.body;
+    let ids: Vec<String> = made["created"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|x| x["id"].as_str().unwrap().to_string())
+        .collect();
+
+    let url = format!("/api/projects/{pid}/numbering");
+    let r1 = call(
+        &app,
+        "POST",
+        &url,
+        Some(json!({"mode": "missing", "view": view})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r1.status, StatusCode::OK, "{:?}", r1.body);
+    assert_eq!(r1.body["changed"], 3);
+    let num = |b: &Value, id: &str| {
+        b["numbers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|x| x["id"] == id)
+            .unwrap()["number"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+    // La sortie du convertisseur sert de référence, même tracée depuis l'entrée.
+    assert_eq!(num(&r1.body, &ids[0]), "BAIEV-V20001");
+    assert_eq!(num(&r1.body, &ids[1]), "BAIEV-V20002");
+    assert_eq!(num(&r1.body, &ids[2]), "BAIEV-A20001");
+    let r2 = call(
+        &app,
+        "POST",
+        &url,
+        Some(json!({"mode": "missing", "view": view})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r2.body["changed"], 0, "déjà numérotés");
+
+    // Un numéro n'est jamais recyclé.
+    call(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid}/cables/delete"),
+        Some(json!({"ids": [ids[1]]})),
+        Some(&o),
+    )
+    .await;
+    let n4 = call(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid}/cables"),
+        Some(json!({"cables": [{"a": p(&c, 2), "b": p(&r, 3)}]})),
+        Some(&o),
+    )
+    .await
+    .body["created"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let r3 = call(
+        &app,
+        "POST",
+        &url,
+        Some(json!({"mode": "missing"})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(num(&r3.body, &n4), "BAIEV-V20003");
+
+    // Règles du site, puis réglages ponctuels.
+    call(
+        &app,
+        "PUT",
+        "/api/site/numbering",
+        Some(json!({"with_rack": false, "digits": 3})),
+        Some(&o),
+    )
+    .await;
+    let r4 = call(
+        &app,
+        "POST",
+        &url,
+        Some(json!({"mode": "selection", "ids": [n4]})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(num(&r4.body, &n4), "V204");
+    let r5 = call(&app, "POST", &url, Some(json!({"mode": "selection", "ids": [n4], "rules": {"template": "{prefix}{seq}·{rack}", "digits": 4}})), Some(&o)).await;
+    assert_eq!(num(&r5.body, &n4), "V005·BAIEV");
+    let bad = call(
+        &app,
+        "POST",
+        &url,
+        Some(json!({"mode": "all", "rules": {"digits": 12}})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(bad.status, StatusCode::UNPROCESSABLE_ENTITY);
+
+    // Saisie manuelle, doublon, validation, effacement.
+    let r6 = call(
+        &app,
+        "POST",
+        &url,
+        Some(json!({"mode": "manual", "ids": [ids[0], n4], "first": "TX-0099"})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(
+        (num(&r6.body, &ids[0]), num(&r6.body, &n4)),
+        ("TX-0099".to_string(), "TX-0100".to_string())
+    );
+    call(
+        &app,
+        "POST",
+        &url,
+        Some(json!({"mode": "manual", "ids": [ids[2]], "first": "TX-0099"})),
+        Some(&o),
+    )
+    .await;
+    let v = call(
+        &app,
+        "GET",
+        &format!("/api/projects/{pid}/synoptic/validate"),
+        None,
+        Some(&o),
+    )
+    .await
+    .body;
+    let codes: Vec<u64> = v["issues"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["code"].as_u64().unwrap())
+        .collect();
+    assert!(codes.contains(&2), "numéro en double : {codes:?}");
+    assert!(codes.contains(&4), "AES vers SDI : {codes:?}");
+    assert!(
+        !codes.contains(&7),
+        "tout équipement à ports est câblé ; ceux du setup n'ont pas de port : {codes:?}"
+    );
+    assert!(v["counts"]["error"].as_u64().unwrap() >= 2);
+    let r7 = call(
+        &app,
+        "POST",
+        &url,
+        Some(json!({"mode": "clear", "ids": [ids[2]]})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r7.body["numbers"][0]["number"], Value::Null);
+    let v = call(
+        &app,
+        "GET",
+        &format!("/api/projects/{pid}/synoptic/validate"),
+        None,
+        Some(&o),
+    )
+    .await
+    .body;
+    assert!(
+        v["issues"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|i| i["code"] == 5),
+        "sans numéro"
+    );
+}

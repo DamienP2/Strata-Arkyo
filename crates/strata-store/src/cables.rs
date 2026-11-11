@@ -184,6 +184,61 @@ impl Store {
         Ok(n)
     }
 
+    /// Dernier numéro attribué par compteur (élément ou projet, préfixe, sens).
+    pub async fn cable_counters(
+        &self,
+        project_id: &str,
+    ) -> Result<HashMap<(String, String, i64), i64>> {
+        let rows =
+            sqlx::query("SELECT scope, prefix, dir, last FROM cable_counters WHERE project_id = ?")
+                .bind(project_id)
+                .fetch_all(&self.pool)
+                .await?;
+        Ok(rows
+            .iter()
+            .map(|r| {
+                (
+                    (r.get("scope"), r.get("prefix"), r.get("dir")),
+                    r.get("last"),
+                )
+            })
+            .collect())
+    }
+
+    /// Écrit des numéros (ou les efface) et avance les compteurs, d'un seul coup.
+    pub async fn apply_numbers(
+        &self,
+        project_id: &str,
+        numbers: &[(String, Option<String>)],
+        counters: &[((String, String, i64), i64)],
+    ) -> Result<u64> {
+        let mut tx = self.pool.begin().await?;
+        let t = now();
+        let mut n = 0;
+        for (id, num) in numbers {
+            n += sqlx::query("UPDATE cables SET data = json_set(data, '$.number', json(?)), rev = rev + 1, updated_at = ? WHERE id = ? AND project_id = ?")
+                .bind(serde_json::to_string(num).unwrap_or_else(|_| "null".into()))
+                .bind(&t)
+                .bind(id)
+                .bind(project_id)
+                .execute(&mut *tx)
+                .await?
+                .rows_affected();
+        }
+        for ((scope, prefix, dir), last) in counters {
+            sqlx::query("INSERT INTO cable_counters (project_id, scope, prefix, dir, last) VALUES (?, ?, ?, ?, ?) ON CONFLICT (project_id, scope, prefix, dir) DO UPDATE SET last = MAX(last, excluded.last)")
+                .bind(project_id)
+                .bind(scope)
+                .bind(prefix)
+                .bind(dir)
+                .bind(last)
+                .execute(&mut *tx)
+                .await?;
+        }
+        tx.commit().await?;
+        Ok(n)
+    }
+
     pub async fn layout(
         &self,
         project_id: &str,
