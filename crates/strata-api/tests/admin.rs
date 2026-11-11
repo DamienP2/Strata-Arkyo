@@ -64,12 +64,7 @@ async fn site(managed: bool, update_url: Option<String>) -> Site {
         Duration::ZERO,
         VERSION,
     );
-    let app = router(AppState {
-        store,
-        secure_cookies: false,
-        ops: Some(ops.clone()),
-    })
-    .layer(MockConnectInfo(
+    let app = router(AppState::new(store, false, Some(ops.clone()))).layer(MockConnectInfo(
         "127.0.0.1:1".parse::<SocketAddr>().unwrap(),
     ));
     let r = call(

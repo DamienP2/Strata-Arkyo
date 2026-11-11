@@ -8,7 +8,9 @@ pub mod auth;
 pub mod catalog;
 pub mod catalog_io;
 pub mod error;
+pub mod live;
 pub mod ops;
+pub mod projects;
 pub mod web;
 
 use crate::auth::{
@@ -54,6 +56,19 @@ pub struct AppState {
     pub secure_cookies: bool,
     /// Exploitation du site (sauvegardes, mises à jour) ; absente dans les tests unitaires de l'API.
     pub ops: Option<Arc<ops::Ops>>,
+    /// Diffusion en temps réel et présence.
+    pub hub: Arc<live::Hub>,
+}
+
+impl AppState {
+    pub fn new(store: Store, secure_cookies: bool, ops: Option<Arc<ops::Ops>>) -> AppState {
+        AppState {
+            store,
+            secure_cookies,
+            ops,
+            hub: Arc::new(live::Hub::default()),
+        }
+    }
 }
 
 pub fn router(state: AppState) -> Router {
@@ -73,6 +88,8 @@ pub fn router(state: AppState) -> Router {
         .route("/audit", get(audit))
         .nest("/admin", admin::routes())
         .nest("/catalog", catalog::routes())
+        .merge(projects::routes())
+        .route("/live", get(live::socket))
         .layer(middleware::from_fn(csrf));
     Router::new()
         .nest("/api", api)

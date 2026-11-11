@@ -14,12 +14,8 @@ const OWNER_PW: &str = "mot-de-passe-solide";
 
 async fn app_from(addr: &str) -> Router {
     let store = Store::open_in_memory().await.unwrap();
-    router(AppState {
-        store,
-        secure_cookies: false,
-        ops: None,
-    })
-    .layer(MockConnectInfo(addr.parse::<SocketAddr>().unwrap()))
+    router(AppState::new(store, false, None))
+        .layer(MockConnectInfo(addr.parse::<SocketAddr>().unwrap()))
 }
 
 async fn app() -> Router {
@@ -138,7 +134,7 @@ async fn health_answers_without_session() {
     let r = call(&app, "GET", "/api/health", None, None).await;
     assert_eq!(r.status, StatusCode::OK);
     assert_eq!(r.body["status"], "ok");
-    assert_eq!(r.body["schema"], 2);
+    assert_eq!(r.body["schema"], 3);
 }
 
 #[tokio::test]

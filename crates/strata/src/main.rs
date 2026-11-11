@@ -284,11 +284,17 @@ async fn serve(
         }
     });
 
-    let app = router(AppState {
-        store: store.clone(),
-        secure_cookies,
-        ops: Some(ops),
+    let state = AppState::new(store.clone(), secure_cookies, Some(ops));
+    // Les présences sans battement expirent.
+    let hub = state.hub.clone();
+    tokio::spawn(async move {
+        let mut t = tokio::time::interval(std::time::Duration::from_secs(15));
+        loop {
+            t.tick().await;
+            hub.sweep();
+        }
     });
+    let app = router(state);
     let listener = tokio::net::TcpListener::bind(listen)
         .await
         .with_context(|| format!("impossible d'écouter sur {listen}"))?;

@@ -57,7 +57,7 @@ fn new_id() -> String {
     uuid::Uuid::now_v7().to_string()
 }
 
-fn file_response(bytes: Vec<u8>, content_type: &str, filename: &str) -> Response {
+pub(crate) fn file_response(bytes: Vec<u8>, content_type: &str, filename: &str) -> Response {
     Response::builder()
         .header(header::CONTENT_TYPE, content_type)
         .header(
@@ -68,7 +68,7 @@ fn file_response(bytes: Vec<u8>, content_type: &str, filename: &str) -> Response
         .unwrap_or_default()
 }
 
-fn today() -> String {
+pub(crate) fn today() -> String {
     chrono::Local::now().format("%Y%m%d").to_string()
 }
 
@@ -907,7 +907,7 @@ fn default_format() -> String {
 }
 
 #[derive(Clone)]
-enum Cell {
+pub(crate) enum Cell {
     Text(String),
     Number(Option<f64>),
 }
@@ -1072,7 +1072,7 @@ fn equipment_rows(
     (headers, rows)
 }
 
-fn to_csv(headers: &[String], rows: &[Vec<Cell>]) -> Result<Vec<u8>, String> {
+pub(crate) fn to_csv(headers: &[String], rows: &[Vec<Cell>]) -> Result<Vec<u8>, String> {
     let mut out = b"\xEF\xBB\xBF".to_vec();
     {
         let mut w = csv::WriterBuilder::new()
@@ -1088,11 +1088,22 @@ fn to_csv(headers: &[String], rows: &[Vec<Cell>]) -> Result<Vec<u8>, String> {
     Ok(out)
 }
 
-fn to_xlsx(headers: &[String], rows: &[Vec<Cell>]) -> Result<Vec<u8>, rust_xlsxwriter::XlsxError> {
+pub(crate) fn to_xlsx(
+    headers: &[String],
+    rows: &[Vec<Cell>],
+) -> Result<Vec<u8>, rust_xlsxwriter::XlsxError> {
+    to_xlsx_named(headers, rows, "Équipements")
+}
+
+pub(crate) fn to_xlsx_named(
+    headers: &[String],
+    rows: &[Vec<Cell>],
+    sheet: &str,
+) -> Result<Vec<u8>, rust_xlsxwriter::XlsxError> {
     use rust_xlsxwriter::{Format, Workbook};
     let mut wb = Workbook::new();
     let ws = wb.add_worksheet();
-    ws.set_name("Équipements")?;
+    ws.set_name(sheet)?;
     let bold = Format::new().set_bold();
     for (c, h) in headers.iter().enumerate() {
         ws.write_string_with_format(0, c as u16, h, &bold)?;

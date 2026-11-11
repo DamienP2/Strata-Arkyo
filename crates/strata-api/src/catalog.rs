@@ -630,7 +630,16 @@ async fn get_item(
         .find(|i| i.id == id)
         .ok_or(ApiError::NotFound("Fiche"))?;
     let used_by = used_by(&snap, &id);
-    Ok(Json(json!({ "item": item, "used_by": used_by })))
+    let in_projects = st
+        .store
+        .item_usage()
+        .await?
+        .into_iter()
+        .find(|(i, _, _)| i == &id)
+        .map(|(_, p, q)| json!({ "projects": p, "quantity": q }));
+    Ok(Json(
+        json!({ "item": item, "used_by": used_by, "in_projects": in_projects }),
+    ))
 }
 
 fn used_by(snap: &Snapshot, id: &str) -> Vec<Value> {
@@ -819,6 +828,14 @@ async fn delete_items(
         )));
     }
     let snap = Snapshot::load(&st.store).await?;
+    // Une fiche posée dans un projet reste : l'inventaire la suit en direct.
+    let in_projects: HashMap<String, i64> = st
+        .store
+        .item_usage()
+        .await?
+        .into_iter()
+        .map(|(id, projects, _)| (id, projects))
+        .collect();
     let chosen: HashSet<&str> = ids.iter().map(String::as_str).collect();
     let mut deleted = Vec::new();
     let mut kept = Vec::new();
@@ -829,10 +846,15 @@ async fn delete_items(
             continue;
         };
         // Les fiches qui l'utilisent et qui partent aussi ne la retiennent pas.
-        let blockers: Vec<Value> = used_by(&snap, id)
+        let mut blockers: Vec<Value> = used_by(&snap, id)
             .into_iter()
             .filter(|u| !chosen.contains(u["id"].as_str().unwrap_or_default()))
             .collect();
+        if let Some(n) = in_projects.get(id) {
+            let s = if *n > 1 { "s" } else { "" };
+            blockers
+                .push(json!({ "id": null, "kind": "project", "name": format!("{n} projet{s}") }));
+        }
         if blockers.is_empty() {
             deleted.push(item.clone());
         } else {

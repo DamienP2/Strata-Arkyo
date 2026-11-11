@@ -1,0 +1,788 @@
+//! Projets et inventaire (cahier des charges, sections 7 et 8) : fiche, emplacements,
+//! contenants, articles et exemplaires. Les dates sont au format AAAA-MM-JJ ; la date
+//! du jour est fournie par l'appelant.
+
+use crate::catalog::FieldError;
+use crate::text::normalize;
+use serde::{Deserialize, Serialize};
+
+fn err(field: impl Into<String>, message: impl Into<String>) -> FieldError {
+    FieldError {
+        field: field.into(),
+        message: message.into(),
+    }
+}
+
+// ----- Projet -----
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Intervention {
+    /// Événementiel : période de tournage.
+    #[default]
+    Prestation,
+    /// Installation permanente : date de mise en service.
+    Integration,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Regie {
+    #[default]
+    FlightCase,
+    Car,
+    Fixed,
+}
+
+impl Regie {
+    pub fn allowed(self, i: Intervention) -> bool {
+        !(i == Intervention::Prestation && self == Regie::Fixed)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectStatus {
+    #[default]
+    Preparation,
+    Ready,
+    InProgress,
+    Done,
+    Cancelled,
+}
+
+impl ProjectStatus {
+    /// Statut autre que Terminé ou Annulé.
+    pub fn active(self) -> bool {
+        !matches!(self, ProjectStatus::Done | ProjectStatus::Cancelled)
+    }
+}
+
+/// Fiche du projet. Le type d'intervention ne change plus après la création.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ProjectData {
+    pub name: String,
+    /// Vide : projet interne.
+    pub client: Option<String>,
+    pub venue: Option<String>,
+    pub description: Option<String>,
+    /// Texte libre : sport, concert, TV…
+    pub service_type: Option<String>,
+    pub intervention: Intervention,
+    pub regie: Regie,
+    pub status: ProjectStatus,
+    pub planning_start: Option<String>,
+    pub planning_end: Option<String>,
+    pub shoot_start: Option<String>,
+    pub shoot_end: Option<String>,
+    pub commissioning: Option<String>,
+}
+
+pub fn is_date(s: &str) -> bool {
+    let b = s.as_bytes();
+    if b.len() != 10 || b[4] != b'-' || b[7] != b'-' {
+        return false;
+    }
+    let num = |r: std::ops::Range<usize>| s[r].parse::<u32>().ok();
+    match (num(0..4), num(5..7), num(8..10)) {
+        (Some(y), Some(m), Some(d)) => {
+            let leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
+            let max = match m {
+                1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+                4 | 6 | 9 | 11 => 30,
+                2 if leap => 29,
+                2 => 28,
+                _ => return false,
+            };
+            (1900..=2200).contains(&y) && (1..=max).contains(&d)
+        }
+        _ => false,
+    }
+}
+
+fn trim_opt(v: &mut Option<String>, max: usize, field: &str, e: &mut Vec<FieldError>) {
+    *v = v
+        .as_ref()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    if v.as_ref().is_some_and(|s| s.chars().count() > max) {
+        e.push(err(field, format!("{max} caractères au plus.")));
+    }
+}
+
+/// Vérifie et normalise une fiche. `creating` : à la création, aucune date ne peut être
+/// passée. Les dates qui ne concernent pas le type d'intervention sont vidées.
+pub fn validate_project(p: &mut ProjectData, creating: bool, today: &str) -> Vec<FieldError> {
+    let mut e = Vec::new();
+    p.name = p.name.trim().to_string();
+    if p.name.is_empty() {
+        e.push(err("name", "Le nom est obligatoire."));
+    } else if p.name.chars().count() > 120 {
+        e.push(err("name", "120 caractères au plus."));
+    }
+    trim_opt(&mut p.client, 120, "client", &mut e);
+    trim_opt(&mut p.venue, 200, "venue", &mut e);
+    trim_opt(&mut p.description, 4000, "description", &mut e);
+    trim_opt(&mut p.service_type, 60, "service_type", &mut e);
+    if !p.regie.allowed(p.intervention) {
+        e.push(err(
+            "regie",
+            "Une prestation se fait en flight-case ou en car régie.",
+        ));
+    }
+    for (f, v) in [
+        ("planning_start", &mut p.planning_start),
+        ("planning_end", &mut p.planning_end),
+        ("shoot_start", &mut p.shoot_start),
+        ("shoot_end", &mut p.shoot_end),
+        ("commissioning", &mut p.commissioning),
+    ] {
+        *v = v
+            .as_ref()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+        if let Some(d) = v {
+            if !is_date(d) {
+                e.push(err(f, "Date attendue au format AAAA-MM-JJ."));
+            } else if creating && d.as_str() < today {
+                e.push(err(f, "La date est passée."));
+            }
+        }
+    }
+    match p.intervention {
+        Intervention::Prestation => p.commissioning = None,
+        Intervention::Integration => {
+            p.shoot_start = None;
+            p.shoot_end = None;
+        }
+    }
+    let before =
+        |a: &Option<String>, b: &Option<String>| matches!((a, b), (Some(a), Some(b)) if a > b);
+    if before(&p.planning_start, &p.planning_end) {
+        e.push(err(
+            "planning_end",
+            "La fin de planification précède son début.",
+        ));
+    }
+    if before(&p.shoot_start, &p.shoot_end) {
+        e.push(err("shoot_end", "La fin du tournage précède son début."));
+    }
+    if let (Some(c), Some(end)) = (&p.commissioning, &p.planning_end) {
+        if c <= end {
+            e.push(err(
+                "commissioning",
+                "La mise en service suit la fin de la planification.",
+            ));
+        }
+    }
+    e
+}
+
+/// Taux de complétion de la fiche, en pourcentage arrondi.
+pub fn completion(p: &ProjectData, locations: usize, containers: usize, articles: usize) -> u32 {
+    let dates = match p.intervention {
+        Intervention::Prestation => p.shoot_start.is_some() && p.shoot_end.is_some(),
+        Intervention::Integration => p.commissioning.is_some(),
+    };
+    let checks = [
+        p.client.is_some(),
+        p.venue.is_some(),
+        p.description.is_some(),
+        p.service_type.is_some(),
+        p.planning_start.is_some() && p.planning_end.is_some(),
+        dates,
+        locations > 0,
+        containers > 0,
+        articles > 0,
+    ];
+    (checks.iter().filter(|c| **c).count() as f64 * 100.0 / checks.len() as f64).round() as u32
+}
+
+/// Jours restants jusqu'à une date (arrondi supérieur), à partir des numéros de jour.
+pub fn day_number(d: &str) -> Option<i64> {
+    if !is_date(d) {
+        return None;
+    }
+    let y: i64 = d[0..4].parse().ok()?;
+    let m: i64 = d[5..7].parse().ok()?;
+    let day: i64 = d[8..10].parse().ok()?;
+    // Jours depuis une origine fixe (algorithme civil de H. Hinnant).
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let mp = (m + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    Some(era * 146097 + doe)
+}
+
+// ----- Codes de câble -----
+
+/// Code câble tiré d'un nom : majuscules, lettres et chiffres, 5 caractères au plus.
+pub fn cable_code(s: &str) -> String {
+    normalize(s)
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .map(|c| c.to_ascii_uppercase())
+        .take(5)
+        .collect()
+}
+
+// ----- Emplacements -----
+
+pub fn validate_location(name: &mut String, code: &mut String) -> Vec<FieldError> {
+    let mut e = Vec::new();
+    *name = name.trim().to_string();
+    if name.is_empty() {
+        e.push(err("name", "Le nom est obligatoire."));
+    } else if name.chars().count() > 120 {
+        e.push(err("name", "120 caractères au plus."));
+    }
+    *code = if code.trim().is_empty() {
+        cable_code(name)
+    } else {
+        cable_code(code)
+    };
+    e
+}
+
+// ----- Contenants -----
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ContainerKind {
+    #[default]
+    Rack,
+    FlightCase,
+    HardCase,
+    WaterproofCase,
+    Furniture,
+}
+
+impl ContainerKind {
+    pub fn default_rackable(self) -> bool {
+        matches!(
+            self,
+            ContainerKind::Rack | ContainerKind::FlightCase | ContainerKind::HardCase
+        )
+    }
+    pub fn mobile(self) -> bool {
+        matches!(
+            self,
+            ContainerKind::FlightCase | ContainerKind::HardCase | ContainerKind::WaterproofCase
+        )
+    }
+    pub fn label(self) -> &'static str {
+        match self {
+            ContainerKind::Rack => "Baie 19\"",
+            ContainerKind::FlightCase => "Flight-case",
+            ContainerKind::HardCase => "Valise rigide",
+            ContainerKind::WaterproofCase => "Valise étanche",
+            ContainerKind::Furniture => "Mobilier",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ContainerData {
+    pub kind: ContainerKind,
+    pub rackable: bool,
+    pub height_u: Option<f64>,
+    pub depth_mm: Option<f64>,
+    /// Distance fond-rails des rails arrière internes, s'il y en a.
+    pub rear_rails_mm: Option<f64>,
+    pub length_mm: Option<f64>,
+    pub width_mm: Option<f64>,
+    pub outer_height_mm: Option<f64>,
+    pub wheels: bool,
+    pub empty_weight_kg: Option<f64>,
+    pub max_weight_kg: Option<f64>,
+    pub max_power_w: Option<f64>,
+    pub cable_code: String,
+    pub notes: Option<String>,
+}
+
+impl Default for ContainerData {
+    fn default() -> Self {
+        ContainerData {
+            kind: ContainerKind::Rack,
+            rackable: true,
+            height_u: Some(42.0),
+            depth_mm: Some(600.0),
+            rear_rails_mm: None,
+            length_mm: None,
+            width_mm: None,
+            outer_height_mm: None,
+            wheels: false,
+            empty_weight_kg: None,
+            max_weight_kg: None,
+            max_power_w: None,
+            cable_code: String::new(),
+            notes: None,
+        }
+    }
+}
+
+fn range(e: &mut Vec<FieldError>, f: &str, v: Option<f64>, min: f64, max: f64, unit: &str) {
+    if let Some(v) = v {
+        if !v.is_finite() || v < min || v > max {
+            e.push(err(f, format!("De {min} à {max} {unit}.")));
+        }
+    }
+}
+
+pub fn validate_container(name: &mut String, c: &mut ContainerData) -> Vec<FieldError> {
+    let mut e = Vec::new();
+    *name = name.trim().to_string();
+    if name.is_empty() {
+        e.push(err("name", "Le nom est obligatoire."));
+    } else if name.chars().count() > 120 {
+        e.push(err("name", "120 caractères au plus."));
+    }
+    if !c.kind.mobile() {
+        c.wheels = false;
+    }
+    if c.rackable {
+        if c.height_u.is_none() {
+            e.push(err("height_u", "Indiquez la hauteur en U."));
+        }
+        if let Some(h) = c.height_u {
+            if !(1.0..=60.0).contains(&h) || h.fract() != 0.0 {
+                e.push(err("height_u", "De 1 à 60 U."));
+            }
+        }
+        range(&mut e, "depth_mm", c.depth_mm, 50.0, 2000.0, "mm");
+        range(&mut e, "rear_rails_mm", c.rear_rails_mm, 0.0, 2000.0, "mm");
+    } else {
+        c.height_u = None;
+        c.rear_rails_mm = None;
+        range(&mut e, "depth_mm", c.depth_mm, 50.0, 2000.0, "mm");
+        range(&mut e, "length_mm", c.length_mm, 50.0, 3000.0, "mm");
+        range(&mut e, "width_mm", c.width_mm, 50.0, 3000.0, "mm");
+        range(
+            &mut e,
+            "outer_height_mm",
+            c.outer_height_mm,
+            50.0,
+            3000.0,
+            "mm",
+        );
+    }
+    range(
+        &mut e,
+        "empty_weight_kg",
+        c.empty_weight_kg,
+        0.0,
+        500.0,
+        "kg",
+    );
+    range(&mut e, "max_weight_kg", c.max_weight_kg, 0.0, 5000.0, "kg");
+    range(&mut e, "max_power_w", c.max_power_w, 0.0, 100_000.0, "W");
+    c.cable_code = cable_code(if c.cable_code.trim().is_empty() {
+        name
+    } else {
+        &c.cable_code
+    });
+    c.notes = c
+        .notes
+        .as_ref()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    e
+}
+
+/// Nom libre parmi `taken` (sans casse) : « Baie », « Baie 2 », « Baie 3 »…
+pub fn unique_name(base: &str, taken: &[String]) -> String {
+    let set: std::collections::HashSet<String> = taken.iter().map(|t| normalize(t)).collect();
+    if !set.contains(&normalize(base)) {
+        return base.to_string();
+    }
+    (2..)
+        .map(|n| format!("{base} {n}"))
+        .find(|c| !set.contains(&normalize(c)))
+        .unwrap_or_default()
+}
+
+// ----- Articles -----
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlateVariant {
+    Blank,
+    Brush,
+    Vented,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Accessory {
+    Plate {
+        variant: PlateVariant,
+        height_u: u32,
+    },
+    Shelf {
+        depth_mm: u32,
+        height_u: u32,
+    },
+    Drawer {
+        depth_mm: u32,
+        height_u: u32,
+    },
+}
+
+impl Accessory {
+    pub fn height_u(&self) -> u32 {
+        match self {
+            Accessory::Plate { height_u, .. }
+            | Accessory::Shelf { height_u, .. }
+            | Accessory::Drawer { height_u, .. } => *height_u,
+        }
+    }
+
+    /// Libellé généré, par exemple « Étagère 1U · 450mm ».
+    pub fn label(&self) -> String {
+        match self {
+            Accessory::Plate { variant, height_u } => {
+                let v = match variant {
+                    PlateVariant::Blank => "pleine",
+                    PlateVariant::Brush => "passe-câble",
+                    PlateVariant::Vented => "aérée",
+                };
+                format!("Plaque {v} {height_u}U")
+            }
+            Accessory::Shelf { depth_mm, height_u } => {
+                format!("Étagère {height_u}U · {depth_mm}mm")
+            }
+            Accessory::Drawer { depth_mm, height_u } => {
+                format!("Tiroir {height_u}U · {depth_mm}mm")
+            }
+        }
+    }
+
+    pub fn validate(&self) -> Vec<FieldError> {
+        let mut e = Vec::new();
+        if !(1..=8).contains(&self.height_u()) {
+            e.push(err("accessory.height_u", "De 1 à 8 U."));
+        }
+        match self {
+            Accessory::Shelf { depth_mm, .. } if !(200..=1200).contains(depth_mm) => {
+                e.push(err("accessory.depth_mm", "Étagère : de 200 à 1 200 mm."))
+            }
+            Accessory::Drawer { depth_mm, .. }
+                if !(200..=500).contains(depth_mm) || depth_mm % 50 != 0 =>
+            {
+                e.push(err(
+                    "accessory.depth_mm",
+                    "Tiroir : de 200 à 500 mm, par pas de 50.",
+                ))
+            }
+            _ => {}
+        }
+        e
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ArticleNature {
+    Equipment,
+    Adapter,
+    Accessory,
+}
+
+/// Repère d'exemplaire « #XXXX » : sans les caractères ambigus O, 0, I, 1.
+pub const TAG_ALPHABET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+pub fn tag_from(n: u64) -> String {
+    let mut s = String::from("#");
+    let mut v = n;
+    for _ in 0..4 {
+        s.push(TAG_ALPHABET[(v % TAG_ALPHABET.len() as u64) as usize] as char);
+        v /= TAG_ALPHABET.len() as u64;
+    }
+    s
+}
+
+pub fn is_mac(s: &str) -> bool {
+    let parts: Vec<&str> = s.split([':', '-']).collect();
+    parts.len() == 6
+        && parts
+            .iter()
+            .all(|p| p.len() == 2 && p.chars().all(|c| c.is_ascii_hexdigit()))
+}
+
+/// Normalise une adresse MAC en AA:BB:CC:DD:EE:FF.
+pub fn normalize_mac(s: &str) -> Option<String> {
+    let t = s.trim();
+    if is_mac(t) {
+        return Some(t.replace('-', ":").to_uppercase());
+    }
+    let hex: String = t.chars().filter(|c| c.is_ascii_hexdigit()).collect();
+    if hex.len() == 12
+        && t.chars()
+            .all(|c| c.is_ascii_hexdigit() || ".:- ".contains(c))
+    {
+        let up = hex.to_uppercase();
+        return Some(
+            (0..6)
+                .map(|i| &up[i * 2..i * 2 + 2])
+                .collect::<Vec<_>>()
+                .join(":"),
+        );
+    }
+    None
+}
+
+// ----- Totaux -----
+
+/// Ce qu'il faut savoir d'un article pour les totaux.
+#[derive(Debug, Clone, Default)]
+pub struct ArticleLoad {
+    pub quantity: u32,
+    /// Hauteur en U d'un exemplaire rackable, sinon `None`.
+    pub height_u: Option<f64>,
+    pub weight_kg: f64,
+    pub power_w: f64,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct ContainerTotals {
+    pub used_u: f64,
+    pub total_u: Option<f64>,
+    pub weight_kg: f64,
+    pub power_w: f64,
+    pub volume_m3: Option<f64>,
+    pub over_weight: bool,
+    pub over_power: bool,
+    pub over_u: bool,
+}
+
+pub fn container_totals(c: &ContainerData, articles: &[ArticleLoad]) -> ContainerTotals {
+    let used_u: f64 = articles
+        .iter()
+        .filter_map(|a| a.height_u.map(|h| h * a.quantity as f64))
+        .sum();
+    let weight = c.empty_weight_kg.unwrap_or(0.0)
+        + articles
+            .iter()
+            .map(|a| a.weight_kg * a.quantity as f64)
+            .sum::<f64>();
+    let power: f64 = articles.iter().map(|a| a.power_w * a.quantity as f64).sum();
+    let volume = if c.rackable {
+        c.height_u
+            .zip(c.depth_mm)
+            .map(|(u, d)| 0.6 * (u * 44.45 / 1000.0) * (d / 1000.0))
+    } else {
+        match (c.length_mm, c.width_mm, c.depth_mm.or(c.outer_height_mm)) {
+            (Some(l), Some(w), Some(d)) => Some(l * w * d / 1e9),
+            _ => None,
+        }
+    };
+    ContainerTotals {
+        used_u,
+        total_u: if c.rackable { c.height_u } else { None },
+        weight_kg: (weight * 10.0).round() / 10.0,
+        power_w: power.round(),
+        volume_m3: volume.map(|v| (v * 1000.0).round() / 1000.0),
+        over_weight: c.max_weight_kg.is_some_and(|m| weight > m),
+        over_power: c.max_power_w.is_some_and(|m| power > m),
+        over_u: c.rackable && c.height_u.is_some_and(|h| used_u > h),
+    }
+}
+
+// ----- Tâches -----
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskStatus {
+    #[default]
+    Todo,
+    InProgress,
+    Done,
+    Validated,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Priority {
+    Low,
+    #[default]
+    Normal,
+    High,
+    Urgent,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TaskData {
+    pub title: String,
+    pub description: Option<String>,
+    pub due: Option<String>,
+    pub done_on: Option<String>,
+    pub assignee_id: Option<String>,
+    pub status: TaskStatus,
+    pub priority: Priority,
+}
+
+pub fn validate_task(t: &mut TaskData) -> Vec<FieldError> {
+    let mut e = Vec::new();
+    t.title = t.title.trim().to_string();
+    if t.title.is_empty() || t.title.chars().count() > 200 {
+        e.push(err("title", "Le titre compte de 1 à 200 caractères."));
+    }
+    t.description = t
+        .description
+        .as_ref()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    for (f, v) in [("due", &t.due), ("done_on", &t.done_on)] {
+        if v.as_deref().is_some_and(|d| !is_date(d)) {
+            e.push(err(f, "Date attendue au format AAAA-MM-JJ."));
+        }
+    }
+    e
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn base() -> ProjectData {
+        ProjectData {
+            name: " Finale Coupe ".into(),
+            planning_start: Some("2026-11-12".into()),
+            planning_end: Some("2026-11-14".into()),
+            shoot_start: Some("2026-11-15".into()),
+            shoot_end: Some("2026-11-16".into()),
+            commissioning: Some("2026-12-01".into()),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn project_rules() {
+        let mut p = base();
+        assert!(validate_project(&mut p, true, "2026-11-11").is_empty());
+        assert_eq!(p.name, "Finale Coupe");
+        assert_eq!(
+            p.commissioning, None,
+            "date d'intégration vidée pour une prestation"
+        );
+        let mut p = base();
+        assert!(
+            validate_project(&mut p, true, "2026-11-13")
+                .iter()
+                .any(|e| e.field == "planning_start")
+        );
+        let mut p = base();
+        p.regie = Regie::Fixed;
+        assert!(
+            validate_project(&mut p, false, "2026-11-11")
+                .iter()
+                .any(|e| e.field == "regie")
+        );
+        let mut p = base();
+        p.intervention = Intervention::Integration;
+        p.commissioning = Some("2026-11-14".into());
+        assert!(
+            validate_project(&mut p, false, "2026-11-11")
+                .iter()
+                .any(|e| e.field == "commissioning")
+        );
+        assert_eq!(p.shoot_start, None);
+        assert!(!is_date("2026-02-30"));
+        assert!(is_date("2028-02-29"));
+    }
+
+    #[test]
+    fn days_and_codes() {
+        assert_eq!(
+            day_number("2026-11-15").unwrap() - day_number("2026-11-11").unwrap(),
+            4
+        );
+        assert_eq!(
+            day_number("2027-01-01").unwrap() - day_number("2026-12-31").unwrap(),
+            1
+        );
+        assert_eq!(cable_code("Car régie CR-2"), "CARRE");
+        assert_eq!(cable_code("Bord terrain"), "BORDT");
+        assert_eq!(
+            unique_name("Baie vidéo", &["baie VIDÉO".into(), "Baie vidéo 2".into()]),
+            "Baie vidéo 3"
+        );
+    }
+
+    #[test]
+    fn containers_and_totals() {
+        let mut name = "Flight 1".to_string();
+        let mut c = ContainerData {
+            kind: ContainerKind::WaterproofCase,
+            rackable: false,
+            wheels: true,
+            height_u: Some(42.0),
+            length_mm: Some(500.0),
+            width_mm: Some(400.0),
+            depth_mm: Some(200.0),
+            ..Default::default()
+        };
+        assert!(validate_container(&mut name, &mut c).is_empty());
+        assert_eq!(c.height_u, None);
+        assert_eq!(c.cable_code, "FLIGH");
+        let mut c = ContainerData {
+            height_u: Some(42.0),
+            empty_weight_kg: Some(40.0),
+            max_weight_kg: Some(60.0),
+            ..Default::default()
+        };
+        let t = container_totals(
+            &c,
+            &[ArticleLoad {
+                quantity: 2,
+                height_u: Some(2.0),
+                weight_kg: 12.0,
+                power_w: 150.0,
+            }],
+        );
+        assert_eq!(
+            (t.used_u, t.weight_kg, t.power_w, t.over_weight),
+            (4.0, 64.0, 300.0, true)
+        );
+        c.kind = ContainerKind::Rack;
+        c.wheels = true;
+        let mut n = "Baie".to_string();
+        validate_container(&mut n, &mut c);
+        assert!(!c.wheels, "pas de roulettes sur une baie");
+    }
+
+    #[test]
+    fn tags_and_macs() {
+        let tags: std::collections::HashSet<String> = (0..2000).map(tag_from).collect();
+        assert_eq!(tags.len(), 2000);
+        assert!(tags.iter().all(|t| !t.contains(['O', '0', 'I', '1'])));
+        assert_eq!(
+            normalize_mac("aa-bb-cc-dd-ee-0f").as_deref(),
+            Some("AA:BB:CC:DD:EE:0F")
+        );
+        assert_eq!(
+            normalize_mac("aabb.ccdd.ee0f").as_deref(),
+            Some("AA:BB:CC:DD:EE:0F")
+        );
+        assert_eq!(normalize_mac("pas une mac"), None);
+        let a = Accessory::Shelf {
+            depth_mm: 450,
+            height_u: 1,
+        };
+        assert_eq!(a.label(), "Étagère 1U · 450mm");
+        assert!(
+            Accessory::Drawer {
+                depth_mm: 275,
+                height_u: 2
+            }
+            .validate()
+            .len()
+                == 1
+        );
+    }
+}

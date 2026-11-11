@@ -7,6 +7,7 @@
 pub mod account;
 pub mod catalog;
 pub mod permissions;
+pub mod project;
 pub mod text;
 
 pub use account::*;

@@ -16,7 +16,9 @@ use std::time::Duration;
 use strata_domain::{Level, Permissions, RoleInfo, builtin};
 
 pub mod catalog;
+pub mod projects;
 pub use catalog::*;
+pub use projects::*;
 
 /// Migrations du schéma. Une base écrite par une version plus récente porte des
 /// migrations que cette version ne connaît pas : elles sont ignorées, ce qui permet
@@ -59,7 +61,7 @@ pub(crate) fn new_id() -> String {
 }
 
 /// Traduit une violation d'unicité en `Conflict` nommant le champ.
-fn map_unique(e: sqlx::Error) -> StoreError {
+pub(crate) fn map_unique(e: sqlx::Error) -> StoreError {
     if let sqlx::Error::Database(db) = &e {
         if db.is_unique_violation() {
             let msg = db.message();
@@ -69,6 +71,10 @@ fn map_unique(e: sqlx::Error) -> StoreError {
                 "username"
             } else if msg.contains("roles_name") {
                 "role_name"
+            } else if msg.contains("projects.name_norm") {
+                "project_name"
+            } else if msg.contains("containers.name_norm") {
+                "container_name"
             } else {
                 "unique"
             };
@@ -851,7 +857,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let s = Store::open(&dir.join("strata.db")).await.unwrap();
         assert!(s.integrity_ok().await.unwrap());
-        assert_eq!(s.schema_version().await.unwrap(), 2);
+        assert_eq!(s.schema_version().await.unwrap(), 3);
         s.close().await;
         // Rouvrir ne rejoue pas les migrations.
         let s = Store::open(&dir.join("strata.db")).await.unwrap();

@@ -12,12 +12,7 @@ use tower::ServiceExt;
 
 async fn app() -> Router {
     let store = Store::open_in_memory().await.unwrap();
-    router(AppState {
-        store,
-        secure_cookies: false,
-        ops: None,
-    })
-    .layer(MockConnectInfo(
+    router(AppState::new(store, false, None)).layer(MockConnectInfo(
         "127.0.0.1:50000".parse::<SocketAddr>().unwrap(),
     ))
 }
