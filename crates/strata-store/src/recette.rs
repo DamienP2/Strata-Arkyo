@@ -47,6 +47,7 @@ impl Store {
     }
 
     /// Pose un verdict (avec l'étiquette du moment) et l'inscrit au journal.
+    #[allow(clippy::too_many_arguments)]
     pub async fn set_verdict(
         &self,
         project_id: &str,
