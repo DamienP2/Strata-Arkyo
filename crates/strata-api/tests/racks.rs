@@ -2750,3 +2750,103 @@ async fn preparation_lines_and_cabled_state() {
     .await;
     assert_eq!(r.status, StatusCode::OK);
 }
+
+#[tokio::test]
+async fn recette_points_verdicts_and_deleted_elements() {
+    let Setup {
+        app,
+        o,
+        lea,
+        pid,
+        mixer,
+        ..
+    } = setup().await;
+    let url = format!("/api/projects/{pid}/recette");
+    let v = call(&app, "GET", &url, None, Some(&lea)).await.body;
+    // Le setup : 3 mélangeurs, 3 convertisseurs, 1 moniteur dans la baie ; aucun câble.
+    assert_eq!(v["total"], 7);
+    assert_eq!(v["progress"], 0);
+    let pts = v["equipment"][0]["points"].as_array().unwrap().clone();
+    let first = pts[0]["key"].as_str().unwrap().to_string();
+    let r = call(&app, "POST", &format!("{url}/verdict"), Some(json!({"key": first, "status": "reserve", "comment": "Conforme avec réserve : ventilation bruyante"})), Some(&lea)).await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    call(
+        &app,
+        "POST",
+        &format!("{url}/verdict"),
+        Some(json!({"key": pts[1]["key"], "status": "ok"})),
+        Some(&lea),
+    )
+    .await;
+    let r = call(
+        &app,
+        "POST",
+        &format!("{url}/verdict"),
+        Some(json!({"key": pts[2]["key"], "status": "parfait"})),
+        Some(&lea),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
+    call(
+        &app,
+        "POST",
+        &format!("{url}/comment"),
+        Some(json!({"key": first, "comment": "Ventilateur changé, à revoir demain."})),
+        Some(&o),
+    )
+    .await;
+    let free = call(
+        &app,
+        "POST",
+        &format!("{url}/free"),
+        Some(json!({"label": "Essai de bascule secours"})),
+        Some(&o),
+    )
+    .await
+    .body["key"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    call(
+        &app,
+        "POST",
+        &format!("{url}/verdict"),
+        Some(json!({"key": free, "status": "ko", "comment": "Non conforme : pas de bascule"})),
+        Some(&o),
+    )
+    .await;
+    let v = call(&app, "GET", &url, None, Some(&o)).await.body;
+    assert_eq!(v["total"], 8);
+    assert_eq!(v["progress"], 38, "3 sur 8");
+    assert_eq!(v["reserves"].as_array().unwrap().len(), 2);
+    let log = call(
+        &app,
+        "GET",
+        &format!("{url}/log?key={first}"),
+        None,
+        Some(&o),
+    )
+    .await
+    .body;
+    assert_eq!(log["entries"].as_array().unwrap().len(), 2);
+    assert_eq!(log["entries"][1]["by"], "Léa");
+
+    // Un équipement supprimé garde son verdict, à part, hors avancement.
+    call(
+        &app,
+        "DELETE",
+        &format!("/api/articles/{mixer}"),
+        None,
+        Some(&o),
+    )
+    .await;
+    let v = call(&app, "GET", &url, None, Some(&o)).await.body;
+    let deleted = v["deleted"].as_array().unwrap();
+    assert!(
+        deleted
+            .iter()
+            .any(|d| d["detail"] == "Élément supprimé du projet"),
+        "{deleted:?}"
+    );
+    assert_eq!(v["total"], 5);
+}

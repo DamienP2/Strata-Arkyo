@@ -22,6 +22,7 @@ pub mod panels;
 pub mod prep;
 pub mod projects;
 pub mod racks;
+pub mod recette;
 pub mod regies;
 pub mod settings;
 pub mod templates;
