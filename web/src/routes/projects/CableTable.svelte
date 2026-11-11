@@ -122,7 +122,7 @@
     for (const r of shown) {
       if (y > 198) { doc.addPage(); page++; head(); doc.setFont('helvetica', 'normal'); }
       let x = 10;
-      for (const [, w, f] of cols) { const t = doc.splitTextToSize(f(r), w - 2)[0] ?? ''; doc.text(t, x, y); x += w; }
+      for (const [, w, f] of cols) { const t = doc.splitTextToSize(f(r).replace(/→/g, '»'), w - 2)[0] ?? ''; doc.text(t, x, y); x += w; }
       doc.setDrawColor(220, 224, 228); doc.line(10, y + 2, 287, y + 2); y += 6;
     }
     const name = view.project.name.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9]+/g, '_');
