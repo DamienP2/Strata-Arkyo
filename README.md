@@ -19,7 +19,7 @@ Strata Arkyo est un seul programme Rust installé sur un serveur Ubuntu du site.
 | Interface | Web app Svelte embarquée : connexion, administration, catalogue, projets et inventaire en temps réel | Fait pour les lots 1 à 4 |
 | 5 | Racks : élévations (avant, arrière, arrière intérieure, côté ; réel ou schématique), placement au demi-U contrôlé par le serveur, profondeur utile, bilan électrique par circuit et par phase, verrou « une personne à la fois » | Fait : étagères, modèles d'éléments, panels de brassage, régies, contrôles de construction, planche d'élévations (PDF vectoriel, PNG, JPG, A4 à A0, cartouche). Le dossier de construction viendra avec le câblage (lot 6) |
 | Éléments | Le contenant devient un élément : baies et valises, mur d'écrans (grille, écrans et sources), pupitre et poste opérateur (postes et matériel affecté), emplacement libre, position caméra, boîtier de terrain, mât HF, point de raccordement, énergie, arrivée externe, diffusion, touret | Fait |
-| 6 | Synoptique : vues par élément et par lieu, nœuds et ports tirés du catalogue, câblage de port à port (multi-câbles), un câble par port, compatibilité, longueur estimée en rack, verrou | En cours : numérotation, validation et mode tableau faits ; faisceaux, adaptateurs et ports externes, vue générale, annotations, exports du synoptique à venir |
+| 6 | Synoptique : vues par élément et par lieu, nœuds et ports tirés du catalogue, câblage de port à port (multi-câbles), un câble par port, compatibilité, longueur estimée en rack, verrou | En cours : numérotation, validation, mode tableau, attaches d'adaptateurs, ports externes, faisceaux et vue générale faits ; annotations, annuler/rétablir et exports du synoptique à venir |
 | 7 à 10 | Livrables, terrain, réseau, plans | À venir |
 
 ## Organisation du dépôt
@@ -159,6 +159,7 @@ Lire demande « Projets : lecture », écrire « Projets : écriture ». Chaque 
 | `POST /api/projects/{id}/numbering`, `GET`/`PUT /api/site/numbering` | Numérotation des câbles : modes sans numéro, tout, sélection, manuel, effacement ; règles du site, de l'élément ou ponctuelles ; compteurs jamais recyclés |
 | `GET /api/projects/{id}/synoptic/validate` | Validation du câblage : anomalies par sévérité avec câbles et nœuds concernés |
 | `GET /api/projects/{id}/cables/table`, `POST …/cables/bulk`, `GET …/cables/export?format=csv\|xlsx` | Mode tableau : tous les câbles avec leurs extrémités ; saisie en série avec révision par ligne ; export de la liste |
+| `POST /api/projects/{id}/attach`, `POST …/external`, `POST …/harnesses`, `POST …/harnesses/assign`, `PATCH`/`DELETE /api/harnesses/{id}` | Attache d'adaptateur sur un port, port externe (autre lieu ou hors projet), faisceaux ; `?view=overview` pour la vue générale |
 | `GET /api/live` (WebSocket) | Temps réel : `{"type":"join","room":"project:<id>"}`, battement `{"type":"ping"}` toutes les 30 s ; événements `change` et `presence` |
 
 ## Mises à jour OTA

@@ -21,12 +21,16 @@
 
   interface Port { ref: string; label: string; connector: string; signal: string | null; family: string | null; dir: 'in' | 'out' | 'bidir' | 'through'; gender: string | null; variant: string | null; side: 'l' | 'r' }
   interface SNode { key: string; kind: 'equipment' | 'panel' | 'adapter'; label: string; sub: string; function: string | null; container_id: string | null; location_id: string; ports: Port[] }
-  interface Far { node: string; label: string; sub: string; port: string; connector: string }
-  interface Fields { number: string | null; color: string | null; style: string; waypoints: [number, number][]; notes: string | null; tags: string[]; cable_model_id: string | null; harness_id: string | null; length_m: number | null }
+  interface Far { node: string | null; label: string; sub: string; port: string; connector: string; external?: boolean; location_id?: string | null; resolved?: boolean | null }
+  interface Fields { number: string | null; color: string | null; style: string; waypoints: [number, number][]; notes: string | null; tags: string[]; cable_model_id: string | null; harness_id: string | null; length_m: number | null; attach?: boolean; external?: { location_id: string | null; label: string | null } | null }
   interface CableV { id: string; a: string; b: string; rev: number; fields: Fields; a_in_view: boolean; b_in_view: boolean; a_info: Far | null; b_info: Far | null; warnings: string[]; estimate_m: number | null }
+  interface Harness { id: string; name: string; color: string; rev: number }
+  interface OvLoc { id: string; name: string; code: string; elements: number; weight_kg: number; power_w: number; outside: number }
+  interface Overview { locations: OvLoc[]; links: { a: string; b: string; cables: string[]; external: number }[]; totals: { weight_kg: number; power_w: number } }
   interface Syn {
     view: string; nodes: SNode[]; cables: CableV[]; layout: Record<string, { x: number; y: number }>;
     lock: { account_id: string; account_name: string; taken_at: string; mine: boolean } | null;
+    overview: Overview | null; harnesses: Harness[];
     views: { containers: { id: string; name: string; location_id: string; kind: string }[]; locations: { id: string; name: string; code: string }[] };
   }
 
@@ -35,7 +39,7 @@
   const pid = $derived(project.project.id);
   const canDesign = $derived(can('conception', 'ecriture'));
   const seg = $derived(route.path.split('/'));
-  const wanted = $derived(seg[4] && seg[5] ? `${seg[4] === 'lieu' ? 'location' : 'container'}:${seg[5]}` : null);
+  const wanted = $derived(seg[4] === 'generale' ? 'overview' : seg[4] && seg[5] ? `${seg[4] === 'lieu' ? 'location' : 'container'}:${seg[5]}` : null);
 
   let syn = $state<Syn | null>(null);
   const mine = $derived(!!syn?.lock?.mine);
@@ -75,7 +79,7 @@
       const q = wanted ? `?view=${encodeURIComponent(wanted)}` : '';
       const s = await api.get<Syn>(`/projects/${pid}/synoptic${q}`);
       syn = s;
-      pos = { ...autoLayout(s.nodes.filter((n) => showEmpty || n.ports.length)), ...s.layout };
+      pos = s.overview ? { ...ovLayout(s.overview), ...s.layout } : { ...autoLayout(s.nodes.filter((n) => showEmpty || n.ports.length)), ...s.layout };
       if (sel && !s.cables.some((c) => c.id === sel)) sel = null;
       multi = new Set([...multi].filter((id) => s.cables.some((c) => c.id === id)));
       if (pendingHl && pendingHl.view === s.view) { const i = pendingHl; pendingHl = null; if (i.cables[0]) { sel = i.cables[0]; multi = new Set(i.cables); } }
@@ -83,7 +87,7 @@
       if (!wanted && s.view) navigate(viewUrl(s.view), true);
     } catch (e) { fail(e); }
   }
-  const viewUrl = (v: string) => { const [k, id] = v.split(':'); return `/projets/${pid}/synoptique/${k === 'location' ? 'lieu' : 'element'}/${id}`; };
+  const viewUrl = (v: string) => { if (v === 'overview') return `/projets/${pid}/synoptique/generale`; const [k, id] = v.split(':'); return `/projets/${pid}/synoptique/${k === 'location' ? 'lieu' : 'element'}/${id}`; };
 
   // ----- Verrou -----
   let beat: ReturnType<typeof setInterval> | null = null;
@@ -139,6 +143,13 @@
     }
     return out;
   }
+  const OVW = 300, OVH = 150;
+  function ovLayout(o: Overview) {
+    const out: Record<string, { x: number; y: number }> = {};
+    o.locations.forEach((l, i) => { out[`loc:${l.id}`] = { x: 60 + (i % 3) * (OVW + 180), y: 60 + Math.floor(i / 3) * (OVH + 140) }; });
+    return out;
+  }
+  const ovCenter = (id: string) => { const p = pos[`loc:${id}`] ?? { x: 0, y: 0 }; return [p.x + OVW / 2, p.y + OVH / 2] as [number, number]; };
   const nodeOf = (ref: string) => syn?.nodes.find((n) => n.ports.some((p) => p.ref === ref));
   function portXY(ref: string): [number, number, 'l' | 'r'] | null {
     const n = nodeOf(ref); if (!n) return null;
@@ -207,6 +218,15 @@
     tx = mx - ((mx - tx) * nk) / k; ty = my - ((my - ty) * nk) / k; k = nk;
   }
   function fit() {
+    if (syn?.overview && svgEl) {
+      const ls = syn.overview.locations; if (!ls.length) return;
+      const xs = ls.flatMap((l) => [pos[`loc:${l.id}`]!.x - 60, pos[`loc:${l.id}`]!.x + OVW + 60]);
+      const ys = ls.flatMap((l) => [pos[`loc:${l.id}`]!.y - 60, pos[`loc:${l.id}`]!.y + OVH + 60]);
+      const r = svgEl.getBoundingClientRect(), w = Math.max(...xs) - Math.min(...xs), h = Math.max(...ys) - Math.min(...ys);
+      k = Math.min(1.2, Math.max(0.3, Math.min(r.width / w, r.height / h)));
+      tx = -Math.min(...xs) * k + (r.width - w * k) / 2; ty = -Math.min(...ys) * k + 10;
+      return;
+    }
     if (!nodes.length || !svgEl) return;
     const xs = nodes.flatMap((n) => [pos[n.key]!.x - 120, pos[n.key]!.x + NW + 120]);
     const ys = nodes.flatMap((n) => [pos[n.key]!.y - 40, pos[n.key]!.y + nodeH(n) + 60]);
@@ -253,12 +273,26 @@
   }
 
   // ----- Câblage -----
+  const isAdIn = (p: Port) => p.ref.startsWith('a:') && p.ref.endsWith(':in');
+  let extForm = $state<{ port: Port; location_id: string; label: string } | null>(null);
+  async function attachTo(adapter: Port, port: Port, replace = false) {
+    try { await api.post(`/projects/${pid}/attach`, { adapter: adapter.ref, port: port.ref, replace }); toast('Adaptateur attaché.'); await load(); }
+    catch (e) { if (e instanceof ApiError && e.code === 'occupied' && confirm('Ce port porte déjà un câble. Le remplacer par l’attache ?')) await attachTo(adapter, port, true); else if (!(e instanceof ApiError && e.code === 'occupied')) { fail(e); await load(); } }
+  }
+  async function markExternal() {
+    if (!extForm) return;
+    const body = { port: extForm.port.ref, location_id: extForm.location_id || null, label: extForm.label.trim() || null };
+    try { await api.post(`/projects/${pid}/external`, body); toast('Port externe marqué.'); extForm = null; armed = []; await load(); } catch (e) { fail(e); }
+  }
   function clickPort(p: Port, n: SNode, e: MouseEvent) {
     e.stopPropagation();
     if (!mine) { const c = syn?.cables.find((x) => x.a === p.ref || x.b === p.ref); if (c) sel = c.id; return; }
     lastAction = Date.now();
-    if (!armed.length) { armed = [p]; mouse = null; return; }
+    if (!armed.length) { armed = [p]; mouse = null; extForm = null; return; }
     if (armed.some((a) => a.ref === p.ref)) { armed = armed.filter((a) => a.ref !== p.ref); return; }
+    // Entrée d'adaptateur sur un port du même connecteur (ou l'inverse) : attache, sans câble.
+    if (armed.length === 1 && n.kind !== 'adapter' && isAdIn(armed[0]!) && armed[0]!.connector === p.connector) { const a = armed[0]!; armed = []; mouse = null; attachTo(a, p); return; }
+    if (armed.length === 1 && isAdIn(p) && nodeOf(armed[0]!.ref)?.kind !== 'adapter' && armed[0]!.connector === p.connector) { const t = armed[0]!; armed = []; mouse = null; attachTo(p, t); return; }
     const first = nodeOf(armed[0]!.ref);
     if (e.shiftKey && first?.key === n.key) { armed = [...armed, p]; return; }
     // Cible : ports consécutifs du même côté, à partir du port cliqué.
@@ -283,6 +317,19 @@
       else { fail(e); await load(); }
     }
   }
+  let newHarness = $state<{ name: string; color: string } | null>(null);
+  const harnessOf = (c: CableV) => syn?.harnesses.find((h) => h.id === c.fields.harness_id) ?? null;
+  async function createHarness() {
+    if (!newHarness) return;
+    try { const h = await api.post<Harness>(`/projects/${pid}/harnesses`, newHarness); const ids = multi.size ? [...multi] : sel ? [sel] : []; if (ids.length) await api.post(`/projects/${pid}/harnesses/assign`, { ids, harness_id: h.id }); newHarness = null; await load(); } catch (e) { fail(e); }
+  }
+  async function assign(id: string | null) {
+    const ids = multi.size ? [...multi] : sel ? [sel] : [];
+    if (!ids.length) return;
+    try { await api.post(`/projects/${pid}/harnesses/assign`, { ids, harness_id: id }); await load(); } catch (e) { fail(e); }
+  }
+  async function dropHarness(h: Harness) { if (!confirm(`Supprimer le faisceau « ${h.name} » ? Ses câbles restent.`)) return; try { await api.del(`/harnesses/${h.id}`); await load(); } catch (e) { fail(e); } }
+  function showHarness(h: Harness) { const ids = syn?.cables.filter((c) => c.fields.harness_id === h.id).map((c) => c.id) ?? []; hl = { cables: new Set(ids), nodes: new Set() }; multi = new Set(ids); sel = ids[0] ?? null; }
   async function patchSel(f: Partial<Fields>) {
     const c = selected; if (!c) return;
     lastAction = Date.now();
@@ -324,11 +371,12 @@
     </div>
     <div class="dtool">
       <select class="input" aria-label="Vue du synoptique" value={syn.view} onchange={(e) => navigate(viewUrl((e.target as HTMLSelectElement).value))}>
+        <option value="overview">Vue générale (liaisons entre lieux)</option>
         <optgroup label="Éléments">{#each syn.views.containers as c}<option value="container:{c.id}">{c.name}</option>{/each}</optgroup>
         <optgroup label="Lieux">{#each syn.views.locations as l}<option value="location:{l.id}">{l.name} (tout le lieu)</option>{/each}</optgroup>
       </select>
-      <label class="toggle-row small"><input type="checkbox" bind:checked={showEmpty} onchange={() => { if (syn) pos = { ...autoLayout(syn.nodes.filter((n) => showEmpty || n.ports.length)), ...syn.layout }; }}>Sans port{hidden ? ` (${hidden})` : ''}</label>
-      <span class="muted small">{nodes.length} nœud{nodes.length > 1 ? 's' : ''} · {syn.cables.length} câble{syn.cables.length > 1 ? 's' : ''}{warnCount ? ` · ${warnCount} à vérifier` : ''}</span>
+{#if !syn.overview}      <label class="toggle-row small"><input type="checkbox" bind:checked={showEmpty} onchange={() => { if (syn) pos = { ...autoLayout(syn.nodes.filter((n) => showEmpty || n.ports.length)), ...syn.layout }; }}>Sans port{hidden ? ` (${hidden})` : ''}</label>
+      <span class="muted small">{nodes.length} nœud{nodes.length > 1 ? 's' : ''} · {syn.cables.length} câble{syn.cables.length > 1 ? 's' : ''}{warnCount ? ` · ${warnCount} à vérifier` : ''}</span>{:else}<span class="muted small">{syn.overview.locations.length} lieu{syn.overview.locations.length > 1 ? 'x' : ''} · {nf(syn.overview.totals.weight_kg, 1)} kg · {nf(syn.overview.totals.power_w)} W · double-clic sur un lieu pour l’ouvrir</span>{/if}
       <span style="flex:1"></span>
       {#if armed.length}<span class="chip accent">{armed.length} port{armed.length > 1 ? 's' : ''} armé{armed.length > 1 ? 's' : ''} · cliquez la cible · Échap pour annuler</span>{/if}
       <button class="icon-btn sm" title="Zoom arrière" aria-label="Zoom arrière" onclick={() => (k = Math.max(0.2, k / 1.2))}><Icon name="zout" size="sm" /></button>
@@ -344,12 +392,36 @@
         <defs><pattern id="syn-grid" width="20" height="20" patternUnits="userSpaceOnUse" patternTransform="translate({tx} {ty}) scale({k})"><circle cx="1" cy="1" r="1" fill="var(--grid-dot, rgba(120,130,140,.25))" /></pattern></defs>
         <rect width="100%" height="100%" fill="url(#syn-grid)" />
         <g transform="translate({tx} {ty}) scale({k})">
+          {#if syn.overview}
+            {@const ov = syn.overview}
+            <g class="ov-links">
+              {#each ov.links as l}
+                {@const [x1, y1] = ovCenter(l.a)}
+                {@const [x2, y2] = ovCenter(l.b)}
+                <line class="ov-line" class:ext={l.external > 0} x1={x1} y1={y1} x2={x2} y2={y2} style="stroke-width:{Math.min(14, 2 + l.cables.length)}" />
+                <g class="ov-count" transform="translate({(x1 + x2) / 2} {(y1 + y2) / 2})"><rect x="-38" y="-14" width="76" height="28" rx="14" /><text y="5" text-anchor="middle">{l.cables.length} câble{l.cables.length > 1 ? 's' : ''}</text></g>
+              {/each}
+            </g>
+            {#each ov.locations as l (l.id)}
+              {@const at = pos[`loc:${l.id}`] ?? { x: 0, y: 0 }}
+              <g class="ov-loc" data-node="loc:{l.id}" transform="translate({at.x} {at.y})" role="button" tabindex="-1" ondblclick={() => navigate(viewUrl(`location:${l.id}`))} onkeydown={() => {}}>
+                <rect class="box" width={OVW} height={OVH} rx="14" />
+                <rect class="drag" width={OVW} height="56" fill="transparent" />
+                <text class="ov-code" x="18" y="28">{l.code}</text>
+                <text class="ov-name" x="18" y="50">{l.name.slice(0, 28)}</text>
+                <text class="ov-k" x="18" y="86">{l.elements} élément{l.elements > 1 ? 's' : ''}</text>
+                <text class="ov-k" x="18" y="108">{nf(l.weight_kg, 1)} kg · {nf(l.power_w)} W</text>
+                {#if l.outside}<text class="ov-out" x="18" y="132">↗ {l.outside} port{l.outside > 1 ? 's' : ''} hors projet</text>{/if}
+                <text class="ov-open" x={OVW - 16} y="132" text-anchor="end">Double-clic : ouvrir</text>
+              </g>
+            {/each}
+          {/if}
           <g class="cables">
             {#each syn.cables as c (c.id)}
               {#if c.a_in_view && c.b_in_view}
                 {@const g = cPath(c)}
                 {#if g}
-                  <g class="cable" class:sel={multi.has(c.id) || sel === c.id} class:hl={hl.cables.has(c.id)} class:warn={c.warnings.length > 0} style="--c:{cableColor(c)}" role="button" tabindex="-1" onclick={(e) => pickCable(c.id, e)} onkeydown={() => {}}>
+                  <g class="cable" class:attach={c.fields.attach} class:harnessed={!!harnessOf(c)} class:sel={multi.has(c.id) || sel === c.id} class:hl={hl.cables.has(c.id)} class:warn={c.warnings.length > 0} style="--c:{cableColor(c)};--h:{harnessOf(c)?.color ?? 'transparent'}" role="button" tabindex="-1" onclick={(e) => pickCable(c.id, e)} onkeydown={() => {}}>
                     <title>{c.fields.number ?? 'Sans numéro'} · {endName(c.a, c.a_info)} → {endName(c.b, c.b_info)}</title>
                     <path class="case" d={g.d} /><path class="vis" d={g.d} /><path class="hit" d={g.d} />
                   </g>
@@ -359,7 +431,7 @@
                 {#if s}
                   <g class="cable stub" class:sel={multi.has(c.id) || sel === c.id} class:hl={hl.cables.has(c.id)} class:warn={c.warnings.length > 0} style="--c:{cableColor(c)}" role="button" tabindex="-1" onclick={(e) => pickCable(c.id, e)} onkeydown={() => {}}>
                     <path class="case" d={s.d} /><path class="vis" d={s.d} /><path class="hit" d={s.d} />
-                    <g class="far" transform="translate({s.dx > 0 ? s.ex + 4 : s.ex - 4} {s.ey - 11})"><rect x={s.dx > 0 ? 0 : -190} width="190" height="22" rx="6" /><text x={s.dx > 0 ? 8 : -182} y="15">→ {(s.far ? `${s.far.label} › ${s.far.port}` : 'Extrémité manquante').slice(0, 30)}</text></g>
+                    <g class="far" transform="translate({s.dx > 0 ? s.ex + 4 : s.ex - 4} {s.ey - 11})"><rect x={s.dx > 0 ? 0 : -190} width="190" height="22" rx="6" /><text x={s.dx > 0 ? 8 : -182} y="15">{s.far?.external ? '↗' : '→'} {(s.far ? (s.far.external ? s.far.label : `${s.far.label} › ${s.far.port}`) : 'Extrémité manquante').slice(0, 30)}</text></g>
                   </g>
                 {/if}
               {/if}
@@ -402,7 +474,7 @@
             {/each}
           </g>
           <g class="tags">
-            {#each syn.cables as c (c.id)}
+            {#each syn.cables.filter((x) => !x.fields.attach) as c (c.id)}
               {@const both = c.a_in_view && c.b_in_view}
               {@const g = both ? cPath(c) : null}
               {@const s = both ? null : stub(c)}
@@ -435,13 +507,24 @@
           <section>
             <span class="lbl-t">{multi.size} câbles choisis</span>
             <p class="muted small" style="margin:0">Ctrl ou Maj + clic pour en ajouter ou en retirer.</p>
-            {#if mine}<button class="btn sm primary" onclick={() => (numbering = true)}><Icon name="hash" size="sm" />Numéroter la sélection</button>
+            {#if mine}
+              <div class="field"><label for="mh">Faisceau</label><select class="input" id="mh" onchange={(e) => { const v = (e.target as HTMLSelectElement).value; if (v === '+') newHarness = { name: '', color: '#2459E0' }; else assign(v || null); (e.target as HTMLSelectElement).value = '~'; }}><option value="~">Ranger dans…</option><option value="">Aucun faisceau</option>{#each syn.harnesses as h}<option value={h.id}>{h.name}</option>{/each}<option value="+">+ Nouveau faisceau…</option></select></div>
+              <button class="btn sm primary" onclick={() => (numbering = true)}><Icon name="hash" size="sm" />Numéroter la sélection</button>
               <button class="btn sm ghost danger" onclick={() => (confirmDelete = true)}><Icon name="trash" size="sm" />Supprimer les {multi.size} câbles</button>{/if}
+          </section>
+        {:else if selected?.fields.attach}
+          {@const c = selected}
+          <section>
+            <span class="lbl-t">Attache d’adaptateur</span>
+            <div class="ends"><div><span class="flabel">Adaptateur</span><b>{endName(c.b, c.b_info)}</b></div><div><span class="flabel">Enfiché sur</span><b>{endName(c.a, c.a_info)}</b></div></div>
+            {#each c.warnings as w}<div class="alert warn"><Icon name="alert" /><span>{w}</span></div>{/each}
+            <p class="muted small" style="margin:0">Sans câble : l’entrée de l’adaptateur est enfichée directement sur le port.</p>
+            {#if mine}<button class="btn sm ghost danger" onclick={() => (confirmDelete = true)}><Icon name="trash" size="sm" />Détacher</button>{/if}
           </section>
         {:else if selected}
           {@const c = selected}
           <section>
-            <span class="lbl-t">Câble</span>
+            <span class="lbl-t">{c.fields.external ? 'Port externe' : 'Câble'}</span>
             <div class="field"><label for="cn">Numéro</label><input class="input mono" id="cn" value={c.fields.number ?? ''} disabled={!mine} placeholder="Sans numéro" onchange={(e) => patchSel({ number: (e.target as HTMLInputElement).value || null })}></div>
             <div class="ends">
               <div><span class="flabel">De</span><b>{endName(c.a, c.a_info)}</b><span class="muted small">{refById('connectors', portByRef(c.a)?.connector ?? c.a_info?.connector)?.name ?? ''}</span></div>
@@ -452,9 +535,22 @@
               <div class="field"><label for="cc">Couleur</label><input class="input" id="cc" type="color" style="padding:4px;height:40px" value={c.fields.color ?? cableColor(c)} disabled={!mine} onchange={(e) => patchSel({ color: (e.target as HTMLInputElement).value })}></div>
               <div class="field"><label for="cl">Longueur réelle (m)</label><input class="input mono" id="cl" type="number" min="0" step="0.5" value={c.fields.length_m ?? ''} disabled={!mine} placeholder={c.estimate_m ? `≈ ${nf(c.estimate_m, 1)}` : 'À saisir'} onchange={(e) => { const v = (e.target as HTMLInputElement).value; patchSel({ length_m: v === '' ? null : Number(v) }); }}></div>
             </div>
+            <div class="field"><label for="ch">Faisceau</label><select class="input" id="ch" disabled={!mine} value={c.fields.harness_id ?? ''} onchange={(e) => { const v = (e.target as HTMLSelectElement).value; if (v === '+') { newHarness = { name: '', color: '#2459E0' }; } else assign(v || null); }}><option value="">Aucun</option>{#each syn.harnesses as h}<option value={h.id}>{h.name}</option>{/each}{#if mine}<option value="+">+ Nouveau faisceau…</option>{/if}</select></div>
             <dl class="kv"><dt>Longueur estimée</dt><dd>{c.estimate_m ? `${nf(c.estimate_m, 1)} m` : '—'}</dd></dl>
             <div class="field"><label for="cno">Notes</label><textarea class="input" id="cno" rows="3" maxlength="2000" disabled={!mine} value={c.fields.notes ?? ''} onchange={(e) => patchSel({ notes: (e.target as HTMLTextAreaElement).value || null })}></textarea></div>
             {#if mine}<button class="btn sm ghost danger" onclick={() => (confirmDelete = true)}><Icon name="trash" size="sm" />Supprimer le câble</button>{/if}
+          </section>
+        {:else if armed.length === 1 && mine}
+          {@const a = armed[0]!}
+          <section>
+            <span class="lbl-t">Port armé</span>
+            <b>{nodeOf(a.ref)?.label} › {a.label}</b>
+            <p class="muted small" style="margin:0">{isAdIn(a) ? 'Cliquez un port d’équipement ou de panel du même connecteur : l’adaptateur s’y attache sans câble. Sinon, cliquez un autre port pour poser un câble.' : 'Cliquez le port d’arrivée pour poser un câble, ou marquez ce port comme sortant de l’élément.'}</p>
+            {#if extForm}
+              <div class="field"><label for="xl">Vers un autre lieu</label><select class="input" id="xl" bind:value={extForm.location_id}><option value="">Hors projet</option>{#each syn.views.locations.filter((l) => l.id !== nodeOf(a.ref)?.location_id) as l}<option value={l.id}>{l.name}</option>{/each}</select></div>
+              {#if !extForm.location_id}<div class="field"><label for="xt">Destination</label><input class="input" id="xt" bind:value={extForm.label} maxlength="120" placeholder="Car OB2, diffuseur, fibre opérateur…"></div>{/if}
+              <div class="row-actions" style="justify-content:flex-start"><button class="btn sm primary" disabled={!extForm.location_id && !extForm.label.trim()} onclick={markExternal}>Marquer</button><button class="btn sm ghost" onclick={() => (extForm = null)}>Annuler</button></div>
+            {:else}<button class="btn sm" onclick={() => (extForm = { port: a, location_id: '', label: '' })}><Icon name="arrowr" size="sm" />Port externe…</button>{/if}
           </section>
         {:else}
           <section>
@@ -466,6 +562,12 @@
                 <button class="warn-row" onclick={() => (sel = w.id)}><Icon name="alert" size="sm" /><span><b>{w.fields.number ?? 'Sans numéro'}</b><span class="muted small">{w.warnings.join(' ')}</span></span></button>
               {/each}
             {/if}
+            <span class="lbl-t" style="margin-top:8px">Faisceaux</span>
+            {#each syn.harnesses as h (h.id)}
+              {@const n = syn.cables.filter((c) => c.fields.harness_id === h.id).length}
+              <div class="hrow"><button class="hname" onclick={() => showHarness(h)}><i class="dot" style="--c:{h.color}"></i><b>{h.name}</b><span class="muted small">{n} câble{n > 1 ? 's' : ''} dans la vue</span></button>{#if mine}<button class="icon-btn sm" aria-label="Supprimer le faisceau {h.name}" onclick={() => dropHarness(h)}><Icon name="trash" size="sm" /></button>{/if}</div>
+            {:else}<span class="muted small">Aucun faisceau. Choisissez des câbles puis « Ranger dans… ».</span>{/each}
+            {#if mine}<button class="btn sm ghost" onclick={() => (newHarness = { name: '', color: '#2459E0' })}><Icon name="plus" size="sm" />Faisceau</button>{/if}
           </section>
         {/if}
       </aside>
@@ -473,6 +575,12 @@
   </div>
 {/if}
 
+{#if newHarness}
+  <Confirm title="Nouveau faisceau" confirmLabel="Créer" onconfirm={createHarness} onclose={() => (newHarness = null)}>
+    <div class="sh2"><div class="field"><label for="hn">Nom</label><input class="input" id="hn" bind:value={newHarness.name} maxlength="120" placeholder="Multi vidéo plateau"></div><div class="field"><label for="hc">Couleur</label><input class="input" id="hc" type="color" style="padding:4px;height:40px" bind:value={newHarness.color}></div></div>
+    <p class="muted small">{multi.size || sel ? 'Les câbles choisis y seront rangés.' : 'Rangez-y des câbles ensuite.'}</p>
+  </Confirm>
+{/if}
 {#if numbering && syn}<NumberingDialog project={project} view={syn.view} selection={multi.size ? [...multi] : sel ? [sel] : []} onclose={() => (numbering = false)} ondone={() => { numbering = false; load(); }} />{/if}
 {#if confirmReplace}
   <Confirm title="Remplacer des câbles ?" confirmLabel="Remplacer" onconfirm={async () => { const b = confirmReplace!.body; confirmReplace = null; await place(b as { cables: { a: string; b: string }[] }, true); }} onclose={() => (confirmReplace = null)}>
@@ -549,6 +657,24 @@
   .issue span { display: flex; flex-direction: column; min-width: 0; }
   .issue.error { background: color-mix(in srgb, var(--err) 10%, transparent); }
   .issue.warning { background: color-mix(in srgb, var(--warn, #B78400) 12%, transparent); }
+  .cable.attach .vis { stroke-width: 6; stroke-linecap: round; stroke-dasharray: none; opacity: .85; }
+  .cable.attach .case { stroke-width: 10; }
+  .cable.harnessed .case { stroke: var(--h); stroke-width: 9; opacity: .55; }
+  .hrow { display: flex; gap: 6px; align-items: center; }
+  .hname { flex: 1; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 6px 8px; border: 0; border-radius: 10px; background: var(--surface-2); cursor: pointer; font: inherit; color: inherit; text-align: left; }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--c); }
+  .ov-loc .box { fill: var(--node-bg, var(--surface)); stroke: var(--line); stroke-width: 1.2; filter: drop-shadow(0 4px 12px rgba(0, 0, 0, .14)); }
+  .ov-loc { cursor: pointer; }
+  .ov-loc .drag { cursor: move; }
+  .ov-code { font: 700 12px var(--mono); fill: var(--fg-3); letter-spacing: .08em; }
+  .ov-name { font: 700 19px var(--font); fill: var(--fg); }
+  .ov-k { font: 500 13px var(--font); fill: var(--fg-2); }
+  .ov-out { font: 600 12.5px var(--font); fill: var(--accent, #4F6BFF); }
+  .ov-open { font: 500 11px var(--font); fill: var(--fg-3); }
+  .ov-line { stroke: var(--fg-2); opacity: .55; stroke-linecap: round; }
+  .ov-line.ext { stroke-dasharray: 10 6; }
+  .ov-count rect { fill: var(--surface); stroke: var(--line); }
+  .ov-count text { font: 700 12px var(--mono); fill: var(--fg); }
   .preview { fill: none; stroke: var(--accent, #4F6BFF); stroke-width: 2; stroke-dasharray: 6 4; pointer-events: none; }
   @media (max-width: 1000px) { .syn-body { grid-template-columns: 1fr; height: auto; } .syn-canvas { height: 70vh; } .syn-side { border-left: 0; border-top: 1px solid var(--line); } }
 </style>
