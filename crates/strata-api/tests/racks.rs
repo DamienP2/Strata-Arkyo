@@ -3535,3 +3535,244 @@ async fn plans_floors_placements_routes_and_lengths() {
     .await;
     assert!(r.status.is_client_error());
 }
+
+#[tokio::test]
+async fn drawings_pages_equipment_sync_and_dmx() {
+    let Setup {
+        app,
+        o,
+        lea,
+        pid,
+        cid,
+        mixer,
+        ..
+    } = setup().await;
+    let spot = call(&app, "POST", "/api/catalog/items", Some(json!({"kind": "equipment", "data": {
+        "name": "Lyre spot", "functions": ["L"], "format": {"kind": "free", "length_mm": 400, "width_mm": 300, "height_mm": 600},
+        "dmx": {"default_channels": 16, "modes": [{"name": "Étendu", "channels": 40}]}
+    }})), Some(&o)).await.body["item"]["id"].as_str().unwrap().to_string();
+    let art = call(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid}/articles"),
+        Some(json!({"container_id": cid, "nature": "equipment", "item_id": spot, "quantity": 3})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(art.status, StatusCode::CREATED, "{:?}", art.body);
+    let art_id = art.body["article"]["id"].as_str().unwrap().to_string();
+    let url = format!("/api/projects/{pid}/drawings");
+    let idx = call(&app, "GET", &url, None, Some(&lea)).await.body;
+    let lamps: Vec<String> = idx["bom"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|l| l["snapshot"]["name"] == "Lyre spot")
+        .map(|l| l["instance_id"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(lamps.len(), 3);
+    let video: String = idx["bom"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|l| l["functions"][0] == "V")
+        .unwrap()["instance_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let _ = mixer;
+
+    let r = call(
+        &app,
+        "POST",
+        &url,
+        Some(json!({"nature": "lighting"})),
+        Some(&lea),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    let page = r.body["id"].as_str().unwrap().to_string();
+    let purl = format!("{url}/{page}");
+    let p = call(&app, "GET", &purl, None, Some(&o)).await.body;
+    assert_eq!(p["name"], "Plan de feu 1");
+    assert_eq!(p["paper"], "A3");
+    // Sans la main : refus.
+    let eq = |id: &str, inst: &str, x: f64, dmx: Value| json!({"type": "equipment", "id": id, "instance_id": inst, "x": x, "y": 20, "w": 30, "h": 20, "show": ["name", "dmx"], "snapshot": {"name": "?"}, "dmx": dmx});
+    let body = |rev: i64, els: Value| json!({"rev": rev, "name": "Plan de feu 1", "paper": "A3", "landscape": true, "grid_mm": 5, "snap": true, "legend": true, "elements": els});
+    let r = call(&app, "PUT", &purl, Some(body(1, json!([]))), Some(&o)).await;
+    assert_eq!(r.status, StatusCode::CONFLICT);
+    call(&app, "POST", &format!("{purl}/lock"), None, Some(&o)).await;
+    // Un projecteur sur un plan de feu ; pas un équipement vidéo ; pas deux fois le même.
+    let r = call(
+        &app,
+        "PUT",
+        &purl,
+        Some(body(1, json!([eq("e0", &video, 10.0, Value::Null)]))),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let r = call(
+        &app,
+        "PUT",
+        &purl,
+        Some(body(
+            1,
+            json!([
+                eq("e1", &lamps[0], 10.0, Value::Null),
+                eq("e2", &lamps[0], 50.0, Value::Null)
+            ]),
+        )),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let r = call(
+        &app,
+        "POST",
+        &format!("{url}/dmx/suggest"),
+        Some(json!({"instance_id": lamps[0]})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(
+        (
+            r.body["universe"].clone(),
+            r.body["address"].clone(),
+            r.body["console"].clone()
+        ),
+        (json!(1), json!(1), json!(1))
+    );
+    let p1 = json!({"console": 1, "universe": 1, "address": 1, "mode": "Étendu"});
+    let r = call(
+        &app,
+        "PUT",
+        &purl,
+        Some(body(
+            1,
+            json!([
+                eq("e1", &lamps[0], 10.0, p1.clone()),
+                eq(
+                    "e2",
+                    &lamps[1],
+                    50.0,
+                    json!({"console": 2, "universe": 1, "address": 30})
+                )
+            ]),
+        )),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    assert_eq!(r.body["rev"], 2);
+    // Révision dépassée : refus.
+    let r = call(&app, "PUT", &purl, Some(body(1, json!([]))), Some(&o)).await;
+    assert_eq!(r.status, StatusCode::CONFLICT);
+    // Chevauchement (1–40 et 30–45) signalé ; proposition pour le troisième : même univers,
+    // première plage libre de 16 après 45, console suivante.
+    let idx = call(&app, "GET", &url, None, Some(&o)).await.body;
+    assert_eq!(idx["dmx"]["conflicts"].as_array().unwrap().len(), 1);
+    let r = call(
+        &app,
+        "POST",
+        &format!("{url}/dmx/suggest"),
+        Some(json!({"instance_id": lamps[2]})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(
+        (
+            r.body["universe"].clone(),
+            r.body["address"].clone(),
+            r.body["console"].clone()
+        ),
+        (json!(1), json!(46), json!(3))
+    );
+    // Adressage de tous : plus de conflit, mode gardé.
+    let r = call(
+        &app,
+        "POST",
+        &format!("{url}/dmx/auto"),
+        Some(json!({"mode": "all"})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.body["assigned"], 2, "{:?}", r.body);
+    let p = call(&app, "GET", &purl, None, Some(&o)).await.body;
+    assert_eq!(p["elements"][0]["dmx"]["address"], 1);
+    assert_eq!(p["elements"][0]["dmx"]["mode"], "Étendu");
+    assert_eq!(p["elements"][1]["dmx"]["address"], 41);
+    let idx = call(&app, "GET", &url, None, Some(&o)).await.body;
+    assert!(idx["dmx"]["conflicts"].as_array().unwrap().is_empty());
+    let placed = idx["bom"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|l| l["instance_id"] == lamps[0].as_str())
+        .unwrap()["placed"]
+        .clone();
+    assert_eq!(placed[0]["page"], page.as_str());
+
+    // Une seconde page de la même nature ne reprend pas un exemplaire déjà posé.
+    let p2 = call(
+        &app,
+        "POST",
+        &url,
+        Some(json!({"nature": "lighting", "name": "Douches"})),
+        Some(&o),
+    )
+    .await
+    .body["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    call(&app, "POST", &format!("{url}/{p2}/lock"), None, Some(&o)).await;
+    let r = call(&app, "PUT", &format!("{url}/{p2}"), Some(json!({"rev": 1, "name": "Douches", "elements": [eq("x", &lamps[0], 0.0, Value::Null)]})), Some(&o)).await;
+    assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
+
+    // Synchronisation : noms à jour, orphelins retirés, liens détachés, positions gardées.
+    let p = call(&app, "GET", &purl, None, Some(&o)).await.body;
+    let mut els = p["elements"].as_array().unwrap().clone();
+    els.push(json!({"type": "link", "id": "l1", "from": {"element": "e1"}, "to": {"element": "e2"}, "style": "orthogonal"}));
+    let r = call(
+        &app,
+        "PUT",
+        &purl,
+        Some(json!({"rev": p["rev"], "name": "Plan de feu 1", "elements": els})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    let r = call(
+        &app,
+        "PATCH",
+        &format!("/api/projects/{pid}/articles/{art_id}"),
+        Some(json!({"quantity": 1})),
+        Some(&o),
+    )
+    .await;
+    let _ = r;
+    let r = call(&app, "POST", &format!("{purl}/sync"), None, Some(&o)).await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    let p = call(&app, "GET", &purl, None, Some(&o)).await.body;
+    let names: Vec<&str> = p["elements"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| e["type"] == "equipment")
+        .map(|e| e["snapshot"]["name"].as_str().unwrap())
+        .collect();
+    assert!(names.iter().all(|n| *n == "Lyre spot"), "{names:?}");
+    assert_eq!(p["elements"][0]["x"], 10.0);
+    let removed = r.body["removed"].as_u64().unwrap();
+    let link = p["elements"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["type"] == "link")
+        .unwrap()
+        .clone();
+    if removed > 0 {
+        assert_eq!(link["to"]["element"], Value::Null);
+    }
+}

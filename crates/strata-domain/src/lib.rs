@@ -6,6 +6,7 @@
 
 pub mod account;
 pub mod catalog;
+pub mod drawing;
 pub mod element;
 pub mod network;
 pub mod numbering;

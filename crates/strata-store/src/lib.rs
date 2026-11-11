@@ -18,6 +18,7 @@ use strata_domain::{Level, Permissions, RoleInfo, builtin};
 pub mod cables;
 pub mod catalog;
 pub mod checks;
+pub mod drawings;
 pub mod network;
 pub mod panels;
 pub mod plans;
