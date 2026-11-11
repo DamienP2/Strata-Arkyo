@@ -13,6 +13,7 @@ use strata_domain::catalog::{ItemKind, RefKind, item_summary};
 use strata_domain::text::normalize;
 
 const META_SEEDED: &str = "catalog_seeded";
+const META_D_FORMAT: &str = "catalog_d_format";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RefItem {
@@ -231,7 +232,7 @@ impl Store {
     /// du pack ne le voit pas revenir.
     pub(crate) async fn seed_catalog(&self) -> Result<()> {
         if self.meta(META_SEEDED).await?.is_some() {
-            return Ok(());
+            return self.backfill_d_format().await;
         }
         let mut tx = self.pool.begin().await?;
         let mut position = std::collections::HashMap::new();
@@ -250,6 +251,43 @@ impl Store {
         }
         sqlx::query("INSERT INTO meta (key, value) VALUES (?, ?)")
             .bind(META_SEEDED)
+            .bind(now())
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("INSERT INTO meta (key, value) VALUES (?, ?)")
+            .bind(META_D_FORMAT)
+            .bind(now())
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    /// Une base créée avant les panels (schéma 5) ne sait pas quels connecteurs du pack
+    /// existent en format D : on le complète une fois, sans toucher aux autres champs.
+    async fn backfill_d_format(&self) -> Result<()> {
+        if self.meta(META_D_FORMAT).await?.is_some() {
+            return Ok(());
+        }
+        let mut tx = self.pool.begin().await?;
+        for d in defaults()
+            .into_iter()
+            .filter(|d| d.kind == RefKind::Connector)
+        {
+            let on = d
+                .data
+                .get("d_format")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            sqlx::query("UPDATE ref_items SET data = json_set(data, '$.d_format', json(?)) WHERE kind = ? AND id = ? AND json_extract(data, '$.d_format') IS NULL")
+                .bind(if on { "true" } else { "false" })
+                .bind(RefKind::Connector.path())
+                .bind(&d.id)
+                .execute(&mut *tx)
+                .await?;
+        }
+        sqlx::query("INSERT INTO meta (key, value) VALUES (?, ?)")
+            .bind(META_D_FORMAT)
             .bind(now())
             .execute(&mut *tx)
             .await?;

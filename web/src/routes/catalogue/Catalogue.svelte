@@ -9,6 +9,8 @@
   import Import from './Import.svelte';
   import Exchange from './Exchange.svelte';
   import Templates from './Templates.svelte';
+  import Panels from './Panels.svelte';
+  import PanelPage from './PanelPage.svelte';
 
   loadRefs();
   const seg = $derived(route.path.split('/').slice(2));
@@ -16,7 +18,7 @@
   const kind = $derived(ITEM_KINDS.find((k) => k.path === sub));
   const groups = $derived.by(() => {
     const g: SecGroup[] = [{ label: 'Fiches', items: ITEM_KINDS.map((k) => ({ key: k.path, label: k.label, href: `/catalogue/${k.path}` })) }];
-    g.push({ label: 'Bibliothèque', items: [{ key: 'modeles', label: 'Modèles de contenants', href: '/catalogue/modeles' }] });
+    g.push({ label: 'Bibliothèque', items: [{ key: 'modeles', label: 'Modèles de contenants', href: '/catalogue/modeles' }, { key: 'panels', label: 'Panels', href: '/catalogue/panels' }] });
     const tools = [{ key: 'referentiels', label: 'Référentiels', href: '/catalogue/referentiels' }];
     if (can('catalogue', 'ecriture')) tools.push({ key: 'import', label: 'Import', href: '/catalogue/import' });
     tools.push({ key: 'echange', label: 'Export et échange', href: '/catalogue/echange' });
@@ -26,7 +28,9 @@
   $effect(() => { if (sub === '') navigate('/catalogue/equipment', true); });
 </script>
 
-{#if seg.length >= 2 && kind}
+{#if sub === 'panels' && seg[1]}
+  {#if refs.loaded}{#key seg[1]}<PanelPage id={seg[1]} />{/key}{:else}<span class="spin"></span>{/if}
+{:else if seg.length >= 2 && kind}
   {#if refs.loaded}<ItemEditor kind={kind.path as ItemPath} id={seg[1] === 'nouveau' ? null : seg[1]!} />{:else}<span class="spin"></span>{/if}
 {:else}
   <div class="page">
@@ -38,6 +42,7 @@
     {:else if sub === 'import'}<Import />
     {:else if sub === 'echange'}<Exchange />
     {:else if sub === 'modeles'}<Templates />
+    {:else if sub === 'panels'}<Panels />
     {:else}<p class="lead">Section introuvable.</p>{/if}
   </div>
 {/if}

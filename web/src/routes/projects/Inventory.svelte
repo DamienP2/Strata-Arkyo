@@ -8,6 +8,7 @@
   import ContainerDialog from './ContainerDialog.svelte';
   import AddArticle from './AddArticle.svelte';
   import TemplatePick from './TemplatePick.svelte';
+  import ProjectPanel from './ProjectPanel.svelte';
   import { api, ApiError, download } from '../../lib/api';
   import { can } from '../../lib/session.svelte';
   import { toast, fail } from '../../lib/toast.svelte';
@@ -18,6 +19,7 @@
   const writable = $derived(can('projets', 'ecriture'));
 
   let selLoc = $state<string | null>(null);
+  let panelOf = $state<Article | null>(null);
   let selCont = $state<string | null>(null); // id de contenant, ou « free » pour les équipements libres
   $effect(() => {
     if (!view.locations.some((l) => l.id === selLoc)) selLoc = view.locations[0]?.id ?? null;
@@ -30,7 +32,7 @@
   const arts = $derived(view.articles.filter((a) => (selCont === 'free' ? a.location_id === selLoc && !a.container_id : a.container_id === selCont)));
   const instOf = (a: Article) => view.instances.filter((i) => i.article_id === a.id);
   const item = (a: Article) => (a.item_id ? view.items[a.item_id] : undefined);
-  const heightOf = (a: Article) => (a.accessory ? a.accessory.height_u : item(a)?.rackable ? item(a)!.height_u : null);
+  const heightOf = (a: Article) => (a.accessory ? (a.accessory.kind === 'panel' ? a.accessory.panel.height_u : a.accessory.height_u) : item(a)?.rackable ? item(a)!.height_u : null);
 
   // Dialogues
   let locEdit = $state<{ id: string | null; rev: number; name: string; code: string } | null>(null);
@@ -172,12 +174,13 @@
               {@const it = item(a)}
               {@const inst = instOf(a)}
               <tr>
-                <td><div class="art-name"><span><b>{a.label}</b><span class="small muted">{a.nature === 'equipment' ? 'Équipement' : a.nature === 'adapter' ? 'Adaptateur' : 'Accessoire'}{it?.brand ? ` · ${it.brand}` : ''}{it && !it.active ? ' · fiche inactive' : ''}</span></span></div></td>
+                <td><div class="art-name"><span><b>{a.label}</b><span class="small muted">{a.nature === 'equipment' ? 'Équipement' : a.nature === 'adapter' ? 'Adaptateur' : a.accessory?.kind === 'panel' ? `Panel · ${a.accessory.panel.slots.length} connecteur${a.accessory.panel.slots.length > 1 ? 's' : ''}` : 'Accessoire'}{it?.brand ? ` · ${it.brand}` : ''}{it && !it.active ? ' · fiche inactive' : ''}</span></span></div></td>
                 <td>{#if writable && a.nature !== 'accessory' && !it?.modular}<span class="stepper"><button onclick={() => setQty(a, a.quantity - 1)} aria-label="Retirer un">−</button><span>{a.quantity}</span><button onclick={() => setQty(a, a.quantity + 1)} aria-label="Ajouter un">+</button></span>{:else}{a.quantity}{/if}</td>
                 <td class="num hide-m">{heightOf(a) ? `${nf(heightOf(a)! * a.quantity, 1).replace(',0', '')} U` : '—'}</td>
                 <td class="num hide-m">{it?.weight_kg ? `${nf(it.weight_kg * a.quantity, 1)} kg` : '—'}</td>
                 <td class="num hide-m">{it?.power_w ? `${nf(it.power_w * a.quantity)} W` : '—'}</td>
                 <td><div class="dl-actions">
+                  {#if a.accessory?.kind === 'panel'}<button class="btn sm ghost" onclick={() => (panelOf = a)}><Icon name="grid" size="sm" />{writable ? 'Modifier' : 'Voir'}</button>{/if}
                   {#if inst.length}<button class="btn sm ghost" onclick={() => toggle(a.id)} aria-expanded={open.has(a.id)}>{inst.length} repère{inst.length > 1 ? 's' : ''}<Icon name="chevd" size="sm" /></button>{/if}
                   {#if writable}<button class="btn sm ghost" title="Déplacer" onclick={() => (moving = { a, target: '', instance: inst.at(-1)?.id ?? null })}><Icon name="arrowr" size="sm" /></button><button class="btn sm ghost danger" title="Supprimer" onclick={() => (confirmDel = { kind: 'article', id: a.id, name: a.label })}><Icon name="trash" size="sm" /></button>{/if}
                 </div></td>
@@ -239,6 +242,8 @@
     <p>{confirmDel.kind === 'container' ? 'Ses articles et leurs exemplaires partent avec lui.' : confirmDel.kind === 'location' ? 'L’emplacement doit être vide : sans contenant ni équipement libre.' : 'Ses exemplaires et leurs repères partent avec lui.'}</p>
   </Confirm>
 {/if}
+
+{#if panelOf}<ProjectPanel article={panelOf} readonly={!writable} eyebrow="Panel du projet" onclose={() => (panelOf = null)} ondone={reload} />{/if}
 
 <style>
   .inst-grid { display: grid; grid-template-columns: 80px repeat(3, minmax(0, 1fr)); gap: 8px 10px; align-items: center; padding: 6px 0; }

@@ -28,7 +28,7 @@
     switch (k) {
       case 'functions': return { key: '', color: '#5E626A', cable_prefix: '' };
       case 'signals': return { color: '#2459E0', function: 'V', prefix: '', suffix: '', impedance_ohm: null, min_bandwidth_mhz: null, connectors: [], ip: false, multicast: false, redundancy: null, default: false };
-      case 'connectors': return { variants: [], symbol: '', color: '#5E626A', functions: [] };
+      case 'connectors': return { variants: [], symbol: '', color: '#5E626A', functions: [], d_format: false };
       case 'brands': return { website: null };
       case 'categories': return { color: '', icon: '' };
       case 'types': return { function: 'V', icon: '' };
@@ -72,7 +72,7 @@
     switch (kind) {
       case 'functions': return `Clé ${d.key} · préfixe ${d.cable_prefix || '—'}`;
       case 'signals': return [refName('functions', d.function), (d.connectors ?? []).map((c: string) => refName('connectors', c)).join(', '), d.impedance_ohm ? `${d.impedance_ohm} Ω` : '', d.ip ? 'IP' + (d.multicast ? ' multicast' : '') : ''].filter(Boolean).join(' · ');
-      case 'connectors': return [(d.variants ?? []).join(', '), (d.functions ?? []).map((f: string) => refName('functions', f)).join(', ')].filter(Boolean).join(' · ');
+      case 'connectors': return [(d.variants ?? []).join(', '), d.d_format ? 'format D' : '', (d.functions ?? []).map((f: string) => refName('functions', f)).join(', ')].filter(Boolean).join(' · ');
       case 'brands': return d.website ?? '';
       case 'categories': return r.parent_id ? `dans ${refName('categories', r.parent_id)}` : '';
       case 'types': return r.parent_id ? `sous-type de ${refName('types', r.parent_id)}` : `fonction ${refName('functions', d.function)}`;
@@ -149,6 +149,7 @@
           <div class="field"><label for="rf-col">Couleur</label><input class="input" type="color" id="rf-col" bind:value={editing.data.color} style="padding:4px"></div>
         </div>
         <div class="field"><span class="flabel">Fonctions</span><ChipPicker options={refList('functions').map((f) => ({ id: f.id, name: f.name, color: f.data.color }))} bind:value={editing.data.functions} label="Fonctions" /></div>
+        <label class="toggle-row"><input type="checkbox" bind:checked={editing.data.d_format}>Existe en format D (coque standard pour les panels)</label>
       {:else if kind === 'brands'}
         <div class="field"><label for="rf-web">Site web</label><input class="input mono" id="rf-web" value={editing.data.website ?? ''} oninput={(e) => (editing!.data.website = (e.target as HTMLInputElement).value || null)} placeholder="https://…"><FieldError message={errors.website} /></div>
       {:else if kind === 'categories'}

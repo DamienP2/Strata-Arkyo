@@ -1,8 +1,8 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import Icon from './Icon.svelte';
-  let { title, eyebrow = '', onclose, children, footer, wide = false }:
-    { title: string; eyebrow?: string; onclose: () => void; children: Snippet; footer?: Snippet; wide?: boolean } = $props();
+  let { title, eyebrow = '', onclose, children, footer, wide = false, xl = false }:
+    { title: string; eyebrow?: string; onclose: () => void; children: Snippet; footer?: Snippet; wide?: boolean; xl?: boolean } = $props();
 
   function key(e: KeyboardEvent) { if (e.key === 'Escape') onclose(); }
   let dlg: HTMLDivElement;
@@ -11,7 +11,7 @@
 
 <svelte:window onkeydown={key} />
 <div class="modal" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) onclose(); }}>
-  <div class="dialog" class:wide bind:this={dlg} role="dialog" aria-modal="true" aria-label={title}>
+  <div class="dialog" class:wide class:xl bind:this={dlg} role="dialog" aria-modal="true" aria-label={title}>
     <div class="wz-head">
       <div class="row">
         <span class="eyebrow">{eyebrow}</span>
@@ -28,6 +28,7 @@
 
 <style>
   .dialog.wide { width: min(900px, 100%); }
+  .dialog.xl { width: min(1240px, 100%); }
   .dlg-body { min-height: 0; }
   .dlg-body h2 { font-size: 30px; }
 </style>

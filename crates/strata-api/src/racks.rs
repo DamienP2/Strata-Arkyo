@@ -161,7 +161,7 @@ async fn rack_view(st: &AppState, c: &Container, token: &str) -> ApiResult<Value
         let (h, _) = ctx.geometry(a).unwrap_or((1.0, Width::Full));
         elements.push(json!({
             "placement": p, "label": article_label(a, &ctx.items), "tag": tag_of(&p.instance_id), "nature": a.nature,
-            "height_u": h, "depth_mm": it.and_then(|i| i.depth_mm).or(a.accessory.as_ref().and_then(|x| x.depth_mm())), "accessory": a.accessory,
+            "height_u": h, "depth_mm": it.and_then(|i| i.depth_mm).or(a.accessory.as_ref().and_then(|x| x.depth_mm())), "accessory": a.accessory, "article_rev": a.rev,
             "rear_reserve_mm": it.and_then(|i| i.rear_reserve_mm), "weight_kg": it.and_then(|i| i.weight_kg), "power_w": it.and_then(|i| i.power_w),
             "function": it.and_then(|i| i.function.clone()), "category": it.and_then(|i| i.category.clone()), "brand": it.and_then(|i| i.brand.clone()), "item_id": a.item_id,
         }));

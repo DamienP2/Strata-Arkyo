@@ -12,14 +12,16 @@
   import { nf, relative } from '../../lib/format';
   import { refById } from '../../lib/catalog.svelte';
   import { faceType, ALU, decor, accessoryFace } from '../../lib/faceplate';
-  import { CONTAINER_KINDS, type ProjectView } from '../../lib/projects';
+  import { CONTAINER_KINDS, type Accessory, type Article, type ProjectView } from '../../lib/projects';
+  import PanelFace from '../../components/PanelFace.svelte';
+  import ProjectPanel from './ProjectPanel.svelte';
 
   let { view }: { view: ProjectView } = $props();
   type Face = 'front' | 'rear' | 'rear_inner';
   type W = 'full' | 'half' | 'third' | 'quarter';
   interface Placement { id: string; article_id: string; instance_id: string | null; face: Face; u_start: number; width: W; col: number; circuit_id: string | null; shelf_id: string | null; rev: number }
-  interface RackEl { placement: Placement; label: string; tag: string | null; nature: string; height_u: number; depth_mm: number | null; rear_reserve_mm: number | null; weight_kg: number | null; power_w: number | null; function: string | null; category: string | null; brand: string | null }
-  interface Pending { article_id: string; instance_id?: string; tag?: string; label: string; nature: string; height_u: number | null; width: W | null; rackable: boolean; function: string | null }
+  interface RackEl { placement: Placement; label: string; tag: string | null; nature: string; height_u: number; depth_mm: number | null; rear_reserve_mm: number | null; weight_kg: number | null; power_w: number | null; function: string | null; category: string | null; brand: string | null; accessory: Accessory | null; article_rev: number }
+  interface Pending { article_id: string; instance_id?: string; tag?: string; label: string; nature: string; height_u: number | null; width: W | null; rackable: boolean; function: string | null; accessory: Accessory | null }
   interface Circuit { id: string; name: string; phase: 'L1' | 'L2' | 'L3'; rating_a: number; rev: number }
   interface Rack {
     container: any; elements: RackEl[]; pending: Pending[]; circuits: Circuit[]; faces: Face[];
@@ -105,7 +107,9 @@
   // ----- Pose et déplacement -----
   const faceEls = $derived(rack?.elements.filter((e) => e.placement.face === face && !e.placement.shelf_id) ?? []);
   const onShelf = (id: string) => rack?.elements.filter((e) => e.placement.shelf_id === id) ?? [];
-  const isShelf = (e: RackEl) => e.nature === 'accessory' && /^Étagère/.test(e.label);
+  const isShelf = (e: RackEl) => e.accessory?.kind === 'shelf';
+  const panelOf = (e: { accessory: Accessory | null }) => (e.accessory?.kind === 'panel' ? e.accessory.panel : null);
+  let editPanel = $state<RackEl | null>(null);
   const shelfOf = (e: RackEl) => rack?.elements.find((x) => x.placement.id === e.placement.shelf_id);
   async function putOnShelf(shelf: RackEl, p: Pending) {
     lastAction = Date.now();
@@ -280,7 +284,7 @@
                     style={style(e)} role="button" tabindex="0" draggable={mine} title="{e.label}{e.tag ? ` · ${e.tag}` : ''} · U{e.placement.u_start}"
                     onclick={() => (sel = e.placement.id)} onkeydown={(k) => { if (k.key === 'Enter') sel = e.placement.id; }}
                     ondragstart={() => (dragging = e)} ondragend={() => (dragging = null)}>
-                    {#if e.nature !== 'accessory'}<i class="led"></i>{/if}<span class="rn">{e.label}</span>{#if isShelf(e) && onShelf(e.placement.id).length}<span class="shelf-load">{#each onShelf(e.placement.id) as x (x.placement.id)}<span class="sh-it" style="--c:{fnColor(x.function)}">{x.label}</span>{/each}</span>{:else if mode === 'real'}<span class="dec">{@html decor(typeOf(e))}</span>{:else}<span class="dec"></span>{/if}{#if e.tag}<span class="rr">{e.tag}</span>{/if}
+                    {#if e.nature !== 'accessory'}<i class="led"></i>{/if}<span class="rn">{e.label}</span>{#if isShelf(e) && onShelf(e.placement.id).length}<span class="shelf-load">{#each onShelf(e.placement.id) as x (x.placement.id)}<span class="sh-it" style="--c:{fnColor(x.function)}">{x.label}</span>{/each}</span>{:else if mode === 'real' && panelOf(e)}<span class="pdec"><PanelFace panel={panelOf(e)!} /></span>{:else if mode === 'real'}<span class="dec">{@html decor(typeOf(e))}</span>{:else}<span class="dec"></span>{/if}{#if e.tag}<span class="rr">{e.tag}</span>{/if}
                   </div>
                 {/each}
                 {#if armed && hoverU}
@@ -302,6 +306,11 @@
             <dl class="kv"><dt>Repère</dt><dd class="mono">{selected.tag ?? '—'}</dd><dt>Position</dt><dd>U{p.u_start}{selected.height_u > 1 ? `–${p.u_start + Math.ceil(selected.height_u) - 1}` : ''} · {FACES[p.face]}</dd>
               <dt>Profondeur</dt><dd>{selected.depth_mm ? `${nf(selected.depth_mm)} mm` : '—'}</dd><dt>Puissance</dt><dd>{selected.power_w ? `${nf(selected.power_w)} W` : '—'}</dd></dl>
             {#each rack.warnings.filter((w) => w.placement_id === p.id) as w}<div class="alert warn"><Icon name="alert" /><span>{w.message}</span></div>{/each}
+            {#if panelOf(selected)}
+              {@const pn = panelOf(selected)!}
+              <div class="pside"><span class="pface-s" style="--h:{pn.height_u}"><PanelFace panel={pn} /></span><span class="muted small">{pn.slots.length} connecteur{pn.slots.length > 1 ? 's' : ''} sur {pn.height_u * pn.per_u} · {pn.groups.length} groupe{pn.groups.length > 1 ? 's' : ''}</span>
+                <button class="btn sm" onclick={() => (editPanel = selected)}><Icon name="grid" size="sm" />{mine ? 'Modifier le panel' : 'Voir le panel'}</button></div>
+            {/if}
             {#if isShelf(selected)}
               <div class="stack" style="gap:8px">
                 <span class="flabel">Sur l’étagère · {onShelf(p.id).length} / 10</span>
@@ -372,6 +381,10 @@
   </Confirm>
 {/if}
 
+{#if editPanel}
+  <ProjectPanel article={{ id: editPanel.placement.article_id, rev: editPanel.article_rev, accessory: editPanel.accessory, label: editPanel.label } as Article} readonly={!mine} eyebrow="Panel du rack" onclose={() => (editPanel = null)} ondone={load} />
+{/if}
+
 <style>
   .rack-screen .design-body { min-height: 640px; }
   .shelf-load { flex: 1 1 0; min-width: 0; display: flex; gap: 4px; justify-content: flex-end; overflow: hidden; }
@@ -381,5 +394,8 @@
   .circ.over .mono { color: var(--err); font-weight: 700; }
   .circ-form { display: grid; grid-template-columns: minmax(0, 1fr) 70px 80px auto; gap: 6px; }
   .circ-form .input { height: 36px; font-size: 14px; padding: 0 8px; }
+  .pdec { flex: 1 1 0; min-width: 0; align-self: stretch; display: block; padding: 2px 0; margin-left: 8px; }
+  .pside { display: grid; gap: 8px; justify-items: start; }
+  .pface-s { display: block; width: 100%; height: calc(var(--h) * 26px); background: linear-gradient(180deg, #363B42, #1D2025); border-radius: 4px; padding: 2px 4px; }
   @media (max-width: 1100px) { .rack-screen .design-body { grid-template-columns: minmax(0, 1fr); } }
 </style>
