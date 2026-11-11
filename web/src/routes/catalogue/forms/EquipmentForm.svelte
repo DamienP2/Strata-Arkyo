@@ -3,7 +3,8 @@
   import NumField from '../../../components/NumField.svelte';
   import ChipPicker from '../../../components/ChipPicker.svelte';
   import FieldError from '../../../components/FieldError.svelte';
-  import { refList, refById, FACES, DIRECTIONS, WIDTHS } from '../../../lib/catalog.svelte';
+  import SynNode from '../../../components/SynNode.svelte';
+  import { refList, refById, refName, FACES, DIRECTIONS, WIDTHS } from '../../../lib/catalog.svelte';
   import { nf } from '../../../lib/format';
 
   let { data = $bindable(), err }: { data: any; err: (f: string) => string | undefined } = $props();
@@ -120,6 +121,11 @@
     </div>
     <FieldError message={err('ports')} />
   {:else}<p class="empty">Aucun port. Ajoutez un groupe par type de connecteur et de signal (ex. 12 × BNC, SDI 3G, entrée).</p>{/if}
+</section>
+
+<section class="card syn-preview">
+  <div class="card-head"><div><h2>Aperçu dans le synoptique</h2><span class="muted small">Entrées à gauche, sorties et ports bidirectionnels à droite ; couleur du signal, dessin du connecteur. Survolez un port pour son détail.</span></div></div>
+  <div class="syn-canvas"><SynNode name={data.name} subtitle={[refName('brands', data.brand_id), data.reference].filter(Boolean).join(' · ')} fn={data.functions[0] ?? null} ports={data.ports} /></div>
 </section>
 
 <section class="card">
