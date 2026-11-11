@@ -376,7 +376,7 @@ impl Store {
     }
 
     pub async fn harness(&self, id: &str) -> Result<Option<Harness>> {
-        Ok(self.harnesses_where(id).await?)
+        self.harnesses_where(id).await
     }
 
     async fn harnesses_where(&self, id: &str) -> Result<Option<Harness>> {
