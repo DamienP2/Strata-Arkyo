@@ -19,7 +19,15 @@ pub struct DefaultRef {
 }
 
 fn r(kind: RefKind, id: &str, name: &str, data: Value) -> DefaultRef {
-    DefaultRef { kind, id: id.into(), name: name.into(), parent_id: None, data, builtin: false, protected: false }
+    DefaultRef {
+        kind,
+        id: id.into(),
+        name: name.into(),
+        parent_id: None,
+        data,
+        builtin: false,
+        protected: false,
+    }
 }
 
 /// Fonctions fournies : clé, libellé, couleur, préfixe de câble.
@@ -51,9 +59,21 @@ const PHASES: &[(&str, &str)] = &[
 ];
 
 /// Connecteurs : identifiant (= symbole), nom, variantes, couleur, fonctions.
-type ConnectorRow = (&'static str, &'static str, &'static [&'static str], &'static str, &'static [&'static str]);
+type ConnectorRow = (
+    &'static str,
+    &'static str,
+    &'static [&'static str],
+    &'static str,
+    &'static [&'static str],
+);
 const CONNECTORS: &[ConnectorRow] = &[
-    ("bnc", "BNC", &["75 Ω", "50 Ω"], "#2459E0", &["V", "S", "A", "R"]),
+    (
+        "bnc",
+        "BNC",
+        &["75 Ω", "50 Ω"],
+        "#2459E0",
+        &["V", "S", "A", "R"],
+    ),
     ("hd-bnc", "HD-BNC", &["75 Ω"], "#2459E0", &["V", "S"]),
     ("din-1023", "DIN 1.0/2.3", &["75 Ω"], "#2459E0", &["V", "S"]),
     ("xlr3", "XLR 3", &[], "#0E8550", &["A", "S"]),
@@ -62,20 +82,74 @@ const CONNECTORS: &[ConnectorRow] = &[
     ("jack635", "Jack 6,35", &["TS", "TRS"], "#0E8550", &["A"]),
     ("jack35", "Jack 3,5", &["TRS", "TRRS"], "#0E8550", &["A"]),
     ("rca", "RCA", &[], "#0E8550", &["A", "V"]),
-    ("dsub25", "D-Sub 25", &["Tascam", "Yamaha"], "#0E8550", &["A"]),
+    (
+        "dsub25",
+        "D-Sub 25",
+        &["Tascam", "Yamaha"],
+        "#0E8550",
+        &["A"],
+    ),
     ("dsub9", "D-Sub 9", &["RS-422", "RS-232"], "#7A44C9", &["C"]),
-    ("rj45", "RJ45", &["Cat 5e", "Cat 6", "Cat 6a"], "#0A8797", &["N", "F", "A", "C", "I"]),
-    ("ethercon", "etherCON", &["Cat 5e", "Cat 6a"], "#0A8797", &["N", "F", "A", "C", "I", "L"]),
-    ("lc", "LC duplex", &["Monomode", "Multimode"], "#0A8797", &["N", "F", "V"]),
-    ("sc", "SC", &["Monomode", "Multimode"], "#0A8797", &["N", "V"]),
-    ("opticalcon-duo", "opticalCON DUO", &["Monomode", "Multimode"], "#0A8797", &["N", "F", "V"]),
-    ("opticalcon-quad", "opticalCON QUAD", &["Monomode", "Multimode"], "#0A8797", &["N", "F", "V"]),
-    ("smpte311", "SMPTE 311 (fibre caméra)", &[], "#2459E0", &["V"]),
+    (
+        "rj45",
+        "RJ45",
+        &["Cat 5e", "Cat 6", "Cat 6a"],
+        "#0A8797",
+        &["N", "F", "A", "C", "I"],
+    ),
+    (
+        "ethercon",
+        "etherCON",
+        &["Cat 5e", "Cat 6a"],
+        "#0A8797",
+        &["N", "F", "A", "C", "I", "L"],
+    ),
+    (
+        "lc",
+        "LC duplex",
+        &["Monomode", "Multimode"],
+        "#0A8797",
+        &["N", "F", "V"],
+    ),
+    (
+        "sc",
+        "SC",
+        &["Monomode", "Multimode"],
+        "#0A8797",
+        &["N", "V"],
+    ),
+    (
+        "opticalcon-duo",
+        "opticalCON DUO",
+        &["Monomode", "Multimode"],
+        "#0A8797",
+        &["N", "F", "V"],
+    ),
+    (
+        "opticalcon-quad",
+        "opticalCON QUAD",
+        &["Monomode", "Multimode"],
+        "#0A8797",
+        &["N", "F", "V"],
+    ),
+    (
+        "smpte311",
+        "SMPTE 311 (fibre caméra)",
+        &[],
+        "#2459E0",
+        &["V"],
+    ),
     ("hdmi", "HDMI", &[], "#2459E0", &["V", "A"]),
     ("displayport", "DisplayPort", &[], "#2459E0", &["V"]),
     ("usb", "USB-C", &[], "#7A44C9", &["C", "N", "P"]),
     ("toslink", "Toslink", &[], "#0E8550", &["A"]),
-    ("speakon", "speakON", &["NL2", "NL4", "NL8"], "#0E8550", &["A"]),
+    (
+        "speakon",
+        "speakON",
+        &["NL2", "NL4", "NL8"],
+        "#0E8550",
+        &["A"],
+    ),
     ("powercon", "powerCON", &[], "#CF3A2F", &["P"]),
     ("powercon-true1", "powerCON TRUE1", &[], "#CF3A2F", &["P"]),
     ("iec-c13", "IEC C13 / C14", &[], "#CF3A2F", &["P"]),
@@ -90,41 +164,293 @@ const CONNECTORS: &[ConnectorRow] = &[
 /// Signaux : identifiant, nom, fonction, impédance, bande passante minimale (MHz), connecteurs,
 /// IP, multicast, redondance, préfixe.
 #[allow(clippy::type_complexity)]
-const SIGNALS: &[(&str, &str, &str, Option<f64>, Option<f64>, &[&str], bool, bool, Option<&str>, &str)] = &[
-    ("sdi-12g", "SDI 12G", "V", Some(75.0), Some(12000.0), &["bnc", "hd-bnc", "din-1023"], false, false, None, "V"),
-    ("sdi-3g", "SDI 3G", "V", Some(75.0), Some(3000.0), &["bnc", "hd-bnc", "din-1023"], false, false, None, "V"),
-    ("sdi-hd", "SDI HD", "V", Some(75.0), Some(1500.0), &["bnc", "hd-bnc", "din-1023"], false, false, None, "V"),
-    ("camera-fibre", "Fibre caméra SMPTE", "V", None, None, &["smpte311"], false, false, None, "V"),
-    ("hdmi", "HDMI", "V", None, None, &["hdmi"], false, false, None, "V"),
-    ("ref-sync", "Référence de synchro", "S", Some(75.0), Some(100.0), &["bnc", "din-1023"], false, false, None, "S"),
-    ("timecode", "Timecode LTC", "S", None, None, &["xlr3", "bnc"], false, false, None, "S"),
-    ("aes3", "AES3", "A", Some(110.0), Some(6.0), &["xlr3", "dsub25"], false, false, None, "A"),
-    ("aes3id", "AES3id", "A", Some(75.0), Some(6.0), &["bnc"], false, false, None, "A"),
-    ("audio-analog", "Audio analogique", "A", None, None, &["xlr3", "jack635", "jack35", "rca", "dsub25"], false, false, None, "A"),
-    ("madi", "MADI", "A", Some(75.0), Some(125.0), &["bnc", "sc", "lc"], false, false, None, "A"),
-    ("dante", "Dante", "A", None, None, &["rj45", "ethercon"], true, true, Some("primary_secondary"), "A"),
-    ("st2110", "SMPTE ST 2110", "F", None, None, &["rj45", "lc", "opticalcon-duo"], true, true, Some("ab"), "F"),
-    ("ethernet", "Ethernet", "N", None, None, &["rj45", "ethercon", "lc", "sc", "opticalcon-duo"], true, false, None, "N"),
-    ("dmx512", "DMX512", "L", Some(120.0), None, &["xlr5", "xlr3"], false, false, None, "L"),
-    ("intercom-4w", "Intercom 4 fils", "I", None, None, &["xlr4", "rj45"], false, false, None, "I"),
-    ("rs422", "RS-422", "C", None, None, &["dsub9"], false, false, None, "C"),
-    ("power-230", "Alimentation 230 V", "P", None, None, &["schuko", "iec-c13", "powercon", "powercon-true1", "cee16-1p"], false, false, None, "P"),
-    ("power-3p", "Alimentation triphasée", "P", None, None, &["cee16-3p", "cee32-3p"], false, false, None, "P"),
-    ("rf", "RF", "R", Some(50.0), None, &["bnc", "sma", "n-type"], false, false, None, "R"),
+const SIGNALS: &[(
+    &str,
+    &str,
+    &str,
+    Option<f64>,
+    Option<f64>,
+    &[&str],
+    bool,
+    bool,
+    Option<&str>,
+    &str,
+)] = &[
+    (
+        "sdi-12g",
+        "SDI 12G",
+        "V",
+        Some(75.0),
+        Some(12000.0),
+        &["bnc", "hd-bnc", "din-1023"],
+        false,
+        false,
+        None,
+        "V",
+    ),
+    (
+        "sdi-3g",
+        "SDI 3G",
+        "V",
+        Some(75.0),
+        Some(3000.0),
+        &["bnc", "hd-bnc", "din-1023"],
+        false,
+        false,
+        None,
+        "V",
+    ),
+    (
+        "sdi-hd",
+        "SDI HD",
+        "V",
+        Some(75.0),
+        Some(1500.0),
+        &["bnc", "hd-bnc", "din-1023"],
+        false,
+        false,
+        None,
+        "V",
+    ),
+    (
+        "camera-fibre",
+        "Fibre caméra SMPTE",
+        "V",
+        None,
+        None,
+        &["smpte311"],
+        false,
+        false,
+        None,
+        "V",
+    ),
+    (
+        "hdmi",
+        "HDMI",
+        "V",
+        None,
+        None,
+        &["hdmi"],
+        false,
+        false,
+        None,
+        "V",
+    ),
+    (
+        "ref-sync",
+        "Référence de synchro",
+        "S",
+        Some(75.0),
+        Some(100.0),
+        &["bnc", "din-1023"],
+        false,
+        false,
+        None,
+        "S",
+    ),
+    (
+        "timecode",
+        "Timecode LTC",
+        "S",
+        None,
+        None,
+        &["xlr3", "bnc"],
+        false,
+        false,
+        None,
+        "S",
+    ),
+    (
+        "aes3",
+        "AES3",
+        "A",
+        Some(110.0),
+        Some(6.0),
+        &["xlr3", "dsub25"],
+        false,
+        false,
+        None,
+        "A",
+    ),
+    (
+        "aes3id",
+        "AES3id",
+        "A",
+        Some(75.0),
+        Some(6.0),
+        &["bnc"],
+        false,
+        false,
+        None,
+        "A",
+    ),
+    (
+        "audio-analog",
+        "Audio analogique",
+        "A",
+        None,
+        None,
+        &["xlr3", "jack635", "jack35", "rca", "dsub25"],
+        false,
+        false,
+        None,
+        "A",
+    ),
+    (
+        "madi",
+        "MADI",
+        "A",
+        Some(75.0),
+        Some(125.0),
+        &["bnc", "sc", "lc"],
+        false,
+        false,
+        None,
+        "A",
+    ),
+    (
+        "dante",
+        "Dante",
+        "A",
+        None,
+        None,
+        &["rj45", "ethercon"],
+        true,
+        true,
+        Some("primary_secondary"),
+        "A",
+    ),
+    (
+        "st2110",
+        "SMPTE ST 2110",
+        "F",
+        None,
+        None,
+        &["rj45", "lc", "opticalcon-duo"],
+        true,
+        true,
+        Some("ab"),
+        "F",
+    ),
+    (
+        "ethernet",
+        "Ethernet",
+        "N",
+        None,
+        None,
+        &["rj45", "ethercon", "lc", "sc", "opticalcon-duo"],
+        true,
+        false,
+        None,
+        "N",
+    ),
+    (
+        "dmx512",
+        "DMX512",
+        "L",
+        Some(120.0),
+        None,
+        &["xlr5", "xlr3"],
+        false,
+        false,
+        None,
+        "L",
+    ),
+    (
+        "intercom-4w",
+        "Intercom 4 fils",
+        "I",
+        None,
+        None,
+        &["xlr4", "rj45"],
+        false,
+        false,
+        None,
+        "I",
+    ),
+    (
+        "rs422",
+        "RS-422",
+        "C",
+        None,
+        None,
+        &["dsub9"],
+        false,
+        false,
+        None,
+        "C",
+    ),
+    (
+        "power-230",
+        "Alimentation 230 V",
+        "P",
+        None,
+        None,
+        &[
+            "schuko",
+            "iec-c13",
+            "powercon",
+            "powercon-true1",
+            "cee16-1p",
+        ],
+        false,
+        false,
+        None,
+        "P",
+    ),
+    (
+        "power-3p",
+        "Alimentation triphasée",
+        "P",
+        None,
+        None,
+        &["cee16-3p", "cee32-3p"],
+        false,
+        false,
+        None,
+        "P",
+    ),
+    (
+        "rf",
+        "RF",
+        "R",
+        Some(50.0),
+        None,
+        &["bnc", "sma", "n-type"],
+        false,
+        false,
+        None,
+        "R",
+    ),
 ];
 
 /// Préréglages de dimensions : genre, valeurs.
 pub const DIMENSIONS: &[(&str, &[f64])] = &[
-    ("height_u", &[0.5, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0, 12.0]),
+    (
+        "height_u",
+        &[0.5, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0, 12.0],
+    ),
     ("width", &[1.0, 0.5, 1.0 / 3.0, 0.25]),
-    ("depth_mm", &[200.0, 300.0, 400.0, 450.0, 500.0, 600.0, 800.0]),
+    (
+        "depth_mm",
+        &[200.0, 300.0, 400.0, 450.0, 500.0, 600.0, 800.0],
+    ),
     ("rear_reserve_mm", &[100.0, 150.0, 200.0]),
-    ("cable_length_m", &[0.5, 1.0, 2.0, 3.0, 5.0, 10.0, 15.0, 20.0, 25.0, 50.0, 100.0]),
+    (
+        "cable_length_m",
+        &[0.5, 1.0, 2.0, 3.0, 5.0, 10.0, 15.0, 20.0, 25.0, 50.0, 100.0],
+    ),
     ("bend_radius_mm", &[30.0, 50.0, 80.0, 120.0]),
 ];
 
 fn dimension_name(kind: &str, v: f64) -> String {
-    let n = if v.fract() == 0.0 { format!("{v:.0}") } else if (v - 1.0 / 3.0).abs() < 1e-9 { "1/3".into() } else { format!("{v}").replace('.', ",") };
+    let n = if v.fract() == 0.0 {
+        format!("{v:.0}")
+    } else if (v - 1.0 / 3.0).abs() < 1e-9 {
+        "1/3".into()
+    } else {
+        format!("{v}").replace('.', ",")
+    };
     match kind {
         "height_u" => format!("{n} U"),
         "width" => match n.as_str() {
@@ -143,8 +469,19 @@ pub fn dimension_defaults() -> Vec<DefaultRef> {
     for (kind, values) in DIMENSIONS {
         for v in *values {
             let reel = *kind == "cable_length_m" && *v >= 50.0;
-            let id = format!("dim-{kind}-{}", format!("{v:.3}").trim_end_matches('0').trim_end_matches('.').replace('.', "_"));
-            let mut d = r(RefKind::Dimension, &id, &dimension_name(kind, *v), json!({ "kind": kind, "value": v, "reel": reel }));
+            let id = format!(
+                "dim-{kind}-{}",
+                format!("{v:.3}")
+                    .trim_end_matches('0')
+                    .trim_end_matches('.')
+                    .replace('.', "_")
+            );
+            let mut d = r(
+                RefKind::Dimension,
+                &id,
+                &dimension_name(kind, *v),
+                json!({ "kind": kind, "value": v, "reel": reel }),
+            );
             d.builtin = true;
             out.push(d);
         }
@@ -156,7 +493,12 @@ pub fn dimension_defaults() -> Vec<DefaultRef> {
 pub fn defaults() -> Vec<DefaultRef> {
     let mut out = Vec::new();
     for (key, label, color) in FUNCTIONS {
-        let mut d = r(RefKind::Function, key, label, json!({ "key": key, "color": color, "cable_prefix": key }));
+        let mut d = r(
+            RefKind::Function,
+            key,
+            label,
+            json!({ "key": key, "color": color, "cable_prefix": key }),
+        );
         d.builtin = true;
         out.push(d);
     }
@@ -165,17 +507,36 @@ pub fn defaults() -> Vec<DefaultRef> {
         d.builtin = true;
         out.push(d);
     }
-    for (id, name, function) in [("sys-video", "Vidéo", "V"), ("sys-audio", "Audio", "A"), ("sys-lumieres", "Lumières", "L"), ("sys-reseau", "Réseau", "N")] {
-        let mut d = r(RefKind::SystemCategory, id, name, json!({ "function": function }));
+    for (id, name, function) in [
+        ("sys-video", "Vidéo", "V"),
+        ("sys-audio", "Audio", "A"),
+        ("sys-lumieres", "Lumières", "L"),
+        ("sys-reseau", "Réseau", "N"),
+    ] {
+        let mut d = r(
+            RefKind::SystemCategory,
+            id,
+            name,
+            json!({ "function": function }),
+        );
         d.builtin = true;
         d.protected = true;
         out.push(d);
     }
     for (id, name, variants, color, functions) in CONNECTORS {
-        out.push(r(RefKind::Connector, id, name, json!({ "variants": variants, "symbol": id, "color": color, "functions": functions })));
+        out.push(r(
+            RefKind::Connector,
+            id,
+            name,
+            json!({ "variants": variants, "symbol": id, "color": color, "functions": functions }),
+        ));
     }
     for (id, name, function, imp, bw, connectors, ip, multicast, redundancy, prefix) in SIGNALS {
-        let color = FUNCTIONS.iter().find(|f| f.0 == *function).map(|f| f.2).unwrap_or("#8A919B");
+        let color = FUNCTIONS
+            .iter()
+            .find(|f| f.0 == *function)
+            .map(|f| f.2)
+            .unwrap_or("#8A919B");
         out.push(r(
             RefKind::Signal,
             id,
@@ -208,18 +569,26 @@ mod tests {
                     ix.functions.insert(d.id.clone());
                 }
                 RefKind::Connector => {
-                    ix.connectors.insert(d.id.clone(), serde_json::from_value(d.data.clone()).unwrap());
+                    ix.connectors.insert(
+                        d.id.clone(),
+                        serde_json::from_value(d.data.clone()).unwrap(),
+                    );
                 }
                 _ => {}
             }
         }
         for d in all.iter().filter(|d| !d.protected) {
-            validate_ref(d.kind, &d.name, &d.data, d.parent_id.as_deref(), &ix).unwrap_or_else(|e| panic!("{}: {e:?}", d.id));
+            validate_ref(d.kind, &d.name, &d.data, d.parent_id.as_deref(), &ix)
+                .unwrap_or_else(|e| panic!("{}: {e:?}", d.id));
         }
-        assert_eq!(all.iter().filter(|d| d.kind == RefKind::Function).count(), 11);
+        assert_eq!(
+            all.iter().filter(|d| d.kind == RefKind::Function).count(),
+            11
+        );
         assert_eq!(all.iter().filter(|d| d.kind == RefKind::Phase).count(), 10);
         assert!(all.iter().any(|d| d.name == "1/3"));
-        let ids: std::collections::HashSet<_> = all.iter().map(|d| (d.kind, d.id.clone())).collect();
+        let ids: std::collections::HashSet<_> =
+            all.iter().map(|d| (d.kind, d.id.clone())).collect();
         assert_eq!(ids.len(), all.len(), "identifiants uniques");
     }
 }

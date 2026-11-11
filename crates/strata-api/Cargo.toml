@@ -1,6 +1,6 @@
 [package]
 name = "strata-api"
-description = "API REST de Strata Arkyo : sessions, membres, rôles."
+description = "API REST de Strata Arkyo : sessions, membres, rôles, exploitation, catalogue."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,9 +10,13 @@ license.workspace = true
 argon2.workspace = true
 axum.workspace = true
 axum-extra.workspace = true
+calamine.workspace = true
 chrono.workspace = true
+csv.workspace = true
+encoding_rs.workspace = true
 hex.workspace = true
 rand.workspace = true
+rust_xlsxwriter.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
@@ -20,11 +24,13 @@ strata-domain.workspace = true
 strata-backup.workspace = true
 strata-store.workspace = true
 strata-update.workspace = true
+strsim.workspace = true
 time = "0.3"
 tokio.workspace = true
 tokio-util = { version = "0.7", features = ["io"] }
 tower-http.workspace = true
 tracing.workspace = true
+uuid.workspace = true
 
 [dev-dependencies]
 ed25519-dalek.workspace = true

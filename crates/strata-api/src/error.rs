@@ -4,6 +4,7 @@ use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use serde_json::json;
+use strata_domain::catalog::FieldError;
 use strata_domain::{Refusal, ValidationError};
 use strata_store::StoreError;
 
@@ -17,6 +18,10 @@ pub enum ApiError {
     Missing(String),
     Conflict(String),
     Invalid(String),
+    /// Champs refusés, chacun avec son message.
+    Fields(Vec<FieldError>),
+    /// Révision dépassée : l'objet a changé depuis sa lecture.
+    Stale,
     Csrf,
     Unavailable(String),
     Internal(String),
@@ -50,6 +55,19 @@ impl ApiError {
             ApiError::Unavailable(m) => (StatusCode::SERVICE_UNAVAILABLE, "unavailable", m.clone()),
             ApiError::Conflict(m) => (StatusCode::CONFLICT, "conflict", m.clone()),
             ApiError::Invalid(m) => (StatusCode::UNPROCESSABLE_ENTITY, "invalid", m.clone()),
+            ApiError::Fields(f) => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "invalid",
+                match f.as_slice() {
+                    [one] => one.message.clone(),
+                    _ => format!("{} champs sont à corriger.", f.len()),
+                },
+            ),
+            ApiError::Stale => (
+                StatusCode::CONFLICT,
+                "stale",
+                "Quelqu'un vient de modifier cet élément. Rechargez-le avant d'enregistrer.".into(),
+            ),
             ApiError::Csrf => (
                 StatusCode::FORBIDDEN,
                 "csrf",
@@ -70,7 +88,11 @@ impl IntoResponse for ApiError {
             tracing::error!(%detail, "erreur interne");
         }
         let (status, code, message) = self.parts();
-        (status, Json(json!({ "code": code, "message": message }))).into_response()
+        let body = match &self {
+            ApiError::Fields(f) => json!({ "code": code, "message": message, "fields": f }),
+            _ => json!({ "code": code, "message": message }),
+        };
+        (status, Json(body)).into_response()
     }
 }
 
@@ -88,6 +110,7 @@ impl From<StoreError> for ApiError {
             }
             StoreError::Conflict(_) => ApiError::Conflict("Cette valeur est déjà utilisée.".into()),
             StoreError::NotFound => ApiError::NotFound("Élément"),
+            StoreError::Stale => ApiError::Stale,
             other => ApiError::Internal(other.to_string()),
         }
     }

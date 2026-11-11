@@ -1,10 +1,12 @@
-//! API REST de Strata Arkyo (lot 1 : socle).
+//! API REST de Strata Arkyo : socle (lot 1), exploitation (lot 2), catalogue (lot 3).
 //!
 //! Toutes les écritures passent par ici ; chaque route vérifie la session, puis
 //! le droit du rôle sur le domaine concerné, puis les garde-fous métier.
 
 pub mod admin;
 pub mod auth;
+pub mod catalog;
+pub mod catalog_io;
 pub mod error;
 pub mod ops;
 
@@ -69,6 +71,7 @@ pub fn router(state: AppState) -> Router {
         .route("/roles/{id}/duplicate", post(duplicate_role))
         .route("/audit", get(audit))
         .nest("/admin", admin::routes())
+        .nest("/catalog", catalog::routes())
         .layer(middleware::from_fn(csrf));
     Router::new()
         .route("/", get(index))

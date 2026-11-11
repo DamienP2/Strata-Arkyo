@@ -15,6 +15,9 @@ use std::str::FromStr;
 use std::time::Duration;
 use strata_domain::{Level, Permissions, RoleInfo, builtin};
 
+pub mod catalog;
+pub use catalog::*;
+
 static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
 
 #[derive(Debug, thiserror::Error)]
@@ -24,6 +27,9 @@ pub enum StoreError {
     Conflict(&'static str),
     #[error("introuvable")]
     NotFound,
+    /// La révision attendue n'est plus la bonne : quelqu'un a modifié l'objet entre-temps.
+    #[error("révision dépassée")]
+    Stale,
     #[error(transparent)]
     Db(#[from] sqlx::Error),
     #[error(transparent)]
@@ -41,7 +47,7 @@ pub fn timestamp(t: DateTime<Utc>) -> String {
     t.to_rfc3339_opts(SecondsFormat::Secs, true)
 }
 
-fn new_id() -> String {
+pub(crate) fn new_id() -> String {
     uuid::Uuid::now_v7().to_string()
 }
 
@@ -195,7 +201,7 @@ pub async fn check_database_file(path: &Path) -> Result<(bool, i64)> {
 
 #[derive(Clone)]
 pub struct Store {
-    pool: SqlitePool,
+    pub(crate) pool: SqlitePool,
 }
 
 impl Store {
@@ -234,6 +240,7 @@ impl Store {
 
     pub async fn migrate(&self) -> Result<()> {
         MIGRATOR.run(&self.pool).await?;
+        self.seed_catalog().await?;
         Ok(())
     }
 
@@ -815,7 +822,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let s = Store::open(&dir.join("strata.db")).await.unwrap();
         assert!(s.integrity_ok().await.unwrap());
-        assert_eq!(s.schema_version().await.unwrap(), 1);
+        assert_eq!(s.schema_version().await.unwrap(), 2);
         s.close().await;
         // Rouvrir ne rejoue pas les migrations.
         let s = Store::open(&dir.join("strata.db")).await.unwrap();

@@ -5,7 +5,11 @@ use unicode_normalization::char::is_combining_mark;
 
 /// Clé de comparaison : minuscules, sans accents, espaces réduits.
 pub fn normalize(s: &str) -> String {
-    let stripped: String = s.nfd().filter(|c| !is_combining_mark(*c)).collect::<String>().to_lowercase();
+    let stripped: String = s
+        .nfd()
+        .filter(|c| !is_combining_mark(*c))
+        .collect::<String>()
+        .to_lowercase();
     stripped.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 

@@ -90,26 +90,100 @@ impl ImportField {
     /// Synonymes français et anglais, déjà normalisés à la comparaison.
     fn synonyms(self) -> &'static [&'static str] {
         match self {
-            ImportField::Name => &["nom", "name", "designation", "modele", "model", "nom reference", "produit", "product", "equipement", "article", "libelle"],
-            ImportField::Reference => &["reference", "ref", "part number", "pn", "sku", "code article", "ref fabricant", "mpn"],
-            ImportField::Brand => &["marque", "brand", "fabricant", "manufacturer", "constructeur", "make", "vendor"],
+            ImportField::Name => &[
+                "nom",
+                "name",
+                "designation",
+                "modele",
+                "model",
+                "nom reference",
+                "produit",
+                "product",
+                "equipement",
+                "article",
+                "libelle",
+            ],
+            ImportField::Reference => &[
+                "reference",
+                "ref",
+                "part number",
+                "pn",
+                "sku",
+                "code article",
+                "ref fabricant",
+                "mpn",
+            ],
+            ImportField::Brand => &[
+                "marque",
+                "brand",
+                "fabricant",
+                "manufacturer",
+                "constructeur",
+                "make",
+                "vendor",
+            ],
             ImportField::Category => &["categorie", "category", "famille", "family", "groupe"],
             ImportField::Type => &["type", "sous type", "subtype", "kind"],
             ImportField::Functions => &["fonction", "fonctions", "function", "functions", "metier"],
             ImportField::Phases => &["phase", "phases", "etape"],
             ImportField::Tags => &["etiquettes", "tags", "mots cles", "keywords", "labels"],
-            ImportField::Notes => &["notes", "note", "commentaire", "commentaires", "comment", "remarques", "description"],
-            ImportField::HeightU => &["hauteur u", "hauteur (u)", "u", "rack units", "unites", "ru", "height u", "hauteur rack"],
+            ImportField::Notes => &[
+                "notes",
+                "note",
+                "commentaire",
+                "commentaires",
+                "comment",
+                "remarques",
+                "description",
+            ],
+            ImportField::HeightU => &[
+                "hauteur u",
+                "hauteur (u)",
+                "u",
+                "rack units",
+                "unites",
+                "ru",
+                "height u",
+                "hauteur rack",
+            ],
             ImportField::Width => &["largeur", "width", "largeur rack", "rack width"],
             ImportField::DepthMm => &["profondeur", "profondeur (mm)", "depth", "depth mm", "prof"],
-            ImportField::RearReserveMm => &["reserve arriere", "reserve de cablage", "rear clearance", "cable clearance"],
+            ImportField::RearReserveMm => &[
+                "reserve arriere",
+                "reserve de cablage",
+                "rear clearance",
+                "cable clearance",
+            ],
             ImportField::LengthMm => &["longueur", "longueur hors rack", "length"],
             ImportField::WidthMm => &["largeur hors rack", "largeur mm", "width mm"],
             ImportField::HeightMm => &["hauteur hors rack", "hauteur mm", "height mm", "hauteur"],
             ImportField::WeightKg => &["poids", "poids (kg)", "poids kg", "weight", "masse", "kg"],
-            ImportField::PowerW => &["puissance", "puissance (w)", "conso", "consommation", "power", "watts", "w", "power consumption"],
-            ImportField::DualPsu => &["double alimentation", "double alim", "dual psu", "redundant psu", "alim redondante", "psu redondante"],
-            ImportField::BtuH => &["dissipation", "btu", "btu h", "btu/h", "heat", "dissipation thermique"],
+            ImportField::PowerW => &[
+                "puissance",
+                "puissance (w)",
+                "conso",
+                "consommation",
+                "power",
+                "watts",
+                "w",
+                "power consumption",
+            ],
+            ImportField::DualPsu => &[
+                "double alimentation",
+                "double alim",
+                "dual psu",
+                "redundant psu",
+                "alim redondante",
+                "psu redondante",
+            ],
+            ImportField::BtuH => &[
+                "dissipation",
+                "btu",
+                "btu h",
+                "btu/h",
+                "heat",
+                "dissipation thermique",
+            ],
             ImportField::DmxChannels => &["canaux dmx", "dmx", "dmx channels", "canaux"],
             ImportField::Active => &["actif", "active", "statut", "status", "enabled"],
         }
@@ -148,17 +222,34 @@ fn header_score(header: &str, field: ImportField) -> f64 {
 
 /// Indice tiré du contenu : « 2U », « 12 kg », « 350 W ».
 fn content_score(samples: &[&str], field: ImportField) -> f64 {
-    let filled: Vec<String> = samples.iter().map(|s| normalize(s)).filter(|s| !s.is_empty()).collect();
+    let filled: Vec<String> = samples
+        .iter()
+        .map(|s| normalize(s))
+        .filter(|s| !s.is_empty())
+        .collect();
     if filled.is_empty() {
         return 0.0;
     }
-    let share = |pred: &dyn Fn(&str) -> bool| filled.iter().filter(|s| pred(s)).count() as f64 / filled.len() as f64;
-    let numeric_with = |suffix: &'static str| move |s: &str| s.ends_with(suffix) && s.trim_end_matches(suffix).trim().replace(',', ".").parse::<f64>().is_ok();
+    let share = |pred: &dyn Fn(&str) -> bool| {
+        filled.iter().filter(|s| pred(s)).count() as f64 / filled.len() as f64
+    };
+    let numeric_with = |suffix: &'static str| {
+        move |s: &str| {
+            s.ends_with(suffix)
+                && s.trim_end_matches(suffix)
+                    .trim()
+                    .replace(',', ".")
+                    .parse::<f64>()
+                    .is_ok()
+        }
+    };
     match field {
         ImportField::HeightU => share(&numeric_with("u")) * 0.7,
         ImportField::WeightKg => share(&numeric_with("kg")) * 0.7,
         ImportField::PowerW => share(&numeric_with("w")) * 0.6,
-        ImportField::DualPsu | ImportField::Active => share(&|s| parse_bool(s).is_some() && !s.is_empty()) * 0.2,
+        ImportField::DualPsu | ImportField::Active => {
+            share(&|s| parse_bool(s).is_some() && !s.is_empty()) * 0.2
+        }
         _ => 0.0,
     }
 }
@@ -167,7 +258,11 @@ fn content_score(samples: &[&str], field: ImportField) -> f64 {
 pub fn match_columns(headers: &[String], rows: &[Vec<String>]) -> Vec<ColumnMatch> {
     let mut candidates = Vec::new();
     for (c, h) in headers.iter().enumerate() {
-        let samples: Vec<&str> = rows.iter().take(50).filter_map(|r| r.get(c).map(String::as_str)).collect();
+        let samples: Vec<&str> = rows
+            .iter()
+            .take(50)
+            .filter_map(|r| r.get(c).map(String::as_str))
+            .collect();
         for f in ImportField::ALL {
             let score = (header_score(h, f) + content_score(&samples, f)).min(1.0);
             if score >= 0.6 {
@@ -188,22 +283,38 @@ pub fn match_columns(headers: &[String], rows: &[Vec<String>]) -> Vec<ColumnMatc
         .enumerate()
         .map(|(c, h)| {
             let found = taken_cols.get(&c);
-            ColumnMatch { column: c, header: h.clone(), field: found.map(|x| x.0), score: found.map(|x| (x.1 * 100.0).round() / 100.0).unwrap_or(0.0) }
+            ColumnMatch {
+                column: c,
+                header: h.clone(),
+                field: found.map(|x| x.0),
+                score: found.map(|x| (x.1 * 100.0).round() / 100.0).unwrap_or(0.0),
+            }
         })
         .collect()
 }
 
 /// Nombre tolérant : virgule décimale, espaces, unité collée (« 2U », « 1,5 kg », « 350 W »).
 pub fn parse_number(s: &str) -> Option<f64> {
-    let t: String = s.trim().chars().filter(|c| !c.is_whitespace() && *c != '\u{a0}' && *c != '\u{202f}').collect();
+    let t: String = s
+        .trim()
+        .chars()
+        .filter(|c| !c.is_whitespace() && *c != '\u{a0}' && *c != '\u{202f}')
+        .collect();
     let t = t.replace(',', ".");
-    let end = t.find(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-')).unwrap_or(t.len());
+    let end = t
+        .find(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-'))
+        .unwrap_or(t.len());
     let (num, unit) = t.split_at(end);
     if num.is_empty() || !num.chars().any(|c| c.is_ascii_digit()) {
         return None;
     }
     let unit = unit.to_lowercase();
-    if !unit.is_empty() && !["u", "ru", "he", "kg", "w", "mm", "m", "btu", "btu/h", "btuh", "ch", "canaux"].contains(&unit.as_str()) {
+    if !unit.is_empty()
+        && ![
+            "u", "ru", "he", "kg", "w", "mm", "m", "btu", "btu/h", "btuh", "ch", "canaux",
+        ]
+        .contains(&unit.as_str())
+    {
         return None;
     }
     num.parse::<f64>().ok().filter(|v| v.is_finite())
@@ -220,7 +331,9 @@ pub fn parse_bool(s: &str) -> Option<bool> {
 /// Largeur de rack : 1/2, demi, half, tiers, 1/4…
 pub fn parse_width(s: &str) -> Option<Width> {
     match normalize(s).replace(' ', "").as_str() {
-        "" | "1" | "pleine" | "full" | "19" | "19\"" | "19pouces" | "entiere" | "1/1" => Some(Width::Full),
+        "" | "1" | "pleine" | "full" | "19" | "19\"" | "19pouces" | "entiere" | "1/1" => {
+            Some(Width::Full)
+        }
         "1/2" | "demi" | "half" | "0.5" | "0,5" | "1/2rack" | "demilargeur" => Some(Width::Half),
         "1/3" | "tiers" | "third" | "0.33" | "0,33" => Some(Width::Third),
         "1/4" | "quart" | "quarter" | "0.25" | "0,25" => Some(Width::Quarter),
@@ -229,7 +342,10 @@ pub fn parse_width(s: &str) -> Option<Width> {
 }
 
 pub fn split_list(s: &str) -> Vec<String> {
-    s.split([',', ';', '|', '\n']).map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect()
+    s.split([',', ';', '|', '\n'])
+        .map(|x| x.trim().to_string())
+        .filter(|x| !x.is_empty())
+        .collect()
 }
 
 /// Ligne lue, cellules converties ; les marques, catégories, types, fonctions et phases
@@ -271,12 +387,21 @@ pub struct CellIssue {
 pub fn read_row(cells: &HashMap<ImportField, String>) -> (ImportDraft, Vec<CellIssue>) {
     let mut d = ImportDraft::default();
     let mut issues = Vec::new();
-    let text = |f: ImportField| cells.get(&f).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    let text = |f: ImportField| {
+        cells
+            .get(&f)
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+    };
     let num = |f: ImportField, issues: &mut Vec<CellIssue>| -> Option<f64> {
         let raw = text(f)?;
         let v = parse_number(&raw);
         if v.is_none() {
-            issues.push(CellIssue { field: f, value: raw, message: "Nombre illisible : cellule vidée.".into() });
+            issues.push(CellIssue {
+                field: f,
+                value: raw,
+                message: "Nombre illisible : cellule vidée.".into(),
+            });
         }
         v
     };
@@ -285,9 +410,15 @@ pub fn read_row(cells: &HashMap<ImportField, String>) -> (ImportDraft, Vec<CellI
     d.brand = text(ImportField::Brand);
     d.category = text(ImportField::Category);
     d.type_name = text(ImportField::Type);
-    d.functions = text(ImportField::Functions).map(|s| split_list(&s)).unwrap_or_default();
-    d.phases = text(ImportField::Phases).map(|s| split_list(&s)).unwrap_or_default();
-    d.tags = text(ImportField::Tags).map(|s| split_list(&s)).unwrap_or_default();
+    d.functions = text(ImportField::Functions)
+        .map(|s| split_list(&s))
+        .unwrap_or_default();
+    d.phases = text(ImportField::Phases)
+        .map(|s| split_list(&s))
+        .unwrap_or_default();
+    d.tags = text(ImportField::Tags)
+        .map(|s| split_list(&s))
+        .unwrap_or_default();
     d.notes = text(ImportField::Notes);
     d.height_u = num(ImportField::HeightU, &mut issues);
     d.depth_mm = num(ImportField::DepthMm, &mut issues);
@@ -302,14 +433,25 @@ pub fn read_row(cells: &HashMap<ImportField, String>) -> (ImportDraft, Vec<CellI
     if let Some(raw) = text(ImportField::Width) {
         d.width = parse_width(&raw);
         if d.width.is_none() {
-            issues.push(CellIssue { field: ImportField::Width, value: raw, message: "Largeur inconnue (pleine, 1/2, 1/3, 1/4) : cellule vidée.".into() });
+            issues.push(CellIssue {
+                field: ImportField::Width,
+                value: raw,
+                message: "Largeur inconnue (pleine, 1/2, 1/3, 1/4) : cellule vidée.".into(),
+            });
         }
     }
-    for (f, slot) in [(ImportField::DualPsu, &mut d.dual_psu), (ImportField::Active, &mut d.active)] {
+    for (f, slot) in [
+        (ImportField::DualPsu, &mut d.dual_psu),
+        (ImportField::Active, &mut d.active),
+    ] {
         if let Some(raw) = text(f) {
             *slot = parse_bool(&raw);
             if slot.is_none() {
-                issues.push(CellIssue { field: f, value: raw, message: "Oui ou non attendu : cellule vidée.".into() });
+                issues.push(CellIssue {
+                    field: f,
+                    value: raw,
+                    message: "Oui ou non attendu : cellule vidée.".into(),
+                });
             }
         }
     }
@@ -342,11 +484,31 @@ mod tests {
 
     #[test]
     fn columns_are_matched_once() {
-        let headers: Vec<String> = ["Désignation", "Fabricant", "Ref.", "Hauteur", "Poids", "Conso (W)", "Prof.", "Notes", "Colonne X"]
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
-        let rows = vec![vec!["Mélangeur".into(), "Blackmagic".into(), "SWATEM".into(), "2U".into(), "12,4".into(), "330".into(), "390".into(), "".into(), "?".into()]];
+        let headers: Vec<String> = [
+            "Désignation",
+            "Fabricant",
+            "Ref.",
+            "Hauteur",
+            "Poids",
+            "Conso (W)",
+            "Prof.",
+            "Notes",
+            "Colonne X",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        let rows = vec![vec![
+            "Mélangeur".into(),
+            "Blackmagic".into(),
+            "SWATEM".into(),
+            "2U".into(),
+            "12,4".into(),
+            "330".into(),
+            "390".into(),
+            "".into(),
+            "?".into(),
+        ]];
         let m = match_columns(&headers, &rows);
         let f: Vec<_> = m.iter().map(|c| c.field).collect();
         assert_eq!(
@@ -367,7 +529,10 @@ mod tests {
 
     #[test]
     fn exported_headers_read_back() {
-        let headers: Vec<String> = ImportField::ALL.iter().map(|f| f.label().to_string()).collect();
+        let headers: Vec<String> = ImportField::ALL
+            .iter()
+            .map(|f| f.label().to_string())
+            .collect();
         let m = match_columns(&headers, &[]);
         for (c, f) in m.iter().zip(ImportField::ALL) {
             assert_eq!(c.field, Some(f), "{}", c.header);
@@ -376,7 +541,12 @@ mod tests {
 
     #[test]
     fn invalid_cells_are_flagged_and_emptied() {
-        let cells: HashMap<_, _> = [(ImportField::Name, "Grille".to_string()), (ImportField::WeightKg, "lourd".to_string()), (ImportField::HeightU, "2U".to_string())].into();
+        let cells: HashMap<_, _> = [
+            (ImportField::Name, "Grille".to_string()),
+            (ImportField::WeightKg, "lourd".to_string()),
+            (ImportField::HeightU, "2U".to_string()),
+        ]
+        .into();
         let (d, issues) = read_row(&cells);
         assert_eq!(d.height_u, Some(2.0));
         assert_eq!(d.weight_kg, None);

@@ -188,7 +188,12 @@ pub enum ItemKind {
 }
 
 impl ItemKind {
-    pub const ALL: [ItemKind; 4] = [ItemKind::Equipment, ItemKind::Cable, ItemKind::CableModel, ItemKind::Adapter];
+    pub const ALL: [ItemKind; 4] = [
+        ItemKind::Equipment,
+        ItemKind::Cable,
+        ItemKind::CableModel,
+        ItemKind::Adapter,
+    ];
 
     pub fn path(self) -> &'static str {
         match self {
@@ -269,7 +274,12 @@ pub enum Format {
 
 impl Default for Format {
     fn default() -> Self {
-        Format::Rack { height_u: 1.0, width: Width::Full, depth_mm: 0.0, rear_reserve_mm: None }
+        Format::Rack {
+            height_u: 1.0,
+            width: Width::Full,
+            depth_mm: 0.0,
+            rear_reserve_mm: None,
+        }
     }
 }
 
