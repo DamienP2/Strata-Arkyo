@@ -14,16 +14,17 @@ Strata Arkyo est un seul programme Rust installé sur un serveur Ubuntu du site.
 | --- | --- | --- |
 | 1 | Socle : binaire, ligne de commande, service systemd, paquet .deb, SQLite et migrations, comptes, rôles, journal d'audit | Fait |
 | 2 | Mises à jour OTA signées avec retour arrière, paquet hors ligne, sauvegardes du site, restauration | Fait (points de restauration par projet : avec les projets, lot 4) |
-| 3 à 10 | Catalogue, projets, racks, synoptique, livrables, terrain, réseau, plans | À venir |
+| 3 | Catalogue : référentiels et pack de départ, fiches équipements, câbles, modèles de câble, adaptateurs, doublons, compatibilité câble et signal, import CSV/XLSX, export, échange entre sites, retour arrière | Fait (API ; écrans web à venir) |
+| 4 à 10 | Projets, racks, synoptique, livrables, terrain, réseau, plans | À venir |
 
 ## Organisation du dépôt
 
 | Dossier | Rôle |
 | --- | --- |
 | `crates/strata` | Binaire `strata` : serveur et ligne de commande d'administration |
-| `crates/strata-api` | API REST : sessions, membres, rôles, journal |
-| `crates/strata-domain` | Règles métier sans entrée-sortie : droits, garde-fous, validations |
-| `crates/strata-store` | Base SQLite, migrations additives, sessions, audit |
+| `crates/strata-api` | API REST : sessions, membres, rôles, journal, exploitation, catalogue |
+| `crates/strata-domain` | Règles métier sans entrée-sortie : droits, garde-fous, validations, modèle du catalogue, rapprochement des colonnes d'import |
+| `crates/strata-store` | Base SQLite, migrations additives, sessions, audit, catalogue et instantanés |
 | `crates/strata-update` | Paquets signés, versions côte à côte, bascule, garde de démarrage, retour arrière |
 | `crates/strata-backup` | Sauvegardes vérifiées du site, restauration au démarrage |
 | `crates/strata-release` | Outil de l'éditeur : clés, paquets `.saupd`, manifestes de canal |
@@ -94,6 +95,24 @@ Les garde-fous de la section 3.3 du cahier des charges sont appliqués par le mo
 - un non-propriétaire ne modifie pas son propre rôle ;
 - seul un propriétaire touche un propriétaire ;
 - il reste toujours un propriétaire actif.
+
+## API du catalogue
+
+Lire demande « Catalogue : lecture ». Écrire une fiche demande « Catalogue : écriture ». Modifier un référentiel demande « Paramètres et site : écriture », car il change les listes de tout le site. L'échange entre sites et le retour arrière demandent « Catalogue : admin ».
+
+| Route | Effet |
+| --- | --- |
+| `GET /api/catalog/refs`, `GET /api/catalog/refs/{genre}` | Référentiels avec leur nombre d'usages (`functions`, `signals`, `connectors`, `brands`, `system-categories`, `categories`, `types`, `phases`, `dimensions`) |
+| `POST /api/catalog/refs/{genre}`, `PATCH`/`DELETE /api/catalog/refs/{genre}/{id}` | Création, modification (avec `rev`), suppression. Un élément utilisé se désactive au lieu de se supprimer ; les catégories système sont protégées |
+| `POST /api/catalog/refs/dimensions/restore` | Remet les préréglages de dimensions d'origine qui manquent |
+| `GET /api/catalog/items?kind=&q=&active=&brand_id=` | Fiches, recherche sans accents ni casse sur le nom et la référence |
+| `POST /api/catalog/items`, `GET`/`PUT /api/catalog/items/{id}`, `POST /api/catalog/items/{id}/duplicate` | Fiches (`equipment`, `cables`, `cable-models`, `adapters`) ; chaque refus nomme ses champs (`fields`), une révision dépassée répond `409 stale` |
+| `POST /api/catalog/items/delete` | Suppression de 1 à 500 fiches ; une fiche encore utilisée par une autre est épargnée |
+| `POST /api/catalog/duplicates`, `GET /api/catalog/compat?model_id=&signal_id=` | Doublons probables ; compatibilité d'un modèle de câble avec un signal |
+| `POST /api/catalog/import/analyze?filename=`, `POST /api/catalog/import/{id}/values`, `POST /api/catalog/import/{id}/run`, `DELETE /api/catalog/import/{id}` | Import de tableurs (CSV en UTF-8 ou Windows-1252, XLSX, XLS, ODS) : colonnes rapprochées, valeurs inconnues à associer ou créer, essai à blanc, doublons ignorés, mis à jour ou créés, globalement ou ligne par ligne |
+| `GET /api/catalog/export?format=csv\|xlsx&full=` | Export des équipements ; la version simple se réimporte telle quelle, `full=true` donne une ligne par groupe de ports |
+| `GET`/`POST /api/catalog/exchange` | Catalogue JSON entre sites, par sections ; fusion (le plus récent l'emporte) ou remplacement |
+| `GET /api/catalog/snapshots`, `POST /api/catalog/snapshots/{id}/restore` | Instantanés pris avant chaque import ou échange, et retour arrière |
 
 ## Mises à jour OTA
 
