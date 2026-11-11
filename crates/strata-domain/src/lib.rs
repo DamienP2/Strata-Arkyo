@@ -5,7 +5,9 @@
 //! compilées en WebAssembly pour le navigateur.
 
 pub mod account;
+pub mod catalog;
 pub mod permissions;
+pub mod text;
 
 pub use account::*;
 pub use permissions::*;

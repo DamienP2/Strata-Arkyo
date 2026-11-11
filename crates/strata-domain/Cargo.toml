@@ -9,4 +9,7 @@ license.workspace = true
 [dependencies]
 rand.workspace = true
 serde.workspace = true
+serde_json.workspace = true
+strsim.workspace = true
 thiserror.workspace = true
+unicode-normalization.workspace = true
