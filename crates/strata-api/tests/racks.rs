@@ -1198,3 +1198,113 @@ async fn regies_main_custom_and_library() {
     assert_eq!(r.body["regies"][0]["totals"]["containers"], 2);
     assert_eq!(r.body["regies"].as_array().unwrap().len(), 3);
 }
+
+#[tokio::test]
+async fn build_checks_follow_the_inventory() {
+    let Setup {
+        app,
+        o,
+        lea,
+        pid,
+        cid,
+        mixer,
+        free,
+        ..
+    } = setup().await;
+    call(
+        &app,
+        "POST",
+        &format!("/api/containers/{cid}/rack/lock"),
+        None,
+        Some(&o),
+    )
+    .await;
+    call(
+        &app,
+        "POST",
+        &format!("/api/containers/{cid}/placements"),
+        Some(place(&mixer, 5)),
+        Some(&o),
+    )
+    .await;
+    let url = format!("/api/containers/{cid}/checks");
+    let r = call(&app, "GET", &url, None, Some(&lea)).await;
+    assert_eq!(r.status, StatusCode::OK);
+    let keys: Vec<String> = r.body["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["key"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(keys.len(), 4, "la baie et trois articles");
+    assert_eq!(keys[0], "rack");
+    assert_eq!(
+        keys[1],
+        format!("article:{mixer}"),
+        "le posé avant le reste"
+    );
+    assert!(
+        r.body["items"][1]["detail"]
+            .as_str()
+            .unwrap()
+            .contains("U5")
+    );
+    assert_eq!(r.body["progress"], json!({"done": 0, "total": 4}));
+
+    // Léa coche en glissant sur deux lignes ; une clé inconnue est ignorée.
+    let r = call(
+        &app,
+        "POST",
+        &url,
+        Some(json!({"keys": ["rack", format!("article:{mixer}"), "conn:x"], "checked": true})),
+        Some(&lea),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    assert_eq!(r.body["progress"]["done"], 2);
+    assert_eq!(r.body["items"][0]["checked"]["name"], "Léa");
+    assert_eq!(
+        r.body["families"][0],
+        json!({"key": "materiel", "label": "Matériel", "done": 2, "total": 4})
+    );
+    let r = call(
+        &app,
+        "POST",
+        &url,
+        Some(json!({"keys": ["rack"], "checked": false})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.body["progress"]["done"], 1);
+
+    // Un article supprimé disparaît de la liste, sa coche avec.
+    call(
+        &app,
+        "POST",
+        &url,
+        Some(json!({"keys": [format!("article:{free}")], "checked": true})),
+        Some(&o),
+    )
+    .await;
+    call(
+        &app,
+        "DELETE",
+        &format!("/api/articles/{free}"),
+        None,
+        Some(&o),
+    )
+    .await;
+    let r = call(
+        &app,
+        "GET",
+        &format!("/api/projects/{pid}/checks"),
+        None,
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.body["containers"][0]["done"], 1);
+    assert_eq!(r.body["containers"][0]["total"], 3);
+
+    let r = call(&app, "DELETE", &url, None, Some(&o)).await;
+    assert_eq!(r.body["progress"], json!({"done": 0, "total": 3}));
+}
