@@ -22,6 +22,7 @@ Strata Arkyo est un seul programme Rust installé sur un serveur Ubuntu du site.
 | Dossier | Rôle |
 | --- | --- |
 | `crates/strata` | Binaire `strata` : serveur et ligne de commande d'administration |
+| `web/` | Interface web (Svelte 5, TypeScript), système de design « Strates » |
 | `crates/strata-api` | API REST : sessions, membres, rôles, journal, exploitation, catalogue |
 | `crates/strata-domain` | Règles métier sans entrée-sortie : droits, garde-fous, validations, modèle du catalogue, rapprochement des colonnes d'import |
 | `crates/strata-store` | Base SQLite, migrations additives, sessions, audit, catalogue et instantanés |
@@ -29,11 +30,19 @@ Strata Arkyo est un seul programme Rust installé sur un serveur Ubuntu du site.
 | `crates/strata-backup` | Sauvegardes vérifiées du site, restauration au démarrage |
 | `crates/strata-release` | Outil de l'éditeur : clés, paquets `.saupd`, manifestes de canal |
 | `packaging/` | Service systemd, réglages, scripts du paquet Debian |
-| `maquette/` | Maquette interactive de l'interface |
+| `maquette/` | Maquettes interactives : `index.html` (v1), `v2/` (design « Strates » retenu) |
 
 ## Développer
 
-Rust 1.85 ou plus récent.
+Rust 1.85 ou plus récent, Node.js 20 ou plus récent pour l'interface web.
+
+L'interface web (`web/`, Svelte 5 en TypeScript) se compile en fichiers statiques que le binaire `strata` embarque. Compilez-la **avant** le moteur ; sans elle, le moteur embarque une page d'attente (les tests n'en ont pas besoin).
+
+```sh
+cd web && npm ci && npm run build && cd ..   # produit web/dist, embarqué par cargo build
+```
+
+Pendant le développement de l'interface, lancez le moteur sur le port 8090, puis `npm run dev` dans `web/` : Vite sert l'interface avec rechargement à chaud et relaie `/api` vers le moteur. `npm run check` vérifie les types.
 
 ```sh
 cargo test --workspace          # tests unitaires et de bout en bout
@@ -156,6 +165,7 @@ Une restauration est préparée (archive vérifiée, extraite), annulable, puis 
 
 ```sh
 cargo install cargo-deb
+(cd web && npm ci && npm run build)   # l'interface, embarquée dans le binaire
 cargo deb -p strata            # produit target/debian/strata-arkyo_<version>_amd64.deb
 sudo apt install ./target/debian/strata-arkyo_*_amd64.deb
 sudo -u strata strata user add --email vous@exemple.fr

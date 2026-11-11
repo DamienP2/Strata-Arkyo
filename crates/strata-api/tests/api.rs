@@ -607,3 +607,34 @@ async fn every_change_is_audited() {
     assert_eq!(last["before"]["role_id"], "technician");
     assert_eq!(last["after"]["role_id"], "viewer");
 }
+
+#[tokio::test]
+async fn web_app_is_served_for_screens_but_not_for_api() {
+    let app = app().await;
+    for uri in ["/", "/catalogue/equipment", "/admin/membres"] {
+        let res = app
+            .clone()
+            .oneshot(Request::get(uri).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK, "{uri}");
+        let ct = res.headers()[header::CONTENT_TYPE]
+            .to_str()
+            .unwrap()
+            .to_string();
+        assert!(ct.starts_with("text/html"), "{uri} : {ct}");
+    }
+    let r = call(&app, "GET", "/api/inconnu", None, None).await;
+    assert_eq!(r.status, StatusCode::NOT_FOUND);
+    assert_eq!(r.body["code"], "not_found");
+    let res = app
+        .clone()
+        .oneshot(
+            Request::get("/assets/absent.js")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::NOT_FOUND);
+}

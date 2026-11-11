@@ -5,6 +5,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+build = "build.rs"
 
 [dependencies]
 argon2.workspace = true
@@ -15,6 +16,7 @@ chrono.workspace = true
 csv.workspace = true
 encoding_rs.workspace = true
 hex.workspace = true
+include_dir.workspace = true
 rand.workspace = true
 rust_xlsxwriter.workspace = true
 serde.workspace = true

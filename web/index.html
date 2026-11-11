@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Strata Arkyo</title>
+<meta name="theme-color" content="#ECEAE5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0D0E10" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+</head>
+<body>
+<svg class="defs" aria-hidden="true" focusable="false">
+ <defs>
+  <linearGradient id="g-tag" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--tag-hi)"/><stop offset=".5" style="stop-color:var(--tag-bg)"/><stop offset="1" style="stop-color:var(--tag-lo)"/></linearGradient>
+  <linearGradient id="g-glass" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color:var(--ill-glass-hi)"/><stop offset=".55" style="stop-color:var(--ill-glass)"/></linearGradient>
+  <linearGradient id="g-alu" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--ill-alu-2)"/><stop offset="1" style="stop-color:var(--ill-alu)"/></linearGradient>
+  <radialGradient id="g-ball" cx=".35" cy=".3" r=".75"><stop offset="0" style="stop-color:#FFFFFF"/><stop offset=".35" style="stop-color:var(--ill-corner)"/><stop offset="1" style="stop-color:var(--ill-rail)"/></radialGradient>
+
+  <!-- Logo : quatre strates de signal sur une plaque -->
+  <symbol id="logo" viewBox="0 0 32 32">
+   <rect x=".5" y=".5" width="31" height="31" rx="8.5" style="fill:var(--logo-bg)"/>
+   <rect x="1" y="1" width="30" height="30" rx="8" fill="none" style="stroke:var(--logo-edge)"/>
+   <rect x="6.5" y="7.6" width="19" height="3.1" rx="1.55" style="fill:var(--sig-v)"/>
+   <rect x="6.5" y="12.6" width="12.5" height="3.1" rx="1.55" style="fill:var(--sig-a)"/>
+   <rect x="6.5" y="17.6" width="16" height="3.1" rx="1.55" style="fill:var(--sig-s)"/>
+   <rect x="6.5" y="22.6" width="9" height="3.1" rx="1.55" style="fill:var(--sig-n)"/>
+  </symbol>
+
+  <!-- Connecteurs (24 × 24, trait = couleur du signal) -->
+  <symbol id="cx-bnc" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="3.5"/><circle cx="12" cy="12" r="1.1" fill="currentColor" stroke="none"/><path d="M2.6 12h2.4M19 12h2.4"/></symbol>
+  <symbol id="cx-xlr" viewBox="0 0 24 24"><circle cx="12" cy="12.4" r="8.2"/><path d="M10.2 4.3h3.6"/><g fill="currentColor" stroke="none"><circle cx="8.4" cy="10.9" r="1.25"/><circle cx="15.6" cy="10.9" r="1.25"/><circle cx="12" cy="16.4" r="1.25"/></g></symbol>
+  <symbol id="cx-xlr4" viewBox="0 0 24 24"><circle cx="12" cy="12.4" r="8.2"/><path d="M10.2 4.3h3.6"/><g fill="currentColor" stroke="none"><circle cx="8.7" cy="10" r="1.2"/><circle cx="15.3" cy="10" r="1.2"/><circle cx="8.7" cy="15.4" r="1.2"/><circle cx="15.3" cy="15.4" r="1.2"/></g></symbol>
+  <symbol id="cx-xlr5" viewBox="0 0 24 24"><circle cx="12" cy="12.4" r="8.2"/><path d="M10.2 4.3h3.6"/><g fill="currentColor" stroke="none"><circle cx="7.6" cy="11.6" r="1.1"/><circle cx="16.4" cy="11.6" r="1.1"/><circle cx="9.4" cy="16" r="1.1"/><circle cx="14.6" cy="16" r="1.1"/><circle cx="12" cy="9.2" r="1.1"/></g></symbol>
+  <symbol id="cx-rj45" viewBox="0 0 24 24"><path d="M4.5 6.5h15v9.2h-3.6v2.8H8.1v-2.8H4.5z"/><path d="M8 9.2v2.4M10 9.2v2.4M12 9.2v2.4M14 9.2v2.4M16 9.2v2.4"/></symbol>
+  <symbol id="cx-lc" viewBox="0 0 24 24"><rect x="3.3" y="6.8" width="7.6" height="10.4" rx="1.8"/><rect x="13.1" y="6.8" width="7.6" height="10.4" rx="1.8"/><circle cx="7.1" cy="12" r="1.6"/><circle cx="16.9" cy="12" r="1.6"/></symbol>
+  <symbol id="cx-iec" viewBox="0 0 24 24"><path d="M4.8 6.8h14.4l-2 10.4H6.8z"/><path d="M9 10.2v3.4M12 10.2v3.4M15 10.2v3.4"/></symbol>
+  <symbol id="cx-db9" viewBox="0 0 24 24"><path d="M3.2 8h17.6l-2.8 8.2H6z"/><g fill="currentColor" stroke="none"><circle cx="7.6" cy="10.8" r=".9"/><circle cx="10.4" cy="10.8" r=".9"/><circle cx="13.2" cy="10.8" r=".9"/><circle cx="16" cy="10.8" r=".9"/><circle cx="9" cy="13.6" r=".9"/><circle cx="11.8" cy="13.6" r=".9"/><circle cx="14.6" cy="13.6" r=".9"/></g></symbol>
+
+  <!-- Car régie : vue latérale -->
+  <symbol id="ill-truck" viewBox="0 0 320 160">
+   <ellipse cx="166" cy="141" rx="152" ry="7" style="fill:var(--ill-shadow)"/>
+   <rect x="24" y="109" width="280" height="13" rx="3" style="fill:var(--ill-chassis)"/>
+   <rect x="102" y="111" width="44" height="12" rx="3" style="fill:var(--ill-roof);stroke:var(--ill-line)" stroke-width="1"/>
+   <path d="M108 114h32M108 118h32" style="stroke:var(--ill-seam)" stroke-width="1"/>
+   <rect x="92" y="24" width="212" height="90" rx="7" style="fill:var(--ill-body);stroke:var(--ill-line)" stroke-width="1.4"/>
+   <path d="M92.7 100h210.6v7.3a6.3 6.3 0 0 1-6.3 6.3H99a6.3 6.3 0 0 1-6.3-6.3z" style="fill:var(--ill-body-2)"/>
+   <path d="M146 25v74M200 25v74M252 25v74" style="stroke:var(--ill-seam)" stroke-width="1"/>
+   <rect x="92.7" y="76" width="210.6" height="3.6" style="fill:var(--sig-v)"/>
+   <rect x="92.7" y="81.6" width="152" height="3.6" style="fill:var(--sig-a)"/>
+   <rect x="92.7" y="87.2" width="180" height="3.6" style="fill:var(--sig-s)"/>
+   <rect x="92.7" y="92.8" width="112" height="3.6" style="fill:var(--sig-n)"/>
+   <rect x="156" y="40" width="27" height="60" rx="2" fill="none" style="stroke:var(--ill-line)" stroke-width="1.3"/>
+   <rect x="161" y="46" width="17" height="16" rx="2" style="fill:url(#g-glass)"/>
+   <path d="M177.5 71h2.5" style="stroke:var(--ill-line)" stroke-width="2.2" stroke-linecap="round"/>
+   <path d="M154 118h31M157 124h25" style="stroke:var(--ill-line)" stroke-width="2.2" stroke-linecap="round"/>
+   <rect x="106" y="38" width="28" height="10" rx="2" style="fill:var(--ill-body-2);stroke:var(--ill-line)" stroke-width="1"/>
+   <path d="M110 40.5v5M114 40.5v5M118 40.5v5M122 40.5v5M126 40.5v5M130 40.5v5" style="stroke:var(--ill-line)" stroke-width="1"/>
+   <rect x="208" y="38" width="36" height="20" rx="2" style="fill:url(#g-glass)"/>
+   <path d="M226 38v20" style="stroke:var(--ill-body)" stroke-width="1.6"/>
+   <rect x="278" y="95" width="22" height="13" rx="1.5" style="fill:var(--ill-chassis)"/>
+   <g style="fill:var(--ill-light)"><circle cx="112" cy="106.5" r="1.7"/><circle cx="172" cy="106.5" r="1.7"/><circle cx="236" cy="106.5" r="1.7"/><circle cx="292" cy="106.5" r="1.7"/></g>
+   <text x="296" y="50" text-anchor="end" style="font:700 9px var(--mono);fill:var(--ill-seam);letter-spacing:.06em">CR-2</text>
+   <rect x="104" y="16" width="34" height="8" rx="2" style="fill:var(--ill-roof);stroke:var(--ill-line)" stroke-width="1"/>
+   <path d="M110 18.5h22M110 21.5h22" style="stroke:var(--ill-seam)" stroke-width="1"/>
+   <rect x="262" y="17" width="30" height="7" rx="2" style="fill:var(--ill-roof);stroke:var(--ill-line)" stroke-width="1"/>
+   <path d="M180 24v-7h17v7" fill="none" style="stroke:var(--ill-line)" stroke-width="1.5"/>
+   <ellipse cx="197" cy="11" rx="26" ry="8" transform="rotate(-7 197 11)" style="fill:var(--ill-dish);stroke:var(--ill-line)" stroke-width="1.4"/>
+   <path d="M197 11.5l12-9" style="stroke:var(--ill-line)" stroke-width="1.4"/>
+   <circle cx="210" cy="2.6" r="2.4" style="fill:var(--ill-line)"/>
+   <path d="M44 42C53 31 70 26.5 92 25.5V42z" style="fill:var(--ill-cab);stroke:var(--ill-line)" stroke-width="1.3"/>
+   <path d="M24 112l-2-54c0-10 5-16 15-16h55v70z" style="fill:var(--ill-cab);stroke:var(--ill-line)" stroke-width="1.4"/>
+   <path d="M23.5 57c0-6 3-9.5 8-9.5V75h-7.5z" style="fill:url(#g-glass)"/>
+   <path d="M38 47.5h33v26H36V51c0-2 1-3.5 2-3.5z" style="fill:url(#g-glass)"/>
+   <path d="M34 46v62M76 46v62" style="stroke:var(--ill-seam)" stroke-width="1.1"/>
+   <path d="M66 82h7" style="stroke:var(--ill-line)" stroke-width="2.2" stroke-linecap="round"/>
+   <path d="M22 60h-5" style="stroke:var(--ill-line)" stroke-width="1.6"/><rect x="11" y="51" width="6" height="16" rx="1.6" style="fill:var(--ill-line)"/>
+   <rect x="21" y="94" width="9" height="7" rx="1.6" style="fill:var(--ill-light)"/>
+   <rect x="17" y="103" width="28" height="9" rx="2.5" style="fill:var(--ill-chassis)"/>
+   <rect x="38" y="100" width="26" height="3.5" rx="1" style="fill:var(--ill-chassis)"/>
+   <path d="M29 112a19 19 0 0 1 38 0z" style="fill:var(--ill-chassis)"/>
+   <path d="M203 112a19 19 0 0 1 19-19h34a19 19 0 0 1 19 19z" style="fill:var(--ill-chassis)"/>
+   <g><circle cx="48" cy="124" r="15" style="fill:var(--ill-tyre)"/><circle cx="48" cy="124" r="8" style="fill:var(--ill-rim)"/><circle cx="48" cy="124" r="2.6" style="fill:var(--ill-tyre)"/></g>
+   <g><circle cx="222" cy="124" r="15" style="fill:var(--ill-tyre)"/><circle cx="222" cy="124" r="8" style="fill:var(--ill-rim)"/><circle cx="222" cy="124" r="2.6" style="fill:var(--ill-tyre)"/></g>
+   <g><circle cx="256" cy="124" r="15" style="fill:var(--ill-tyre)"/><circle cx="256" cy="124" r="8" style="fill:var(--ill-rim)"/><circle cx="256" cy="124" r="2.6" style="fill:var(--ill-tyre)"/></g>
+  </symbol>
+
+  <!-- Flight-case 12 U, capot avant retiré -->
+  <symbol id="ill-case" viewBox="0 0 320 160">
+   <ellipse cx="160" cy="147" rx="100" ry="6" style="fill:var(--ill-shadow)"/>
+   <g style="fill:var(--ill-tyre)"><rect x="99" y="131" width="16" height="5" rx="1"/><circle cx="107" cy="141" r="6"/><rect x="205" y="131" width="16" height="5" rx="1"/><circle cx="213" cy="141" r="6"/></g>
+   <rect x="84" y="14" width="152" height="118" rx="6" style="fill:var(--ill-case);stroke:var(--ill-line)" stroke-width="1.4"/>
+   <rect x="87.5" y="17.5" width="145" height="111" rx="4" fill="none" style="stroke:url(#g-alu)" stroke-width="7"/>
+   <rect x="93" y="23" width="134" height="100" rx="2" style="fill:var(--ill-case-in)"/>
+   <rect x="96" y="24" width="7" height="98" style="fill:var(--ill-rail)"/><rect x="217" y="24" width="7" height="98" style="fill:var(--ill-rail)"/>
+   <path d="M99.5 26V120M220.5 26V120" style="stroke:var(--ill-hole)" stroke-width="2.6" stroke-dasharray="2.2 2.5"/>
+   <rect x="103" y="25" width="114" height="16" rx="1" style="fill:var(--ill-unit)"/>
+   <circle cx="110" cy="33" r="2" style="fill:var(--sig-v)"/>
+   <path d="M168 29v8M171 29v8M174 29v8M177 29v8M180 29v8M183 29v8M186 29v8M189 29v8M192 29v8M195 29v8M198 29v8M201 29v8" style="stroke:#0B0C0E" stroke-width="1.6"/>
+   <rect x="103" y="42" width="114" height="8" rx="1" style="fill:var(--ill-unit-2)"/>
+   <circle cx="110" cy="46" r="1.8" style="fill:var(--sig-s)"/><rect x="150" y="43.6" width="20" height="4.8" rx="1" style="fill:#183F37"/>
+   <rect x="103" y="51" width="114" height="24" rx="1" style="fill:var(--ill-unit)"/>
+   <circle cx="110" cy="58" r="2" style="fill:var(--sig-v)"/>
+   <g style="fill:url(#g-alu)"><circle cx="150" cy="64" r="3.4"/><circle cx="162" cy="64" r="3.4"/><circle cx="174" cy="64" r="3.4"/></g>
+   <rect x="186" y="56" width="26" height="13" rx="1.5" style="fill:#0E2925"/><path d="M189 62.5h8l2-3 2 6 2-3h6" fill="none" style="stroke:#7CF0C7" stroke-width="1"/>
+   <rect x="103" y="76" width="114" height="8" rx="1" style="fill:var(--ill-unit-2)"/>
+   <g style="fill:url(#g-alu)"><circle cx="126" cy="80" r="2"/><circle cx="134" cy="80" r="2"/><circle cx="142" cy="80" r="2"/><circle cx="150" cy="80" r="2"/><circle cx="158" cy="80" r="2"/><circle cx="166" cy="80" r="2"/><circle cx="174" cy="80" r="2"/><circle cx="182" cy="80" r="2"/><circle cx="190" cy="80" r="2"/><circle cx="198" cy="80" r="2"/><circle cx="206" cy="80" r="2"/></g>
+   <rect x="103" y="85" width="114" height="16" rx="1" style="fill:var(--ill-unit)"/>
+   <circle cx="110" cy="93" r="2" style="fill:var(--sig-a)"/>
+   <g style="fill:#0B0C0E;stroke:var(--ill-alu)" stroke-width="1.2"><circle cx="138" cy="93" r="4"/><circle cx="150" cy="93" r="4"/><circle cx="162" cy="93" r="4"/><circle cx="174" cy="93" r="4"/><circle cx="186" cy="93" r="4"/><circle cx="198" cy="93" r="4"/><circle cx="210" cy="93" r="4"/></g>
+   <rect x="103" y="102" width="114" height="8" rx="1" style="fill:var(--ill-unit-2)"/>
+   <circle cx="110" cy="106" r="1.8" style="fill:var(--sig-p)"/>
+   <path d="M128 104v4M140 104v4M152 104v4M164 104v4M176 104v4M188 104v4M200 104v4" style="stroke:#0B0C0E" stroke-width="5"/>
+   <path d="M107 113.5h106M107 116.5h106M107 119.5h106" style="stroke:#1D2024" stroke-width="1.2"/>
+   <rect x="79" y="58" width="8" height="22" rx="2" style="fill:url(#g-alu);stroke:var(--ill-line)" stroke-width="1"/>
+   <rect x="233" y="58" width="8" height="22" rx="2" style="fill:url(#g-alu);stroke:var(--ill-line)" stroke-width="1"/>
+   <path d="M137 14V9.5a3.5 3.5 0 0 1 3.5-3.5h39a3.5 3.5 0 0 1 3.5 3.5V14" fill="none" style="stroke:var(--ill-line)" stroke-width="3.2"/>
+   <g style="stroke:var(--ill-line)" stroke-width="1"><circle cx="88" cy="18" r="7.5" style="fill:url(#g-ball)"/><circle cx="232" cy="18" r="7.5" style="fill:url(#g-ball)"/><circle cx="88" cy="128" r="7.5" style="fill:url(#g-ball)"/><circle cx="232" cy="128" r="7.5" style="fill:url(#g-ball)"/></g>
+  </symbol>
+
+  <!-- Installation fixe : régie avec mur d'écrans -->
+  <symbol id="ill-fixe" viewBox="0 0 320 160">
+   <ellipse cx="160" cy="146" rx="138" ry="6" style="fill:var(--ill-shadow)"/>
+   <rect x="156" y="52" width="8" height="30" style="fill:var(--ill-chassis)"/>
+   <rect x="58" y="62" width="204" height="5" rx="2" style="fill:var(--ill-chassis)"/>
+   <g>
+    <rect x="50" y="10" width="70" height="46" rx="3.5" style="fill:var(--ill-tyre)"/><rect x="53.5" y="13.5" width="63" height="35" rx="1.5" style="fill:var(--ill-screen)"/>
+    <rect x="56" y="16" width="28" height="14.5" style="fill:var(--sig-v)" fill-opacity=".55"/><rect x="86" y="16" width="28" height="14.5" style="fill:var(--sig-a)" fill-opacity=".45"/>
+    <rect x="56" y="32" width="28" height="14.5" style="fill:var(--sig-n)" fill-opacity=".45"/><rect x="86" y="32" width="28" height="14.5" style="fill:var(--sig-s)" fill-opacity=".4"/>
+    <rect x="56" y="16" width="28" height="14.5" fill="none" stroke="#FF4B3E" stroke-width="1.6"/>
+    <rect x="125" y="10" width="70" height="46" rx="3.5" style="fill:var(--ill-tyre)"/><rect x="128.5" y="13.5" width="63" height="35" rx="1.5" style="fill:var(--ill-screen)"/>
+    <rect x="131" y="16" width="58" height="30.5" style="fill:var(--sig-v)" fill-opacity=".5"/>
+    <path d="M131 40l12-9 9 6 13-12 10 8 14-5v18.5h-58z" style="fill:var(--sig-a)" fill-opacity=".55"/>
+    <rect x="131" y="16" width="58" height="30.5" fill="none" stroke="#FF4B3E" stroke-width="1.8"/>
+    <rect x="200" y="10" width="70" height="46" rx="3.5" style="fill:var(--ill-tyre)"/><rect x="203.5" y="13.5" width="63" height="35" rx="1.5" style="fill:var(--ill-screen)"/>
+    <rect x="206" y="16" width="28" height="14.5" style="fill:var(--sig-f)" fill-opacity=".45"/><rect x="236" y="16" width="28" height="14.5" style="fill:var(--sig-v)" fill-opacity=".45"/>
+    <rect x="206" y="32" width="28" height="14.5" style="fill:var(--sig-c)" fill-opacity=".45"/><rect x="236" y="32" width="28" height="14.5" style="fill:var(--sig-a)" fill-opacity=".5"/>
+    <rect x="236" y="16" width="28" height="14.5" fill="none" stroke="#2BD96F" stroke-width="1.6"/>
+    <path d="M60 51.5h10M135 51.5h10M210 51.5h10" style="stroke:var(--ill-rim)" stroke-width="1.6"/>
+   </g>
+   <path d="M24 103L50 80h220l26 23z" style="fill:var(--ill-desk-top);stroke:var(--ill-line)" stroke-width="1.4"/>
+   <path d="M66 100l12-15h164l12 15z" style="fill:var(--ill-desk)"/>
+   <g style="stroke:#090A0C" stroke-width="2.2"><path d="M92 88.5l-1.4 9M103 88.5l-1.2 9M114 88.5l-1 9M125 88.5l-.8 9M136 88.5l-.5 9M147 88.5l-.3 9M158 88.5v9M169 88.5l.3 9M180 88.5l.5 9M191 88.5l.8 9M202 88.5l1 9M213 88.5l1.2 9M224 88.5l1.4 9"/></g>
+   <g style="fill:var(--ill-alu-2)"><rect x="89.5" y="93" width="5" height="2.6" rx=".6"/><rect x="100.5" y="90" width="5" height="2.6" rx=".6"/><rect x="111.5" y="94" width="5" height="2.6" rx=".6"/><rect x="122.5" y="91" width="5" height="2.6" rx=".6"/><rect x="133.5" y="92.5" width="5" height="2.6" rx=".6"/><rect x="144.5" y="89.5" width="5" height="2.6" rx=".6"/><rect x="155.5" y="93.5" width="5" height="2.6" rx=".6"/><rect x="166.5" y="90.5" width="5" height="2.6" rx=".6"/><rect x="177.5" y="92" width="5" height="2.6" rx=".6"/><rect x="188.5" y="94" width="5" height="2.6" rx=".6"/><rect x="199.5" y="90" width="5" height="2.6" rx=".6"/><rect x="210.5" y="92.5" width="5" height="2.6" rx=".6"/><rect x="221.5" y="91" width="5" height="2.6" rx=".6"/></g>
+   <g><circle cx="80" cy="96" r="2" style="fill:var(--sig-v)"/><circle cx="238" cy="96" r="2" style="fill:var(--sig-a)"/><circle cx="244" cy="91" r="2" style="fill:var(--sig-p)"/><circle cx="76" cy="91" r="2" style="fill:var(--sig-s)"/></g>
+   <rect x="24" y="103" width="272" height="25" rx="2" style="fill:var(--ill-desk);stroke:var(--ill-line)" stroke-width="1.4"/>
+   <path d="M44 110h40M44 114h40M44 118h40M236 110h40M236 114h40M236 118h40" style="stroke:#0B0C0E" stroke-width="1.4"/>
+   <rect x="34" y="128" width="12" height="10" rx="1" style="fill:var(--ill-chassis)"/><rect x="274" y="128" width="12" height="10" rx="1" style="fill:var(--ill-chassis)"/>
+  </symbol>
+ </defs>
+</svg>
+
+<div id="app"></div>
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>

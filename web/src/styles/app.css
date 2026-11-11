@@ -1,0 +1,36 @@
+/* Compléments propres à l'application (au-delà de la maquette). */
+a { color: inherit; }
+.topnav a, .menu-links a, a.word, a.btn, a.crumb, a.next, a.fig { text-decoration: none; }
+a.btn { color: var(--fg); }
+a.btn.primary { color: var(--primary-fg); }
+main#view { min-height: calc(100vh - 72px); padding-block: 48px 96px; padding-left: max(28px, env(safe-area-inset-left, 0px)); padding-right: max(28px, env(safe-area-inset-right, 0px)); }
+@media (max-width: 860px) { main#view { padding: 28px 16px 80px; } }
+
+/* Écrans d'accueil hors session : connexion, premier compte, mot de passe temporaire */
+.gate { min-height: 100vh; display: grid; place-items: center; padding: 32px 16px; }
+.gate-card { width: min(460px, 100%); display: flex; flex-direction: column; gap: 26px; }
+.gate-card .word { font-size: 24px; }
+.gate-card h1 { font: 760 clamp(38px, 7vw, 52px)/1.02 var(--display); letter-spacing: -.04em; }
+.gate-card .lead { font-size: 18px; color: var(--fg-2); }
+.gate-card form { display: flex; flex-direction: column; gap: 16px; }
+.gate-card .btn { width: 100%; height: 50px; font-size: 16px; }
+.gate-foot { font-size: 13.5px; color: var(--fg-3); }
+
+.stack { display: flex; flex-direction: column; gap: 16px; }
+.row-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.spin { width: 18px; height: 18px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: spin .8s linear infinite; display: inline-block; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.secret { font: 700 22px var(--mono); letter-spacing: .06em; padding: 14px 16px; border-radius: 12px; background: var(--sunken); box-shadow: var(--well); user-select: all; text-align: center; }
+.perm-grid { display: grid; grid-template-columns: minmax(120px, 1fr) repeat(4, auto); gap: 6px 10px; align-items: center; font-size: 14.5px; }
+.perm-grid .h { font: 600 10.5px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--fg-3); text-align: center; }
+.perm-grid input { width: 18px; height: 18px; accent-color: var(--fg); justify-self: center; }
+.role-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 18%, transparent); display: inline-block; flex: none; }
+.user-menu { position: absolute; right: 12px; top: calc(100% + 6px); z-index: 60; min-width: 260px; background: var(--surface); border-radius: 16px; box-shadow: var(--e3); padding: 8px; display: flex; flex-direction: column; gap: 2px; animation: pop .2s var(--ease); }
+.user-menu .who { padding: 10px 12px 12px; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+.user-menu .who b { display: block; }
+.user-menu .who span { font-size: 13.5px; color: var(--fg-3); }
+.user-menu button, .user-menu a { display: flex; align-items: center; gap: 10px; height: 42px; padding: 0 12px; border: 0; border-radius: 10px; background: none; text-align: left; font-size: 15px; color: var(--fg); text-decoration: none; }
+.user-menu button:hover, .user-menu a:hover { background: var(--surface-2); }
+.av-btn { border: 0; background: none; padding: 0; border-radius: 50%; }
+.dl-actions { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+.side-foot .av { color: #fff; font-size: 14px; }

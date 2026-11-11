@@ -9,6 +9,7 @@ pub mod catalog;
 pub mod catalog_io;
 pub mod error;
 pub mod ops;
+pub mod web;
 
 use crate::auth::{
     Member, Session, burn_verification, hash_password, new_token, removal_cookie, session_cookie,
@@ -18,7 +19,7 @@ use crate::error::{ApiError, ApiResult};
 use axum::extract::{ConnectInfo, Path, Query, Request, State};
 use axum::http::{HeaderMap, Method, StatusCode, header};
 use axum::middleware::{self, Next};
-use axum::response::{Html, IntoResponse, Response};
+use axum::response::{IntoResponse, Response};
 use axum::routing::{get, patch, post};
 use axum::{Json, Router};
 use axum_extra::extract::cookie::CookieJar;
@@ -74,9 +75,10 @@ pub fn router(state: AppState) -> Router {
         .nest("/catalog", catalog::routes())
         .layer(middleware::from_fn(csrf));
     Router::new()
-        .route("/", get(index))
         .nest("/api", api)
+        .fallback(web::serve)
         .with_state(state)
+        .layer(tower_http::compression::CompressionLayer::new())
         .layer(tower_http::trace::TraceLayer::new_for_http())
 }
 
@@ -89,15 +91,6 @@ async fn csrf(req: Request, next: Next) -> Response {
     } else {
         ApiError::Csrf.into_response()
     }
-}
-
-async fn index() -> Html<String> {
-    Html(format!(
-        "<!doctype html><html lang=\"fr\"><meta charset=\"utf-8\"><title>Strata Arkyo</title>\
-         <body style=\"font:16px/1.5 system-ui;margin:48px\"><h1>Strata Arkyo</h1>\
-         <p>Moteur {VERSION} en marche. L'interface web arrive avec les lots suivants ; \
-         l'API répond sous <code>/api</code>.</p></body></html>"
-    ))
 }
 
 async fn health(State(st): State<AppState>) -> ApiResult<Json<Value>> {
