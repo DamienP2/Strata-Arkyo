@@ -2850,3 +2850,293 @@ async fn recette_points_verdicts_and_deleted_elements() {
     );
     assert_eq!(v["total"], 5);
 }
+
+#[tokio::test]
+async fn network_vlans_ip_plan_and_multicast() {
+    let Setup {
+        app,
+        o,
+        lea,
+        pid,
+        cid,
+        ..
+    } = setup().await;
+    let item = |name: &str, data: Value| {
+        let mut d = json!({"name": name, "functions": ["N"], "format": {"kind": "rack", "height_u": 1, "depth_mm": 300}});
+        for (k, v) in data.as_object().unwrap() {
+            d[k] = v.clone();
+        }
+        json!({"kind": "equipment", "data": d})
+    };
+    let sw = call(&app, "POST", "/api/catalog/items", Some(item("Switch 2110", json!({"ports": [
+        {"connector_id": "rj45", "signal_id": "ethernet", "direction": "bidir", "gender": "F", "quantity": 4, "label": "Port", "network_role": "switching"}
+    ]}))), Some(&o)).await;
+    assert_eq!(sw.status, StatusCode::CREATED, "{:?}", sw.body);
+    let sw = sw.body["item"]["id"].as_str().unwrap().to_string();
+    let gw = call(&app, "POST", "/api/catalog/items", Some(item("Passerelle SDI/IP", json!({"ports": [
+        {"connector_id": "rj45", "signal_id": "st2110", "direction": "bidir", "gender": "F", "quantity": 2, "label": "Média"}
+    ], "ip": {"control": "out_of_band", "flows": [
+        {"signal_id": "st2110", "essence": "video", "inputs": 0, "outputs": 2},
+        {"signal_id": "dante", "inputs": 0, "outputs": 1}
+    ]}}))), Some(&o)).await;
+    assert_eq!(gw.status, StatusCode::CREATED, "{:?}", gw.body);
+    let gw = gw.body["item"]["id"].as_str().unwrap().to_string();
+    for it in [&sw, &gw] {
+        call(
+            &app,
+            "POST",
+            &format!("/api/projects/{pid}/articles"),
+            Some(json!({"container_id": cid, "nature": "equipment", "item_id": it})),
+            Some(&o),
+        )
+        .await;
+    }
+    let url = format!("/api/projects/{pid}/network");
+    let v = call(&app, "GET", &url, None, Some(&lea)).await.body;
+    let ports = v["ports"].as_array().unwrap().clone();
+    assert_eq!(ports.len(), 6, "{v:?}");
+    assert_eq!(v["flows"].as_array().unwrap().len(), 3);
+    let refs: Vec<String> = ports
+        .iter()
+        .map(|p| p["ref"].as_str().unwrap().to_string())
+        .collect();
+    let of = |name: &str, i: usize| {
+        ports
+            .iter()
+            .filter(|p| p["equipment"] == name)
+            .nth(i)
+            .unwrap()["ref"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+    assert!(
+        ports
+            .iter()
+            .filter(|p| p["equipment"] == "Switch 2110")
+            .all(|p| p["switching"] == true)
+    );
+
+    // VLAN : numéro unique de 1 à 4094, passerelle dans le sous-réseau.
+    let r = call(&app, "POST", &format!("{url}/vlans"), Some(json!({"vid": 20, "name": "Production", "cidr": "10.10.20.0/24", "gateway": "10.10.20.1"})), Some(&lea)).await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    let v20 = r.body["id"].as_str().unwrap().to_string();
+    let r = call(
+        &app,
+        "POST",
+        &format!("{url}/vlans"),
+        Some(json!({"vid": 20, "name": "Doublon"})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let r = call(&app, "POST", &format!("{url}/vlans"), Some(json!({"vid": 5000, "name": "Trop", "cidr": "10.0.0.0/24", "gateway": "10.1.0.1"})), Some(&o)).await;
+    assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let f: Vec<&str> = r.body["fields"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["field"].as_str().unwrap())
+        .collect();
+    assert_eq!(f, vec!["vid", "gateway"]);
+
+    // Ports en masse, puis adresses automatiques : première libre hors passerelle.
+    let r = call(
+        &app,
+        "POST",
+        &format!("{url}/ports"),
+        Some(json!({"refs": refs, "set": {"vlan": 20}})),
+        Some(&lea),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    let r = call(
+        &app,
+        "POST",
+        &format!("{url}/ports"),
+        Some(json!({"refs": [of("Switch 2110", 0)], "set": {"ip": "10.10.20.2"}})),
+        Some(&lea),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    let r = call(
+        &app,
+        "POST",
+        &format!("{url}/ip/auto"),
+        Some(json!({})),
+        Some(&lea),
+    )
+    .await;
+    assert_eq!(r.body["assigned"], 5, "{:?}", r.body);
+    let v = call(&app, "GET", &url, None, Some(&lea)).await.body;
+    let ips: Vec<&str> = v["ports"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["ip"].as_str().unwrap())
+        .collect();
+    assert!(ips.contains(&"10.10.20.7") && !ips.contains(&"10.10.20.1"));
+    assert_eq!(v["vlans"][0]["used"], 6);
+    assert_eq!(v["vlans"][0]["hosts"], 254);
+    // Une IP est unique dans le projet ; jamais deux à la fois en masse.
+    let r = call(
+        &app,
+        "POST",
+        &format!("{url}/ports"),
+        Some(json!({"refs": [of("Passerelle SDI/IP", 0)], "set": {"ip": "10.10.20.2"}})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(
+        r.body["fields"][0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("Switch 2110")
+    );
+    let r = call(
+        &app,
+        "POST",
+        &format!("{url}/ports"),
+        Some(json!({"refs": refs, "set": {"ip": "10.10.20.50"}})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let r = call(
+        &app,
+        "POST",
+        &format!("{url}/ports"),
+        Some(json!({"refs": [of("Switch 2110", 1)], "set": {"vlan": 99}})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
+
+    // Liaison : VLAN différents aux deux bouts, réseau A relié au B.
+    let r = call(&app, "POST", &format!("{url}/vlans"), Some(json!({"vid": 30, "name": "Contrôle", "color": "#E0A030"})), Some(&o)).await;
+    let v30 = r.body["id"].as_str().unwrap().to_string();
+    call(&app, "POST", &format!("{url}/ports"), Some(json!({"refs": [of("Switch 2110", 0)], "set": {"vlan": 30, "redundancy": "a"}})), Some(&o)).await;
+    call(
+        &app,
+        "POST",
+        &format!("{url}/ports"),
+        Some(json!({"refs": [of("Passerelle SDI/IP", 0)], "set": {"redundancy": "B"}})),
+        Some(&o),
+    )
+    .await;
+    call(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid}/synoptic/lock"),
+        None,
+        Some(&o),
+    )
+    .await;
+    let r = call(&app, "POST", &format!("/api/projects/{pid}/cables"), Some(json!({"cables": [{"a": of("Passerelle SDI/IP", 0), "b": of("Switch 2110", 0)}]})), Some(&o)).await;
+    assert_eq!(r.status, StatusCode::CREATED, "{:?}", r.body);
+    let v = call(&app, "GET", &url, None, Some(&o)).await.body;
+    let kinds: Vec<&str> = v["issues"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["kind"].as_str().unwrap())
+        .collect();
+    assert!(kinds.contains(&"vlan_mismatch"), "{kinds:?}");
+    assert!(kinds.contains(&"redundancy"));
+    assert_eq!(v["map"]["links"].as_array().unwrap().len(), 1);
+    assert_eq!(v["map"]["nodes"][0]["switch"], true);
+
+    // Multicast : 239.{20|30|40}.bloc.n, port 500xx ; la saisie manuelle prime.
+    let r = call(
+        &app,
+        "POST",
+        &format!("{url}/flows/assign"),
+        Some(json!({"mode": "missing"})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.body["assigned"], 3);
+    let v = call(&app, "GET", &url, None, Some(&o)).await.body;
+    let fl = v["flows"].as_array().unwrap().clone();
+    assert_eq!(fl[0]["address"], "239.20.0.1");
+    assert_eq!(fl[1]["address"], "239.20.0.2");
+    assert_eq!(fl[2]["address"], "239.30.0.1");
+    assert_eq!(fl[2]["udp"], 50030);
+    assert_eq!(fl[2]["essence"], "audio");
+    let dante = fl[2]["key"].as_str().unwrap().to_string();
+    let r = call(&app, "POST", &format!("{url}/flows/set"), Some(json!({"key": dante, "address": "239.20.0.1", "udp": 50020})), Some(&o)).await;
+    assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let r = call(
+        &app,
+        "POST",
+        &format!("{url}/flows/set"),
+        Some(json!({"key": dante, "address": "10.0.0.1"})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let r = call(
+        &app,
+        "POST",
+        &format!("{url}/flows/set"),
+        Some(json!({"key": dante, "address": "239.30.9.9"})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    call(
+        &app,
+        "POST",
+        &format!("{url}/flows/assign"),
+        Some(json!({"mode": "all"})),
+        Some(&o),
+    )
+    .await;
+    let v = call(&app, "GET", &url, None, Some(&o)).await.body;
+    assert_eq!(v["flows"][2]["address"], "239.30.9.9");
+    assert_eq!(v["flows"][2]["manual"], true);
+    assert_eq!(v["stats"]["flows_assigned"], 3);
+
+    // Renuméroter un VLAN : les ports suivent ; le supprimer : ils le perdent.
+    let r = call(&app, "PATCH", &format!("{url}/vlans"), Some(json!({"id": v20, "vid": 21, "name": "Production", "cidr": "10.10.20.0/24", "gateway": "10.10.20.1"})), Some(&o)).await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    call(
+        &app,
+        "POST",
+        &format!("{url}/vlans/delete"),
+        Some(json!({"id": v30})),
+        Some(&o),
+    )
+    .await;
+    let v = call(&app, "GET", &url, None, Some(&o)).await.body;
+    let p = |r: &str| {
+        v["ports"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["ref"] == r)
+            .unwrap()
+            .clone()
+    };
+    assert_eq!(p(&of("Switch 2110", 0))["vlan"], Value::Null);
+    assert_eq!(p(&of("Switch 2110", 1))["vlan"], 21);
+    let r = call(
+        &app,
+        "POST",
+        &format!("{url}/flows/clear"),
+        Some(json!({})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.body["cleared"], 3);
+    let r = call(
+        &app,
+        "GET",
+        &format!("{url}/export?format=csv"),
+        None,
+        Some(&lea),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK);
+}

@@ -384,6 +384,9 @@ pub enum IpControl {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct IpFlow {
     pub signal_id: String,
+    /// Essence du flux ; à défaut, déduite de la famille du signal.
+    #[serde(default)]
+    pub essence: Option<crate::network::Essence>,
     #[serde(default)]
     pub inputs: u32,
     #[serde(default)]

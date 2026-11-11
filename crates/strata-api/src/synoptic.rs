@@ -75,6 +75,9 @@ pub(crate) struct Port {
     pub side: char,
     #[serde(skip)]
     pub ip: bool,
+    /// Port de commutation (switch) : sert à dessiner la carte réseau.
+    #[serde(skip)]
+    pub switching: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -239,6 +242,8 @@ pub(crate) async fn project_nodes(store: &Store, pid: &str) -> ApiResult<Vec<Nod
                                 variant: pg.variant.clone(),
                                 side: if dir == Dir::In { 'l' } else { 'r' },
                                 ip,
+                                switching: pg.network_role
+                                    == Some(strata_domain::catalog::NetworkRole::Switching),
                             });
                         }
                     }
@@ -285,6 +290,7 @@ pub(crate) async fn project_nodes(store: &Store, pid: &str) -> ApiResult<Vec<Nod
                                 variant: s.variant.clone(),
                                 side: if rear { 'l' } else { 'r' },
                                 ip: false,
+                                switching: false,
                             });
                         }
                     }
@@ -338,6 +344,7 @@ pub(crate) async fn project_nodes(store: &Store, pid: &str) -> ApiResult<Vec<Nod
                         variant: None,
                         side: 'l',
                         ip: false,
+                        switching: false,
                     }];
                     for (k, o) in ad.outputs.iter().enumerate() {
                         for n in 1..=o.quantity.clamp(1, 64) {
@@ -365,6 +372,7 @@ pub(crate) async fn project_nodes(store: &Store, pid: &str) -> ApiResult<Vec<Nod
                                 variant: None,
                                 side: 'r',
                                 ip: false,
+                                switching: false,
                             });
                         }
                     }

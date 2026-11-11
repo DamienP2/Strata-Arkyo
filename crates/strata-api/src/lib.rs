@@ -12,6 +12,7 @@ pub mod catalog_io;
 pub mod checks;
 pub mod error;
 pub mod live;
+pub mod network;
 pub mod ops;
 pub mod panels;
 pub mod prep;
@@ -111,6 +112,7 @@ pub fn router(state: AppState) -> Router {
         .merge(cable_table::routes())
         .merge(prep::routes())
         .merge(recette::routes())
+        .merge(network::routes())
         .route("/live", get(live::socket))
         .layer(middleware::from_fn(csrf));
     Router::new()

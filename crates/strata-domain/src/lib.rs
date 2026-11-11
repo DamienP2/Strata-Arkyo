@@ -7,6 +7,7 @@
 pub mod account;
 pub mod catalog;
 pub mod element;
+pub mod network;
 pub mod numbering;
 pub mod panel;
 pub mod permissions;

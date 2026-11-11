@@ -46,6 +46,10 @@
 
   let dmxOn = $state(!!data.dmx);
   $effect(() => { if (dmxOn && !data.dmx) data.dmx = { default_channels: 1, modes: [] }; if (!dmxOn && data.dmx) data.dmx = null; });
+  let ipOn = $state(!!data.ip);
+  $effect(() => { if (ipOn && !data.ip) data.ip = { control: 'out_of_band', flows: [] }; if (!ipOn && data.ip) data.ip = null; });
+  const addFlow = () => (data.ip.flows = [...data.ip.flows, { signal_id: signals[0]?.id ?? '', inputs: 0, outputs: 1 }]);
+  const addMode = () => (data.dmx.modes = [...data.dmx.modes, { name: '', channels: data.dmx.default_channels || 1 }]);
   const addDoc = () => (data.documents = [...data.documents, { title: '', url: '' }]);
 </script>
 
@@ -132,6 +136,31 @@
   <div class="card-head"><h2>Lumières (DMX)</h2><label class="toggle-row"><input type="checkbox" bind:checked={dmxOn}>Pilotable en DMX</label></div>
   {#if dmxOn && data.dmx}
     <div class="fg3" style="margin-top:16px"><NumField id="e-dmx" label="Canaux par défaut" bind:value={data.dmx.default_channels} error={err('dmx')} /></div>
+    <div class="stack" style="gap:8px;margin-top:10px">
+      <span class="flabel">Modes</span>
+      {#each data.dmx.modes as mo, i}
+        <div class="fg3"><input class="input" bind:value={mo.name} placeholder="Nom du mode (Standard, Étendu…)" aria-label="Nom du mode {i + 1}"><NumField id="e-dm{i}" label="Canaux" bind:value={mo.channels} /><button type="button" class="btn sm ghost danger" style="align-self:end" onclick={() => (data.dmx.modes = data.dmx.modes.filter((_: unknown, j: number) => j !== i))}><Icon name="trash" size="sm" />Retirer</button></div>
+      {/each}
+      <button type="button" class="btn sm" style="justify-self:start" onclick={addMode}><Icon name="plus" size="sm" />Ajouter un mode</button>
+    </div>
+  {/if}
+</section>
+
+<section class="card">
+  <div class="card-head"><div><h2>Flux IP (SMPTE ST 2110…)</h2><span class="muted small">Chaque sortie de flux reçoit un groupe multicast dans le plan d’adressage du projet. Essence déduite de la famille du signal : vidéo, audio ou données annexes.</span></div><label class="toggle-row"><input type="checkbox" bind:checked={ipOn}>Émet ou reçoit des flux IP</label></div>
+  {#if ipOn && data.ip}
+    <div class="stack" style="gap:8px;margin-top:12px">
+      <div class="seg" style="justify-self:start"><button type="button" class:on={data.ip.control === 'out_of_band'} onclick={() => (data.ip.control = 'out_of_band')}>Contrôle hors bande</button><button type="button" class:on={data.ip.control === 'in_band'} onclick={() => (data.ip.control = 'in_band')}>Contrôle dans la bande</button></div>
+      {#each data.ip.flows as f, i}
+        <div class="fg4">
+          <div class="field"><label for="e-fs{i}">Signal</label><select class="input" id="e-fs{i}" bind:value={f.signal_id}>{#each signals as sg}<option value={sg.id}>{sg.name}</option>{/each}</select></div>
+          <NumField id="e-fi{i}" label="Entrées" bind:value={f.inputs} min={0} step={1} />
+          <NumField id="e-fo{i}" label="Sorties" bind:value={f.outputs} min={0} step={1} />
+          <button type="button" class="btn sm ghost danger" style="align-self:end" onclick={() => (data.ip.flows = data.ip.flows.filter((_: unknown, j: number) => j !== i))}><Icon name="trash" size="sm" />Retirer</button>
+        </div>
+      {/each}
+      <button type="button" class="btn sm" style="justify-self:start" onclick={addFlow}><Icon name="plus" size="sm" />Ajouter un flux</button>
+    </div>
   {/if}
 </section>
 

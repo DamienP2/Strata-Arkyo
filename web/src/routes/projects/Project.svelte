@@ -18,6 +18,7 @@
   import CableTable from './CableTable.svelte';
   import Preparation from './Preparation.svelte';
   import Recette from './Recette.svelte';
+  import Network from './Network.svelte';
   import Tasks from './Tasks.svelte';
   import History from './History.svelte';
   import Racks from './Racks.svelte';
@@ -55,6 +56,7 @@
     { key: 'planche', label: 'Planche d’élévations', href: `/projets/${id}/planche` },
     { key: 'synoptique', label: 'Synoptique', href: `/projets/${id}/synoptique` },
     { key: 'cables', label: 'Câbles', href: `/projets/${id}/cables` },
+    { key: 'reseau', label: 'Réseau', href: `/projets/${id}/reseau` },
   ] }, { label: 'Sur le terrain', items: [
     { key: 'preparation', label: 'Préparation', href: `/projets/${id}/preparation` },
     { key: 'atelier', label: 'Atelier', href: `/projets/${id}/atelier` },
@@ -102,6 +104,7 @@
     {:else if sub === 'cables'}<CableTable {view} />
     {:else if sub === 'preparation'}<Preparation {view} />
     {:else if sub === 'recette'}<Recette {view} />
+    {:else if sub === 'reseau'}<Network {view} />
     {:else if sub === 'taches'}<Tasks bind:view reload={load} />
     {:else if sub === 'historique'}<History projectId={id} />
     {:else if sub === 'racks'}<Racks {view} />
