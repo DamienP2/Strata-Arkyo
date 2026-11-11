@@ -729,7 +729,8 @@ select.input option{color:var(--fg);background:var(--surface)}
 .ritem.sel{outline:3px solid #8EA2FF;outline-offset:1px;z-index:2}
 .ritem.dw .rn::after{content:"  ⚠";color:#F2A43C}
 @container fp (max-width:300px){.ritem .dec .bnc,.ritem .dec .xlr,.ritem .dec .rj,.ritem .dec .slots,.ritem .dec .sock,.ritem .dec .bays{max-width:84px}.ritem .dec .keys,.ritem .dec .perf{display:none}}
-@container fp (max-width:150px){.ritem .dec{display:none}}
+@container fp (max-width:160px){.ritem .dec .lcd,.ritem .dec .knob,.ritem .dec .pwr,.ritem .dec .sfp{display:none}.ritem .dec{gap:4px}}
+@container fp (max-width:90px){.ritem .dec{display:none}}
 .schem .ritem{--fp-bg:linear-gradient(180deg,color-mix(in srgb,var(--c) 52%,#20262F),color-mix(in srgb,var(--c) 34%,#1A1F26));--fp-ink:#F3F5F7;box-shadow:inset 0 0 0 1px var(--c),0 2px 3px rgba(0,0,0,.35)}
 .schem .ritem .dec,.schem .ritem::before,.schem .ritem::after{display:none}
 .schem .ritem.acc{--fp-bg:#2A3039}
@@ -857,7 +858,7 @@ select.input option{color:var(--fg);background:var(--surface)}
 .cat-name b{display:block;font-weight:600}
 .cat-name span{font-size:13.5px;color:var(--fg-3)}
 .cat-thumb{display:block;width:150px;flex:none;padding:6px 0;border-radius:8px}
-.cat-thumb .fpv{--u:11px;padding:0 9px}
+.cat-thumb .fpv{--u:11px;padding:0 12px}
 .cat-thumb.sm{width:118px}
 .cat-thumb.sm .fpv{--u:9px}
 .cat-thumb .fpv .ritem{font-size:0;padding:0 5px;gap:4px}

@@ -138,7 +138,7 @@ En sombre, l'élévation se lit à la luminosité : plus une plaque est haute, p
 
 - **Vumètre à segments** `vu(p, mode, n)`. Le mode `prog` sert à la progression ; le mode `load` sert à la charge (hauteur, poids, conso, phases) avec des zones vert, ambre et rouge comme un crête-mètre. Il existe en version verticale (console de l'avancement) et horizontale.
 - **Galvanomètre** `gauge(p)` : cadran de VU-mètre avec une zone d'objectif au-delà de 90 %.
-- **Faces avant** `fpv()` et `.ritem` : 22 types reconnus par le nom. Deux finitions, anodisé noir et alu brossé. Les oreilles portent des vis. Le décor est composé d'ouïes, de BNC, de XLR, de RJ45, de cages SFP, d'un afficheur LCD, de touches, de baies de disques, de fentes de cartes, d'un écran d'oscilloscope, de prises IEC, d'une poignée ou d'une brosse. Des requêtes de conteneur simplifient le décor quand la face est étroite. La même face sert à la baie, au catalogue, à l'inventaire, aux éléments à placer et aux aperçus.
+- **Faces avant** `fpv()` et `.ritem` : 23 types reconnus par le nom, plus un type générique. Deux finitions, anodisé noir et alu brossé. Les oreilles portent des vis. Le décor est composé d'ouïes, de BNC, de XLR, de RJ45, de cages SFP, d'un afficheur LCD, de touches, de baies de disques, de fentes de cartes, d'un écran d'oscilloscope, de prises IEC, d'une poignée ou d'une brosse. Des requêtes de conteneur simplifient le décor quand la face est étroite. La même face sert à la baie, au catalogue, à l'inventaire, aux éléments à placer et aux aperçus.
 - **Repère de câble** `.tape` : une gaine thermorétractable blanche, avec un léger volume et un liseré de la couleur du signal. Il existe aussi en SVG sur le synoptique.
 - **Témoin** `.tally` : la LED et le texte mono de J-4, d'Indice A, des alertes.
 - **Mini-baie** : l'occupation réelle d'un contenant, unité par unité.
@@ -214,7 +214,7 @@ En sombre, l'élévation se lit à la luminosité : plus une plaque est haute, p
 
 - Contrastes AA vérifiés sur les paires de jetons, dans les deux thèmes. Exemples : `--fg-3` sur `--sunken` à 4,69 en clair, texte des témoins entre 5,8 et 6 en clair, `--inst-fg-3` sur l'instrument à 5,47 en sombre.
 - Anneau de focus de 2 px en `--accent`, couleur de LED sur les instruments sombres.
-- Cibles tactiles de 36 à 44 px, 44 px pour les entrées du sélecteur de section sur mobile.
+- Cibles tactiles de 32 à 44 px (WCAG 2.2 AA en exige 24), 44 px pour les entrées du sélecteur de section sur mobile.
 - `role="img"` et `aria-label` sur les vumètres, le galvanomètre et le spectre, `aria-pressed` sur les bascules, `aria-current` sur la section active. Les visuels décoratifs sont en `aria-hidden`.
 - `prefers-reduced-motion` est respecté.
 
