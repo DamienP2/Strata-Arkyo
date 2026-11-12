@@ -1,5 +1,5 @@
 <script lang="ts">
-  import Logo from '../components/Logo.svelte';
+  import Brand from '../components/Brand.svelte';
   import FieldError from '../components/FieldError.svelte';
   import { api, ApiError } from '../lib/api';
   import { session } from '../lib/session.svelte';
@@ -25,7 +25,7 @@
 
 <div class="gate">
   <div class="gate-card">
-    <span class="word"><Logo /><span>Strata Arkyo</span></span>
+    <span class="word"><Brand stacked /></span>
     <div class="card stack" style="padding:30px 28px">
       <p class="eyebrow" style="margin:0">Première mise en route</p>
       <h1>Créez le compte propriétaire</h1>

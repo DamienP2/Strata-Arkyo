@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import Icon from './Icon.svelte';
-  import Logo from './Logo.svelte';
+  import Brand from './Brand.svelte';
   import Avatar from './Avatar.svelte';
   import PasswordDialog from './PasswordDialog.svelte';
   import CommandPalette from './CommandPalette.svelte';
@@ -47,7 +47,7 @@
 <div class="app">
   <header class="mast">
     <button class="icon-btn menu-btn" aria-label="Ouvrir le menu" onclick={() => (menuOpen = true)}><Icon name="menu" /></button>
-    <a class="word" href="/" aria-label="Strata Arkyo, accueil"><Logo /><span>Strata Arkyo</span></a>
+    <a class="word" href="/" aria-label="Strata Arkyo, accueil"><Brand /></a>
     <nav class="topnav" aria-label="Navigation principale">
       {#each links as l}<a href={l.href} class:on={top === l.key} aria-current={top === l.key ? 'page' : undefined}>{l.label}</a>{/each}
     </nav>
@@ -70,7 +70,7 @@
 </div>
 
 <aside class="sidebar" class:open={menuOpen} aria-label="Menu" aria-hidden={!menuOpen}>
-  <div class="menu-top"><span class="word"><Logo /><span>Strata Arkyo</span></span><button class="icon-btn" aria-label="Fermer le menu" onclick={() => (menuOpen = false)}><Icon name="x" /></button></div>
+  <div class="menu-top"><span class="word"><Brand /></span><button class="icon-btn" aria-label="Fermer le menu" onclick={() => (menuOpen = false)}><Icon name="x" /></button></div>
   <nav class="menu-links" aria-label="Menu principal">
     {#each links as l}<a href={l.href} class:on={top === l.key}>{l.label}</a>{/each}
   </nav>

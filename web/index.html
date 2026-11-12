@@ -6,7 +6,9 @@
 <title>Strata Arkyo</title>
 <meta name="theme-color" content="#ECEAE5" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0D0E10" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 </head>
 <body>
 <svg class="defs" aria-hidden="true" focusable="false">
@@ -16,15 +18,8 @@
   <linearGradient id="g-alu" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--ill-alu-2)"/><stop offset="1" style="stop-color:var(--ill-alu)"/></linearGradient>
   <radialGradient id="g-ball" cx=".35" cy=".3" r=".75"><stop offset="0" style="stop-color:#FFFFFF"/><stop offset=".35" style="stop-color:var(--ill-corner)"/><stop offset="1" style="stop-color:var(--ill-rail)"/></radialGradient>
 
-  <!-- Logo : quatre strates de signal sur une plaque -->
-  <symbol id="logo" viewBox="0 0 32 32">
-   <rect x=".5" y=".5" width="31" height="31" rx="8.5" style="fill:var(--logo-bg)"/>
-   <rect x="1" y="1" width="30" height="30" rx="8" fill="none" style="stroke:var(--logo-edge)"/>
-   <rect x="6.5" y="7.6" width="19" height="3.1" rx="1.55" style="fill:var(--sig-v)"/>
-   <rect x="6.5" y="12.6" width="12.5" height="3.1" rx="1.55" style="fill:var(--sig-a)"/>
-   <rect x="6.5" y="17.6" width="16" height="3.1" rx="1.55" style="fill:var(--sig-s)"/>
-   <rect x="6.5" y="22.6" width="9" height="3.1" rx="1.55" style="fill:var(--sig-n)"/>
-  </symbol>
+  <!-- Logo : le S de Strata et le A d’Arkyo, comme Strata Multiview -->
+  <symbol id="logo" viewBox="0 0 100 100"><rect width="100" height="100" rx="22" fill="#12141f"/><path fill="#ffffff" transform="translate(16.659 68.164) scale(0.02438 -0.02438) translate(-72 0)" d="M691 -20C1060 -20 1280 149 1280 432C1280 670 1113 814 825 877L696 907C563 937 476 981 476 1073C476 1156 549 1217 690 1217C832 1217 911 1154 921 1046H1260C1256 1322 1036 1510 691 1510C353 1510 111 1325 111 1049C111 825 267 696 524 637L682 600C845 563 923 518 923 433C923 338 833 273 687 273C526 273 419 347 411 492H72C78 148 318 -20 691 -20Z"/><path fill="#8fa3ff" transform="translate(47.210 68.164) scale(0.02438 -0.02438) translate(-47 0)" d="M47 0H439L536 317H1032L1133 0H1529L1017 1490H544ZM619 587 639 651C688 820 732 1008 777 1209C825 1009 874 821 926 651L946 587Z"/></symbol>
 
   <!-- Connecteurs (24 × 24, trait = couleur du signal) -->
   <symbol id="cx-bnc" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="3.5"/><circle cx="12" cy="12" r="1.1" fill="currentColor" stroke="none"/><path d="M2.6 12h2.4M19 12h2.4"/></symbol>

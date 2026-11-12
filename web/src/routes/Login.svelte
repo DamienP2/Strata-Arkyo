@@ -1,5 +1,5 @@
 <script lang="ts">
-  import Logo from '../components/Logo.svelte';
+  import Brand from '../components/Brand.svelte';
   import { api, ApiError } from '../lib/api';
   import { session } from '../lib/session.svelte';
   import type { Me } from '../lib/types';
@@ -22,7 +22,7 @@
 
 <div class="gate">
   <div class="gate-card">
-    <span class="word"><Logo /><span>Strata Arkyo</span></span>
+    <span class="word"><Brand stacked /></span>
     <div class="card stack" style="padding:30px 28px">
       <h1>Connexion</h1>
       <form onsubmit={submit}>
