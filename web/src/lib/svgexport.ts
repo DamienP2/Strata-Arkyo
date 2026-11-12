@@ -2,7 +2,7 @@
 // en ligne, palette claire même en thème sombre, rendu PNG ou JPG sur fond blanc, ou PDF
 // vectoriel avec cartouche.
 
-import { PAPERS, type Paper } from './sheet';
+import type { Paper } from './sheet';
 
 const PROPS = ['fill', 'fill-opacity', 'stroke', 'stroke-width', 'stroke-dasharray', 'stroke-linecap', 'stroke-linejoin', 'stroke-opacity', 'opacity',
   'font-family', 'font-size', 'font-weight', 'font-style', 'text-decoration', 'letter-spacing', 'text-anchor', 'dominant-baseline', 'display', 'visibility'];
@@ -63,37 +63,20 @@ export async function raster(svg: SVGSVGElement, w: number, h: number, type: 'im
   } finally { URL.revokeObjectURL(url); }
 }
 
-export interface Block { title: string; project: string; client: string; view: string; revision: string; site: string; date: string }
+export interface Block { title: string; project: string; client: string; view: string; revision: string; site: string; date: string; address?: string; author?: string }
 
-/** PDF vectoriel : le dessin ajusté dans la page, cartouche en bas à droite. */
-export async function pdf(svg: SVGSVGElement, w: number, h: number, paper: Paper, landscape: boolean, block: Block): Promise<Blob> {
-  const { jsPDF } = await import('jspdf');
-  await import('svg2pdf.js');
-  const [pw0, ph0] = PAPERS[paper];
-  const [W, H] = landscape ? [Math.max(pw0, ph0), Math.min(pw0, ph0)] : [Math.min(pw0, ph0), Math.max(pw0, ph0)];
-  const doc = new jsPDF({ unit: 'mm', format: [W, H], orientation: landscape ? 'landscape' : 'portrait' });
-  const m = 10, bh = 26;
-  const aw = W - 2 * m, ah = H - 2 * m - bh - 4;
-  const k = Math.min(aw / w, ah / h);
-  await doc.svg(svg, { x: m + (aw - w * k) / 2, y: m + (ah - h * k) / 2, width: w * k, height: h * k });
-  // Cadre et cartouche
-  doc.setDrawColor(21, 23, 26); doc.setLineWidth(0.35); doc.rect(m / 2, m / 2, W - m, H - m);
-  const bw = Math.min(170, W - 2 * m), bx = W - m - bw, by = H - m - bh;
-  doc.setLineWidth(0.4); doc.rect(bx, by, bw, bh);
-  const cell = (x: number, y: number, cw: number, chh: number, label: string, value: string, big = false) => {
-    doc.setLineWidth(0.2); doc.rect(x, y, cw, chh);
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(5.5); doc.setTextColor(91, 99, 109); doc.text(label.toUpperCase(), x + 1.4, y + 2.6);
-    doc.setFont('helvetica', big ? 'bold' : 'normal'); doc.setFontSize(big ? 11 : 8); doc.setTextColor(21, 23, 26);
-    doc.text(doc.splitTextToSize(value || '—', cw - 3)[0] ?? '', x + 1.4, y + chh - 2.2);
-  };
-  cell(bx, by, bw * 0.38, 10, 'Site', block.site);
-  cell(bx + bw * 0.38, by, bw * 0.62, 10, 'Titre', block.title, true);
-  cell(bx, by + 10, bw * 0.38, 8, 'Projet', block.project);
-  cell(bx + bw * 0.38, by + 10, bw * 0.34, 8, 'Client', block.client);
-  cell(bx + bw * 0.72, by + 10, bw * 0.28, 8, 'Vue', block.view);
-  cell(bx, by + 18, bw * 0.38, 8, 'Date', block.date);
-  cell(bx + bw * 0.38, by + 18, bw * 0.34, 8, 'Révision', block.revision);
-  cell(bx + bw * 0.72, by + 18, bw * 0.28, 8, 'Format', `${paper} ${landscape ? 'paysage' : 'portrait'}`);
+/** PDF vectoriel : le dessin ajusté dans la page, cartouche du site (modèle choisi, sinon le
+ * premier actif) en bas à droite. */
+export async function pdf(svg: SVGSVGElement, w: number, h: number, paper: Paper, landscape: boolean, block: Block, template?: string | null): Promise<Blob> {
+  const kit = await import('./pdfkit');
+  const doc = await kit.newDoc(paper as import('./pdfkit').PaperKey, landscape);
+  const site = await kit.siteInfo();
+  const tpl = await kit.titleBlock(template);
+  await kit.svgPage(doc, svg, w, h, tpl, {
+    title: block.title, project: block.project, client: block.client, view: block.view, version: block.revision,
+    site: block.site || site.name, date: block.date, format: `${paper} ${landscape ? 'paysage' : 'portrait'}`, sheet: '1', sheets: '1',
+    logo: site.logo ?? '', address: block.address ?? '', author: block.author ?? '',
+  });
   return doc.output('blob');
 }
 

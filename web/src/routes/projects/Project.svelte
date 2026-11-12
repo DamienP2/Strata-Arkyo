@@ -21,6 +21,7 @@
   import Network from './Network.svelte';
   import Plans from './Plans.svelte';
   import Drawings from './Drawings.svelte';
+  import Dossier from './Dossier.svelte';
   import Tasks from './Tasks.svelte';
   import History from './History.svelte';
   import Racks from './Racks.svelte';
@@ -53,6 +54,7 @@
     { key: 'regies', label: 'Régies', href: `/projets/${id}/regies` },
     { key: 'taches', label: 'Tâches', href: `/projets/${id}/taches`, badge: view?.tasks.filter((t) => t.status === 'todo' || t.status === 'in_progress').length || undefined },
     { key: 'historique', label: 'Historique', href: `/projets/${id}/historique` },
+    { key: 'dossier', label: 'Dossier', href: `/projets/${id}/dossier` },
   ] }, { label: 'Dessiner', lock: true, items: [
     { key: 'racks', label: 'Racks', href: `/projets/${id}/racks` },
     { key: 'planche', label: 'Planche d’élévations', href: `/projets/${id}/planche` },
@@ -111,6 +113,7 @@
     {:else if sub === 'reseau'}<Network {view} />
     {:else if sub === 'plans'}<Plans {view} />
     {:else if sub === 'dessins'}<Drawings {view} />
+    {:else if sub === 'dossier'}<Dossier {view} />
     {:else if sub === 'taches'}<Tasks bind:view reload={load} />
     {:else if sub === 'historique'}<History projectId={id} />
     {:else if sub === 'racks'}<Racks {view} />

@@ -9,6 +9,7 @@
   import { toast, fail } from '../../lib/toast.svelte';
   import { nf } from '../../lib/format';
   import { loadRefs, fnColor, refList } from '../../lib/catalog.svelte';
+  import Dialog from '../../components/Dialog.svelte';
   import type { ProjectView } from '../../lib/projects';
 
   interface End { port_ref: string; element: string; container_id: string | null; location: string; location_id: string | null; equipment: string; tag: string; port: string; connector: string }
@@ -102,31 +103,32 @@
   function togglePick(id: string) { const s = new Set(picked); if (s.has(id)) s.delete(id); else s.add(id); picked = s; }
 
   async function pdf() {
-    const { jsPDF } = await import('jspdf');
-    const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'landscape' });
-    const cols: [string, number, (r: Row) => string][] = [
-      ['N°', 26, (r) => r.number ?? '—'], ['Signal', 22, (r) => r.signal], ['De', 92, (r) => `${r.a.element} › ${r.a.equipment} ${r.a.tag} › ${r.a.port}`],
-      ['Vers', 92, (r) => `${r.b.element} › ${r.b.equipment} ${r.b.tag} › ${r.b.port}`], ['Long. (m)', 18, (r) => (r.length_m ?? r.estimate_m ?? '') + ''], ['Notes', 27, (r) => r.notes ?? ''],
-    ];
-    const day = new Date().toISOString().slice(0, 10);
-    let y = 0; let page = 1;
-    const head = () => {
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.text(`Câbles · ${view.project.name}`, 10, 12);
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.text(`${shown.length} câble(s) · ${day} · page ${page}`, 287, 12, { align: 'right' });
-      let x = 10; doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
-      for (const [h, w] of cols) { doc.text(h, x, 20); x += w; }
-      doc.setDrawColor(21, 23, 26); doc.line(10, 22, 287, 22); y = 27;
-    };
-    head();
-    doc.setFont('helvetica', 'normal');
-    for (const r of shown) {
-      if (y > 198) { doc.addPage(); page++; head(); doc.setFont('helvetica', 'normal'); }
-      let x = 10;
-      for (const [, w, f] of cols) { const t = doc.splitTextToSize(f(r).replace(/→/g, '»'), w - 2)[0] ?? ''; doc.text(t, x, y); x += w; }
-      doc.setDrawColor(220, 224, 228); doc.line(10, y + 2, 287, y + 2); y += 6;
-    }
-    const name = view.project.name.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9]+/g, '_');
-    doc.save(`Cables_${name}_${day}.pdf`);
+    const kit = await import('../../lib/pdfkit');
+    const doc = await kit.newDoc('A4', true);
+    const h = kit.projectHeader(view.project, `Câbles (${shown.length})`);
+    kit.drawTable(doc, h, [{ label: 'N°', w: 24 }, { label: 'Signal', w: 22 }, { label: 'De', w: 90 }, { label: 'Vers', w: 90 }, { label: 'Long. (m)', w: 18, align: 'right' }, { label: 'Notes', w: 32 }],
+      shown.map((r) => [String(val(r, 'number') ?? '—'), r.signal, `${r.a.element} › ${r.a.equipment} ${r.a.tag} › ${r.a.port}`, `${r.b.element} › ${r.b.equipment} ${r.b.tag} › ${r.b.port}`, String(val(r, 'length_m') ?? r.estimate_m ?? ''), String(val(r, 'notes') ?? '')]), 'A4', true);
+    kit.paginate(doc, 1, undefined, view.project.name);
+    doc.save(`${kit.fileStem('Cables', view.project.name)}.pdf`);
+  }
+
+  // ----- Étiquettes (section 11.7) -----
+  let lbl = $state<{ sheets: import('../../lib/pdfkit').LabelSheet[]; key: string; perEnd: boolean; skip: number; scope: 'rule' | 'shown' } | null>(null);
+  async function openLabels() {
+    try { const r = await api.get<{ items: import('../../lib/pdfkit').LabelSheet[] }>('/print/label-sheets'); const act = r.items.filter((x) => x.active); lbl = { sheets: act, key: act[0]?.key ?? '', perEnd: true, skip: 0, scope: 'rule' }; } catch (e) { fail(e); }
+  }
+  // Règle : en intégration tous les câbles, en prestation le câblage interne des éléments.
+  const ruleRows = $derived((rows ?? []).filter((r) => view.project.intervention === 'integration' || (r.a.container_id && r.a.container_id === r.b.container_id)));
+  const labelRows = $derived((lbl?.scope === 'shown' ? shown : ruleRows).filter((r) => val(r, 'number')));
+  async function printLabels() {
+    if (!lbl) return;
+    const sh = lbl.sheets.find((x) => x.key === lbl!.key); if (!sh) return;
+    const sigColor = (r: Row) => { const sg = refList('signals').find((x) => x.name === r.signal) as any; return sg?.data?.color || (r.family ? fnColor(r.family) : null); };
+    const { cableLabels } = await import('../../lib/labels');
+    const kit = await import('../../lib/pdfkit');
+    const blob = await cableLabels(labelRows.map((r) => ({ number: String(val(r, 'number')), color: (val(r, 'color') as string | null) || sigColor(r), a: r.a, b: r.b })), sh, { perEnd: lbl.perEnd, skip: lbl.skip });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `${kit.fileStem('Etiquettes', view.project.name)}.pdf`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    lbl = null;
   }
 </script>
 
@@ -148,6 +150,7 @@
     <button class="btn sm ghost" onclick={() => download(`/projects/${pid}/cables/export?format=csv`)}><Icon name="download" size="sm" />CSV</button>
     <button class="btn sm ghost" onclick={() => download(`/projects/${pid}/cables/export?format=xlsx`)}><Icon name="download" size="sm" />XLSX</button>
     <button class="btn sm ghost" onclick={pdf}><Icon name="download" size="sm" />PDF</button>
+    <button class="btn sm ghost" onclick={openLabels}><Icon name="file" size="sm" />Étiquettes</button>
     {#if writable}
       <button class="btn sm" disabled={!dirty || saving} onclick={cancel}>Annuler</button>
       <button class="btn sm primary" disabled={!dirty || saving} onclick={save}>{#if saving}<span class="spin"></span>{/if}Enregistrer{dirty ? ` (${dirty})` : ''}</button>
@@ -184,6 +187,23 @@
     </table></div>
   </section>
   {#if writable}<p class="muted small">Cliquez une ligne puis ↓ dans l’en-tête d’une colonne : la valeur part sur les lignes choisies en dessous (toutes les lignes affichées en dessous si aucune n’est choisie) ; les numéros s’incrémentent. Rien n’est enregistré avant « Enregistrer ».</p>{/if}
+{/if}
+
+{#if lbl}
+  <Dialog title="Étiquettes de câbles" eyebrow="Impression" onclose={() => (lbl = null)}>
+    {#if !lbl.sheets.length}<p class="muted">Aucune planche active : ajoutez-en une dans Catalogue › Impression.</p>
+    {:else}
+      <label class="field">Planche<select class="input" bind:value={lbl.key}>{#each lbl.sheets as s}<option value={s.key}>{s.name} · {s.reference}{s.brand ? ` · ${s.brand}` : ''} ({s.cols} × {s.rows}{s.diam_min ? `, Ø ${s.diam_min}–${s.diam_max} mm` : ''})</option>{/each}</select></label>
+      <div class="field"><span class="flabel">Câbles</span>
+        <label class="toggle-row small"><input type="radio" bind:group={lbl.scope} value="rule">{view.project.intervention === 'integration' ? 'Tous les câbles (intégration)' : 'Câblage interne des éléments (prestation)'}</label>
+        <label class="toggle-row small"><input type="radio" bind:group={lbl.scope} value="shown">Les câbles affichés par les filtres</label>
+      </div>
+      <label class="toggle-row small"><input type="checkbox" bind:checked={lbl.perEnd}>Une étiquette par extrémité (deux par câble)</label>
+      <label class="field">Emplacements déjà utilisés sur la première planche<input class="input" type="number" min="0" bind:value={lbl.skip}></label>
+      <p class="small">{labelRows.length} câble{labelRows.length > 1 ? 's' : ''} numéroté{labelRows.length > 1 ? 's' : ''} · {labelRows.length * (lbl.perEnd ? 2 : 1)} étiquette{labelRows.length * (lbl.perEnd ? 2 : 1) > 1 ? 's' : ''}. Les câbles sans numéro ne sont pas imprimés.</p>
+    {/if}
+    {#snippet footer()}<button class="btn" onclick={() => (lbl = null)}>Annuler</button><button class="btn primary" disabled={!labelRows.length || !lbl?.key} onclick={printLabels}>Imprimer les étiquettes</button>{/snippet}
+  </Dialog>
 {/if}
 
 <style>
