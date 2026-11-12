@@ -1,5 +1,6 @@
 <script lang="ts">
   import Brand from '../components/Brand.svelte';
+  import Icon from '../components/Icon.svelte';
   import { api, ApiError } from '../lib/api';
   import { session } from '../lib/session.svelte';
   import type { Me } from '../lib/types';
@@ -22,14 +23,13 @@
 
 <div class="gate">
   <div class="gate-card">
-    <span class="word"><Brand stacked /></span>
-    <div class="card stack" style="padding:30px 28px">
-      <h1>Connexion</h1>
+    <div class="gate-panel">
+      <div class="gate-brand"><Brand stacked /></div>
       <form onsubmit={submit}>
         <div class="field"><label for="login">E-mail ou identifiant</label><input class="input" id="login" autocomplete="username" bind:value={login} required></div>
         <div class="field"><label for="pw">Mot de passe</label><input class="input" id="pw" type="password" autocomplete="current-password" bind:value={password} required></div>
         {#if error}<div class="alert err" role="alert">{error}</div>{/if}
-        <button class="btn primary" disabled={busy}>{#if busy}<span class="spin"></span>{/if}Se connecter</button>
+        <button class="btn primary" disabled={busy}>{#if busy}<span class="spin"></span>{:else}<Icon name="login" size="sm" />{/if}Se connecter</button>
       </form>
     </div>
     <p class="gate-foot">Mot de passe oublié : demandez à un administrateur du site de le réinitialiser.</p>

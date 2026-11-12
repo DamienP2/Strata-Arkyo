@@ -25,8 +25,8 @@
 
 <div class="gate">
   <div class="gate-card">
-    <span class="word"><Brand stacked /></span>
-    <div class="card stack" style="padding:30px 28px">
+    <div class="gate-panel">
+      <div class="gate-brand"><Brand stacked /></div>
       <p class="eyebrow" style="margin:0">Première mise en route</p>
       <h1>Créez le compte propriétaire</h1>
       <p class="muted">Ce compte a tous les droits sur le site. Pour des raisons de sécurité, il se crée depuis la machine serveur elle-même (ou avec la commande <code>strata user add</code>).</p>

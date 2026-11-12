@@ -6,12 +6,30 @@ a.btn.primary { color: var(--primary-fg); }
 
 /* Écrans d'accueil hors session : connexion, premier compte, mot de passe temporaire */
 .gate { height: 100%; overflow: auto; display: grid; place-items: center; padding: 32px 16px; }
+/* Pages d'accès : même présentation que les autres modules Strata (Graphics, Multiview) —
+   fond nuit, carte sombre, nom et signature centrés, libellés en capitales. Toujours sombre. */
+.gate { --fg: #ffffff; --fg-2: #a3a9b6; --fg-3: #7b8191; --accent: #8fa3ff; --line: rgba(255,255,255,.08); color: var(--fg);
+  background: radial-gradient(120% 80% at 0% 0%, #1d1a3f 0%, rgba(29,26,63,0) 55%), linear-gradient(180deg, #0f1018, #0a0b10); }
+.gate .gate-card { width: min(400px, 100%); gap: 18px; }
+.gate .gate-panel { display: flex; flex-direction: column; gap: 18px; padding: 30px 30px 32px; border-radius: 18px; background: #12141b; box-shadow: 0 0 0 1px rgba(255,255,255,.08), 0 40px 80px -30px rgba(0,0,0,.8); }
+.gate .gate-brand { display: flex; justify-content: center; padding-bottom: 22px; border-bottom: 1px solid rgba(255,255,255,.08); }
+.gate .gate-brand .brand-name, .gate .gate-brand .brand-module { font-size: 36px; }
+.gate .gate-panel h1 { font: 700 22px/1.2 var(--display); letter-spacing: -.02em; color: #fff; }
+.gate .gate-panel .muted, .gate .gate-panel .help { color: #8a90a0; }
+.gate .gate-panel .eyebrow { color: #8fa3ff; }
+.gate label, .gate .flabel { font: 600 11px var(--font); letter-spacing: .07em; text-transform: uppercase; color: #9aa0ae; }
+.gate .input { height: 40px; background: #1d2030; border: 1px solid rgba(255,255,255,.06); color: #e9ebf2; box-shadow: none; }
+.gate .input:focus { border-color: #8fa3ff; box-shadow: 0 0 0 3px rgba(143,163,255,.2); }
+.gate .btn.primary { height: 42px; font-size: 14.5px; font-weight: 500; background: #4a5384; color: #e6e9f5; border: 0; box-shadow: none; }
+.gate .btn.primary:hover:not(:disabled) { background: #57619a; }
+.gate .gate-foot { text-align: center; color: #6f7585; font-size: 12.5px; }
+.gate code { background: rgba(255,255,255,.08); color: #e9ebf2; }
 .gate-card { width: min(460px, 100%); display: flex; flex-direction: column; gap: 26px; }
 .gate-card .word { font-size: 24px; }
 .gate-card h1 { font: 760 clamp(38px, 7vw, 52px)/1.02 var(--display); letter-spacing: -.04em; }
 .gate-card .lead { font-size: 18px; color: var(--fg-2); }
-.gate-card form { display: flex; flex-direction: column; gap: 16px; }
-.gate-card .btn { width: 100%; height: 50px; font-size: 16px; }
+.gate-card form { display: flex; flex-direction: column; gap: 14px; }
+.gate-card .btn { width: 100%; height: 50px; font-size: 16px; gap: 8px; }
 .gate-foot { font-size: 13.5px; color: var(--fg-3); }
 
 .stack { display: flex; flex-direction: column; gap: 16px; }
