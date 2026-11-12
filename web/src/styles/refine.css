@@ -194,3 +194,80 @@ kbd{font-size:10.5px;padding:3px 6px}
 .ritem.acc{--fp-bg:linear-gradient(180deg,#4A5059,#363B42)}
 .ritem.sel{outline:3px solid #A9B8FF;outline-offset:2px;filter:brightness(1.12)}
 .rack-screen .design-body{grid-template-columns:260px minmax(0,1fr) 320px}
+
+/* ===== Thème sombre : plus contrasté, moins plat ===== */
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  color-scheme:dark;
+  /* Nuit bleutée, comme Strata Graphics et Multiview : trois plans nets (fond, cartes,
+     champs), contours visibles, texte à fort contraste (AA et plus sur chaque surface). */
+  --bg:#0B0D14; --bg-deep:#06070C; --bg-glow:rgba(120,110,255,.16);
+  --surface:#161A26; --surface-2:#1E2333; --surface-3:#282E42; --sunken:#0D1019;
+  --line:#2C3245; --line-2:#434A63; --line-soft:rgba(255,255,255,.10);
+  --fg:#F6F7FB; --fg-2:#D3D7E2; --fg-3:#A9AFC0; --fg-4:#848BA0;
+  --accent:#9DB0FF; --accent-soft:#242C55; --accent-2:#C6D0FF;
+  --primary:#F6F7FB; --primary-fg:#0E1018;
+  --ok:#4FD99B; --ok-soft:#10301F; --warn:#F7B24A; --warn-soft:#352612; --err:#FF7B70; --err-soft:#3B1716; --info:#B3BACA; --info-soft:#20253A;
+  --seg-off:#283046; --wk-c:rgba(255,255,255,.04);
+  --canvas:#0E1119; --dot:#2E3550; --node-bg:#1A1F2E; --node-edge:#3D4560;
+  --stage-a:#262C42; --stage-b:#080A10; --rack-rim:0 0 0 1px rgba(255,255,255,.16),0 0 80px rgba(130,140,255,.12); --vis-a:#222840; --vis-b:#10131E;
+  --inst:#181C2A; --inst-hi:#2B3148; --inst-lo:#11141E; --inst-edge:rgba(255,255,255,.12); --inst-seg:#2A3046;
+  --ill-desk:#1F2434; --ill-desk-top:#323A52; --ill-wall:#1E2333; --ill-unit:#2A3044; --ill-unit-2:#3B4259; --ill-case:#262B3C;
+  --logo-bg:#1A1E2C; --logo-edge:rgba(255,255,255,.18);
+  --e1:0 0 0 1px rgba(255,255,255,.085),0 1px 2px rgba(0,0,0,.55),0 10px 24px -10px rgba(0,0,0,.8),inset 0 1px 0 rgba(255,255,255,.07);
+  --e2:0 0 0 1px rgba(255,255,255,.11),0 2px 4px rgba(0,0,0,.55),0 22px 44px -12px rgba(0,0,0,.9),inset 0 1px 0 rgba(255,255,255,.08);
+  --e3:0 0 0 1px rgba(255,255,255,.12),0 30px 80px -20px rgba(0,0,0,.92);
+  --e-inst:0 0 0 1px rgba(255,255,255,.11),0 24px 50px -16px rgba(0,0,0,.9),inset 0 1px 0 rgba(255,255,255,.09);
+  --well:inset 0 1px 3px rgba(0,0,0,.6),inset 0 0 0 1px rgba(255,255,255,.09),0 1px 0 rgba(255,255,255,.05);
+  --key:inset 0 1px 0 rgba(255,255,255,.11),0 0 0 1px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.06),0 1px 2px rgba(0,0,0,.5),0 4px 10px -3px rgba(0,0,0,.6);
+  --key-bg:linear-gradient(180deg,#2C3248 0%,#222839 100%);
+  --key-bg-h:linear-gradient(180deg,#343B54 0%,#293045 100%);
+  --primary-bg:linear-gradient(180deg,#FFFFFF 0%,#DADDE8 100%);
+  --key-led:#3C55F0;
+  --scrim:rgba(3,4,10,.66);
+}}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  /* Nuit bleutée, comme Strata Graphics et Multiview : trois plans nets (fond, cartes,
+     champs), contours visibles, texte à fort contraste (AA et plus sur chaque surface). */
+  --bg:#0B0D14; --bg-deep:#06070C; --bg-glow:rgba(120,110,255,.16);
+  --surface:#161A26; --surface-2:#1E2333; --surface-3:#282E42; --sunken:#0D1019;
+  --line:#2C3245; --line-2:#434A63; --line-soft:rgba(255,255,255,.10);
+  --fg:#F6F7FB; --fg-2:#D3D7E2; --fg-3:#A9AFC0; --fg-4:#848BA0;
+  --accent:#9DB0FF; --accent-soft:#242C55; --accent-2:#C6D0FF;
+  --primary:#F6F7FB; --primary-fg:#0E1018;
+  --ok:#4FD99B; --ok-soft:#10301F; --warn:#F7B24A; --warn-soft:#352612; --err:#FF7B70; --err-soft:#3B1716; --info:#B3BACA; --info-soft:#20253A;
+  --seg-off:#283046; --wk-c:rgba(255,255,255,.04);
+  --canvas:#0E1119; --dot:#2E3550; --node-bg:#1A1F2E; --node-edge:#3D4560;
+  --stage-a:#262C42; --stage-b:#080A10; --rack-rim:0 0 0 1px rgba(255,255,255,.16),0 0 80px rgba(130,140,255,.12); --vis-a:#222840; --vis-b:#10131E;
+  --inst:#181C2A; --inst-hi:#2B3148; --inst-lo:#11141E; --inst-edge:rgba(255,255,255,.12); --inst-seg:#2A3046;
+  --ill-desk:#1F2434; --ill-desk-top:#323A52; --ill-wall:#1E2333; --ill-unit:#2A3044; --ill-unit-2:#3B4259; --ill-case:#262B3C;
+  --logo-bg:#1A1E2C; --logo-edge:rgba(255,255,255,.18);
+  --e1:0 0 0 1px rgba(255,255,255,.085),0 1px 2px rgba(0,0,0,.55),0 10px 24px -10px rgba(0,0,0,.8),inset 0 1px 0 rgba(255,255,255,.07);
+  --e2:0 0 0 1px rgba(255,255,255,.11),0 2px 4px rgba(0,0,0,.55),0 22px 44px -12px rgba(0,0,0,.9),inset 0 1px 0 rgba(255,255,255,.08);
+  --e3:0 0 0 1px rgba(255,255,255,.12),0 30px 80px -20px rgba(0,0,0,.92);
+  --e-inst:0 0 0 1px rgba(255,255,255,.11),0 24px 50px -16px rgba(0,0,0,.9),inset 0 1px 0 rgba(255,255,255,.09);
+  --well:inset 0 1px 3px rgba(0,0,0,.6),inset 0 0 0 1px rgba(255,255,255,.09),0 1px 0 rgba(255,255,255,.05);
+  --key:inset 0 1px 0 rgba(255,255,255,.11),0 0 0 1px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.06),0 1px 2px rgba(0,0,0,.5),0 4px 10px -3px rgba(0,0,0,.6);
+  --key-bg:linear-gradient(180deg,#2C3248 0%,#222839 100%);
+  --key-bg-h:linear-gradient(180deg,#343B54 0%,#293045 100%);
+  --primary-bg:linear-gradient(180deg,#FFFFFF 0%,#DADDE8 100%);
+  --key-led:#3C55F0;
+  --scrim:rgba(3,4,10,.66);
+}
+
+/* Bandeaux en relief (sombre) : barre du haut en dégradé nuit, barre latérale surélevée,
+   fond avec un halo violet discret, carte active soulignée. */
+:root[data-theme="dark"] .mast{background:linear-gradient(180deg,#151827,#10121B);border-bottom:1px solid #262B3D;box-shadow:0 1px 0 rgba(0,0,0,.5)}
+:root[data-theme="dark"] .ws-side{background:linear-gradient(180deg,#121522,#0E1019);border-right-color:#262B3D}
+:root[data-theme="dark"] body{background:radial-gradient(90% 60% at 0% 0%,rgba(68,58,150,.20),transparent 60%),var(--bg)}
+:root[data-theme="dark"] .card{background:linear-gradient(180deg,#191D2B,#151925)}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]) .mast{background:linear-gradient(180deg,#151827,#10121B);border-bottom:1px solid #262B3D;box-shadow:0 1px 0 rgba(0,0,0,.5)}
+  :root:not([data-theme="light"]) .ws-side{background:linear-gradient(180deg,#121522,#0E1019);border-right-color:#262B3D}
+  :root:not([data-theme="light"]) body{background:radial-gradient(90% 60% at 0% 0%,rgba(68,58,150,.20),transparent 60%),var(--bg)}
+  :root:not([data-theme="light"]) .card{background:linear-gradient(180deg,#191D2B,#151925)}
+}
+
+/* Champs en sombre : fond léger, contour visible, focus bleu. */
+:root[data-theme="dark"] .input{background-color:#111522;box-shadow:inset 0 0 0 1px #30374D,inset 0 1px 2px rgba(0,0,0,.4)} :root[data-theme="dark"] .input:hover{box-shadow:inset 0 0 0 1px #3E4661} :root[data-theme="dark"] .input:focus,:root[data-theme="dark"] .input:focus-visible{box-shadow:inset 0 0 0 1px #9DB0FF,0 0 0 3px rgba(157,176,255,.22)}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .input{background-color:#111522;box-shadow:inset 0 0 0 1px #30374D,inset 0 1px 2px rgba(0,0,0,.4)} :root:not([data-theme="light"]) .input:hover{box-shadow:inset 0 0 0 1px #3E4661} :root:not([data-theme="light"]) .input:focus,:root:not([data-theme="light"]) .input:focus-visible{box-shadow:inset 0 0 0 1px #9DB0FF,0 0 0 3px rgba(157,176,255,.22)} }
