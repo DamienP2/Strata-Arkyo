@@ -56,7 +56,7 @@
       <dl class="kv">
         <dt>État</dt><dd>{PHASES[st.status.phase] ?? st.status.phase}</dd>
         <dt>Dernière recherche</dt><dd>{relative(st.last_check)}</dd>
-        <dt>Mises à jour signées</dt><dd>{st.signed_updates ? 'Oui' : 'Aucune clé de confiance'}</dd>
+        <dt>Source</dt><dd>{st.source ? (st.source.startsWith('github:') ? `GitHub · ${st.source.slice(7)}` : st.source) : 'Désactivée (fichier seulement)'}</dd>
         <dt>Installation gérée</dt><dd>{st.managed ? 'Oui' : 'Non (hors paquet Debian)'}</dd>
       </dl>
       {#if st.status.last_check_error}<div class="alert warn"><Icon name="alert" /><span>{st.status.last_check_error}</span></div>{/if}

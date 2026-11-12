@@ -212,11 +212,8 @@ impl Ops {
                 "Ce serveur n'a pas été installé par le paquet Strata Arkyo : les mises à jour sont désactivées.".into(),
             ));
         }
-        if self.keys.is_empty() {
-            return Err(OpsError::Unavailable(
-                "Cette version n'a pas de clé de publication : les mises à jour signées sont désactivées.".into(),
-            ));
-        }
+        // Pas de clé exigée ici : les versions GitHub sont vérifiées par leur empreinte. Les
+        // paquets signés (.saupd, serveur de publication) refusent d'eux-mêmes sans clé.
         Ok(())
     }
 
@@ -560,11 +557,7 @@ impl Ops {
                 if Instant::now() >= next_check {
                     next_check = Instant::now() + Duration::from_secs(24 * 3600);
                     let enabled = ops.auto_check(&store).await.unwrap_or(false);
-                    if enabled
-                        && ops.update_url.is_some()
-                        && ops.layout.is_managed()
-                        && !ops.keys.is_empty()
-                    {
+                    if enabled && ops.update_url.is_some() && ops.layout.is_managed() {
                         match ops.check(&store).await {
                             Ok(Some(m)) => {
                                 tracing::info!(version = %m.version, "nouvelle version disponible")

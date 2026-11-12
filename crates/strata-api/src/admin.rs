@@ -152,6 +152,7 @@ async fn update_status(State(st): State<AppState>, m: Member) -> ApiResult<Json<
         "current": VERSION,
         "managed": ops.layout.is_managed(),
         "signed_updates": !ops.keys.is_empty(),
+        "source": ops.update_url,
         "channel": ops.channel(&st.store).await?,
         "auto_check": ops.auto_check(&st.store).await?,
         "last_check": st.store.meta(META_LAST_CHECK).await?,

@@ -271,8 +271,8 @@ async fn serve(
     }
     let keys = TrustedKeys::embedded();
     if keys.is_empty() {
-        tracing::warn!(
-            "aucune clé de publication intégrée : les mises à jour signées sont désactivées"
+        tracing::debug!(
+            "aucune clé de publication intégrée : seules les versions GitHub (vérifiées par empreinte) sont acceptées"
         );
     }
     let (ops, restart_rx) = Ops::new(
