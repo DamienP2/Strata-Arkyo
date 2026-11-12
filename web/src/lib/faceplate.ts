@@ -33,7 +33,7 @@ import { refById } from './catalog.svelte';
 
 /** Visuels proposés dans la fiche équipement. */
 export const VISUALS: [string, string][] = [
-  ['monitor', 'Moniteur'], ['switch', 'Switch réseau'], ['server', 'Serveur / ordinateur'], ['router', 'Grille / routeur vidéo'],
+  ['monitor', 'Moniteur · 1 écran'], ['monitor2', 'Moniteur · 2 écrans'], ['monitor3', 'Moniteur · 3 écrans'], ['monitor4', 'Moniteur · 4 écrans'], ['switch', 'Switch réseau'], ['server', 'Serveur / ordinateur'], ['router', 'Grille / routeur vidéo'],
   ['mixer', 'Mélangeur / console'], ['rec', 'Enregistreur'], ['replay', 'Serveur vidéo / replay'], ['mv', 'Multiviewer'],
   ['cards', 'Châssis de cartes / convertisseurs'], ['sync', 'Synchro / timecode'], ['dist', 'Distributeur'], ['ccu', 'CCU / voie caméra'],
   ['intercom', 'Intercom'], ['rx', 'Récepteur HF'], ['stage', 'Stagebox / E-S audio'], ['scope', 'Forme d’onde'],
@@ -55,10 +55,26 @@ export function visualOf(e: { visual?: string | null; type_id?: string | null; l
   if (e.visual) return e.visual;
   const t = e.type_id ? refById('types', e.type_id) : null;
   const names = [t?.name, t?.parent_id ? refById('types', t.parent_id)?.name : null].filter(Boolean) as string[];
-  for (const n of names) { const hit = BY_TYPE.find(([re]) => re.test(n)); if (hit) return hit[1]; }
-  return faceType(e.label);
+  let v: string | null = null;
+  for (const n of names) { const hit = BY_TYPE.find(([re]) => re.test(n)); if (hit) { v = hit[1]; break; } }
+  if (!v && /moniteur|monitor|écran/i.test(e.label)) v = 'monitor';
+  v ??= faceType(e.label);
+  // Moniteurs en rack : nombre d'écrans d'après le nom (Dual, 2×7″, Triple, Quad…).
+  if (v === 'monitor') {
+    const n = /quad|4\s?[x×]/i.test(e.label) ? 4 : /tri(ple)?\b|3\s?[x×]/i.test(e.label) ? 3 : /dual|double|duo|2\s?[x×]/i.test(e.label) ? 2 : 1;
+    if (n > 1) v = `monitor${n}`;
+  }
+  return v;
 }
-const MON = '<svg viewBox="0 0 70 20" preserveAspectRatio="none" aria-hidden="true">' +
-  ['#c0c0c0', '#c0c000', '#00c0c0', '#00c000', '#c000c0', '#c00000', '#0000c0'].map((c, i) => `<rect x="${i * 10}" y="0" width="10" height="14" fill="${c}"/>`).join('') +
-  '<rect x="0" y="14" width="70" height="6" fill="#111"/></svg>';
-DECOR.monitor = `<i class="scr mon">${MON}</i><i class="knob"></i>`;
+/** Nombre d'écrans d'un visuel de moniteur (0 si ce n'en est pas un). */
+export const screensOf = (v: string): number => (v === 'monitor' ? 1 : /^monitor([2-4])$/.exec(v) ? Number(v.slice(7)) : 0);
+// Mire SMPTE (barres, contre-barres, pluge), un peu atténuée comme sur un vrai écran.
+const MON = '<svg viewBox="0 0 70 40" preserveAspectRatio="none" aria-hidden="true">' +
+  ['#bfbfbf', '#bfbf00', '#00bfbf', '#00bf00', '#bf00bf', '#bf0000', '#0000bf'].map((c, i) => `<rect x="${i * 10}" y="0" width="10.2" height="27" fill="${c}"/>`).join('') +
+  ['#0000bf', '#131313', '#bf00bf', '#131313', '#00bfbf', '#131313', '#bfbfbf'].map((c, i) => `<rect x="${i * 10}" y="27" width="10.2" height="3" fill="${c}"/>`).join('') +
+  '<rect x="0" y="30" width="12.5" height="10" fill="#00214c"/><rect x="12.5" y="30" width="12.5" height="10" fill="#fff"/><rect x="25" y="30" width="12.5" height="10" fill="#32006a"/><rect x="37.5" y="30" width="32.5" height="10" fill="#131313"/></svg>';
+const screens = (n: number) => `<i class="mwrap" style="--n:${n}">${Array.from({ length: n }, () => `<i class="mscr">${MON}<i class="umd"></i></i>`).join('')}</i><i class="mkeys"></i>`;
+DECOR.monitor = screens(1);
+DECOR.monitor2 = screens(2);
+DECOR.monitor3 = screens(3);
+DECOR.monitor4 = screens(4);

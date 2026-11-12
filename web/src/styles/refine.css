@@ -168,8 +168,15 @@ kbd{font-size:10.5px;padding:3px 6px}
 .ws-main>.editor .page-head{padding-bottom:4px}
 /* Oreilles 1U : deux trous de fixation par côté, comme sur un vrai équipement. */
 .ritem.u1::before,.ritem.u1::after{background:radial-gradient(circle at 50% 24%,#C8CDD2 0 1.2px,#5A6068 1.5px 2.1px,transparent 2.4px),radial-gradient(circle at 50% 76%,#C8CDD2 0 1.2px,#5A6068 1.5px 2.1px,transparent 2.4px),var(--fp-bg)}
-.scr.mon{width:46px;background:#05070a}
-.scr.mon svg{display:block;width:100%;height:100%}
+/* Moniteurs en rack : écrans 16/9 sur presque toute la hauteur, tally et UMD, touches. */
+.ritem:has(.mwrap) .dec{flex:1 1 auto;justify-content:center;padding:0}
+.ritem:has(.mwrap) .rn{position:absolute;left:10px;top:3px;font-size:9px;opacity:.75;max-width:30%;z-index:1}
+.ritem:has(.mwrap) .led{position:absolute;left:10px;bottom:5px}
+.dec .mwrap{display:flex;align-items:center;justify-content:center;gap:10px;flex:1 1 auto;width:100%;height:100%;min-width:0;padding:4px 0 5px;box-sizing:border-box}
+.dec .mscr{position:relative;display:block;height:100%;aspect-ratio:16/9;flex:0 1 auto;min-width:0;border-radius:2px;background:#000;box-shadow:0 0 0 2px #0a0b0d,0 0 0 3px #4a5058;overflow:hidden}
+.dec .mscr svg{display:block;width:100%;height:100%;opacity:.92}
+.dec .mscr .umd{position:absolute;left:0;right:0;bottom:0;height:12%;min-height:3px;background:#0b0c0e;box-shadow:inset 3px 0 0 #3bd16f}
+.dec .mkeys{flex:none;width:8px;height:58%;margin-left:6px;border-radius:1px;background:repeating-linear-gradient(to bottom,#9aa1a9 0 3px,transparent 3px 6px)}
 /* Barre de laçage : barre ronde sur fond ajouré */
 .ritem .lace{flex:1;align-self:center;height:5px;margin:0 10px;border-radius:3px;background:linear-gradient(180deg,#F0F2F4,#8C9298);box-shadow:0 1px 2px rgba(0,0,0,.6)}
 .ritem.acc:has(.lace){background:transparent!important;box-shadow:none!important}

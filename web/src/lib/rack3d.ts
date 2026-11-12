@@ -174,7 +174,32 @@ function faceCanvases(e: El3D, wPx: number, hPx: number) {
     case 'intercom': lcd(x0, 110, 'IC-1', '#ffb02e'); keys(x0 + 130, 8); break;
     case 'ccu': lcd(x0, 100, 'CAM 3', '#7cc8ff'); keys(x0 + 120, 6); break;
     case 'rx': lcd(x0, 140, '606.125', '#7cc8ff'); lcd(x0 + 170, 140, '614.450', '#7cc8ff'); break;
-    case 'monitor': { const w = Math.min(avail * 0.55, hPx * 2.2), hh = hPx * 0.8, y = hPx * 0.1; roundRect(g, x0, y, w, hh, 3); g.fillStyle = '#05070a'; g.fill(); const bars = ['#c0c0c0', '#c0c000', '#00c0c0', '#00c000', '#c000c0', '#c00000', '#0000c0']; bars.forEach((c, i) => { ge.fillStyle = c; ge.globalAlpha = 0.08; ge.fillRect(x0 + 4 + i * (w - 8) / 7, y + 4, (w - 8) / 7, hh * 0.7); g.fillStyle = c; g.fillRect(x0 + 4 + i * (w - 8) / 7, y + 4, (w - 8) / 7, hh * 0.7); }); ge.globalAlpha = 1; keys(x0 + w + 16, 4); led(x1 - 20, hPx / 2, '#45f58a'); break; }
+    case 'monitor': case 'monitor2': case 'monitor3': case 'monitor4': {
+      // Écrans 16/9 sur presque toute la hauteur, côte à côte, chacun avec sa mire et son UMD.
+      const n = t === 'monitor' ? 1 : Number(t.slice(7));
+      const keysW = 30, room = avail - keysW, gap = room * 0.03;
+      let hh = hPx * 0.8, w = hh * 16 / 9;
+      if (n * w + (n - 1) * gap > room) { w = (room - (n - 1) * gap) / n; hh = w * 9 / 16; }
+      const y = (hPx - hh) / 2, start = x0 + (room - (n * w + (n - 1) * gap)) / 2;
+      const top = ['#bfbfbf', '#bfbf00', '#00bfbf', '#00bf00', '#bf00bf', '#bf0000', '#0000bf'];
+      const mid2 = ['#0000bf', '#131313', '#bf00bf', '#131313', '#00bfbf', '#131313', '#bfbfbf'];
+      for (let k = 0; k < n; k++) {
+        const sx = start + k * (w + gap);
+        roundRect(g, sx - 3, y - 3, w + 6, hh + 6, 3); g.fillStyle = '#0a0b0d'; g.fill();
+        const paint = (ctx: CanvasRenderingContext2D, a: number) => {
+          ctx.globalAlpha = a; const bw = w / 7;
+          top.forEach((c, i) => { ctx.fillStyle = c; ctx.fillRect(sx + i * bw, y, bw + 0.5, hh * 0.6); });
+          mid2.forEach((c, i) => { ctx.fillStyle = c; ctx.fillRect(sx + i * bw, y + hh * 0.6, bw + 0.5, hh * 0.08); });
+          [['#00214c', 0, 0.18], ['#ffffff', 0.18, 0.36], ['#32006a', 0.36, 0.54], ['#131313', 0.54, 1]].forEach(([c, a1, a2]) => { ctx.fillStyle = c as string; ctx.fillRect(sx + w * (a1 as number), y + hh * 0.68, w * ((a2 as number) - (a1 as number)) + 0.5, hh * 0.2); });
+          ctx.fillStyle = '#0b0c0e'; ctx.fillRect(sx, y + hh * 0.88, w, hh * 0.12);
+          ctx.globalAlpha = 1;
+        };
+        paint(g, 1); paint(ge, 0.55);
+        g.fillStyle = '#3bd16f'; g.fillRect(sx, y + hh * 0.88, 4, hh * 0.12);
+      }
+      for (let i = 0; i < 5; i++) { roundRect(g, x1 - 18, hPx * 0.2 + i * hPx * 0.13, 12, hPx * 0.08, 2); g.fillStyle = '#8f969e'; g.fill(); }
+      break;
+    }
     case 'vent': vents(x0, x1); break;
     case 'brush': { roundRect(g, x0, hPx * 0.3, avail, hPx * 0.4, 6); g.fillStyle = '#060607'; g.fill(); for (let i = 0; i < avail; i += 2) { g.strokeStyle = `rgba(30,30,32,${0.5 + r() * 0.5})`; g.beginPath(); g.moveTo(x0 + i, hPx * 0.3); g.lineTo(x0 + i + (r() - 0.5) * 3, hPx * 0.5); g.moveTo(x0 + i, hPx * 0.7); g.lineTo(x0 + i + (r() - 0.5) * 3, hPx * 0.5); g.stroke(); } break; }
     case 'drawer': { roundRect(g, mid - 80, hPx * 0.38, 160, hPx * 0.24, 6); g.fillStyle = '#9aa0a8'; g.fill(); break; }

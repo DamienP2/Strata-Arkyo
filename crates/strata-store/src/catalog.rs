@@ -124,6 +124,8 @@ pub struct ItemFilter {
     pub q: Option<String>,
     pub active: Option<bool>,
     pub brand_id: Option<String>,
+    /// Rôle modulaire : « host » (châssis) ou « component » (module).
+    pub modular: Option<String>,
     pub limit: i64,
     pub offset: i64,
 }
@@ -435,6 +437,10 @@ impl Store {
         if let Some(b) = &f.brand_id {
             clause.push_str(" AND brand_id = ?");
             binds.push(b.clone());
+        }
+        if let Some(m) = &f.modular {
+            clause.push_str(" AND json_extract(data, '$.modular.role') = ?");
+            binds.push(m.clone());
         }
         let count_sql = format!("SELECT COUNT(*){clause}");
         let mut count = sqlx::query_scalar::<_, i64>(&count_sql);

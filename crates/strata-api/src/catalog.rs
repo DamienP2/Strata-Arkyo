@@ -594,6 +594,7 @@ struct ItemsQuery {
     q: Option<String>,
     active: Option<bool>,
     brand_id: Option<String>,
+    modular: Option<String>,
     limit: Option<i64>,
     offset: Option<i64>,
 }
@@ -610,6 +611,7 @@ async fn list_items(
         q: q.q,
         active: q.active,
         brand_id: q.brand_id,
+        modular: q.modular.filter(|m| m == "host" || m == "component"),
         limit: q.limit.unwrap_or(200),
         offset: q.offset.unwrap_or(0),
     };

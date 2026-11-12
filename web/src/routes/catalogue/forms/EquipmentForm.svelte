@@ -7,6 +7,7 @@
   import { refList, refById, refName, FACES, WIDTHS } from '../../../lib/catalog.svelte';
   import { nf } from '../../../lib/format';
   import { VISUALS, visualOf, decor, ALU } from '../../../lib/faceplate';
+  import { api } from '../../../lib/api';
 
   let { data = $bindable(), err }: { data: any; err: (f: string) => string | undefined } = $props();
 
@@ -58,8 +59,92 @@
   const addFlow = () => (data.ip.flows = [...data.ip.flows, { signal_id: signals[0]?.id ?? '', inputs: 0, outputs: 1 }]);
   const addMode = () => (data.dmx.modes = [...data.dmx.modes, { name: '', channels: data.dmx.default_channels || 1 }]);
   const addDoc = () => (data.documents = [...data.documents, { title: '', url: '' }]);
+
+  // ----- Onglets -----
+  type Tab = 'general' | 'format' | 'ports' | 'modules' | 'options' | 'docs';
+  const TABS: { id: Tab; label: string; fields: string[] }[] = [
+    { id: 'general', label: 'Général', fields: ['name', 'reference', 'brand_id', 'category_id', 'type_id', 'functions', 'phases'] },
+    { id: 'format', label: 'Format et énergie', fields: ['format', 'weight_kg', 'power_w', 'btu_h', 'visual'] },
+    { id: 'ports', label: 'Ports', fields: ['ports'] },
+    { id: 'modules', label: 'Modules', fields: ['modular'] },
+    { id: 'options', label: 'DMX et IP', fields: ['dmx', 'ip'] },
+    { id: 'docs', label: 'Documents', fields: ['documents', 'custom'] },
+  ];
+  let tab = $state<Tab>((() => { try { return (sessionStorage.getItem('fiche-tab') as Tab) || 'general'; } catch { return 'general'; } })());
+  $effect(() => { try { sessionStorage.setItem('fiche-tab', tab); } catch { /* indisponible */ } });
+  const tabErr = (t: (typeof TABS)[number]) => t.fields.some((f) => !!err(f));
+  const tabCount = (t: Tab) => t === 'ports' ? totalPorts : t === 'modules' ? (data.modular?.role === 'host' ? data.modular.slots : data.modular?.role === 'component' ? 1 : 0) : t === 'docs' ? data.documents.length : t === 'options' ? Number(!!data.dmx) + Number(!!data.ip) : 0;
+
+  // ----- Aperçu de la façade aux vraies proportions (19″ = 482,6 mm, 1 U = 44,45 mm) -----
+  const vis = $derived(visualOf({ visual: data.visual, type_id: data.type_id, label: data.name ?? '' }));
+  const hu = $derived(data.format.kind === 'rack' ? Math.max(0.5, Number(data.format.height_u) || 1) : 1);
+  const fpW = $derived(Math.min(560, (230 * 482.6) / (44.45 * hu)));
+  const fpH = $derived((fpW * 44.45 * hu) / 482.6);
+  const frac = $derived(({ full: 1, half: 0.5, third: 1 / 3, quarter: 0.25 } as Record<string, number>)[data.format.width ?? 'full'] ?? 1);
+  const fnColor0 = $derived(refById('functions', data.functions[0])?.data?.color ?? 'var(--fg-3)');
+  const inCount = $derived(countOf(true)), outCount = $derived(countOf(false));
+
+  // ----- Modulaire : châssis (reçoit des modules) ou module (occupe des emplacements) -----
+  interface Comp { id: string; name: string; reference: string | null; slots: number }
+  let comps = $state<Comp[] | null>(null);
+  async function loadComps() {
+    if (comps) return;
+    try { comps = (await api.get<{ items: { id: string; name: string; reference: string | null; data: any }[] }>('/catalog/items?kind=equipment&modular=component&limit=1000')).items.map((i) => ({ id: i.id, name: i.name, reference: i.reference, slots: i.data.modular?.slots ?? 1 })); }
+    catch { comps = []; }
+  }
+  $effect(() => { if (data.modular?.role === 'host') loadComps(); });
+  function setRole(r: 'none' | 'host' | 'component') {
+    if (r === 'none') data.modular = null;
+    else if (r === 'host') { if (!data.visual) data.visual = 'cards'; data.modular = { role: 'host', slots: data.modular?.role === 'host' ? data.modular.slots : 10, default_composition: data.modular?.default_composition ?? [] }; }
+    else data.modular = { role: 'component', slots: data.modular?.role === 'component' ? data.modular.slots : 1 };
+  }
+  const compOf = (id: string) => comps?.find((c) => c.id === id);
+  /** Emplacement → module qui l'occupe (premier emplacement seulement porte le module). */
+  const occupancy = $derived.by(() => {
+    const m = new Map<number, { i: number; first: boolean; width: number }>();
+    if (data.modular?.role !== 'host') return m;
+    data.modular.default_composition.forEach((p: any, i: number) => { const w = compOf(p.equipment_id)?.slots ?? 1; for (let k = 0; k < w; k++) m.set(p.slot + k, { i, first: k === 0, width: w }); });
+    return m;
+  });
+  let pickSlot = $state<number | null>(null);
+  let compQ = $state('');
+  const fits = (slot: number, w: number) => { if (slot + w - 1 > (data.modular?.slots ?? 0)) return false; for (let k = 0; k < w; k++) if (occupancy.has(slot + k)) return false; return true; };
+  function placeComp(c: Comp) {
+    if (pickSlot == null || !fits(pickSlot, c.slots)) return;
+    data.modular.default_composition = [...data.modular.default_composition, { equipment_id: c.id, slot: pickSlot }].sort((a: any, b: any) => a.slot - b.slot);
+    pickSlot = null; compQ = '';
+  }
+  const removeComp = (i: number) => (data.modular.default_composition = data.modular.default_composition.filter((_: unknown, j: number) => j !== i));
 </script>
 
+<!-- En-tête : façade aux vraies proportions et chiffres clés -->
+<section class="card fhead">
+  <div class="fh-face">
+    {#if data.format.kind === 'rack'}
+      <div class="fp-big" style="width:{fpW}px;height:{fpH}px;--u:{fpH / hu}px">
+        <span class="ritem {ALU.has(vis) ? 'alu' : ''} {hu <= 1 ? 'u1' : ''}" style="--c:{fnColor0};left:12px;width:calc(({fpW}px - 24px) * {frac});height:{fpH}px"><i class="led"></i><span class="rn">{data.name || 'Équipement'}</span><span class="dec">{@html decor(vis)}</span></span>
+      </div>
+      <span class="muted small">Façade {nf(hu, hu % 1 ? 1 : 0)} U{frac < 1 ? ` · ${data.format.width === 'half' ? '1/2' : data.format.width === 'third' ? '1/3' : '1/4'} largeur` : ''} · {VISUALS.find(([k]) => k === vis)?.[1] ?? 'Générique'}{data.visual ? '' : ' (automatique)'}</span>
+    {:else}
+      <div class="fp-free"><Icon name="box" /><span>Hors rack{data.format.length_mm ? ` · ${nf(data.format.length_mm)} × ${nf(data.format.width_mm)} × ${nf(data.format.height_mm)} mm` : ''}</span></div>
+    {/if}
+  </div>
+  <dl class="fh-facts">
+    <div><dt>Format</dt><dd>{data.format.kind === 'rack' ? `${nf(hu, hu % 1 ? 1 : 0)} U · ${data.format.depth_mm ? `${nf(data.format.depth_mm)} mm` : 'prof. ?'}` : 'Hors rack'}</dd></div>
+    <div><dt>Poids</dt><dd>{data.weight_kg != null ? `${nf(data.weight_kg, 1)} kg` : '—'}</dd></div>
+    <div><dt>Conso.</dt><dd>{data.power_w != null ? `${nf(data.power_w)} W` : '—'}{data.dual_psu ? ' · 2 alim.' : ''}</dd></div>
+    <div><dt>Ports</dt><dd>{inCount} entrée{inCount > 1 ? 's' : ''} · {outCount} sortie{outCount > 1 ? 's' : ''}</dd></div>
+    <div><dt>Modulaire</dt><dd>{data.modular?.role === 'host' ? `Châssis · ${data.modular.slots} empl.` : data.modular?.role === 'component' ? `Module · ${data.modular.slots} empl.` : 'Non'}</dd></div>
+  </dl>
+</section>
+
+<div class="ftabs" role="tablist" aria-label="Sections de la fiche">
+  {#each TABS as t}
+    <button type="button" role="tab" aria-selected={tab === t.id} class:on={tab === t.id} class:bad={tabErr(t)} onclick={() => (tab = t.id)}>{t.label}{#if tabCount(t.id)}<span class="tc">{tabCount(t.id)}</span>{/if}{#if tabErr(t)}<i class="te" title="Champ à corriger"></i>{/if}</button>
+  {/each}
+</div>
+
+{#if tab === 'general'}
 <section class="card">
   <h2>Identité</h2>
   <div class="form-grid">
@@ -76,6 +161,7 @@
   </div>
 </section>
 
+{:else if tab === 'format'}
 <section class="card">
   <div class="card-head"><h2>Format</h2><div class="seg"><button type="button" class:on={data.format.kind === 'rack'} onclick={() => setFormat('rack')}>Rack 19″</button><button type="button" class:on={data.format.kind === 'free'} onclick={() => setFormat('free')}>Hors rack</button></div></div>
   {#if data.format.kind === 'rack'}
@@ -91,8 +177,7 @@
           <option value="">Automatique · {VISUALS.find(([k]) => k === visualOf({ type_id: data.type_id, label: data.name ?? '' }))?.[1] ?? 'Générique'}</option>
           {#each VISUALS as [k, l]}<option value={k}>{l}</option>{/each}
         </select>
-        <span class="help">Façade dessinée dans les vues réelle et 3D. Automatique : d’après le type, puis le nom.</span></div>
-      <div class="vis-prev" aria-hidden="true"><span class="ritem {ALU.has(visualOf({ visual: data.visual, type_id: data.type_id, label: data.name ?? '' })) ? 'alu' : ''} {(data.format.height_u ?? 1) <= 1 ? 'u1' : ''}" style="--c:{refById('functions', data.functions[0])?.data?.color ?? 'var(--fg-3)'}"><i class="led"></i><span class="rn">{data.name || 'Équipement'}</span><span class="dec">{@html decor(visualOf({ visual: data.visual, type_id: data.type_id, label: data.name ?? '' }))}</span></span></div>
+        <span class="help">Façade dessinée dans les vues réelle et 3D (aperçu en haut de la fiche). Automatique : d’après le type, puis le nom ; pour un moniteur, le nombre d’écrans vient du nom (Dual, Triple, 4×…).</span></div>
     </div>
   {:else}
     <div class="fg3" style="margin-top:16px">
@@ -116,6 +201,7 @@
   </div>
 </section>
 
+{:else if tab === 'ports'}
 {#snippet group(p: any, i: number, inSide: boolean)}
   <div class="pg" class:on={hl === i} style="--c:{refById('signals', p.signal_id)?.data?.color ?? refById('connectors', p.connector_id)?.data?.color ?? 'var(--fg-3)'}" role="group" aria-label="Groupe de ports {i + 1}"
     onmouseenter={() => (hl = i)} onfocusin={() => (hl = i)}>
@@ -161,7 +247,55 @@
   </div>
   <FieldError message={err('ports')} />
 </section>
+{:else if tab === 'modules'}
+<section class="card">
+  <div class="card-head"><div><h2>Équipement modulaire</h2><span class="muted small">Un châssis reçoit des modules (cartes, convertisseurs) dans ses emplacements ; un module occupe un ou plusieurs emplacements d’un châssis.</span></div></div>
+  <div class="seg role-seg">
+    <button type="button" class:on={!data.modular} onclick={() => setRole('none')}>Équipement simple</button>
+    <button type="button" class:on={data.modular?.role === 'host'} onclick={() => setRole('host')}>Châssis · reçoit des modules</button>
+    <button type="button" class:on={data.modular?.role === 'component'} onclick={() => setRole('component')}>Module · se glisse dans un châssis</button>
+  </div>
+  {#if data.modular?.role === 'host'}
+    <div class="fg4" style="margin-top:16px"><NumField id="e-slots" label="Emplacements" bind:value={data.modular.slots} min={1} max={40} step={1} error={err('modular.slots')} help="De 1 à 40." /></div>
+    <div class="chassis-h"><b>Composition par défaut</b><span class="muted small">Proposée quand le châssis est ajouté à un projet. Cliquez un emplacement libre pour y glisser un module.</span></div>
+    <div class="chassis" style="--n:{data.modular.slots}">
+      {#each Array(Math.max(1, Math.min(40, Number(data.modular.slots) || 1))) as _, k}
+        {@const slot = k + 1}
+        {@const o = occupancy.get(slot)}
+        {#if o?.first}
+          {@const p = data.modular.default_composition[o.i]}
+          <div class="card-slot full" style="grid-column:span {Math.min(o.width, data.modular.slots - k)}" title={compOf(p.equipment_id)?.name ?? p.equipment_id}>
+            <span class="cs-n">{slot}{o.width > 1 ? `–${slot + o.width - 1}` : ''}</span>
+            <span class="cs-name">{compOf(p.equipment_id)?.name ?? 'Module'}</span>
+            <button type="button" class="cs-x" aria-label="Retirer ce module" onclick={() => removeComp(o.i)}><Icon name="x" size="sm" /></button>
+          </div>
+        {:else if !o}
+          <button type="button" class="card-slot" class:pick={pickSlot === slot} onclick={() => { pickSlot = pickSlot === slot ? null : slot; loadComps(); }}><span class="cs-n">{slot}</span><span class="cs-plus">+</span></button>
+        {/if}
+      {/each}
+    </div>
+    <FieldError message={err('modular')} />
+    {#if pickSlot != null}
+      <div class="comp-pick">
+        <div class="cp-h"><b>Module pour l’emplacement {pickSlot}</b><input class="input" placeholder="Rechercher un module…" bind:value={compQ} aria-label="Rechercher un module"><button type="button" class="btn sm ghost" onclick={() => (pickSlot = null)}>Fermer</button></div>
+        {#if comps === null}<span class="spin"></span>
+        {:else}
+          {#each comps.filter((c) => !compQ.trim() || `${c.name} ${c.reference ?? ''}`.toLowerCase().includes(compQ.trim().toLowerCase())).slice(0, 60) as c (c.id)}
+            {@const ok = fits(pickSlot, c.slots)}
+            <button type="button" class="cp-row" disabled={!ok} onclick={() => placeComp(c)}><b>{c.name}</b><span class="muted small">{c.reference ?? ''}</span><span class="cp-w">{c.slots} empl.{ok ? '' : ' · ne tient pas ici'}</span></button>
+          {:else}<p class="muted small">Aucun module au catalogue. Ouvrez la fiche d’une carte et choisissez « Module » dans cet onglet.</p>{/each}
+        {/if}
+      </div>
+    {/if}
+  {:else if data.modular?.role === 'component'}
+    <div class="fg4" style="margin-top:16px"><NumField id="e-cslots" label="Emplacements occupés" bind:value={data.modular.slots} min={1} max={8} step={1} error={err('modular.slots')} help="Largeur du module dans le châssis, de 1 à 8." /></div>
+    <p class="muted small" style="margin-top:8px">Ce module apparaît dans la liste des modules de chaque fiche de châssis.</p>
+  {:else}
+    <p class="muted small" style="margin-top:14px">Cet équipement ne reçoit pas de modules et ne se glisse pas dans un châssis.</p>
+  {/if}
+</section>
 
+{:else if tab === 'options'}
 <section class="card">
   <div class="card-head"><h2>Lumières (DMX)</h2><label class="toggle-row"><input type="checkbox" bind:checked={dmxOn}>Pilotable en DMX</label></div>
   {#if dmxOn && data.dmx}
@@ -194,6 +328,7 @@
   {/if}
 </section>
 
+{:else}
 <section class="card">
   <div class="card-head"><h2>Documents</h2><button type="button" class="btn sm" onclick={addDoc}><Icon name="plus" size="sm" />Ajouter un lien</button></div>
   <div class="stack" style="margin-top:12px">
@@ -207,6 +342,7 @@
     <FieldError message={err('documents')} />
   </div>
 </section>
+{/if}
 
 <style>
   .ports3 { display: grid; grid-template-columns: minmax(300px, 1fr) minmax(330px, auto) minmax(300px, 1fr); gap: 18px; align-items: start; margin-top: 14px; }
@@ -233,8 +369,42 @@
     .pprev { grid-column: 1 / -1; grid-row: 1; position: static; }
   }
   @media (max-width: 760px) { .ports3 { grid-template-columns: minmax(0, 1fr); } }
-  .vis-row { display: grid; grid-template-columns: minmax(220px, 320px) minmax(0, 1fr); gap: 16px; align-items: end; margin-top: 14px; }
-  .vis-prev { position: relative; height: 44px; padding: 0 14px; border-radius: 8px; background: #111418; display: flex; align-items: center; }
-  .vis-prev .ritem { position: relative; inset: auto; width: 100%; height: 30px; }
-  @media (max-width: 760px) { .vis-row { grid-template-columns: minmax(0, 1fr); } }
+  .vis-row { display: grid; grid-template-columns: minmax(220px, 420px); gap: 16px; margin-top: 14px; }
+  /* En-tête */
+  .fhead { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 28px; align-items: center; }
+  .fh-face { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+  .fp-big { position: relative; flex: none; border-radius: 6px; background: linear-gradient(90deg, #2A2E34, #3A3F46 6%, #30353B 50%, #3A3F46 94%, #2A2E34); box-shadow: 0 0 0 6px #1d2126, 0 12px 26px -14px rgba(0, 0, 0, .6); }
+  .fp-big .ritem { position: absolute; top: 0; font-size: 13px; }
+  .fp-free { display: flex; align-items: center; gap: 10px; padding: 18px 22px; border-radius: 12px; background: var(--surface-2); color: var(--fg-2); }
+  .fh-facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px 18px; margin: 0; }
+  .fh-facts div { display: flex; flex-direction: column; gap: 2px; }
+  .fh-facts dt { font: 600 10.5px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--fg-3); }
+  .fh-facts dd { margin: 0; font-weight: 600; font-size: 14.5px; }
+  @media (max-width: 900px) { .fhead { grid-template-columns: minmax(0, 1fr); } .fp-big { max-width: 100%; } }
+  /* Onglets */
+  .ftabs { display: flex; gap: 4px; flex-wrap: wrap; padding: 4px; border-radius: 12px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); position: sticky; top: 8px; z-index: 5; }
+  .ftabs button { display: inline-flex; align-items: center; gap: 7px; padding: 8px 14px; border: 0; border-radius: 9px; background: none; font: inherit; font-weight: 600; font-size: 14px; color: var(--fg-3); cursor: pointer; }
+  .ftabs button:hover { color: var(--fg); background: var(--surface-2); }
+  .ftabs button.on { color: var(--fg); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line-2); }
+  .ftabs .tc { font: 600 11px var(--mono); padding: 1px 6px; border-radius: 99px; background: var(--sunken, var(--surface-2)); color: var(--fg-2); }
+  .ftabs .te { width: 7px; height: 7px; border-radius: 50%; background: var(--err); }
+  .ftabs button.bad { color: var(--err); }
+  /* Modulaire */
+  .role-seg { margin-top: 14px; flex-wrap: wrap; }
+  .chassis-h { display: flex; flex-direction: column; gap: 2px; margin: 18px 0 8px; }
+  .chassis { display: grid; grid-template-columns: repeat(var(--n), minmax(26px, 1fr)); gap: 3px; padding: 10px; border-radius: 8px; background: linear-gradient(180deg, #2b3036, #1c2025); box-shadow: inset 0 0 0 1px #000; }
+  .card-slot { position: relative; height: 150px; display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 6px 2px; border: 0; border-radius: 3px; background: repeating-linear-gradient(180deg, #121519 0 6px, #171b20 6px 12px); box-shadow: inset 0 0 0 1px #000; color: #8f98a3; font: inherit; cursor: pointer; }
+  .card-slot:hover, .card-slot.pick { box-shadow: inset 0 0 0 2px var(--accent); }
+  .card-slot.full { cursor: default; background: linear-gradient(90deg, #4a515a, #5d6570 40%, #444b54); color: #fff; box-shadow: inset 0 0 0 1px #000, inset 0 1px 0 rgba(255, 255, 255, .25); }
+  .cs-n { font: 600 10px var(--mono); }
+  .cs-plus { font-size: 18px; line-height: 1; opacity: .7; }
+  .cs-name { flex: 1; writing-mode: vertical-rl; transform: rotate(180deg); font-size: 11.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 6px 0; }
+  .cs-x { border: 0; background: rgba(0, 0, 0, .35); color: #fff; border-radius: 4px; width: 22px; height: 22px; display: grid; place-items: center; cursor: pointer; }
+  .comp-pick { margin-top: 12px; display: grid; gap: 6px; padding: 12px; border-radius: 12px; background: var(--surface-2); max-height: 360px; overflow: auto; }
+  .cp-h { display: flex; gap: 8px; align-items: center; }
+  .cp-h .input { flex: 1; height: 34px; }
+  .cp-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 8px 10px; border: 0; border-radius: 9px; background: var(--surface); text-align: left; font: inherit; color: inherit; cursor: pointer; }
+  .cp-row:hover:not(:disabled) { box-shadow: inset 0 0 0 1.5px var(--accent); }
+  .cp-row:disabled { opacity: .5; cursor: default; }
+  .cp-w { font: 600 11.5px var(--mono); color: var(--fg-3); }
 </style>
