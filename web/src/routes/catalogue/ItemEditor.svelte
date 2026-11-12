@@ -82,7 +82,7 @@
     <header class="page-head">
       <div>
         <nav class="crumbs" aria-label="Fil d’Ariane"><a class="crumb" href="/catalogue/{kind}">Catalogue · {meta.label}</a><span class="sep">›</span><span>{id ? 'Fiche' : 'Nouvelle fiche'}</span></nav>
-        <h1 class="display" style="font-size:clamp(34px,5vw,54px);margin-top:10px">{data.name || (id ? item?.name : meta.newLabel)}</h1>
+        <h1 style="margin-top:4px">{data.name || (id ? item?.name : meta.newLabel)}</h1>
         {#if item}<p class="muted small" style="margin-top:6px">Modifiée {relative(item.updated_at)} · révision {item.rev}</p>{/if}
       </div>
       {#if id && writable}<div class="head-actions"><button class="btn" onclick={duplicate}><Icon name="copy" />Dupliquer</button><button class="btn ghost danger" onclick={() => (deleting = true)}><Icon name="trash" />Supprimer</button></div>{/if}

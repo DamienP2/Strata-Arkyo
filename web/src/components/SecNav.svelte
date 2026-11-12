@@ -1,7 +1,7 @@
 <script lang="ts">
   // Barre de sections : touches groupées sur grand écran, sélecteur déroulant sur mobile.
   import Icon from './Icon.svelte';
-  export interface SecItem { key: string; label: string; href: string; badge?: string | number }
+  export interface SecItem { key: string; label: string; href: string; badge?: string | number; icon?: string }
   export interface SecGroup { label?: string; lock?: boolean; items: SecItem[] }
   let { groups, active, label }: { groups: SecGroup[]; active: string; label: string } = $props();
 

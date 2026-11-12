@@ -18,6 +18,8 @@
   let paletteOpen = $state(false);
 
   const top = $derived(route.path.split('/')[1] ?? '');
+  // Projet ouvert, catalogue et administration : barre latérale de sections, contenu pleine hauteur.
+  const wsView = $derived(top === 'catalogue' || top === 'admin' || (top === 'projets' && !!route.path.split('/')[2]));
   const links = $derived([
     { key: '', label: 'Accueil', href: '/', show: true },
     { key: 'projets', label: 'Projets', href: '/projets', show: can('projets', 'lecture') },
@@ -64,7 +66,7 @@
       </div>
     </div>
   </header>
-  <main id="view" tabindex="-1">{@render children()}</main>
+  <main id="view" class:wsv={wsView} tabindex="-1">{@render children()}</main>
 </div>
 
 <aside class="sidebar" class:open={menuOpen} aria-label="Menu" aria-hidden={!menuOpen}>

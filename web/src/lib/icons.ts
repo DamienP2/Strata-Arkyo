@@ -1,5 +1,13 @@
 // Icônes de trait (24 × 24, épaisseur 1,7), reprises de la maquette v2.
 export const ICONS: Record<string, string> = {
+cable:'M3 20c5 0 4-8 9-8s4-8 9-8M2 18h3v4H2zM19 2h3v4h-3z',
+plug:'M9 3v5M15 3v5M6 8h12v3a6 6 0 0 1-12 0zM12 17v4',
+printer:'M6 9V3h12v6M6 17H4.5A1.5 1.5 0 0 1 3 15.5v-5A1.5 1.5 0 0 1 4.5 9h15a1.5 1.5 0 0 1 1.5 1.5v5a1.5 1.5 0 0 1-1.5 1.5H18M6 14h12v7H6z',
+sheet:'M3 5h18v14H3zM9 5v14M15 5v14',
+home:'M3 11 12 4l9 7M5 9.5V20h5v-6h4v6h5V9.5',
+panel:'M3 8h18v8H3zM6.5 12h.01M10 12h.01M13.5 12h.01M17 12h.01',
+tools:'M14.5 6.5a4 4 0 0 0 5 5L21 13l-8 8-3-3 7-7-1-1a4 4 0 0 1-1.5-3.5zM3 21l7-7',
+collapse:'M4 4h16v16H4zM9 4v16M15 9l-3 3 3 3',
 folder:'M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2h8.5A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z',
 box:'M21 8 12 3 3 8v8l9 5 9-5zM3 8l9 5 9-5M12 13v8',
 layers:'M12 3 2 8l10 5 10-5zM2 12.5l10 5 10-5M2 17l10 5 10-5',
