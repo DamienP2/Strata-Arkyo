@@ -36,9 +36,9 @@
       default: return {};
     }
   }
-  function edit(r?: RefItem) {
+  function edit(r?: RefItem, preset?: { function?: string; parent_id?: string }) {
     errors = {}; general = null;
-    editing = r ? { id: r.id, rev: r.rev, name: r.name, parent_id: r.parent_id, data: structuredClone(r.data) } : { id: null, rev: 0, name: '', parent_id: null, data: blankData(kind) };
+    editing = r ? { id: r.id, rev: r.rev, name: r.name, parent_id: r.parent_id, data: structuredClone(r.data) } : { id: null, rev: 0, name: '', parent_id: preset?.parent_id ?? null, data: { ...blankData(kind), ...(preset?.function ? { function: preset.function } : {}) } };
     variants = (editing.data.variants ?? []).join(', ');
   }
   let variants = $state('');
@@ -66,6 +66,29 @@
   async function restoreDims() {
     try { const r = await api.post<{ restored: number }>('/catalog/refs/dimensions/restore'); toast(r.restored ? `${r.restored} préréglage(s) remis.` : 'Tous les préréglages d’origine sont déjà là.'); await loadRefs(true); } catch (e) { fail(e); }
   }
+  // Types : classés par fonction, sous-types sous leur type ; groupes repliables (mémorisé).
+  const byName = (a: RefItem, b: RefItem) => a.name.localeCompare(b.name, 'fr', { numeric: true });
+  const typeTree = $derived.by(() => {
+    if (kind !== 'types') return [];
+    const all = list;
+    const tops = all.filter((r) => !r.parent_id);
+    const subs = (id: string) => all.filter((r) => r.parent_id === id).sort(byName);
+    const known = new Set(refList('functions').map((f) => f.id));
+    const groups = refList('functions').map((f) => {
+      const types = tops.filter((r) => r.data.function === f.id).sort(byName).map((r) => ({ r, subs: subs(r.id) }));
+      return { f, types, count: types.reduce((n, t) => n + 1 + t.subs.length, 0) };
+    });
+    const orphan = tops.filter((r) => !known.has(r.data.function)).sort(byName).map((r) => ({ r, subs: subs(r.id) }));
+    return orphan.length ? [...groups, { f: null, types: orphan, count: orphan.reduce((n, t) => n + 1 + t.subs.length, 0) }] : groups;
+  });
+  let folded = $state<Record<string, boolean>>((() => { try { return JSON.parse(localStorage.getItem('strata-types-folded') ?? '{}'); } catch { return {}; } })());
+  function toggleFold(id: string) { folded = { ...folded, [id]: !folded[id] }; try { localStorage.setItem('strata-types-folded', JSON.stringify(folded)); } catch { /* indisponible */ } }
+  const allFolded = $derived(typeTree.length > 0 && typeTree.every((g) => folded[g.f?.id ?? '-']));
+  function foldAll(v: boolean) { folded = Object.fromEntries(typeTree.map((g) => [g.f?.id ?? '-', v])); try { localStorage.setItem('strata-types-folded', JSON.stringify(folded)); } catch { /* indisponible */ } }
+  let typeQuery = $state('');
+  const tq = $derived(typeQuery.trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase());
+  const tmatch = (r: RefItem) => !tq || r.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().includes(tq);
+
   const sw = (c: string) => (c ? `<span class="role-dot" style="--c:${c}"></span>` : '');
   function detail(r: RefItem): string {
     const d = r.data;
@@ -97,6 +120,52 @@
   {/if}
 </div>
 
+{#snippet typeRow(r: RefItem, sub: boolean, fnId: string)}
+  <div class="tt-row" class:sub class:off={!r.active}>
+    <span class="tt-name">{#if sub}<span class="tt-branch"></span>{/if}<b>{r.name}</b></span>
+    {#if writable}
+      <span class="tt-act">
+        {#if !sub}<button class="btn sm ghost" title="Ajouter un sous-type à « {r.name} »" onclick={() => edit(undefined, { parent_id: r.id, function: fnId })}><Icon name="plus" size="sm" />Sous-type</button>{/if}
+        <label class="toggle-row small" title={r.active ? 'Actif' : 'Inactif'}><input type="checkbox" checked={r.active} onchange={(e) => setActive(r, (e.target as HTMLInputElement).checked)}></label>
+        <button class="btn sm ghost" title="Modifier" onclick={() => edit(r)}><Icon name="pen" size="sm" /></button>
+        <button class="btn sm ghost danger" title={r.uses ? 'Utilisé : désactivez-le plutôt' : 'Supprimer'} disabled={r.uses > 0} onclick={() => (deleting = r)}><Icon name="trash" size="sm" /></button>
+      </span>
+    {/if}
+    <span class="tt-uses" title="{r.uses || 0} équipement(s) de ce type">{r.uses || ''}</span>
+  </div>
+{/snippet}
+
+{#if kind === 'types'}
+  <div class="tt-bar">
+    <label class="search"><Icon name="search" /><input class="input" bind:value={typeQuery} placeholder="Chercher un type…" aria-label="Chercher un type"></label>
+    <button class="btn sm ghost" onclick={() => foldAll(!allFolded)}>{allFolded ? 'Tout déplier' : 'Tout replier'}</button>
+    <span class="muted small">{list.length} types et sous-types</span>
+  </div>
+  <div class="tt-groups">
+    {#each typeTree as g (g.f?.id ?? '-')}
+      {@const gid = g.f?.id ?? '-'}
+      {@const shown = g.types.filter((t) => tmatch(t.r) || t.subs.some(tmatch))}
+      {#if !tq || shown.length}
+        <section class="card tt-group" style="--c:{g.f?.data.color ?? 'var(--fg-3)'}">
+          <header class="tt-head">
+            <button class="tt-fold" aria-expanded={!folded[gid] || !!tq} onclick={() => toggleFold(gid)}><Icon name="chevr" size="sm" /></button>
+            <i class="tt-dot"></i><b>{g.f?.name ?? 'Sans fonction connue'}</b>{#if g.f}<span class="tt-key mono">{g.f.data.key}</span>{/if}
+            <span class="tt-count">{g.count}</span>
+            {#if writable && g.f}<button class="btn sm ghost tt-add" onclick={() => edit(undefined, { function: g.f!.id })}><Icon name="plus" size="sm" />Type</button>{/if}
+          </header>
+          {#if !folded[gid] || tq}
+            <div class="tt-body">
+              {#each shown as t (t.r.id)}
+                {@render typeRow(t.r, false, gid)}
+                {#each t.subs.filter((x) => !tq || tmatch(x) || tmatch(t.r)) as x (x.id)}{@render typeRow(x, true, gid)}{/each}
+              {:else}<p class="empty" style="padding:8px 4px">Aucun type.</p>{/each}
+            </div>
+          {/if}
+        </section>
+      {/if}
+    {/each}
+  </div>
+{:else}
 <section class="card" style="padding:6px 18px 10px">
   <div class="tbl-wrap">
     <table class="tbl">
@@ -118,6 +187,8 @@
     </table>
   </div>
 </section>
+
+{/if}
 
 {#if editing}
   <Dialog title={editing.id ? `Modifier « ${editing.name} »` : `Ajouter : ${meta.one.toLowerCase()}`} eyebrow={meta.label} onclose={() => (editing = null)}>
@@ -179,3 +250,31 @@
     <p>Aucune fiche ne l’utilise. La suppression est définitive ; pour le masquer seulement, désactivez-le.</p>
   </Confirm>
 {/if}
+
+<style>
+  .tt-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .tt-groups { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); gap: 14px; align-items: start; }
+  .tt-group { padding: 0; overflow: hidden; }
+  .tt-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--c) 5%, var(--surface)); box-shadow: inset 3px 0 0 var(--c); }
+  .tt-head b { font: 650 14.5px var(--display); }
+  .tt-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--c); flex: none; }
+  .tt-key { font-size: 10.5px; color: var(--fg-3); letter-spacing: .05em; }
+  .tt-count { min-width: 22px; height: 20px; padding: 0 6px; border-radius: 10px; display: grid; place-items: center; font: 700 11px var(--mono); background: color-mix(in srgb, var(--c) 14%, var(--surface)); color: var(--fg-2); }
+  .tt-add { margin-left: auto; }
+  .tt-fold { border: 0; background: none; padding: 2px; color: var(--fg-3); display: grid; place-items: center; border-radius: 5px; }
+  .tt-fold :global(.ic) { transition: transform .15s; }
+  .tt-fold[aria-expanded='true'] :global(.ic) { transform: rotate(90deg); }
+  .tt-body { padding: 4px 6px 8px; }
+  .tt-row { display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 6px; border-radius: 7px; }
+  .tt-row:hover { background: var(--surface-2); }
+  .tt-row.off .tt-name { opacity: .5; }
+  .tt-name { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1; }
+  .tt-name b { font-weight: 600; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tt-row.sub .tt-name b { font-weight: 500; color: var(--fg-2); }
+  .tt-branch { width: 14px; height: 14px; margin-left: 8px; border-left: 1.5px solid var(--line-2); border-bottom: 1.5px solid var(--line-2); border-bottom-left-radius: 5px; transform: translateY(-4px); flex: none; }
+  .tt-uses { font: 600 11.5px var(--mono); color: var(--fg-3); min-width: 20px; text-align: right; }
+  .tt-act { display: flex; align-items: center; gap: 2px; opacity: 0; transition: opacity .12s; }
+  .tt-row:hover .tt-act, .tt-row:focus-within .tt-act { opacity: 1; }
+  .tt-act .toggle-row input { width: 15px; height: 15px; }
+  @media (hover: none) { .tt-act { opacity: 1; } }
+</style>
