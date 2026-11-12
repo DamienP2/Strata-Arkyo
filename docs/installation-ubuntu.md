@@ -299,7 +299,95 @@ La base de données est migrée automatiquement au démarrage. Pour mettre à jo
 
 ---
 
-## Mises à jour OTA (depuis l'application)
+## Mises à jour depuis GitHub (recommandé)
+
+GitHub compile, signe et publie chaque version dans les **Releases** du dépôt. Le serveur y lit les nouvelles versions et l'administrateur les installe en un clic depuis l'application. Plus rien à compiler sur le serveur.
+
+### 1. Une seule fois : la clé de publication sur GitHub
+
+Sur votre poste (Ubuntu, avec Rust, voir étape 2) :
+
+```sh
+cd ~/Strata-Arkyo
+cargo run --release -p strata-release -- keygen --out ~/strata-keys
+cat ~/strata-keys/release.key     # clé privée
+cat ~/strata-keys/release.pub     # clé publique
+```
+
+Sur GitHub, dans le dépôt : **Settings → Secrets and variables → Actions → New repository secret**, créez deux secrets :
+
+| Nom | Valeur |
+| --- | --- |
+| `STRATA_RELEASE_KEY` | le contenu de `release.key` |
+| `STRATA_RELEASE_PUBKEY` | le contenu de `release.pub` |
+
+Rangez ensuite `release.key` en lieu sûr hors du poste (coffre, clé USB). Avec elle, n'importe qui peut signer une mise à jour acceptée par vos serveurs ; sans elle, il faudrait réinstaller les serveurs avec une nouvelle clé.
+
+### 2. Publier une version
+
+1. Sur GitHub, onglet **Actions** → **Publier une version** → **Run workflow**, branche `main`.
+2. Comptez 15 à 25 minutes : tests, compilation, signature.
+3. La version apparaît dans **Releases** (`v0.2.0`, puis `v0.2.1`…) avec trois fichiers : le paquet `.saupd`, `manifest.json` et le `.deb`.
+
+Le numéro publié est celui de `Cargo.toml`. Une version déjà publiée est refusée : il faut d'abord monter le numéro. Un numéro avec tiret (ex. `0.3.0-beta.1`) part en préversion, sur le canal Bêta.
+
+### 3. Une seule fois sur le serveur : installer une version signée et brancher GitHub
+
+**a. Installer le `.deb` de la Release.** Il contient votre clé publique, ce qui permet ensuite les mises à jour OTA. Téléchargez-le depuis la page Releases (bouton du fichier `strata-arkyo_0.2.0_amd64.deb`), copiez-le sur le serveur, puis :
+
+```sh
+sudo -u strata strata backup --label "avant passage aux mises à jour GitHub"
+sudo apt install ./strata-arkyo_0.2.0_amd64.deb
+strata version                       # Strata Arkyo 0.2.0
+```
+
+**b. Créer un jeton GitHub en lecture seule** (le dépôt est privé) : GitHub → photo de profil → **Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token**.
+- *Repository access* : **Only select repositories** → `Strata-Arkyo`.
+- *Permissions* → *Repository permissions* → **Contents : Read-only**. Rien d'autre.
+- Une durée de validité d'un an, à noter dans l'agenda pour le renouveler.
+
+**c. Indiquer la source et le jeton au serveur :**
+
+```sh
+sudo nano /etc/default/strata-arkyo
+```
+
+Ajoutez (ou décommentez) ces deux lignes :
+
+```sh
+STRATA_UPDATE_URL=github:DamienP2/Strata-Arkyo
+STRATA_UPDATE_TOKEN=github_pat_xxxxxxxxxxxxxxxx
+```
+
+```sh
+sudo chmod 600 /etc/default/strata-arkyo     # le jeton n'est lisible que par root
+sudo systemctl restart strata-arkyo
+```
+
+Le serveur doit pouvoir joindre `api.github.com` et `objects.githubusercontent.com` en HTTPS (port 443 sortant).
+
+### 4. Ensuite, à chaque nouvelle version
+
+1. **Publier** : Actions → Publier une version → Run workflow (étape 2).
+2. **Installer** : dans l'application, **Administration → Mises à jour → Rechercher**. La nouvelle version s'affiche ; choisissez **Installer maintenant** ou **Cette nuit (03:30)**.
+
+Le serveur vérifie aussi tout seul une fois par jour et signale la nouvelle version ; l'installation reste toujours décidée par un administrateur. Avant de basculer, il vérifie la signature, fait un essai sur une copie de la base et une sauvegarde. Si la nouvelle version ne démarre pas, il revient seul à l'ancienne.
+
+### Si ça ne marche pas
+
+| Message dans Administration → Mises à jour | Cause | Solution |
+| --- | --- | --- |
+| « Aucune source de mise à jour configurée » | `STRATA_UPDATE_URL` absent | Étape 3c |
+| « réponse 404 … dépôt privé sans jeton » | Jeton absent, expiré ou sans accès au dépôt | Refaire le jeton (3b), puis 3c |
+| « réponse 401 … jeton refusé » | Jeton invalide ou mal copié | Recopier le jeton, redémarrer le service |
+| « aucune clé de publication dans cette version » | La version installée n'a pas été compilée par le workflow | Installer le `.deb` de la Release (3a) |
+| « signature invalide » | Les secrets GitHub ne correspondent pas à la clé de la version installée | Vérifier les deux secrets (étape 1), republier |
+| « ne contient pas le fichier manifest.json » | Release créée à la main, ou workflow encore en cours | Attendre la fin du workflow ; publier uniquement par le workflow |
+| Le workflow échoue à « Clés de publication présentes » | Secrets absents | Étape 1 |
+
+---
+
+## Mises à jour OTA sans GitHub (paquet déposé à la main)
 
 Une mise à jour OTA se fait depuis **Administration → Mises à jour**, sans recompiler sur le serveur : on dépose un paquet signé `.saupd` (ou le serveur le télécharge lui-même). Le moteur vérifie la signature, essaie la nouvelle version sur une copie de la base, fait une sauvegarde, bascule, puis redémarre. Si la nouvelle version ne démarre pas, il revient seul à l'ancienne.
 

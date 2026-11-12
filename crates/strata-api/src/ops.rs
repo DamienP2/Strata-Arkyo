@@ -10,7 +10,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use strata_backup::{Backups, Kind};
 use strata_store::Store;
-use strata_update::{Layout, ReleaseManifest, TrustedKeys, fetch, manifest, package, version};
+use strata_update::{Layout, ReleaseManifest, TrustedKeys, manifest, package, version};
 use tokio::sync::{Mutex, watch};
 
 pub const EXIT_RESTART: i32 = 75;
@@ -252,7 +252,7 @@ impl Ops {
         self.require_managed()?;
         let base = self.update_url.clone().ok_or_else(|| {
             OpsError::Unavailable(
-                "Aucun serveur de publication n'est configuré (STRATA_UPDATE_URL).".into(),
+                "Aucune source de mise à jour configurée : indiquez STRATA_UPDATE_URL (par exemple github:propriétaire/dépôt) dans /etc/default/strata-arkyo.".into(),
             )
         })?;
         let channel = self.channel(store).await?;
@@ -304,7 +304,7 @@ impl Ops {
             .map_err(|_| OpsError::Conflict("Une mise à jour est déjà en cours.".into()))?;
         self.set_phase(Phase::Downloading).await;
         let result = async {
-            let bytes = fetch::get(&manifest::package_url(&base, &m))
+            let bytes = manifest::fetch_package(&base, &m)
                 .await
                 .map_err(update_err)?;
             if strata_update::signing::sha256_hex(&bytes) != m.sha256 {

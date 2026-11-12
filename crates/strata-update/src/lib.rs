@@ -6,6 +6,7 @@
 //! - Après une bascule, un compteur de démarrages ramène l'ancienne version au troisième échec.
 
 pub mod fetch;
+pub mod github;
 pub mod layout;
 pub mod manifest;
 pub mod package;

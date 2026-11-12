@@ -1,7 +1,7 @@
 //! Manifeste d'un canal de publication : `<base>/<canal>/manifest.json`, enveloppe signée.
 
 use crate::signing::{Envelope, TrustedKeys};
-use crate::{Result, UpdateError, fetch};
+use crate::{Result, UpdateError, fetch, github};
 use ed25519_dalek::SigningKey;
 use serde::{Deserialize, Serialize};
 
@@ -45,11 +45,28 @@ pub async fn fetch_manifest(
     channel: &str,
     keys: &TrustedKeys,
 ) -> Result<ReleaseManifest> {
-    let bytes = fetch::get(&manifest_url(base, channel)).await?;
+    let gh = github::parse(base);
+    let bytes = match &gh {
+        Some(repo) => github::manifest_bytes(repo, channel).await?,
+        None => fetch::get(&manifest_url(base, channel)).await?,
+    };
     let env: Envelope = serde_json::from_slice(&bytes)?;
     let m: ReleaseManifest = serde_json::from_str(keys.verify(&env)?)?;
-    if m.channel != channel || m.package.contains("..") {
+    // Sur GitHub, le canal Bêta suit aussi les versions stables (la plus récente l'emporte).
+    let channel_ok = m.channel == channel || (gh.is_some() && channel == "beta");
+    if !channel_ok || m.package.contains("..") {
         return Err(UpdateError::InvalidPackage("manifeste incohérent".into()));
     }
     Ok(m)
+}
+
+/// Télécharge le paquet annoncé par le manifeste, quelle que soit la source.
+pub async fn fetch_package(base: &str, m: &ReleaseManifest) -> Result<Vec<u8>> {
+    match github::parse(base) {
+        Some(repo) => {
+            let file = m.package.rsplit('/').next().unwrap_or(&m.package);
+            github::package_bytes(&repo, &m.version, file).await
+        }
+        None => fetch::get(&package_url(base, m)).await,
+    }
 }

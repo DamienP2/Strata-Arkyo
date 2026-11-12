@@ -1,0 +1,115 @@
+# Publication d'une version de Strata Arkyo dans les Releases du dépôt.
+#
+# Lancement : onglet Actions → « Publier une version » → Run workflow (sur main), ou en
+# poussant une étiquette vX.Y.Z. Le numéro est celui de Cargo.toml ; une préversion
+# (ex. 0.3.0-beta.1) part sur le canal Bêta.
+#
+# La Release reçoit :
+#   - strata-arkyo_<version>_x86_64.saupd : paquet signé, installé par les serveurs en OTA ;
+#   - manifest.json : manifeste signé lu par les serveurs (STRATA_UPDATE_URL=github:…) ;
+#   - strata-arkyo_<version>_amd64.deb : pour une première installation.
+#
+# Secrets du dépôt (Settings → Secrets and variables → Actions) :
+#   STRATA_RELEASE_KEY     contenu de release.key (clé privée de publication)
+#   STRATA_RELEASE_PUBKEY  contenu de release.pub (clé publique, intégrée au moteur)
+
+name: Publier une version
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    # Ubuntu 22.04 : le programme produit fonctionne sur 22.04 et 24.04.
+    runs-on: ubuntu-22.04
+    env:
+      STRATA_RELEASE_PUBKEY: ${{ secrets.STRATA_RELEASE_PUBKEY }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version et étiquette
+        id: v
+        run: |
+          VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          TAG="v$VERSION"
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "$GITHUB_REF_NAME" != "$TAG" ]; then
+            echo "::error::L'étiquette $GITHUB_REF_NAME ne correspond pas à la version $VERSION de Cargo.toml."
+            exit 1
+          fi
+          if [ "$GITHUB_REF_TYPE" != "tag" ] && gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::error::La version $TAG est déjà publiée : montez le numéro dans Cargo.toml."
+            exit 1
+          fi
+          case "$VERSION" in *-*) CHANNEL=beta ;; *) CHANNEL=stable ;; esac
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
+          echo "Version $VERSION, canal $CHANNEL."
+
+      - name: Clés de publication présentes
+        env:
+          KEY: ${{ secrets.STRATA_RELEASE_KEY }}
+        run: |
+          if [ -z "$STRATA_RELEASE_PUBKEY" ] || [ -z "$KEY" ]; then
+            echo "::error::Ajoutez les secrets STRATA_RELEASE_KEY et STRATA_RELEASE_PUBKEY au dépôt."
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Interface web
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Tests
+        run: cargo test --workspace --locked
+
+      - name: Compilation
+        run: cargo build --release --locked -p strata -p strata-release
+
+      - name: Paquet signé et manifeste
+        env:
+          KEY: ${{ secrets.STRATA_RELEASE_KEY }}
+        run: |
+          umask 077
+          printf '%s\n' "$KEY" > "$RUNNER_TEMP/release.key"
+          target/release/strata version
+          target/release/strata-release pack --binary target/release/strata --key "$RUNNER_TEMP/release.key" --out dist
+          target/release/strata-release publish --package dist/strata-arkyo_${{ steps.v.outputs.version }}_x86_64.saupd \
+            --channel ${{ steps.v.outputs.channel }} --key "$RUNNER_TEMP/release.key" --site site \
+            --note "Strata Arkyo ${{ steps.v.outputs.version }}"
+          cp site/${{ steps.v.outputs.channel }}/manifest.json dist/manifest.json
+          rm -f "$RUNNER_TEMP/release.key"
+
+      - name: Paquet Debian
+        run: |
+          cargo install cargo-deb --locked
+          cargo deb --no-build -p strata
+          cp target/debian/*.deb dist/
+
+      - name: Release GitHub
+        run: |
+          PRE=""
+          [ "${{ steps.v.outputs.channel }}" = "beta" ] && PRE="--prerelease"
+          gh release create "${{ steps.v.outputs.tag }}" dist/*.saupd dist/manifest.json dist/*.deb \
+            --target "$GITHUB_SHA" --title "Strata Arkyo ${{ steps.v.outputs.version }}" --generate-notes $PRE

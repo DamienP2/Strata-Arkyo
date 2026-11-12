@@ -18,7 +18,7 @@
       <dt>Dossier d’installation</dt><dd class="mono">{sys.install_dir}</dd>
       <dt>Installation gérée (OTA)</dt><dd>{sys.managed ? 'Oui' : 'Non : lancé hors du paquet Debian'}</dd>
       <dt>Clés de publication de confiance</dt><dd class="mono">{sys.release_keys.length ? sys.release_keys.join(', ') : 'Aucune'}</dd>
-      <dt>Serveur de mises à jour</dt><dd class="mono">{sys.update_url ?? 'Non configuré'}</dd>
+      <dt>Source des mises à jour</dt><dd class="mono">{sys.update_url ? (sys.update_url.startsWith('github:') ? `GitHub · ${sys.update_url.slice(7)}` : sys.update_url) : 'Non configurée'}</dd>
     </dl>
   </section>
 {:else}<span class="spin"></span>{/if}

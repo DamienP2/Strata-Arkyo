@@ -9,6 +9,8 @@ if [ "$1" = "configure" ]; then
             --gecos "Strata Arkyo" strata >/dev/null
     fi
     install -d -o strata -g strata -m 0750 /var/lib/strata-arkyo
+    # Les réglages peuvent contenir un jeton d'accès : lisibles par root seulement (systemd les lit).
+    chmod 600 /etc/default/strata-arkyo 2>/dev/null || true
 
     VERSION="$(/usr/lib/strata-arkyo/strata version --short)"
     install -d -m 0755 "/opt/strata-arkyo/versions/$VERSION"

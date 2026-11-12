@@ -38,5 +38,5 @@ conf-files = ["/etc/default/strata-arkyo"]
 assets = [
     ["target/release/strata", "usr/lib/strata-arkyo/strata", "755"],
     ["../../packaging/systemd/strata-arkyo.service", "lib/systemd/system/strata-arkyo.service", "644"],
-    ["../../packaging/strata-arkyo.default", "etc/default/strata-arkyo", "644"],
+    ["../../packaging/strata-arkyo.default", "etc/default/strata-arkyo", "600"],
 ]
