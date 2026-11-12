@@ -1211,7 +1211,7 @@
                   <rect class="bandc" x="3.5" y="3.5" width="3" height="11" rx="1" />
                   <text class="tconn" x="10" y="12.5">{connOf(c)}</text>
                   {#if c.fields.number}<text x={cw + 16} y="13">{c.fields.number}</text>{:else}<text class="tnone" x={cw + 16} y="13">—</text>{/if}
-                  {#if c.fields.number && dups.has(c.fields.number)}<g class="dupm" transform="translate({tagW(c) + 4} 0)"><path d="M8 1l7.5 14h-15z" /><text x="8" y="13.5" text-anchor="middle">!</text><title>Numéro en double</title></g>{/if}
+                  {#if (c.fields.number && dups.has(c.fields.number)) || c.warnings.length}<g class="dupm" transform="translate({tagW(c) + 4} 0)"><path d="M8 1l7.5 14h-15z" /><text x="8" y="13.5" text-anchor="middle">!</text><title>{[...(c.fields.number && dups.has(c.fields.number) ? ['Numéro en double'] : []), ...c.warnings].join(' · ')}</title></g>{/if}
                 </g>
               {/each}
             {/each}
@@ -1601,7 +1601,6 @@
   .cable .case { fill: none; stroke: var(--surface-2); stroke-width: 6; }
   .cable .vis { fill: none; stroke: var(--c); stroke-width: 2.2; stroke-linejoin: round; }
   .cable .hit { fill: none; stroke: transparent; stroke-width: 14; }
-  .cable.warn .vis { stroke-dasharray: 7 4; }
   .cable.sel .vis { stroke-width: 3.6; filter: drop-shadow(0 0 4px var(--c)); }
   .cable.stub .vis { stroke-dasharray: 2 4; }
   .far rect { fill: var(--surface); stroke: var(--c); stroke-width: 1.2; }
