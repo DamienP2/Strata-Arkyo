@@ -22,6 +22,7 @@ export interface El3D {
   brand: string | null; face: 'front' | 'rear' | 'rear_inner'; u_start: number; width: 'full' | 'half' | 'third' | 'quarter'; col: number;
   kind: string; // type de face (faceplate.ts)
   alu: boolean; accessory: any | null; ports: Port3D[]; fnColor: string;
+  shelf_id: string | null;
 }
 export interface Box3DSpec { kind: string; name: string; units: number; width_mm: number | null; depth_mm: number | null; height_mm: number | null; rear_rails_mm: number | null; wheels: boolean }
 export interface Hit { label: string; tag: string | null; u: number; height: number; face: string }
@@ -143,9 +144,17 @@ function faceCanvases(e: El3D, wPx: number, hPx: number) {
   const brand = (e.brand ?? '').toUpperCase();
   g.font = `600 ${Math.round(Math.min(hPx * 0.2, 20))}px Helvetica, Arial`; g.textBaseline = 'top';
   g.fillStyle = alu ? '#2a2c30' : '#c8ccd2';
-  if (e.nature !== 'accessory') g.fillText(brand || e.label.split(' ')[0]!.toUpperCase(), x0, hPx * 0.08);
-  g.font = `400 ${Math.round(Math.min(hPx * 0.16, 15))}px Helvetica, Arial`; g.fillStyle = alu ? '#4a4d52' : '#8b9096';
-  if (e.nature !== 'accessory') g.fillText(e.label.slice(0, 40), x0, hPx * 0.08 + Math.min(hPx * 0.22, 22));
+  // Sérigraphie : en haut à gauche sur 2 U et plus ; en bas à droite, discrète, sur 1 U.
+  const tall = e.height_u >= 1.5;
+  const mark = brand || e.label.split(' ')[0]!.toUpperCase();
+  if (e.nature !== 'accessory' && tall) {
+    g.fillText(mark, x0, hPx * 0.06);
+    g.font = `400 ${Math.round(Math.min(hPx * 0.12, 15))}px Helvetica, Arial`; g.fillStyle = alu ? '#4a4d52' : '#8b9096';
+    g.fillText(e.label.slice(0, 40), x0, hPx * 0.06 + Math.min(hPx * 0.17, 22));
+  } else if (e.nature !== 'accessory') {
+    g.font = `600 ${Math.round(hPx * 0.17)}px Helvetica, Arial`; g.textAlign = 'right'; g.textBaseline = 'bottom';
+    g.fillText(mark.slice(0, 18), x1 - 6, hPx * 0.94); g.textAlign = 'left'; g.textBaseline = 'top';
+  }
   // Repère de l'exemplaire, étiquette blanche.
   if (e.tag) { const tw = g.measureText(e.tag).width + 14; roundRect(g, x1 - tw, hPx * 0.08, tw, 18, 3); g.fillStyle = '#f4f4f0'; g.fill(); g.fillStyle = '#15171a'; g.font = '600 12px Courier, monospace'; g.fillText(e.tag, x1 - tw + 7, hPx * 0.08 + 3); }
   const mid = (x0 + x1) / 2, avail = x1 - x0;
@@ -420,9 +429,47 @@ export class RackScene {
       }
     }
 
-    // Équipements.
-    for (const e of els) this.equipment(e, frontRail, rearRail, y0);
+    // Équipements : au rack, ou posés sur une étagère.
+    for (const e of els.filter((x) => !x.shelf_id)) this.equipment(e, frontRail, rearRail, y0);
+    const byShelf = new Map<string, El3D[]>();
+    for (const e of els.filter((x) => x.shelf_id)) byShelf.set(e.shelf_id!, [...(byShelf.get(e.shelf_id!) ?? []), e]);
+    for (const [sid, items] of byShelf) {
+      const sh = els.find((x) => x.id === sid); if (!sh) continue;
+      const ys = y0 + (sh.u_start - 1) * U + 0.003;
+      const rear = sh.face !== 'front', z = rear ? rearRail : frontRail;
+      const slot = (OPEN - 0.02) / items.length;
+      items.forEach((it, i) => this.loose(it, -OPEN / 2 + 0.01 + slot * (i + 0.5), ys, z + (rear ? 0.15 : -0.15), slot, sh.height_u, rear));
+    }
     this.frame('quarter');
+  }
+
+  /** Appareil hors format posé sur une étagère : moniteur (écran et mire) ou boîtier. */
+  private loose(e: El3D, x: number, y: number, z: number, slot: number, shelfU: number, rear: boolean) {
+    const m = this.mats; const g = new THREE.Group(); g.position.set(x, y, z); if (rear) g.rotation.y = Math.PI;
+    const hit = { label: e.label, tag: e.tag, u: e.u_start, height: e.height_u, face: e.face } as Hit;
+    if (/moniteur|écran|monitor/i.test(e.label)) {
+      const w = Math.min(slot - 0.01, 0.38), h = Math.min(w * 0.6, Math.max(0.09, shelfU * U * 4));
+      const body = new THREE.Mesh(new RoundedBoxGeometry(w, h, 0.045, 3, 0.006), m.blackPlastic); body.position.set(0, h / 2 + 0.03, 0); body.castShadow = true; g.add(body);
+      // Mire de barres couleur (SMPTE), lumineuse.
+      const [c, gc] = canvas(512, 300);
+      const bars = ['#c0c0c0', '#c0c000', '#00c0c0', '#00c000', '#c000c0', '#c00000', '#0000c0'];
+      bars.forEach((b, i) => { gc.fillStyle = b; gc.fillRect((i * 512) / 7, 0, 512 / 7 + 1, 200); });
+      ['#0000c0', '#131313', '#c000c0', '#131313', '#00c0c0', '#131313', '#c0c0c0'].forEach((b, i) => { gc.fillStyle = b; gc.fillRect((i * 512) / 7, 200, 512 / 7 + 1, 25); });
+      gc.fillStyle = '#00214c'; gc.fillRect(0, 225, 90, 75); gc.fillStyle = '#ffffff'; gc.fillRect(90, 225, 90, 75); gc.fillStyle = '#32006a'; gc.fillRect(180, 225, 90, 75); gc.fillStyle = '#131313'; gc.fillRect(270, 225, 242, 75);
+      gc.fillStyle = 'rgba(0,0,0,.6)'; gc.fillRect(8, 8, 120, 26); gc.fillStyle = '#fff'; gc.font = 'bold 18px Helvetica'; gc.fillText(e.tag ?? 'PGM', 14, 28);
+      const t = tex(c);
+      const scr = new THREE.Mesh(new THREE.PlaneGeometry(w - 0.016, h - 0.022), new THREE.MeshPhysicalMaterial({ map: t, emissiveMap: t, emissive: '#ffffff', emissiveIntensity: 0.62, roughness: 0.15, clearcoat: 1, clearcoatRoughness: 0.05 }));
+      scr.position.set(0, h / 2 + 0.03 + 0.003, 0.0231); scr.userData.hit = hit; this.pick.push(scr); g.add(scr);
+      const foot = new THREE.Mesh(new THREE.BoxGeometry(w * 0.4, 0.03, 0.12), m.blackPlastic); foot.position.set(0, 0.015, -0.02); foot.castShadow = true; g.add(foot);
+      const led = new THREE.Mesh(new THREE.BoxGeometry(0.003, 0.002, 0.001), new THREE.MeshStandardMaterial({ color: '#45f58a', emissive: '#45f58a', emissiveIntensity: 4 })); led.position.set(w / 2 - 0.012, 0.035, 0.0232); g.add(led);
+    } else {
+      const w = Math.min(slot - 0.01, 0.3), h = Math.max(0.04, shelfU * U * 0.7);
+      const body = new THREE.Mesh(new RoundedBoxGeometry(w, h, 0.22, 3, 0.006), m.chassis); body.position.y = h / 2; body.castShadow = true; g.add(body);
+      const f = faceCanvases({ ...e, width: 'half' }, Math.round(w * 2400), Math.round(h * 2400));
+      const front = new THREE.Mesh(new THREE.PlaneGeometry(w - 0.006, h - 0.006), new THREE.MeshStandardMaterial({ map: f.map, emissiveMap: f.emissive, emissive: '#fff', emissiveIntensity: 3.2, roughnessMap: f.rough, metalness: 0.5 }));
+      front.position.set(0, h / 2, 0.111); front.userData.hit = hit; this.pick.push(front); g.add(front);
+    }
+    this.root.add(g);
   }
 
   private castor(x: number, z: number, h: number) {
