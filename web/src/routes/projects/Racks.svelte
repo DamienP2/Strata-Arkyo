@@ -15,6 +15,7 @@
   import { CONTAINER_KINDS, type Accessory, type Article, type ProjectView } from '../../lib/projects';
   import PanelFace from '../../components/PanelFace.svelte';
   import ProjectPanel from './ProjectPanel.svelte';
+  import Rack3D from '../../components/Rack3D.svelte';
 
   let { view }: { view: ProjectView } = $props();
   type Face = 'front' | 'rear' | 'rear_inner';
@@ -38,6 +39,7 @@
   let rack = $state<Rack | null>(null);
   let face = $state<Face | 'side'>('front');
   let mode = $state<'real' | 'schematic'>('real');
+  let show3d = $state(false);
   let armed = $state<Pending | null>(null);
   let sel = $state<string | null>(null);
   let hoverU = $state<{ u: number; col: number } | null>(null);
@@ -224,7 +226,7 @@
         {#each racks as c}<option value={c.id}>{c.name} · {c.height_u} U</option>{/each}
       </select>
       <div class="seg" role="group" aria-label="Face">{#each [...rack.faces, 'side'] as f}<button class:on={face === f} onclick={() => { face = f as Face | 'side'; armed = null; }}>{FACES[f as Face]}</button>{/each}</div>
-      <div class="seg" role="group" aria-label="Rendu"><button class:on={mode === 'real'} onclick={() => (mode = 'real')}>Réel</button><button class:on={mode === 'schematic'} onclick={() => (mode = 'schematic')}>Schématique</button></div>
+      <div class="seg" role="group" aria-label="Rendu"><button class:on={mode === 'real' && !show3d} onclick={() => { mode = 'real'; show3d = false; }}>Réel</button><button class:on={mode === 'schematic' && !show3d} onclick={() => { mode = 'schematic'; show3d = false; }}>Schématique</button><button class:on={show3d} onclick={() => (show3d = true)}><Icon name="box" size="sm" />3D</button></div>
       <span class="gap"></span>
       <span class="meter" class:err={t.over_u}><span>U</span><Vu value={(t.used_u / (t.total_u || 1)) * 100} mode="load" n={16} /><span class="mono">{nf(t.used_u, t.used_u % 1 ? 1 : 0)} / {t.total_u} U</span></span>
       <span class="meter" class:err={t.over_weight}><span>Poids</span><Vu value={rack.container.max_weight_kg ? (t.weight_kg / rack.container.max_weight_kg) * 100 : 0} mode="load" n={16} /><span class="mono">{nf(t.weight_kg, 1)}{rack.container.max_weight_kg ? ` / ${nf(rack.container.max_weight_kg)}` : ''} kg</span></span>
@@ -250,8 +252,10 @@
         </section>
       </aside>
 
-      <div class="rack-stage">
-        {#if face === 'side'}
+      <div class="rack-stage" class:stage3d={show3d}>
+        {#if show3d}
+          <Rack3D container={rack.container} elements={rack.elements} title={rack.container.name} />
+        {:else if face === 'side'}
           <div class="rack-wrap">
             <span class="rack-title"><Icon name="server" />{rack.container.name} · côté</span>
             <div class="rack" style="--units:{units};grid-template-columns:28px auto">
@@ -386,6 +390,7 @@
 {/if}
 
 <style>
+  .rack-stage.stage3d { padding: 0; display: block; align-self: stretch; }
   .rack-screen .design-body { min-height: 640px; }
   .shelf-load { flex: 1 1 0; min-width: 0; display: flex; gap: 4px; justify-content: flex-end; overflow: hidden; }
   .sh-it { flex: none; font: 600 10px/1 var(--font); padding: 3px 6px; border-radius: 3px; color: #fff; background: color-mix(in srgb, var(--c) 70%, #1C1F23); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .15); max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
