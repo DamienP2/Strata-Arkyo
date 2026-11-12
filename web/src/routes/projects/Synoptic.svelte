@@ -800,6 +800,22 @@
               </g>
             {/each}
           </g>
+          <!-- Vol d'oiseau : trait direct entre les deux extrémités des câbles sélectionnés. -->
+          <g class="bird" pointer-events="none">
+            {#each [...new Set([...(sel ? [sel] : []), ...multi])].slice(0, 60) as id (id)}
+              {@const c = syn.cables.find((x) => x.id === id)}
+              {#if c}
+                {@const A = portXY(c.a)}{@const B = portXY(c.b)}{@const st = !A || !B ? stub(c) : null}
+                {@const p1 = A ?? (st ? [st.ex, st.ey] : null)}{@const p2 = B ?? (st ? [st.ex, st.ey] : null)}
+                {#if p1 && p2 && (p1[0] !== p2[0] || p1[1] !== p2[1])}
+                  <line class="bird-halo" x1={p1[0]} y1={p1[1]} x2={p2[0]} y2={p2[1]} />
+                  <line class="bird-line" x1={p1[0]} y1={p1[1]} x2={p2[0]} y2={p2[1]} style="--c:{cableColor(c)}" />
+                  <circle class="bird-end" cx={p1[0]} cy={p1[1]} r="7" style="--c:{cableColor(c)}" />
+                  <circle class="bird-end" cx={p2[0]} cy={p2[1]} r="7" style="--c:{cableColor(c)}" />
+                {/if}
+              {/if}
+            {/each}
+          </g>
           <g class="tags">
             {#each syn.cables.filter((x) => !x.fields.attach) as c (c.id)}
               {@const both = c.a_in_view && c.b_in_view}
@@ -1065,6 +1081,11 @@
   .node.panel .box { stroke-dasharray: 5 3; }
   .port { cursor: pointer; }
   .port .ph { fill: transparent; }
+  .bird-halo { stroke: var(--surface); stroke-width: 7; stroke-linecap: round; opacity: .85; }
+  .bird-line { stroke: var(--c); stroke-width: 2.5; stroke-dasharray: 10 6; stroke-linecap: round; animation: bird 0.9s linear infinite; }
+  .bird-end { fill: none; stroke: var(--c); stroke-width: 2.5; }
+  @keyframes bird { to { stroke-dashoffset: -32; } }
+  @media (prefers-reduced-motion: reduce) { .bird-line { animation: none; } }
   .pdot { fill: var(--node-bg, var(--surface)); stroke: var(--c); stroke-width: 2; }
   .port.used .pdot { fill: var(--c); }
   .port:hover .ph, .port.armed .ph { fill: color-mix(in srgb, var(--c) 22%, transparent); }
