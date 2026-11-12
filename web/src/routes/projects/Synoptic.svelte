@@ -66,6 +66,9 @@
   async function validate() { try { issues = await api.get(`/projects/${pid}/synoptic/validate`); } catch (e) { fail(e); } }
   function pickCable(id: string, e: MouseEvent) {
     e.stopPropagation();
+    if (tool !== 'select') return;
+    const cb = syn?.cables.find((x) => x.id === id);
+    if (cb && lockedFam.has(famOf(cb))) { toast('Calque verrouillé : déverrouillez-le pour choisir ce câble.', 'info'); return; }
     if (e.ctrlKey || e.metaKey || e.shiftKey) { const m = new Set(multi); if (m.has(id)) m.delete(id); else m.add(id); multi = m; }
     else multi = new Set([id]);
     sel = id; tab = 'cable';
@@ -287,7 +290,7 @@
   }
 
   // ----- Outils et annotations -----
-  type Tool = 'select' | 'zone' | 'label';
+  type Tool = 'select' | 'lasso' | 'zone' | 'label';
   let tool = $state<Tool>('select');
   let selAnn = $state<string | null>(null);
   const anns = $derived(syn?.annotations ?? []);
@@ -326,30 +329,70 @@
   let hiddenFam = $state<Set<string>>(new Set((() => { try { return JSON.parse(localStorage.getItem('syn-hidden') ?? '[]'); } catch { return []; } })()));
   function toggleFam(f: string) { const h = new Set(hiddenFam); if (h.has(f)) h.delete(f); else h.add(f); hiddenFam = h; try { localStorage.setItem('syn-hidden', JSON.stringify([...h])); } catch { /* stockage indisponible */ } }
   function isolateFam(f: string) { const all = families.filter((x) => x !== f); hiddenFam = new Set(all); try { localStorage.setItem('syn-hidden', JSON.stringify(all)); } catch { /* stockage indisponible */ } }
-  const famOf = (c: CableV) => portByRef(c.a)?.family ?? portByRef(c.b)?.family ?? '—';
+  // Calques par famille de signal ou par signal ; verrouillés ou renommés, par projet.
+  const LKEY = (k: string) => `syn-${k}:${pid}`;
+  const lsGet = <T,>(k: string, d: T): T => { try { const v = localStorage.getItem(LKEY(k)); return v ? JSON.parse(v) : d; } catch { return d; } };
+  const lsSet = (k: string, v: unknown) => { try { localStorage.setItem(LKEY(k), JSON.stringify(v)); } catch { /* stockage indisponible */ } };
+  let layerBy = $state<'family' | 'signal'>(lsGet('layerby', 'family'));
+  let lockedFam = $state<Set<string>>(new Set(lsGet<string[]>('locked', [])));
+  let famNames = $state<Record<string, string>>(lsGet('names', {}));
+  function toggleLock(f: string) { const l = new Set(lockedFam); if (l.has(f)) l.delete(f); else l.add(f); lockedFam = l; lsSet('locked', [...l]); if (l.has(f)) multi = new Set([...multi].filter((id) => { const c = syn?.cables.find((x) => x.id === id); return !c || famOf(c) !== f; })); }
+  function renameLayer(f: string) { const cur = famNames[f] ?? layerName(f, true); const n = prompt('Nom du calque :', cur); if (n === null) return; const m = { ...famNames }; if (n.trim()) m[f] = n.trim().slice(0, 60); else delete m[f]; famNames = m; lsSet('names', m); }
+  const layerName = (f: string, raw = false) => (!raw && famNames[f]) || (f === '—' ? (layerBy === 'signal' ? 'Sans signal' : 'Sans famille') : layerBy === 'signal' ? (refById('signals', f)?.name ?? f) : (refById('functions', f)?.name ?? f));
+  const famOf = (c: CableV) => layerBy === 'signal' ? (portByRef(c.a)?.signal ?? portByRef(c.b)?.signal ?? '—') : (portByRef(c.a)?.family ?? portByRef(c.b)?.family ?? '—');
+  const layerColor = (f: string) => f === '—' ? 'var(--fg-3)' : layerBy === 'signal' ? ((refById('signals', f) as any)?.data?.color || fnColor((refById('signals', f) as any)?.data?.function)) : fnColor(f);
   const families = $derived([...new Set((syn?.cables ?? []).map(famOf))]);
 
-  let drag: { kind: 'pan' | 'node' | 'ann' | 'resize' | 'draft'; key?: string; ox: number; oy: number; moved: boolean; from?: { x: number; y: number; w?: number; h?: number } } | null = null;
+  let drag: { kind: 'pan' | 'node' | 'ann' | 'resize' | 'draft' | 'lasso'; key?: string; ox: number; oy: number; moved: boolean; rect?: boolean; from?: { x: number; y: number; w?: number; h?: number } } | null = null;
+  // Sélection au rectangle (Maj + glisser) ou au lasso (outil Lasso).
+  let lasso = $state<[number, number][] | null>(null);
+  let annMulti = $state<Set<string>>(new Set());
+  function inPoly(x: number, y: number, poly: [number, number][]) {
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const [xi, yi] = poly[i]!, [xj, yj] = poly[j]!; if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside; }
+    return inside;
+  }
+  function finishLasso(poly: [number, number][], add: boolean) {
+    if (!syn || poly.length < 3) return;
+    const picked = new Set(add ? multi : []);
+    for (const c of syn.cables) {
+      if (hiddenFam.has(famOf(c)) || lockedFam.has(famOf(c))) continue;
+      const A = portXY(c.a), B = portXY(c.b); const pts = [A, B].filter(Boolean) as [number, number, string][];
+      if (!pts.length) continue;
+      const mx = pts.reduce((s, p) => s + p[0], 0) / pts.length, my = pts.reduce((s, p) => s + p[1], 0) / pts.length;
+      if (pts.every((p) => inPoly(p[0], p[1], poly)) || inPoly(mx, my, poly)) picked.add(c.id);
+    }
+    const am = new Set<string>();
+    for (const a of anns) { const cx = a.kind === 'zone' ? a.data.x + a.data.w / 2 : a.data.x, cy = a.kind === 'zone' ? a.data.y + a.data.h / 2 : a.data.y; if (inPoly(cx, cy, poly)) am.add(a.id); }
+    multi = picked; sel = [...picked][0] ?? null; annMulti = am; selAnn = am.size === 1 ? [...am][0]! : null;
+    if (picked.size) tab = 'cable';
+    if (picked.size || am.size) toast(`${picked.size} câble${picked.size > 1 ? 's' : ''}${am.size ? ` et ${am.size} annotation${am.size > 1 ? 's' : ''}` : ''} sélectionné${picked.size + am.size > 1 ? 's' : ''}.`, 'info');
+  }
   function down(e: PointerEvent) {
     const t = e.target as Element;
-    if (t.closest('.port') || t.closest('.cable') || t.closest('.lbl')) return;
+    if (t.closest('.port') || (tool === 'select' && (t.closest('.cable') || t.closest('.lbl')))) return;
     const nodeEl = t.closest<SVGGElement>('[data-node]');
     const annEl = t.closest<SVGGElement>('[data-ann]');
     const [wx0, wy0] = toWorld(e);
-    if (mine && tool === 'zone' && !nodeEl) {
+    if (!syn?.overview && tool === 'lasso') {
+      drag = { kind: 'lasso', ox: wx0, oy: wy0, moved: false, rect: false }; lasso = [[wx0, wy0]];
+    } else if (mine && tool === 'zone') {
       drag = { kind: 'draft', ox: wx0, oy: wy0, moved: false }; draft = { x: wx0, y: wy0, w: 0, h: 0 };
-    } else if (mine && tool === 'label' && !nodeEl) {
+    } else if (mine && tool === 'label') {
       createAnn('label', { x: Math.round(wx0), y: Math.round(wy0), text: 'Étiquette' });
       return;
     } else if (annEl) {
       const a = anns.find((x) => x.id === annEl.dataset.ann); if (!a) return;
+      if (e.shiftKey) { const s2 = new Set(annMulti); if (selAnn) s2.add(selAnn); if (s2.has(a.id)) s2.delete(a.id); else s2.add(a.id); annMulti = s2; } else annMulti = new Set();
       selAnn = a.id; sel = null; multi = new Set();
       if (mine) drag = { kind: t.closest('.rs') ? 'resize' : 'ann', key: a.id, ox: wx0 - a.data.x, oy: wy0 - a.data.y, moved: false, from: { x: a.data.x, y: a.data.y, w: a.data.w, h: a.data.h } };
     } else if (nodeEl && mine && t.closest('.drag')) {
       const key = nodeEl.dataset.node!, [wx, wy] = toWorld(e);
       drag = { kind: 'node', key, ox: wx - pos[key]!.x, oy: wy - pos[key]!.y, moved: false, from: { ...pos[key]! } };
+    } else if (!nodeEl && !syn?.overview && e.shiftKey) {
+      drag = { kind: 'lasso', ox: wx0, oy: wy0, moved: false, rect: tool !== 'lasso' }; lasso = [[wx0, wy0]];
     } else if (!nodeEl) {
-      selAnn = null;
+      selAnn = null; annMulti = new Set();
       drag = { kind: 'pan', ox: e.clientX - tx, oy: e.clientY - ty, moved: false };
       sel = null; multi = new Set();
     }
@@ -362,6 +405,11 @@
     drag.moved = true;
     if (drag.kind === 'pan') { tx = e.clientX - drag.ox; ty = e.clientY - drag.oy; return; }
     const [wx, wy] = toWorld(e);
+    if (drag.kind === 'lasso') {
+      if (drag.rect) lasso = [[drag.ox, drag.oy], [wx, drag.oy], [wx, wy], [drag.ox, wy]];
+      else { const l = lasso ?? []; const last = l[l.length - 1]; if (!last || Math.hypot(wx - last[0], wy - last[1]) > 4 / k) lasso = [...l, [wx, wy]]; }
+      return;
+    }
     if (drag.kind === 'draft') { draft = { x: Math.min(drag.ox, wx), y: Math.min(drag.oy, wy), w: Math.abs(wx - drag.ox), h: Math.abs(wy - drag.oy) }; return; }
     if (drag.kind === 'ann' || drag.kind === 'resize') {
       const a = anns.find((x) => x.id === drag!.key); if (!a) return;
@@ -369,10 +417,16 @@
       else { a.data.w = Math.max(40, Math.round((wx - a.data.x) / 10) * 10); a.data.h = Math.max(40, Math.round((wy - a.data.y) / 10) * 10); }
       return;
     }
-    pos[drag.key!] = { x: Math.round((wx - drag.ox) / 10) * 10, y: Math.round((wy - drag.oy) / 10) * 10 };
+    let nx = Math.round((wx - drag.ox) / 10) * 10, ny = Math.round((wy - drag.oy) / 10) * 10;
+    // Aimantation aux repères : bords et milieu du nœud.
+    const tol = 8 / k, n = nodes.find((x) => x.key === drag!.key);
+    for (const gx of guides.v) for (const off of [0, NW / 2, NW]) if (Math.abs(nx + off - gx) < tol) nx = gx - off;
+    if (n) for (const gy of guides.h) for (const off of [0, nodeH(n) / 2, nodeH(n)]) if (Math.abs(ny + off - gy) < tol) ny = gy - off;
+    pos[drag.key!] = { x: nx, y: ny };
   }
-  async function up() {
+  async function up(e?: PointerEvent) {
     const d = drag; drag = null;
+    if (d?.kind === 'lasso') { const poly = lasso; lasso = null; if (poly && d.moved) finishLasso(poly, !!e?.ctrlKey || !!e?.metaKey); return; }
     if (d?.kind === 'draft') { const z = draft; draft = null; if (z && z.w >= 20 && z.h >= 20) createAnn('zone', { x: Math.round(z.x), y: Math.round(z.y), w: Math.round(z.w), h: Math.round(z.h) }); return; }
     if ((d?.kind === 'ann' || d?.kind === 'resize') && d.moved) {
       const a = anns.find((x) => x.id === d.key); if (!a) return;
@@ -479,11 +533,92 @@
     if ((e.target as Element).closest('input,textarea,select')) return;
     if (e.key === 'Escape') { armed = []; mouse = null; sel = null; multi = new Set(); hl = { cables: new Set(), nodes: new Set() }; }
     if ((e.key === 'Delete' || e.key === 'Backspace') && mine) {
-      if (annSel) { e.preventDefault(); deleteAnn(annSel); }
+      if (annMulti.size > 1) { e.preventDefault(); cutAnns(); }
+      else if (annSel) { e.preventDefault(); deleteAnn(annSel); }
       else if (selected || multi.size) { e.preventDefault(); confirmDelete = true; }
     }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') copyAnns();
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'x' && mine) { if (copyAnns()) cutAnns(); }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v' && mine) { e.preventDefault(); pasteAnns(); }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a' && syn && !syn.overview) { e.preventDefault(); finishLasso([[-1e7, -1e7], [1e7, -1e7], [1e7, 1e7], [-1e7, 1e7]], false); }
+  }
+  // ----- Presse-papiers des zones et étiquettes -----
+  let clip: { kind: 'zone' | 'label'; data: any }[] = [];
+  let pasteN = 0;
+  const selectedAnns = () => { const ids = new Set(annMulti); if (selAnn) ids.add(selAnn); return anns.filter((a) => ids.has(a.id)); };
+  function copyAnns(): boolean {
+    const list = selectedAnns(); if (!list.length) return false;
+    clip = list.map((a) => ({ kind: a.kind, data: structuredClone($state.snapshot(a.data)) })); pasteN = 0;
+    toast(`${list.length} annotation${list.length > 1 ? 's' : ''} copiée${list.length > 1 ? 's' : ''}.`, 'info'); return true;
+  }
+  async function cutAnns() {
+    const list = selectedAnns(); if (!list.length || !syn) return;
+    const keep = list.map((a) => ({ view: a.view, kind: a.kind, data: { ...a.data } }));
+    try {
+      await api.post(`/projects/${pid}/annotations/delete`, { ids: list.map((a) => a.id) });
+      push({ label: 'couper', undo: async () => { for (const k2 of keep) await api.post(`/projects/${pid}/annotations`, k2); }, redo: async () => { for (const k2 of keep) { const c = findAnnLike(k2.kind, k2.data); if (c) await api.post(`/projects/${pid}/annotations/delete`, { ids: [c.id] }); } } });
+      selAnn = null; annMulti = new Set(); await load();
+    } catch (x) { fail(x); }
+  }
+  async function pasteAnns() {
+    if (!clip.length || !syn) return;
+    pasteN++;
+    const view = syn.view, made: { kind: string; data: any }[] = [];
+    try {
+      for (const c of clip) { const data = { ...c.data, x: c.data.x + 30 * pasteN, y: c.data.y + 30 * pasteN }; await api.post(`/projects/${pid}/annotations`, { view, kind: c.kind, data }); made.push({ kind: c.kind, data }); }
+      push({ label: 'coller', undo: async () => { for (const m2 of made) { const c = findAnnLike(m2.kind, m2.data); if (c) await api.post(`/projects/${pid}/annotations/delete`, { ids: [c.id] }); } }, redo: async () => { for (const m2 of made) await api.post(`/projects/${pid}/annotations`, { view, kind: m2.kind, data: m2.data }); } });
+      await load();
+      annMulti = new Set(made.map((m2) => findAnnLike(m2.kind, m2.data)?.id).filter(Boolean) as string[]); selAnn = annMulti.size === 1 ? [...annMulti][0]! : null;
+    } catch (x) { fail(x); await load(); }
+  }
+
+  // ----- Règles et repères (par vue, sur ce poste) -----
+  let guides = $state<{ v: number[]; h: number[] }>({ v: [], h: [] });
+  $effect(() => { const v = syn?.view; if (v) guides = lsGet(`guides:${v}`, { v: [], h: [] }); });
+  const saveGuides = () => { if (syn?.view) lsSet(`guides:${syn.view}`, guides); };
+  let gdrag = $state<{ axis: 'v' | 'h'; i: number | null; at: number } | null>(null);
+  let stageW = $state(800), stageH = $state(600), stageEl = $state<HTMLDivElement>(null!);
+  function guideStart(e: PointerEvent, axis: 'v' | 'h', i: number | null) {
+    e.stopPropagation(); e.preventDefault();
+    const r = stageEl.getBoundingClientRect();
+    const at = axis === 'v' ? (e.clientX - r.left - tx) / k : (e.clientY - r.top - ty) / k;
+    gdrag = { axis, i, at };
+    const mv = (ev: PointerEvent) => { if (!gdrag) return; gdrag = { ...gdrag, at: Math.round((gdrag.axis === 'v' ? (ev.clientX - r.left - tx) / k : (ev.clientY - r.top - ty) / k) / 5) * 5 }; };
+    const end = (ev: PointerEvent) => {
+      window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', end);
+      if (!gdrag) return;
+      const onRuler = gdrag.axis === 'v' ? ev.clientY - r.top < 20 : ev.clientX - r.left < 20;
+      const list = [...guides[gdrag.axis]];
+      if (gdrag.i != null) list.splice(gdrag.i, 1);
+      if (!onRuler) list.push(gdrag.at);
+      guides = { ...guides, [gdrag.axis]: list }; saveGuides(); gdrag = null;
+    };
+    window.addEventListener('pointermove', mv); window.addEventListener('pointerup', end);
+  }
+  const rulerStep = $derived.by(() => { for (const st of [20, 50, 100, 200, 500, 1000, 2000]) if (st * k >= 60) return st; return 5000; });
+  const ticks = (from: number, to: number) => { const o: number[] = []; for (let v = Math.ceil(from / rulerStep) * rulerStep; v <= to && o.length < 300; v += rulerStep) o.push(v); return o; };
+
+  // ----- Mini-carte -----
+  const MM = { w: 180, h: 120 };
+  const mm = $derived.by(() => {
+    if (!syn || syn.overview || !nodes.length) return null;
+    const xs: number[] = [], ys: number[] = [];
+    for (const n of nodes) { const p = pos[n.key]; if (!p) continue; xs.push(p.x, p.x + NW); ys.push(p.y, p.y + nodeH(n)); }
+    for (const a of anns) { xs.push(a.data.x, a.data.x + (a.data.w ?? 0)); ys.push(a.data.y, a.data.y + (a.data.h ?? 0)); }
+    if (!xs.length) return null;
+    const x0 = Math.min(...xs) - 100, y0 = Math.min(...ys) - 100, w = Math.max(...xs) - x0 + 100, h = Math.max(...ys) - y0 + 100;
+    const sc = Math.min(MM.w / w, MM.h / h);
+    return { x0, y0, sc, w: w * sc, h: h * sc };
+  });
+  function mmGo(e: PointerEvent) {
+    if (!mm) return;
+    const r = (e.currentTarget as Element).getBoundingClientRect();
+    const go = (ev: PointerEvent) => { const wx = mm.x0 + (ev.clientX - r.left) / mm.sc, wy = mm.y0 + (ev.clientY - r.top) / mm.sc; tx = stageW / 2 - wx * k; ty = stageH / 2 - wy * k; };
+    go(e);
+    const mv = (ev: PointerEvent) => go(ev); const end = () => { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', end); };
+    window.addEventListener('pointermove', mv); window.addEventListener('pointerup', end);
   }
   let exp = $state<{ format: 'pdf' | 'png' | 'jpg'; paper: Paper; landscape: boolean; frame: 'all' | 'view'; revision: string; title: string; busy: boolean } | null>(null);
   async function doExport() {
@@ -549,8 +684,9 @@
       <button class="icon-btn sm" title="Zoom arrière" aria-label="Zoom arrière" onclick={() => (k = Math.max(0.2, k / 1.2))}><Icon name="zout" size="sm" /></button>
       <span class="mono small">{Math.round(k * 100)} %</span>
       <button class="icon-btn sm" title="Zoom avant" aria-label="Zoom avant" onclick={() => (k = Math.min(2.5, k * 1.2))}><Icon name="zin" size="sm" /></button>
+      {#if !mine && !syn.overview}<button class="btn sm" class:on={tool === 'lasso'} title="Entourer pour sélectionner" onclick={() => (tool = tool === 'lasso' ? 'select' : 'lasso')}>Lasso</button>{/if}
       {#if mine && !syn.overview}
-        <div class="seg" role="group" aria-label="Outil">{#each [['select', 'Sélection'], ['zone', 'Zone'], ['label', 'Étiquette']] as [k, l]}<button class:on={tool === k} onclick={() => (tool = k as Tool)}>{l}</button>{/each}</div>
+        <div class="seg" role="group" aria-label="Outil">{#each [['select', 'Sélection'], ['lasso', 'Lasso'], ['zone', 'Zone'], ['label', 'Étiquette']] as [k, l]}<button class:on={tool === k} title={k === 'select' ? 'Maj + glisser : sélection au rectangle' : k === 'lasso' ? 'Entourer câbles et annotations' : ''} onclick={() => (tool = k as Tool)}>{l}</button>{/each}</div>
         <button class="icon-btn sm" title="Annuler (Ctrl+Z)" aria-label="Annuler" disabled={!past.length} onclick={undo}><Icon name="undo" size="sm" /></button>
         <button class="icon-btn sm flip" title="Rétablir (Ctrl+Maj+Z)" aria-label="Rétablir" disabled={!future.length} onclick={redo}><Icon name="undo" size="sm" /></button>
       {/if}
@@ -566,7 +702,7 @@
       {#if mine}<button class="btn sm primary" onclick={() => (numbering = true)}><Icon name="hash" size="sm" />Numéroter</button>{/if}
     </div>
     <div class="syn-body">
-      <div class="syn-stage"><svg bind:this={svgEl} class="syn-canvas" class:arming={armed.length > 0} role="application" aria-label="Synoptique"
+      <div class="syn-stage" bind:this={stageEl} bind:clientWidth={stageW} bind:clientHeight={stageH}><svg bind:this={svgEl} class="syn-canvas" class:arming={armed.length > 0} role="application" aria-label="Synoptique"
         onwheel={wheel} onpointerdown={down} onpointermove={move} onpointerup={up}>
         <defs><pattern id="syn-grid" width="20" height="20" patternUnits="userSpaceOnUse" patternTransform="translate({tx} {ty}) scale({k})"><circle cx="1" cy="1" r="1" fill="var(--grid-dot, rgba(120,130,140,.25))" /></pattern></defs>
         <rect class="gridbg" width="100%" height="100%" fill="url(#syn-grid)" />
@@ -580,6 +716,11 @@
             </g>
           {/each}
           {#if draft}<rect class="draft" x={draft.x} y={draft.y} width={draft.w} height={draft.h} rx="12" />{/if}
+          {#each anns.filter((a) => annMulti.has(a.id)) as a (a.id)}<rect class="amulti" x={a.data.x - 6} y={a.data.y - (a.kind === 'zone' ? 6 : 18)} width={(a.data.w ?? 120) + 12} height={(a.data.h ?? 24) + 12} rx="10" />{/each}
+          {#each guides.v as gx, i}<line class="syn-guide" x1={gx} x2={gx} y1={-1e5} y2={1e5} role="separator" tabindex="-1" onpointerdown={(e) => guideStart(e, 'v', i)} ondblclick={() => { guides = { ...guides, v: guides.v.filter((_, j) => j !== i) }; saveGuides(); }} />{/each}
+          {#each guides.h as gy, i}<line class="syn-guide" x1={-1e5} x2={1e5} y1={gy} y2={gy} role="separator" tabindex="-1" onpointerdown={(e) => guideStart(e, 'h', i)} ondblclick={() => { guides = { ...guides, h: guides.h.filter((_, j) => j !== i) }; saveGuides(); }} />{/each}
+          {#if gdrag}{#if gdrag.axis === 'v'}<line class="syn-guide live" x1={gdrag.at} x2={gdrag.at} y1={-1e5} y2={1e5} />{:else}<line class="syn-guide live" x1={-1e5} x2={1e5} y1={gdrag.at} y2={gdrag.at} />{/if}{/if}
+          {#if lasso && lasso.length > 1}<polygon class="lasso" points={lasso.map((p) => p.join(',')).join(' ')} />{/if}
           {#if syn.overview}
             {@const ov = syn.overview}
             <g class="ov-links">
@@ -685,6 +826,20 @@
           {#if armedPreview}<path class="preview" d={armedPreview} />{/if}
         </g>
       </svg>
+      {#if !syn.overview}
+        <svg class="ruler rt" aria-hidden="true" onpointerdown={(e) => guideStart(e, 'h', null)}><rect width="100%" height="20" class="rbg" />{#each ticks(-tx / k, (stageW - tx) / k) as v}<line x1={tx + v * k} x2={tx + v * k} y1="12" y2="20" class="rtk" /><text x={tx + v * k + 3} y="11" class="rlb">{v}</text>{/each}</svg>
+        <svg class="ruler rl" aria-hidden="true" onpointerdown={(e) => guideStart(e, 'v', null)}><rect width="20" height="100%" class="rbg" />{#each ticks(-ty / k, (stageH - ty) / k) as v}<line y1={ty + v * k} y2={ty + v * k} x1="12" x2="20" class="rtk" /><text transform="translate(11 {ty + v * k - 3}) rotate(-90)" class="rlb">{v}</text>{/each}</svg>
+        <span class="ruler-hint muted small">Tirez une règle pour poser un repère</span>
+      {/if}
+      {#if mm}
+        <div class="minimap" style="width:{mm.w}px;height:{mm.h}px" role="slider" tabindex="-1" aria-label="Mini-carte" aria-valuenow={0} onpointerdown={mmGo}>
+          <svg width={mm.w} height={mm.h}>
+            {#each anns.filter((a) => a.kind === 'zone') as a (a.id)}<rect x={(a.data.x - mm.x0) * mm.sc} y={(a.data.y - mm.y0) * mm.sc} width={a.data.w * mm.sc} height={a.data.h * mm.sc} fill={a.data.color ?? '#4F6BFF'} opacity=".18" />{/each}
+            {#each nodes as n (n.key)}{@const p = pos[n.key]}{#if p}<rect x={(p.x - mm.x0) * mm.sc} y={(p.y - mm.y0) * mm.sc} width={Math.max(2, NW * mm.sc)} height={Math.max(2, nodeH(n) * mm.sc)} class="mmn" />{/if}{/each}
+            <rect class="mmv" x={(-tx / k - mm.x0) * mm.sc} y={(-ty / k - mm.y0) * mm.sc} width={(stageW / k) * mm.sc} height={(stageH / k) * mm.sc} />
+          </svg>
+        </div>
+      {/if}
       {#if syn.view}<RemoteCursors room={`project:${pid}/syn:${syn.view}`} toScreen={(x, y) => [tx + x * k, ty + y * k]} bind:selections={remoteSel} />{/if}</div>
 
       <aside class="syn-side">
@@ -789,8 +944,15 @@
             {/if}
             {#if families.length}
               <span class="lbl-t" style="margin-top:8px">Calques</span>
+              <div class="seg" role="group" aria-label="Calques par">{#each [['family', 'Par famille'], ['signal', 'Par signal']] as [kk, l]}<button class:on={layerBy === kk} onclick={() => { layerBy = kk as typeof layerBy; lsSet('layerby', kk); }}>{l}</button>{/each}</div>
               {#each families as f (f)}
-                <div class="hrow"><label class="toggle-row small" style="flex:1"><input type="checkbox" checked={!hiddenFam.has(f)} onchange={() => toggleFam(f)}><i class="dot" style="--c:{f === '—' ? 'var(--fg-3)' : fnColor(f)}"></i>{f === '—' ? 'Sans famille' : refById('functions', f)?.name ?? f}</label><button class="btn sm ghost" onclick={() => isolateFam(f)} title="Isoler">Isoler</button></div>
+                {@const n = syn.cables.filter((c) => famOf(c) === f).length}
+                <div class="hrow lay" class:locked={lockedFam.has(f)}>
+                  <label class="toggle-row small" style="flex:1;min-width:0"><input type="checkbox" checked={!hiddenFam.has(f)} onchange={() => toggleFam(f)} aria-label="Afficher {layerName(f)}"><i class="dot" style="--c:{layerColor(f)}"></i><span class="ln">{layerName(f)}</span><span class="muted mono">{n}</span></label>
+                  <button class="icon-btn sm" title={lockedFam.has(f) ? 'Déverrouiller' : 'Verrouiller'} aria-label={lockedFam.has(f) ? 'Déverrouiller' : 'Verrouiller'} onclick={() => toggleLock(f)}><Icon name={lockedFam.has(f) ? 'lock' : 'unlock'} size="sm" /></button>
+                  <button class="icon-btn sm" title="Renommer" aria-label="Renommer {layerName(f)}" onclick={() => renameLayer(f)}><Icon name="pen" size="sm" /></button>
+                  <button class="btn sm ghost" onclick={() => isolateFam(f)} title="Isoler">Isoler</button>
+                </div>
               {/each}
               {#if hiddenFam.size}<button class="btn sm ghost" onclick={() => { hiddenFam = new Set(); try { localStorage.removeItem('syn-hidden'); } catch { /* */ } }}>Tout afficher</button>{/if}
             {/if}
@@ -862,7 +1024,24 @@
 <style>
   .dtool { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 10px 16px; border-top: 1px solid var(--line); }
   .dtool select { width: auto; min-width: 220px; height: 38px; }
-  .syn-stage { position: relative; min-width: 0; min-height: 0; }
+  .syn-stage { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+  .ruler { position: absolute; z-index: 4; cursor: copy; }
+  .ruler.rt { left: 0; top: 0; width: 100%; height: 20px; cursor: row-resize; }
+  .ruler.rl { left: 0; top: 0; width: 20px; height: 100%; cursor: col-resize; }
+  .rbg { fill: color-mix(in srgb, var(--surface) 90%, transparent); }
+  .rtk { stroke: var(--fg-3); stroke-width: 1; }
+  .rlb { font: 600 9px var(--font-mono, monospace); fill: var(--fg-3); }
+  .ruler-hint { position: absolute; left: 26px; top: 22px; z-index: 4; pointer-events: none; opacity: .7; }
+  :global(.syn-guide) { stroke: #E23C7A; stroke-width: 1; vector-effect: non-scaling-stroke; stroke-dasharray: 6 4; cursor: move; }
+  :global(.syn-guide.live) { stroke-dasharray: none; }
+  :global(.lasso) { fill: color-mix(in srgb, var(--accent, #4F6BFF) 10%, transparent); stroke: var(--accent, #4F6BFF); stroke-width: 1.5; vector-effect: non-scaling-stroke; stroke-dasharray: 5 4; }
+  :global(.amulti) { fill: none; stroke: var(--accent, #4F6BFF); stroke-width: 2; vector-effect: non-scaling-stroke; stroke-dasharray: 4 3; }
+  .minimap { position: absolute; right: 12px; bottom: 12px; z-index: 4; background: color-mix(in srgb, var(--surface) 92%, transparent); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 6px 20px -8px rgba(0,0,0,.35); cursor: pointer; overflow: hidden; }
+  .minimap svg { display: block; }
+  .mmn { fill: var(--fg-3); }
+  .mmv { fill: color-mix(in srgb, var(--accent, #4F6BFF) 12%, transparent); stroke: var(--accent, #4F6BFF); stroke-width: 1.5; }
+  .lay.locked .ln { opacity: .55; }
+  .lay .ln { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .syn-stage > .syn-canvas { height: 100%; }
   :global(.cable.rsel) path { filter: drop-shadow(0 0 2.5px var(--rs)) drop-shadow(0 0 2.5px var(--rs)); }
   .syn-body { display: grid; grid-template-columns: minmax(0, 1fr) 320px; border-top: 1px solid var(--line); height: calc(100vh - 220px); min-height: 520px; }
