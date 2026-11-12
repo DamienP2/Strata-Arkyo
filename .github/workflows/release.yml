@@ -1,24 +1,22 @@
-# Publication d'une version de Strata Arkyo dans les Releases du dépôt.
+# Publication automatique d'une version de Strata Arkyo dans les Releases du dépôt.
 #
-# Lancement : onglet Actions → « Publier une version » → Run workflow (sur main), ou en
-# poussant une étiquette vX.Y.Z. Le numéro est celui de Cargo.toml ; une préversion
-# (ex. 0.3.0-beta.1) part sur le canal Bêta.
+# À chaque envoi sur main : si la version de Cargo.toml n'est pas encore publiée, GitHub
+# teste, compile et crée la Release vX.Y.Z. Rien à configurer : ni clé, ni secret.
+# Les serveurs la trouvent seuls (Administration → Mises à jour, ou `sudo strata upgrade`).
 #
 # La Release reçoit :
-#   - strata-arkyo_<version>_x86_64.saupd : paquet signé, installé par les serveurs en OTA ;
-#   - manifest.json : manifeste signé lu par les serveurs (STRATA_UPDATE_URL=github:…) ;
-#   - strata-arkyo_<version>_amd64.deb : pour une première installation.
+#   strata-X.Y.Z-x86_64          le programme, installé par les serveurs ;
+#   strata-arkyo_X.Y.Z_amd64.deb pour une première installation ;
+#   SHA256SUMS                   l'empreinte de chaque fichier, vérifiée par les serveurs.
 #
-# Secrets du dépôt (Settings → Secrets and variables → Actions) :
-#   STRATA_RELEASE_KEY     contenu de release.key (clé privée de publication)
-#   STRATA_RELEASE_PUBKEY  contenu de release.pub (clé publique, intégrée au moteur)
+# Un numéro avec tiret (ex. 0.3.0-beta.1) est publié en préversion (canal Bêta).
 
 name: Publier une version
 
 on:
-  workflow_dispatch:
   push:
-    tags: ["v*"]
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -28,42 +26,39 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release:
-    # Ubuntu 22.04 : le programme produit fonctionne sur 22.04 et 24.04.
-    runs-on: ubuntu-22.04
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      publish: ${{ steps.v.outputs.publish }}
+      pre: ${{ steps.v.outputs.pre }}
     env:
-      STRATA_RELEASE_PUBKEY: ${{ secrets.STRATA_RELEASE_PUBKEY }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Version et étiquette
-        id: v
+      - id: v
         run: |
           VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
-          TAG="v$VERSION"
-          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "$GITHUB_REF_NAME" != "$TAG" ]; then
-            echo "::error::L'étiquette $GITHUB_REF_NAME ne correspond pas à la version $VERSION de Cargo.toml."
-            exit 1
-          fi
-          if [ "$GITHUB_REF_TYPE" != "tag" ] && gh release view "$TAG" >/dev/null 2>&1; then
-            echo "::error::La version $TAG est déjà publiée : montez le numéro dans Cargo.toml."
-            exit 1
-          fi
-          case "$VERSION" in *-*) CHANNEL=beta ;; *) CHANNEL=stable ;; esac
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
-          echo "Version $VERSION, canal $CHANNEL."
-
-      - name: Clés de publication présentes
-        env:
-          KEY: ${{ secrets.STRATA_RELEASE_KEY }}
-        run: |
-          if [ -z "$STRATA_RELEASE_PUBKEY" ] || [ -z "$KEY" ]; then
-            echo "::error::Ajoutez les secrets STRATA_RELEASE_KEY et STRATA_RELEASE_PUBKEY au dépôt."
-            exit 1
+          case "$VERSION" in *-*) echo "pre=true" >> "$GITHUB_OUTPUT" ;; *) echo "pre=false" >> "$GITHUB_OUTPUT" ;; esac
+          if gh release view "v$VERSION" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "La version $VERSION est déjà publiée : rien à faire."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Nouvelle version $VERSION : publication."
+            echo "publish=true" >> "$GITHUB_OUTPUT"
           fi
+
+  release:
+    needs: version
+    if: needs.version.outputs.publish == 'true'
+    # Ubuntu 22.04 : le programme produit fonctionne sur 22.04 et 24.04.
+    runs-on: ubuntu-22.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
@@ -85,31 +80,25 @@ jobs:
         run: cargo test --workspace --locked
 
       - name: Compilation
-        run: cargo build --release --locked -p strata -p strata-release
-
-      - name: Paquet signé et manifeste
-        env:
-          KEY: ${{ secrets.STRATA_RELEASE_KEY }}
         run: |
-          umask 077
-          printf '%s\n' "$KEY" > "$RUNNER_TEMP/release.key"
-          target/release/strata version
-          target/release/strata-release pack --binary target/release/strata --key "$RUNNER_TEMP/release.key" --out dist
-          target/release/strata-release publish --package dist/strata-arkyo_${{ steps.v.outputs.version }}_x86_64.saupd \
-            --channel ${{ steps.v.outputs.channel }} --key "$RUNNER_TEMP/release.key" --site site \
-            --note "Strata Arkyo ${{ steps.v.outputs.version }}"
-          cp site/${{ steps.v.outputs.channel }}/manifest.json dist/manifest.json
-          rm -f "$RUNNER_TEMP/release.key"
+          cargo build --release --locked -p strata
+          test "$(target/release/strata version --short)" = "$VERSION"
 
       - name: Paquet Debian
         run: |
           cargo install cargo-deb --locked
           cargo deb --no-build -p strata
+
+      - name: Fichiers de la version
+        run: |
+          mkdir dist
+          cp target/release/strata "dist/strata-$VERSION-x86_64"
           cp target/debian/*.deb dist/
+          (cd dist && sha256sum * > SHA256SUMS && cat SHA256SUMS)
 
       - name: Release GitHub
         run: |
           PRE=""
-          [ "${{ steps.v.outputs.channel }}" = "beta" ] && PRE="--prerelease"
-          gh release create "${{ steps.v.outputs.tag }}" dist/*.saupd dist/manifest.json dist/*.deb \
-            --target "$GITHUB_SHA" --title "Strata Arkyo ${{ steps.v.outputs.version }}" --generate-notes $PRE
+          [ "${{ needs.version.outputs.pre }}" = "true" ] && PRE="--prerelease"
+          gh release create "v$VERSION" dist/* --target "$GITHUB_SHA" \
+            --title "Strata Arkyo $VERSION" --generate-notes $PRE

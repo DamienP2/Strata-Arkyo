@@ -81,6 +81,7 @@ Le mot de passe affiché par `user add` est temporaire : il doit être changé �
 | `strata user remove <login>` | Retire un compte en gardant son historique |
 | `strata backup [--label …]`, `strata backup --list` | Sauvegarde complète vérifiée, ou liste des sauvegardes |
 | `strata restore <nom>`, `strata restore --cancel` | Prépare une restauration, appliquée au prochain démarrage ; ou l'annule |
+| `strata upgrade [--check]` | Met à jour vers la dernière version publiée (lancer avec `sudo`) |
 | `strata update status` | Versions installées, bascule en attente, dernier retour arrière |
 | `strata update install <paquet.saupd>` | Installation hors ligne : vérification, essai à blanc, sauvegarde, bascule |
 | `strata update rollback` | Retour à la version précédente |
@@ -168,33 +169,17 @@ Lire demande « Projets : lecture », écrire « Projets : écriture ». Chaque 
 | `GET /api/projects/{id}/recette`, `POST …/recette/verdict`, `…/comment`, `GET …/recette/log`, `…/recette/free` | Recette |
 | `GET /api/live` (WebSocket) | Temps réel : `{"type":"join","room":"project:<id>"}`, battement `{"type":"ping"}` toutes les 30 s ; événements `change` et `presence` |
 
-## Mises à jour OTA
+## Mises à jour
 
-1. Chaque version s'installe dans `/opt/strata-arkyo/versions/<version>/` ; le lien `current` désigne celle qui tourne.
-2. Le moteur lit le manifeste signé du canal (`<STRATA_UPDATE_URL>/<stable|beta>/manifest.json`). La recherche automatique, quotidienne, ne fait que signaler.
-3. Sur décision de l'administrateur, immédiate ou la nuit à 03:30, il exécute dans l'ordre :
-   - téléchargement du paquet, vérification de son empreinte et de sa signature Ed25519 ;
-   - installation de la nouvelle version à côté de l'actuelle ;
-   - essai à blanc sur une copie de la base ;
-   - sauvegarde du site ;
-   - bascule du lien et arrêt avec le code 75.
-4. systemd relance le service sur la nouvelle version.
-5. Avant chaque démarrage, `strata boot-guard` (programme du paquet Debian, que l'OTA ne remplace jamais) compte les démarrages. Au troisième échec, il rétablit l'ancienne version.
+Quand le numéro de version de `Cargo.toml` change sur `main`, le workflow « Publier une version » (`.github/workflows/release.yml`) teste, compile et crée la Release `vX.Y.Z` : programme, paquet `.deb` et `SHA256SUMS`.
 
-Sans Internet, le même paquet signé se dépose dans l'administration (`POST /api/admin/update/upload`) ou s'installe avec `strata update install`.
+Les serveurs lisent ces Releases (source par défaut, `STRATA_UPDATE_URL` pour en changer, `off` pour désactiver) :
+- dans l'application : Administration → Mises à jour ;
+- en ligne de commande : `sudo strata upgrade`.
 
-### Publier une version (éditeur)
+Le moteur vérifie l'empreinte, essaie la nouvelle version sur une copie de la base, sauvegarde, bascule et redémarre. Avant chaque démarrage, `strata boot-guard` compte les échecs et rétablit l'ancienne version au troisième. Pas à pas : [`docs/installation-ubuntu.md`](docs/installation-ubuntu.md).
 
-```sh
-cargo run -p strata-release -- keygen --out ~/strata-keys          # une seule fois ; garder release.key hors du dépôt
-export STRATA_RELEASE_PUBKEY=$(cat ~/strata-keys/release.pub)       # clé publique intégrée au moteur
-cargo deb -p strata
-cargo run -p strata-release -- pack --binary target/release/strata --key ~/strata-keys/release.key --out dist
-cargo run -p strata-release -- publish --package dist/strata-arkyo_<version>_x86_64.saupd \
-    --channel stable --key ~/strata-keys/release.key --site site --note "…"
-```
-
-Le dossier `site/` se sert tel quel par n'importe quel serveur web, ou se copie sur une clé USB (`STRATA_UPDATE_URL=file:///media/usb/site`). Un moteur compilé sans `STRATA_RELEASE_PUBKEY` refuse toute mise à jour signée.
+Les paquets signés `.saupd` (`strata-release`, `strata update install`) restent possibles pour un serveur sans accès à GitHub.
 
 ## Sauvegardes
 

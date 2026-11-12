@@ -128,6 +128,19 @@ pub fn next_local(now: DateTime<Local>, (h, m): (u32, u32)) -> DateTime<Local> {
     }
 }
 
+/// Dépôt GitHub du projet : source des mises à jour quand rien n'est configuré.
+pub const DEFAULT_UPDATE_SOURCE: &str = "github:DamienP2/Strata-Arkyo";
+
+/// Source effective : celle configurée, la source par défaut si rien n'est indiqué,
+/// aucune avec `off` (mises à jour par fichier seulement).
+pub fn update_source(configured: Option<String>) -> Option<String> {
+    match configured.map(|u| u.trim().to_string()) {
+        Some(u) if u.eq_ignore_ascii_case("off") || u.eq_ignore_ascii_case("none") => None,
+        Some(u) if !u.is_empty() => Some(u),
+        _ => Some(DEFAULT_UPDATE_SOURCE.to_string()),
+    }
+}
+
 impl Ops {
     pub fn new(
         data_dir: PathBuf,
@@ -142,7 +155,7 @@ impl Ops {
             data_dir,
             layout,
             keys,
-            update_url: update_url.filter(|u| !u.trim().is_empty()),
+            update_url: update_source(update_url),
             countdown,
             version: version.into(),
             status: Mutex::new(UpdateStatus::default()),
@@ -252,12 +265,17 @@ impl Ops {
         self.require_managed()?;
         let base = self.update_url.clone().ok_or_else(|| {
             OpsError::Unavailable(
-                "Aucune source de mise à jour configurée : indiquez STRATA_UPDATE_URL (par exemple github:propriétaire/dépôt) dans /etc/default/strata-arkyo.".into(),
+                "Mises à jour en ligne désactivées (STRATA_UPDATE_URL=off) : installez un fichier de mise à jour.".into(),
             )
         })?;
         let channel = self.channel(store).await?;
         self.set_phase(Phase::Checking).await;
-        let result = manifest::fetch_manifest(&base, &channel, &self.keys).await;
+        let result = match strata_update::github::parse(&base) {
+            Some(repo) => {
+                strata_update::github::latest(&repo, &channel, strata_update::host_arch()).await
+            }
+            None => manifest::fetch_manifest(&base, &channel, &self.keys).await,
+        };
         store
             .set_meta(META_LAST_CHECK, Some(&rfc3339(Utc::now())))
             .await?;
@@ -310,6 +328,22 @@ impl Ops {
             if strata_update::signing::sha256_hex(&bytes) != m.sha256 {
                 return Err(update_err(strata_update::UpdateError::HashMismatch));
             }
+            // GitHub : le programme lui-même, vérifié par son empreinte.
+            if strata_update::github::parse(&base).is_some() {
+                let pkg = package::VerifiedPackage {
+                    info: package::PackageInfo {
+                        format: 1,
+                        product: "strata-arkyo".into(),
+                        version: m.version.clone(),
+                        arch: m.arch.clone(),
+                        sha256: m.sha256.clone(),
+                        size: bytes.len() as u64,
+                        created_at: m.published_at.clone(),
+                    },
+                    binary: bytes,
+                };
+                return self.prepare_verified_locked(store, pkg).await;
+            }
             std::fs::create_dir_all(self.updates_dir())?;
             let path = self
                 .updates_dir()
@@ -354,6 +388,22 @@ impl Ops {
     async fn prepare_file_locked(&self, store: &Store, path: &Path) -> OpsResult<String> {
         self.set_phase(Phase::Testing).await;
         let pkg = package::open(path, &self.keys).map_err(update_err)?;
+        self.prepare_verified_locked(store, pkg).await
+    }
+
+    /// Installe à côté de la version courante un programme vérifié, puis l'essaie à blanc.
+    async fn prepare_verified_locked(
+        &self,
+        store: &Store,
+        pkg: package::VerifiedPackage,
+    ) -> OpsResult<String> {
+        self.set_phase(Phase::Testing).await;
+        if pkg.info.arch != strata_update::host_arch() {
+            return Err(update_err(strata_update::UpdateError::WrongArch {
+                found: pkg.info.arch.clone(),
+                expected: strata_update::host_arch().into(),
+            }));
+        }
         let v = pkg.info.version.clone();
         if !version::is_newer(&v, &self.version) {
             return Err(OpsError::Conflict(format!(

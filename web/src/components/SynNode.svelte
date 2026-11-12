@@ -3,6 +3,7 @@
   // fonction, entrées à gauche, sorties et E/S à droite, un point par port à la couleur
   // du signal, le connecteur et son genre (M/F). Aperçu de la fiche équipement.
   import { refById } from '../lib/catalog.svelte';
+  import { fitText, shareRow, textWidth } from '../lib/fit';
 
   interface Port { connector_id: string; signal_id: string | null; direction: string; gender: string; quantity: number; label: string | null; variant: string | null }
   let { name, subtitle = '', fn = null, ports, maxPerSide = 48, hl = null }: { name: string; subtitle?: string; fn?: string | null; ports: Port[]; maxPerSide?: number; hl?: number | null } = $props();
@@ -35,12 +36,27 @@
   const fnColor = $derived(refById('functions', fn)?.data?.color ?? 'var(--fg-3)');
   const y = (i: number) => HH + i * PS + PS / 2 + 4;
   const chipW = (s: string) => s.length * 6.3 + 12;
+  const chipOf = (p: Port) => short(p.connector_id) + (p.gender === 'M' ? ' M' : p.gender === 'F' ? ' F' : '');
+  const text = (e: { label: string; p: Port }) => e.label + (e.p.direction === 'bidir' ? ' ↔' : '');
+  /** Libellés de chaque ligne, raccourcis pour que l'entrée et la sortie ne se chevauchent pas. */
+  const fitted = $derived.by(() => {
+    const out: { l: string; r: string }[] = [];
+    for (let i = 0; i < Math.max(shownIn.length, shownOut.length); i++) {
+      const L = shownIn[i], R = shownOut[i];
+      const from = L ? 16 + chipW(chipOf(L.p)) + 7 : 10;
+      const to = R ? NW - 16 - chipW(chipOf(R.p)) - 7 : NW - 10;
+      const [wl, wr] = shareRow(L ? textWidth(text(L)) : null, R ? textWidth(text(R)) : null, to - from);
+      out.push({ l: L ? fitText(text(L), wl) : '', r: R ? fitText(text(R), wr) : '' });
+    }
+    return out;
+  });
+  const title = $derived(fitText(name || 'Nouvel équipement', NW - 44, '650 15px "Inter Variable", Inter, system-ui, sans-serif'));
+  const sub = $derived(fitText(subtitle, NW - 44, '500 11px "JetBrains Mono", ui-monospace, monospace'));
 </script>
 
 {#snippet port(e: { label: string; p: Port; g: number }, i: number, out: boolean)}
   {@const x = out ? NW : 0}
-  {@const s = short(e.p.connector_id) + (e.p.gender === 'M' ? ' M' : e.p.gender === 'F' ? ' F' : '')}
-  {@const room = (out ? shownIn : shownOut).length > i ? 9 : 20}
+  {@const s = chipOf(e.p)}
   {@const cw = chipW(s)}
   {@const cx0 = out ? NW - 16 - cw : 16}
   <g class="port" class:hl={hl === e.g} class:dim={hl != null && hl !== e.g} style="--c:{color(e.p)}">
@@ -48,7 +64,7 @@
     {#if hl === e.g}<rect class="hlbar" x={out ? NW / 2 + 2 : 2} y={y(i) - 13} width={NW / 2 - 4} height="26" rx="6" />{/if}
     <circle class="pdot" cx={x} cy={y(i)} r="4.5" />
     <g class="cchip"><rect x={cx0} y={y(i) - 8.5} width={cw} height="17" rx="4" /><text x={cx0 + cw / 2} y={y(i) + 3.6} text-anchor="middle">{s}</text></g>
-    <text class="pn" x={out ? cx0 - 7 : cx0 + cw + 7} y={y(i) + 4.5} text-anchor={out ? 'end' : 'start'}>{e.label.length > room ? e.label.slice(0, room - 1) + '…' : e.label}{e.p.direction === 'bidir' ? ' ↔' : ''}</text>
+    <text class="pn" x={out ? cx0 - 7 : cx0 + cw + 7} y={y(i) + 4.5} text-anchor={out ? 'end' : 'start'}>{out ? fitted[i]?.r : fitted[i]?.l}</text>
   </g>
 {/snippet}
 
@@ -60,8 +76,8 @@
     <rect class="band" width={NW} height="4" clip-path="url(#{uid})" />
     <line class="sep" x1="0" x2={NW} y1={HH} y2={HH} />
     <circle class="nled" cx="16" cy={HH / 2 + 1} r="4.5" />
-    <text class="nt" x="30" y="25">{(name || 'Nouvel équipement').slice(0, 30)}</text>
-    <text class="ns" x="30" y="42">{subtitle}</text>
+    <text class="nt" x="30" y="25">{title}</text>
+    <text class="ns" x="30" y="42">{sub}</text>
     {#each shownIn as e, i}{@render port(e, i, false)}{/each}
     {#if ins.length > maxPerSide}<text class="more" x="16" y={y(shownIn.length) + 4}>+ {ins.length - maxPerSide} entrées</text>{/if}
     {#each shownOut as e, i}{@render port(e, i, true)}{/each}

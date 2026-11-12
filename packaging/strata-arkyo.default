@@ -7,14 +7,11 @@ STRATA_DATA_DIR=/var/lib/strata-arkyo
 # Adresse et port d'écoute.
 STRATA_LISTEN=0.0.0.0:8090
 
-# Source des mises à jour :
-#   github:propriétaire/dépôt     les Releases d'un dépôt GitHub (publiées par le workflow)
-#   https://…  ou  file:///…      un serveur de publication ou une clé USB
-# Sans source, seule la mise à jour hors ligne (dépôt d'un paquet) est possible.
+# Mises à jour : par défaut, les Releases GitHub du projet (rien à régler).
+# « off » les désactive (mise à jour par fichier seulement) ; une autre source est possible.
 #STRATA_UPDATE_URL=github:DamienP2/Strata-Arkyo
 
-# Jeton GitHub en lecture seule (dépôt privé) : fine-grained token, accès « Contents: Read-only ».
-# Ce fichier le contient : il n'est lisible que par root.
+# Seulement si le dépôt GitHub devient privé : jeton en lecture seule (Contents: Read-only).
 #STRATA_UPDATE_TOKEN=github_pat_...
 
 # Secondes entre l'annonce d'un redémarrage aux utilisateurs et la bascule.

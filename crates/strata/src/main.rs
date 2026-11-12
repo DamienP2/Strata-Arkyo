@@ -73,7 +73,16 @@ enum Command {
     /// bascule et rétablit l'ancienne version au troisième échec.
     #[command(hide = true)]
     BootGuard,
-    /// Mises à jour : état, installation hors ligne, retour arrière.
+    /// Met à jour vers la dernière version publiée sur GitHub : `sudo strata upgrade`.
+    Upgrade {
+        /// Indique seulement si une nouvelle version existe.
+        #[arg(long)]
+        check: bool,
+        /// Ne redémarre pas le service (usage interne).
+        #[arg(long, hide = true)]
+        no_restart: bool,
+    },
+    /// Mises à jour avancées : état, installation d'un fichier, retour arrière.
     #[command(subcommand)]
     Update(UpdateCommand),
     /// Applique les migrations de la base sans lancer le serveur.
@@ -159,6 +168,10 @@ async fn main() -> Result<()> {
         Command::Backup { label, list } => backup(&cli.data_dir, label, list).await,
         Command::Restore { name, cancel } => restore(&cli.data_dir, name, cancel).await,
         Command::Update(cmd) => update(&cli.data_dir, cmd).await,
+        Command::Upgrade { check, no_restart } => {
+            let code = upgrade(&cli.data_dir, check, no_restart).await?;
+            std::process::exit(code);
+        }
         Command::BootGuard => {
             let layout = Layout::from_env();
             if let BootDecision::RolledBack { from, to } = layout.guard_boot()? {
@@ -427,6 +440,133 @@ async fn restore(data_dir: &Path, name: Option<String>, cancel: bool) -> Result<
         "Les données actuelles seront mises de côté, jamais effacées. Pour annuler : strata restore --cancel"
     );
     Ok(())
+}
+
+/// Lit une valeur de /etc/default/strata-arkyo (la ligne de commande ne passe pas par systemd).
+fn site_setting(key: &str) -> Option<String> {
+    if let Ok(v) = std::env::var(key) {
+        return Some(v);
+    }
+    let text = std::fs::read_to_string("/etc/default/strata-arkyo").ok()?;
+    text.lines().find_map(|l| {
+        let (k, v) = l.trim().split_once('=')?;
+        (k.trim() == key).then(|| v.trim().trim_matches('"').to_string())
+    })
+}
+
+fn is_root() -> bool {
+    std::fs::read_to_string("/proc/self/status")
+        .ok()
+        .and_then(|s| {
+            s.lines()
+                .find(|l| l.starts_with("Uid:"))
+                .map(|l| l.split_whitespace().nth(1) == Some("0"))
+        })
+        .unwrap_or(false)
+}
+
+/// `strata upgrade` : codes de sortie 0 (installée), 3 (déjà à jour), 1 (erreur).
+async fn upgrade(data_dir: &Path, check: bool, no_restart: bool) -> Result<i32> {
+    let source = site_setting("STRATA_UPDATE_URL");
+    let token = site_setting("STRATA_UPDATE_TOKEN");
+    if is_root() {
+        // Les fichiers appartiennent à l'utilisateur strata : on travaille sous son nom,
+        // puis on redémarre le service.
+        let exe = std::env::current_exe()?;
+        let mut cmd = std::process::Command::new("runuser");
+        cmd.args(["-u", "strata", "--"])
+            .arg(&exe)
+            .arg("--data-dir")
+            .arg(data_dir)
+            .arg("upgrade")
+            .arg("--no-restart");
+        if check {
+            cmd.arg("--check");
+        }
+        for (k, v) in [
+            ("STRATA_UPDATE_URL", &source),
+            ("STRATA_UPDATE_TOKEN", &token),
+        ] {
+            if let Some(v) = v {
+                cmd.env(k, v);
+            }
+        }
+        let code = cmd
+            .status()
+            .context("lancement sous l'utilisateur strata")?
+            .code()
+            .unwrap_or(1);
+        if code == 0 && !check {
+            println!("Redémarrage du service…");
+            let ok = std::process::Command::new("systemctl")
+                .args(["restart", "strata-arkyo"])
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false);
+            if ok {
+                println!("Strata Arkyo redémarré. Vérifiez avec : strata version");
+            } else {
+                println!("Redémarrez : sudo systemctl restart strata-arkyo");
+            }
+        }
+        return Ok(code);
+    }
+    if let Some(t) = &token {
+        // SAFETY : avant tout autre fil d'exécution qui lirait l'environnement.
+        unsafe { std::env::set_var("STRATA_UPDATE_TOKEN", t) };
+    }
+    let layout = Layout::from_env();
+    let store = open(data_dir).await?;
+    let (ops, _rx) = Ops::new(
+        data_dir.to_path_buf(),
+        layout,
+        TrustedKeys::embedded(),
+        source,
+        Duration::ZERO,
+        VERSION,
+    );
+    println!("Version installée : {VERSION}. Recherche d'une nouvelle version…");
+    let found = ops
+        .check(&store)
+        .await
+        .map_err(|e| anyhow::anyhow!("{}", ops_message(e)))?;
+    let Some(m) = found else {
+        println!("Déjà à jour.");
+        store.close().await;
+        return Ok(3);
+    };
+    println!("Nouvelle version disponible : {}.", m.version);
+    for n in &m.notes {
+        println!("  · {n}");
+    }
+    if check {
+        store.close().await;
+        return Ok(0);
+    }
+    println!("Téléchargement, vérification et essai sur une copie de la base…");
+    let v = ops
+        .prepare_online(&store)
+        .await
+        .map_err(|e| anyhow::anyhow!("{}", ops_message(e)))?;
+    println!("Sauvegarde du site et bascule…");
+    ops.finish(&store, &v)
+        .await
+        .map_err(|e| anyhow::anyhow!("{}", ops_message(e)))?;
+    store.close().await;
+    println!("Version {v} installée.");
+    if !no_restart {
+        println!(
+            "Redémarrez : sudo systemctl restart strata-arkyo (ou lancez directement sudo strata upgrade)"
+        );
+    }
+    Ok(0)
+}
+
+fn ops_message(e: strata_api::ops::OpsError) -> String {
+    use strata_api::ops::OpsError::*;
+    match e {
+        Conflict(m) | Invalid(m) | Unavailable(m) | Internal(m) => m,
+    }
 }
 
 async fn update(data_dir: &Path, cmd: UpdateCommand) -> Result<()> {

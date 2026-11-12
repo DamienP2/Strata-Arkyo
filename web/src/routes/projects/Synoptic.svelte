@@ -12,6 +12,7 @@
   import { withLightTheme, standalone, raster, pdf as toPdf, save } from '../../lib/svgexport';
   import { PAPERS, type Paper } from '../../lib/sheet';
   import RemoteCursors from '../../components/RemoteCursors.svelte';
+  import { fitText, shareRow, textWidth } from '../../lib/fit';
   import { routeAll, rounded, type Routed, type Req as RouteReq } from '../../lib/cableroute';
   import ProjectLinks from '../../components/ProjectLinks.svelte';
   import { sendCursor, sendSelection, type PresenceMember } from '../../lib/live.svelte';
@@ -139,6 +140,28 @@
   const NW = 270, HH = 52, PS = 28, TAG_GAP = 26;
   const left = (n: SNode) => n.ports.filter((p) => p.side === 'l');
   const right = (n: SNode) => n.ports.filter((p) => p.side === 'r');
+  // Libellés des ports par ligne : l'entrée et la sortie se partagent la place (mesurée en pixels).
+  const portChip = (p: SNode['ports'][number]) => short(p.connector) + (p.gender === 'M' ? ' M' : p.gender === 'F' ? ' F' : '');
+  const portText = (p: SNode['ports'][number]) => p.label + (p.dir === 'bidir' ? ' ↔' : '');
+  const chipWidth = (s: string) => s.length * 6.3 + 12;
+  const fitCache = new Map<string, { l: string; r: string }[]>();
+  function fittedLabels(n: SNode): { l: string; r: string }[] {
+    const L = left(n), R = right(n);
+    const key = n.key + '|' + n.ports.map((p) => `${p.side}${p.connector}${p.gender}${p.dir}${p.label}`).join('|');
+    const hit = fitCache.get(key);
+    if (hit) return hit;
+    const rows: { l: string; r: string }[] = [];
+    for (let i = 0; i < Math.max(L.length, R.length); i++) {
+      const a = L[i], b = R[i];
+      const from = a ? 16 + chipWidth(portChip(a)) + 7 : 10;
+      const to = b ? NW - 16 - chipWidth(portChip(b)) - 7 : NW - 10;
+      const [wl, wr] = shareRow(a ? textWidth(portText(a)) : null, b ? textWidth(portText(b)) : null, to - from);
+      rows.push({ l: a ? fitText(portText(a), wl) : '', r: b ? fitText(portText(b), wr) : '' });
+    }
+    if (fitCache.size > 500) fitCache.clear();
+    fitCache.set(key, rows);
+    return rows;
+  }
   const nodeH = (n: SNode) => HH + Math.max(left(n).length, right(n).length, 1) * PS + 12;
   function autoLayout(nodes: SNode[]) {
     const col = (n: SNode) => (n.kind !== 'equipment' ? 1 : left(n).length === 0 ? 0 : right(n).length === 0 ? 2 : left(n).length > right(n).length ? 2 : 0);
@@ -777,17 +800,16 @@
                     {@const out = si === 1}
                     {@const x = out ? NW : 0}
                     {@const y = HH + i * PS + PS / 2 + 4}
-                    {@const s = short(p.connector) + (p.gender === 'M' ? ' M' : p.gender === 'F' ? ' F' : '')}
+                    {@const s = portChip(p)}
                     {@const cw = s.length * 6.3 + 12}
                     {@const cx0 = out ? NW - 16 - cw : 16}
-                    {@const room = (si === 0 ? right(n) : left(n)).length > i ? 9 : 20}
                     <g class="port" class:used={used.has(p.ref)} class:armed={armed.some((a) => a.ref === p.ref)} style="--c:{portColor(p)}" role="button" tabindex="-1"
                       onclick={(e) => clickPort(p, n, e)} onkeydown={() => {}}>
                       <title>{p.label} · {refById('connectors', p.connector)?.name ?? p.connector}{p.variant ? ` ${p.variant}` : ''}{p.gender ? ` · ${p.gender === 'M' ? 'mâle' : p.gender === 'F' ? 'femelle' : 'neutre'}` : ''}{p.signal ? ` · ${refById('signals', p.signal)?.name ?? p.signal}` : ''}</title>
                       <circle class="ph" cx={x} cy={y} r="13" />
                       <circle class="pdot" cx={x} cy={y} r="4.5" />
                       <g class="cchip"><rect x={cx0} y={y - 8.5} width={cw} height="17" rx="4" /><text x={cx0 + cw / 2} y={y + 3.6} text-anchor="middle">{s}</text></g>
-                      <text class="pn" x={out ? cx0 - 7 : cx0 + cw + 7} y={y + 4.5} text-anchor={out ? 'end' : 'start'}>{p.label.length > room ? p.label.slice(0, room - 1) + '…' : p.label}{p.dir === 'bidir' ? ' ↔' : ''}</text>
+                      <text class="pn" x={out ? cx0 - 7 : cx0 + cw + 7} y={y + 4.5} text-anchor={out ? 'end' : 'start'}>{out ? fittedLabels(n)[i]?.r : fittedLabels(n)[i]?.l}</text>
                     </g>
                   {/each}
                 {/each}
