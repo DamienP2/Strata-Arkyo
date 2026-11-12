@@ -115,7 +115,7 @@
 <style>
   .pp-head { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-bottom: 14px; }
   .pp-fam { display: grid; gap: 4px; padding: 12px 14px; border-radius: 14px; border: 1.5px solid var(--line); background: var(--surface); text-align: left; cursor: pointer; font: inherit; color: inherit; }
-  .pp-fam.on { border-color: var(--fg); box-shadow: 0 0 0 3px color-mix(in srgb, var(--fg) 10%, transparent); }
+  .pp-fam.on { border-color: var(--fg); box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--fg) 10%, transparent); }
   .pp-fam b { font-size: 20px; }
   .bar { display: block; height: 6px; border-radius: 99px; background: color-mix(in srgb, var(--fg) 10%, transparent); overflow: hidden; }
   .bar i { display: block; height: 100%; background: var(--ok, #22A06B); }

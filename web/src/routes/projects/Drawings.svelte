@@ -663,7 +663,7 @@
   .dw-side h4 { margin: 12px 0 2px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--fg-2); }
   .li { display: flex; flex-direction: column; gap: 2px; text-align: left; padding: 7px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); font: inherit; color: inherit; cursor: pointer; }
   .li:hover:not(:disabled) { border-color: var(--fg-3); }
-  .li.on { border-color: var(--accent, #4F6BFF); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent, #4F6BFF) 25%, transparent); }
+  .li.on { border-color: var(--accent, #4F6BFF); box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--accent, #4F6BFF) 25%, transparent); }
   .nm { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--c); flex: none; }
   .field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }

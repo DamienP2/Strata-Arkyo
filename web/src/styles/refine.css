@@ -192,7 +192,7 @@ kbd{font-size:10.5px;padding:3px 6px}
 .ritem.alu .rn{text-shadow:none}
 .ritem .led{width:7px;height:7px}
 .ritem.acc{--fp-bg:linear-gradient(180deg,#4A5059,#363B42)}
-.ritem.sel{outline:3px solid #A9B8FF;outline-offset:2px;filter:brightness(1.12)}
+.ritem.sel{outline:1.5px solid var(--accent);outline-offset:1px;filter:brightness(1.1)}
 .rack-screen .design-body{grid-template-columns:260px minmax(0,1fr) 320px}
 
 /* ===== Thème sombre : plus contrasté, moins plat ===== */

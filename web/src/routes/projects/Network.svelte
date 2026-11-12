@@ -367,7 +367,7 @@
   .bar i { display: block; height: 100%; background: var(--c); }
   .sw-row { display: flex; gap: 6px; flex-wrap: wrap; }
   .swc { width: 26px; height: 26px; border-radius: 50%; background: var(--c); border: 2px solid transparent; cursor: pointer; }
-  .swc.on { border-color: var(--fg); box-shadow: inset 0 0 0 2px var(--bg); }
+  .swc.on { border-color: var(--fg); box-shadow: inset 0 0 0 1.5px var(--bg); }
   .ferr { color: var(--err); font-size: 13px; }
   .nw-map { padding: 12px; overflow: auto; }
   .nw-map svg { display: block; max-width: none; }

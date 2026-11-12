@@ -286,7 +286,7 @@
   .sh { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 18px; align-items: start; }
   .sh-side { display: grid; gap: 12px; position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto; padding-bottom: 4px; }
   .sh-card { padding: 14px; display: grid; gap: 10px; }
-  .sh-card.sel { box-shadow: 0 0 0 2px var(--accent, #4F6BFF); }
+  .sh-card.sel { box-shadow: 0 0 0 1.5px var(--accent, #4F6BFF); }
   .sh-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: end; }
   .sh-2 .input { height: 38px; font-size: 14px; }
   .seg.wrap { flex-wrap: wrap; }

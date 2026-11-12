@@ -760,7 +760,7 @@
   .obj { cursor: pointer; }
   .ctr { fill: color-mix(in srgb, var(--accent, #4F6BFF) 16%, var(--surface)); stroke: var(--fg); stroke-width: 1.5; }
   .obj.rsel .ctr { stroke: var(--rs); stroke-width: 3; }
-  .obj.sel .ctr { stroke: var(--accent, #4F6BFF); stroke-width: 3; }
+  .obj.sel .ctr { stroke: var(--accent, #4F6BFF); stroke-width: 1.6; }
   .ct-t, .pt-t { font-family: var(--font); font-weight: 600; fill: var(--fg); paint-order: stroke; stroke: var(--surface); stroke-width: 3px; stroke-linejoin: round; }
   .pt-t .muted { fill: var(--fg-2); font-weight: 500; }
   .obj.sel .pt-t { fill: var(--accent, #4F6BFF); }
@@ -792,7 +792,7 @@
   .pl-side h4 { margin: 12px 0 2px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--fg-2); }
   .li { display: flex; flex-direction: column; gap: 2px; text-align: left; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); font: inherit; color: inherit; cursor: pointer; }
   .li:hover:not(:disabled) { border-color: var(--fg-3); }
-  .li.on { border-color: var(--accent, #4F6BFF); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent, #4F6BFF) 25%, transparent); }
+  .li.on { border-color: var(--accent, #4F6BFF); box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--accent, #4F6BFF) 25%, transparent); }
   .li.tr { cursor: default; }
   .li .nm { display: flex; gap: 6px; align-items: center; }
   .ra { display: flex; gap: 6px; margin-top: 4px; }

@@ -76,7 +76,7 @@
 <style>
   .chassis { display: grid; grid-template-columns: repeat(var(--n), minmax(24px, 1fr)); gap: 3px; padding: 10px; border-radius: 8px; background: linear-gradient(180deg, #2b3036, #1c2025); box-shadow: inset 0 0 0 1px #000; overflow-x: auto; }
   .cs { position: relative; height: 170px; display: flex; flex-direction: column; align-items: center; justify-content: space-between; gap: 4px; padding: 6px 2px; border: 0; border-radius: 3px; background: repeating-linear-gradient(180deg, #121519 0 6px, #171b20 6px 12px); box-shadow: inset 0 0 0 1px #000; color: #8f98a3; font: inherit; cursor: pointer; min-width: 0; }
-  .cs:hover:not(:disabled), .cs.on { box-shadow: inset 0 0 0 2px var(--accent); }
+  .cs:hover:not(:disabled), .cs.on { box-shadow: inset 0 0 0 1.5px var(--accent); }
   .cs:disabled { cursor: default; }
   .cs.full { cursor: default; background: linear-gradient(90deg, #4a515a, #5d6570 40%, #444b54); color: #fff; box-shadow: inset 0 0 0 1px #000, inset 0 1px 0 rgba(255, 255, 255, .25); }
   .n { font: 600 10px var(--mono); }

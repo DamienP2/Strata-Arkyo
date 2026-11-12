@@ -92,7 +92,7 @@
   .wv-tile { aspect-ratio: auto; position: relative; display: flex; flex-direction: column; justify-content: flex-end; align-items: flex-start; gap: 2px; padding: 10px; border: 3px solid #0B0C0E; color: #fff; text-align: left;
     background: linear-gradient(135deg, #24406E, #142236 60%, #0F1826); box-shadow: 0 0 0 1px #3A4048, 0 6px 14px -6px rgba(0, 0, 0, .6); min-height: 54px; }
   .wv-tile.noscreen { background: repeating-linear-gradient(135deg, #1B1F24 0 8px, #22272D 8px 16px); }
-  .wv-tile.on { outline: 3px solid var(--accent, #4F6BFF); outline-offset: 1px; }
+  .wv-tile.on { outline: 1.5px solid var(--accent, #4F6BFF); outline-offset: 1px; }
   .wv-src { font: 700 clamp(12px, 1.6vw, 20px)/1.1 var(--display, inherit); letter-spacing: -.01em; }
   .wv-meta { font-size: 10.5px; color: #A9B4C2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
   .wv-led { position: absolute; top: 8px; right: 8px; width: 6px; height: 6px; border-radius: 50%; background: #3BE07F; box-shadow: 0 0 6px #3BE07F; }

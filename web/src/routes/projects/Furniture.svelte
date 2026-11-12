@@ -228,7 +228,7 @@
   .desk .dimh { position: absolute; left: -48px; top: 50%; transform: translateY(-50%); font-size: 11px; color: var(--fg-3); }
   /* Casquette encastrée : joues noir laqué, dessus noir, liseré alu ; gradin continu derrière. */
   .cq { position: absolute; bottom: 100%; margin-bottom: 0; padding: 0 calc(25 * var(--u) / 44.45) calc(25 * var(--u) / 44.45); box-sizing: border-box; border-radius: 7px 7px 2px 2px; background: linear-gradient(90deg, #050506, #2a2c31 5%, #141518 6.5%, #141518 93.5%, #2a2c31 95%, #050506); box-shadow: inset 0 3px 0 #1b1d21, inset 0 4px 0 rgba(220,224,230,.6), 0 0 0 1px #0d0e10, 0 14px 22px -14px rgba(0,0,0,.75); cursor: grab; touch-action: none; z-index: 2; }
-  .cq.sel { box-shadow: inset 0 3px 0 #1b1d21, inset 0 4px 0 rgba(220,224,230,.6), 0 0 0 3px var(--accent), 0 14px 22px -14px rgba(0,0,0,.75); }
+  .cq.sel { box-shadow: inset 0 3px 0 #1b1d21, inset 0 4px 0 rgba(220,224,230,.6), 0 0 0 1.5px var(--accent), 0 14px 22px -14px rgba(0,0,0,.75); }
   .cq.dragging { cursor: grabbing; opacity: .9; }
   .cq-name { position: absolute; left: 0; right: 0; bottom: 100%; margin-bottom: 4px; text-align: center; font: 600 11px var(--font); color: var(--fg-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .cq-in { position: absolute; left: calc(25 * var(--u) / 44.45 + 10px); right: calc(25 * var(--u) / 44.45 + 10px); top: calc(25 * var(--u) / 44.45); bottom: calc(25 * var(--u) / 44.45); background: repeating-linear-gradient(to top, #1E2228 0 1px, #08090B 1px var(--u)); }

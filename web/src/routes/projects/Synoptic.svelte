@@ -1027,7 +1027,7 @@
 
 {#if !syn}<span class="spin"></span>
 {:else}
-  <div class="syn card" style="padding:0;overflow:hidden">
+  <div class="syn">
     <div class="dtool">
       <select class="input" aria-label="Vue du synoptique" value={syn.view} onchange={(e) => navigate(viewUrl((e.target as HTMLSelectElement).value))}>
         <option value="overview">Vue générale (liaisons entre lieux)</option>
@@ -1546,7 +1546,7 @@
   :global(.syn-guide.live) { stroke-dasharray: none; }
   :global(.lasso) { fill: color-mix(in srgb, var(--accent, #4F6BFF) 10%, transparent); stroke: var(--accent, #4F6BFF); stroke-width: 1.5; vector-effect: non-scaling-stroke; stroke-dasharray: 5 4; }
   :global(.amulti) { fill: none; stroke: var(--accent, #4F6BFF); stroke-width: 2; vector-effect: non-scaling-stroke; stroke-dasharray: 4 3; }
-  .minimap { position: absolute; right: 12px; bottom: 60px; z-index: 4; background: color-mix(in srgb, var(--surface) 92%, transparent); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 6px 20px -8px rgba(0,0,0,.35); cursor: pointer; overflow: hidden; }
+  .minimap { position: absolute; right: 12px; bottom: 56px; z-index: 4; background: color-mix(in srgb, var(--surface) 70%, transparent); border-radius: 8px; cursor: pointer; overflow: hidden; }
   .minimap svg { display: block; }
   .mmn { fill: var(--fg-3); }
   .mmv { fill: color-mix(in srgb, var(--accent, #4F6BFF) 12%, transparent); stroke: var(--accent, #4F6BFF); stroke-width: 1.5; }
@@ -1556,7 +1556,8 @@
      décalait le canevas par rapport au calcul des coordonnées de la souris. */
   .syn-stage > .syn-canvas { height: 100%; padding: 0; margin: 0; border-radius: 0; box-shadow: none; display: block; background-image: none; }
   :global(.cable.rsel) path { filter: drop-shadow(0 0 2.5px var(--rs)) drop-shadow(0 0 2.5px var(--rs)); }
-  .syn-body { display: grid; grid-template-columns: 52px minmax(0, 1fr) 320px; border-top: 1px solid var(--line); height: calc(100vh - 196px); min-height: 520px; }
+  .syn { margin: -6px -8px 0; }
+  .syn-body { display: grid; grid-template-columns: 52px minmax(0, 1fr) 320px; border-top: 1px solid var(--line); height: calc(100vh - 176px); min-height: 520px; }
   .syn-body.norail { grid-template-columns: minmax(0, 1fr) 320px; }
   /* Rail d'outils (hors du dessin) */
   .rail { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 10px 0; border-right: 1px solid var(--line); background: var(--surface); }
@@ -1572,7 +1573,7 @@
   .cap-chk { display: inline-flex; align-items: center; gap: 5px; padding: 0 6px; font-size: 12.5px; color: var(--fg-2); cursor: pointer; }
   .cap-hint { position: absolute; left: 50%; top: 62px; transform: translateX(-50%); z-index: 5; padding: 3px 10px; border-radius: 99px; font-size: 12px; color: var(--accent); background: color-mix(in srgb, var(--surface) 88%, transparent); white-space: nowrap; pointer-events: none; }
   /* Zoom et mini-carte en bas à droite */
-  .zoomer { position: absolute; right: 12px; bottom: 12px; z-index: 5; display: flex; align-items: center; gap: 2px; padding: 4px; border-radius: 11px; background: var(--surface); box-shadow: 0 8px 22px -10px rgba(0, 0, 0, .3), 0 0 0 1px var(--line); }
+  .zoomer { position: absolute; right: 12px; bottom: 12px; z-index: 5; display: flex; align-items: center; gap: 2px; padding: 2px; border-radius: 9px; background: color-mix(in srgb, var(--surface) 80%, transparent); }
   .zoomer button { width: 30px; height: 30px; display: grid; place-items: center; border: 0; border-radius: 8px; background: none; color: var(--fg-2); cursor: pointer; }
   .zoomer button:hover { background: var(--surface-2); color: var(--fg); }
   .zoomer .mono { min-width: 46px; text-align: center; font-size: 12px; }
@@ -1642,7 +1643,7 @@
   .cable .case { fill: none; stroke: var(--surface-2); stroke-width: 6; }
   .cable .vis { fill: none; stroke: var(--c); stroke-width: 2.2; stroke-linejoin: round; }
   .cable .hit { fill: none; stroke: transparent; stroke-width: 14; }
-  .cable.sel .vis { stroke-width: 3.6; filter: drop-shadow(0 0 4px var(--c)); }
+  .cable.sel .vis { stroke-width: 1.6.6; filter: drop-shadow(0 0 4px var(--c)); }
   .cable.stub .vis { stroke-dasharray: 2 4; }
   .far rect { fill: var(--surface); stroke: var(--c); stroke-width: 1.2; }
   .far text { font: 600 11px var(--font); fill: var(--fg-2); }
@@ -1699,7 +1700,7 @@
   .syn-canvas.t-select { cursor: default; } .syn-canvas.t-pan { cursor: grab; } .syn-canvas.t-pan:active { cursor: grabbing; }
   .syn-canvas.t-cable, .syn-canvas.t-zone, .syn-canvas.t-lasso { cursor: crosshair; } .syn-canvas.t-label { cursor: text; }
   .syn-canvas.t-eraser { cursor: not-allowed; } .syn-canvas.t-eraser .cable:hover .vis { stroke: var(--err); stroke-dasharray: 4 3; }
-  .node.nsel .box { stroke: var(--accent); stroke-width: 2.5; }
+  .node.nsel .box { stroke: var(--accent); stroke-width: 1.6; }
   .nd-t { margin: 0; font-size: 17px; }
   /* Compatibilité pendant le tracé */
   .arming .port.ok .pdot { r: 6.5; }
