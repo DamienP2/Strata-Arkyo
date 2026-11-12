@@ -178,7 +178,8 @@ async fn rack_view(st: &AppState, c: &Container, token: &str) -> ApiResult<Value
         .map(|p| p.article_id.as_str())
         .collect();
     let mut pending = Vec::new();
-    for a in &ctx.articles {
+    for a in ctx.articles.iter().filter(|a| a.host.is_none()) {
+        // Un module est dans son châssis : il ne se pose pas seul.
         let geo = ctx.geometry(a);
         let base = json!({ "article_id": a.id, "label": article_label(a, &ctx.items), "nature": a.nature, "height_u": geo.map(|g| g.0), "width": geo.map(|g| g.1), "rackable": geo.is_some(), "function": ctx.item(a).and_then(|i| i.function.clone()), "accessory": a.accessory, "type_id": ctx.item(a).and_then(|i| i.type_id.clone()), "visual": ctx.item(a).and_then(|i| i.visual.clone()) });
         match a.nature {

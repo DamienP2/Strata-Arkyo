@@ -20,7 +20,7 @@ use strata_domain::catalog::{FieldError, Format, Modular};
 use strata_domain::project::*;
 use strata_domain::{Domain, Level};
 use strata_store::{
-    Article, CatalogItem, Container, Inventory, Location, Project, Store, StoreError,
+    Article, CatalogItem, Container, Inventory, Location, ModuleHost, Project, Store, StoreError,
 };
 
 const READ: &str = "Vous n'avez pas accès aux projets.";
@@ -52,6 +52,7 @@ pub fn routes() -> Router<AppState> {
             patch(update_article).delete(delete_article),
         )
         .route("/articles/{id}/move", post(move_article))
+        .route("/articles/{id}/modules", post(add_module))
         .route("/instances/{id}", patch(update_instance))
         .route("/projects/{id}/tasks", get(list_tasks).post(create_task))
         .route("/tasks/{id}", patch(update_task).delete(delete_task))
@@ -138,6 +139,9 @@ pub(crate) struct ItemView {
     pub(crate) weight_kg: Option<f64>,
     pub(crate) power_w: Option<f64>,
     pub(crate) modular: bool,
+    /// Châssis : nombre d'emplacements ; module : emplacements occupés.
+    pub(crate) host_slots: Option<u32>,
+    pub(crate) module_slots: Option<u32>,
     pub(crate) active: bool,
     /// Largeur en rack (pleine, 1/2…), réserve de câbles à l'arrière, première fonction.
     pub(crate) width: strata_domain::catalog::Width,
@@ -207,6 +211,14 @@ pub(crate) fn view_of(
         weight_kg: d.get("weight_kg").and_then(Value::as_f64),
         power_w: d.get("power_w").and_then(Value::as_f64),
         modular: matches!(modular, Some(Modular::Host { .. })),
+        host_slots: match &modular {
+            Some(Modular::Host { slots, .. }) => Some(*slots),
+            _ => None,
+        },
+        module_slots: match &modular {
+            Some(Modular::Component { slots }) => Some(*slots),
+            _ => None,
+        },
         active: i.active,
         width,
         rear_reserve_mm,
@@ -235,7 +247,8 @@ pub(crate) fn load_of(a: &Article, items: &HashMap<String, ItemView>) -> Article
         },
         (None, Some(it)) => ArticleLoad {
             quantity: q,
-            height_u: it.height_u.filter(|_| it.rackable),
+            // Un module est dans son châssis : il ne prend pas de place en baie.
+            height_u: it.height_u.filter(|_| it.rackable && a.host.is_none()),
             weight_kg: it.weight_kg.unwrap_or(0.0),
             power_w: it.power_w.unwrap_or(0.0),
         },
@@ -1211,9 +1224,57 @@ async fn create_article(
         Some(&a),
     )
     .await?;
+    // Châssis : ses modules par défaut (fiche du catalogue) sont glissés dans ses emplacements.
+    let mut modules = Vec::new();
+    if created && item_view.as_ref().is_some_and(|v| v.modular) {
+        if let Some(it) = st
+            .store
+            .item(a.item_id.as_deref().unwrap_or_default())
+            .await?
+        {
+            if let Some(Modular::Host {
+                default_composition,
+                ..
+            }) = it
+                .data
+                .get("modular")
+                .and_then(|v| serde_json::from_value::<Modular>(v.clone()).ok())
+            {
+                for p in default_composition {
+                    if st.store.item(&p.equipment_id).await?.is_none() {
+                        continue;
+                    }
+                    let (mo, _) = st
+                        .store
+                        .add_article(
+                            &pid,
+                            &lid,
+                            b.container_id.as_deref(),
+                            ArticleNature::Equipment,
+                            Some(&p.equipment_id),
+                            1,
+                            None,
+                            false,
+                        )
+                        .await?;
+                    let mo = st
+                        .store
+                        .set_article_host(
+                            &mo.id,
+                            Some(&ModuleHost {
+                                article_id: a.id.clone(),
+                                slot: p.slot,
+                            }),
+                        )
+                        .await?;
+                    modules.push(mo);
+                }
+            }
+        }
+    }
     Ok((
         StatusCode::CREATED,
-        Json(json!({ "article": a, "merged": !created, "warnings": warnings })),
+        Json(json!({ "article": a, "merged": !created, "warnings": warnings, "modules": modules })),
     ))
 }
 
@@ -1244,6 +1305,12 @@ async fn update_article(
     }
     if before.nature == ArticleNature::Accessory && b.quantity != before.quantity {
         return Err(one("quantity", "Un accessoire se pose à l'unité."));
+    }
+    if before.host.is_some() && b.quantity != 1 {
+        return Err(one(
+            "quantity",
+            "Un module glissé dans un châssis est à l'unité.",
+        ));
     }
     if let Some(item) = before.item_id.as_deref() {
         let ids = HashSet::from([item.to_string()]);
@@ -1305,6 +1372,12 @@ async fn move_article(
         .await?
         .ok_or(ApiError::NotFound("Article"))?;
     let pid = a.project_id.clone();
+    if a.host.is_some() {
+        return Err(one(
+            "container_id",
+            "Un module suit son châssis : déplacez le châssis, ou retirez le module.",
+        ));
+    }
     let (lid, cid) = match &b.container_id {
         Some(cid) => {
             let c = st
@@ -1392,6 +1465,104 @@ async fn delete_article(
     )
     .await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+struct NewModule {
+    item_id: String,
+    slot: u32,
+}
+
+/// Glisse un module du catalogue dans un emplacement libre d'un châssis du projet.
+async fn add_module(
+    State(st): State<AppState>,
+    m: Member,
+    origin: Origin,
+    Path(id): Path<String>,
+    Json(b): Json<NewModule>,
+) -> ApiResult<(StatusCode, Json<Article>)> {
+    write(&m)?;
+    let host = st
+        .store
+        .article(&id)
+        .await?
+        .ok_or(ApiError::NotFound("Article"))?;
+    let mut ids = HashSet::from([b.item_id.clone()]);
+    if let Some(i) = &host.item_id {
+        ids.insert(i.clone());
+    }
+    let views = item_views(&st.store, &ids).await?;
+    let slots = host
+        .item_id
+        .as_deref()
+        .and_then(|i| views.get(i))
+        .and_then(|v| v.host_slots)
+        .ok_or_else(|| one("item_id", "Cet équipement ne reçoit pas de modules."))?;
+    let width = views
+        .get(&b.item_id)
+        .and_then(|v| v.module_slots)
+        .ok_or_else(|| one("item_id", "Cette fiche n'est pas un module."))?;
+    if b.slot == 0 || b.slot + width - 1 > slots {
+        return Err(one("slot", "Le module dépasse du châssis."));
+    }
+    // Emplacements déjà pris par les autres modules du châssis.
+    let inv = st.store.inventory(&host.project_id).await?;
+    let others: Vec<&Article> = inv
+        .articles
+        .iter()
+        .filter(|a| a.host.as_ref().is_some_and(|h| h.article_id == host.id))
+        .collect();
+    let oids: HashSet<String> = others.iter().filter_map(|a| a.item_id.clone()).collect();
+    let ov = item_views(&st.store, &oids).await?;
+    for o in &others {
+        let h = o.host.as_ref().unwrap();
+        let w = o
+            .item_id
+            .as_deref()
+            .and_then(|i| ov.get(i))
+            .and_then(|v| v.module_slots)
+            .unwrap_or(1);
+        if b.slot < h.slot + w && h.slot < b.slot + width {
+            return Err(one("slot", "Emplacement déjà occupé."));
+        }
+    }
+    let (mo, _) = st
+        .store
+        .add_article(
+            &host.project_id,
+            &host.location_id,
+            host.container_id.as_deref(),
+            ArticleNature::Equipment,
+            Some(&b.item_id),
+            1,
+            None,
+            false,
+        )
+        .await?;
+    let mo = st
+        .store
+        .set_article_host(
+            &mo.id,
+            Some(&ModuleHost {
+                article_id: host.id.clone(),
+                slot: b.slot,
+            }),
+        )
+        .await?;
+    record(
+        &st,
+        &m,
+        &origin,
+        &host.project_id,
+        "article",
+        &mo.id,
+        "create",
+        Some(mo.rev),
+        None::<&()>,
+        Some(&mo),
+    )
+    .await?;
+    Ok((StatusCode::CREATED, Json(mo)))
 }
 
 #[derive(Deserialize)]

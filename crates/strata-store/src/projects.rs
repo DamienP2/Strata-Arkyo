@@ -4,7 +4,7 @@
 //! révision attendue et garde les exemplaires en accord avec les quantités.
 
 use crate::{Result, Store, StoreError, map_unique, new_id, now};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::sqlite::SqliteRow;
 use sqlx::{Row, Sqlite, Transaction};
@@ -57,7 +57,16 @@ pub struct Article {
     pub item_id: Option<String>,
     pub quantity: i64,
     pub accessory: Option<Accessory>,
+    /// Module glissé dans un châssis du projet : l'article hôte et le premier emplacement.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub host: Option<ModuleHost>,
     pub rev: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ModuleHost {
+    pub article_id: String,
+    pub slot: u32,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -149,6 +158,9 @@ impl Article {
             accessory: data
                 .get("accessory")
                 .and_then(|a| serde_json::from_value(a.clone()).ok()),
+            host: data
+                .get("host")
+                .and_then(|h| serde_json::from_value(h.clone()).ok()),
             rev: r.get("rev"),
         }
     }
@@ -742,6 +754,15 @@ impl Store {
             .bind(id)
             .fetch_one(&mut *tx)
             .await?;
+        // Les modules d'un châssis le suivent.
+        sqlx::query("UPDATE articles SET location_id = ?, container_id = ?, rev = rev + 1, updated_at = ? WHERE project_id = ? AND json_extract(data, '$.host.article_id') = ?")
+            .bind(location_id)
+            .bind(container_id)
+            .bind(now())
+            .bind(&pid)
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
         touch_project(&mut tx, &pid).await?;
         tx.commit().await?;
         self.article(id).await?.ok_or(StoreError::NotFound)
@@ -805,8 +826,34 @@ impl Store {
         self.article(&id).await?.ok_or(StoreError::NotFound)
     }
 
+    /// Glisse un module dans un châssis (ou l'en sort avec `None`).
+    pub async fn set_article_host(&self, id: &str, host: Option<&ModuleHost>) -> Result<Article> {
+        let mut tx = self.pool.begin().await?;
+        let pid: String = match host {
+            Some(h) => sqlx::query_scalar("UPDATE articles SET data = json_set(data, '$.host', json(?)), rev = rev + 1, updated_at = ? WHERE id = ? RETURNING project_id")
+                .bind(serde_json::to_string(h).unwrap_or_default())
+                .bind(now())
+                .bind(id)
+                .fetch_one(&mut *tx)
+                .await?,
+            None => sqlx::query_scalar("UPDATE articles SET data = json_remove(data, '$.host'), rev = rev + 1, updated_at = ? WHERE id = ? RETURNING project_id")
+                .bind(now())
+                .bind(id)
+                .fetch_one(&mut *tx)
+                .await?,
+        };
+        touch_project(&mut tx, &pid).await?;
+        tx.commit().await?;
+        self.article(id).await?.ok_or(StoreError::NotFound)
+    }
+
     pub async fn delete_article(&self, id: &str) -> Result<()> {
         let mut tx = self.pool.begin().await?;
+        // Supprimer un châssis supprime les modules qu'il porte.
+        sqlx::query("DELETE FROM articles WHERE json_extract(data, '$.host.article_id') = ?")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
         let pid: Option<String> =
             sqlx::query_scalar("DELETE FROM articles WHERE id = ? RETURNING project_id")
                 .bind(id)

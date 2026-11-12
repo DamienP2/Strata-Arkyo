@@ -9,6 +9,7 @@
   import AddArticle from './AddArticle.svelte';
   import TemplatePick from './TemplatePick.svelte';
   import ProjectPanel from './ProjectPanel.svelte';
+  import ChassisDialog from './ChassisDialog.svelte';
   import WallView from './WallView.svelte';
   import DeskView from './DeskView.svelte';
   import KindIll from '../../components/KindIll.svelte';
@@ -32,7 +33,10 @@
   const loc = $derived(view.locations.find((l) => l.id === selLoc));
   const conts = $derived(view.containers.filter((c) => c.location_id === selLoc));
   const cont = $derived(view.containers.find((c) => c.id === selCont) ?? null);
-  const arts = $derived(view.articles.filter((a) => (selCont === 'free' ? a.location_id === selLoc && !a.container_id : a.container_id === selCont)));
+  // Les modules glissés dans un châssis s'affichent sous leur châssis, pas comme des lignes à part.
+  const arts = $derived(view.articles.filter((a) => !a.host && (selCont === 'free' ? a.location_id === selLoc && !a.container_id : a.container_id === selCont)));
+  const modulesOf = (a: Article) => view.articles.filter((m) => m.host?.article_id === a.id).sort((x, y) => x.host!.slot - y.host!.slot);
+  let chassisOf = $state<Article | null>(null);
   const instOf = (a: Article) => view.instances.filter((i) => i.article_id === a.id);
   const item = (a: Article) => (a.item_id ? view.items[a.item_id] : undefined);
   const heightOf = (a: Article) => (a.accessory ? (a.accessory.kind === 'panel' ? a.accessory.panel.height_u : a.accessory.height_u) : item(a)?.rackable ? item(a)!.height_u : null);
@@ -124,7 +128,8 @@
   const grouped = $derived.by(() => {
     const rows = new Map<string, Row>();
     for (const a of arts) {
-      const unit = a.nature === 'accessory' || item(a)?.modular;
+      // Accessoires identiques regroupés ; un châssis garde sa ligne (ses modules lui sont propres).
+      const unit = a.nature === 'accessory';
       const key = unit ? `${sectionOf(a)}|${a.item_id ?? ''}|${JSON.stringify(a.accessory ?? null)}` : a.id;
       const r = rows.get(key);
       if (r) r.list.push(a); else rows.set(key, { key, a, list: [a] });
@@ -284,17 +289,31 @@
               {@const it = item(a)}
               {@const inst = instOf(a)}
               <tr>
-                <td><div class="art-name"><span><b>{a.label}</b><span class="small muted">{a.nature === 'equipment' ? 'Équipement' : a.nature === 'adapter' ? 'Adaptateur' : a.accessory?.kind === 'panel' ? `Panel · ${a.accessory.panel.slots.length} connecteur${a.accessory.panel.slots.length > 1 ? 's' : ''}` : 'Accessoire'}{it?.brand ? ` · ${it.brand}` : ''}{it && !it.active ? ' · fiche inactive' : ''}</span></span></div></td>
+                <td><div class="art-name"><span><b>{a.label}</b><span class="small muted">{it?.modular ? `Châssis · ${modulesOf(a).length} module${modulesOf(a).length > 1 ? 's' : ''}` : a.nature === 'equipment' ? 'Équipement' : a.nature === 'adapter' ? 'Adaptateur' : a.accessory?.kind === 'panel' ? `Panel · ${a.accessory.panel.slots.length} connecteur${a.accessory.panel.slots.length > 1 ? 's' : ''}` : 'Accessoire'}{it?.brand ? ` · ${it.brand}` : ''}{it && !it.active ? ' · fiche inactive' : ''}</span></span></div></td>
                 <td>{#if writable}<span class="stepper"><button onclick={() => step(r, -1)} aria-label="Retirer un">−</button><span>{qtyOf(r)}</span><button onclick={() => step(r, 1)} aria-label="Ajouter un">+</button></span>{:else}{qtyOf(r)}{/if}</td>
                 <td class="num hide-m">{heightOf(a) ? `${nf(heightOf(a)! * qtyOf(r), 1).replace(',0', '')} U` : '—'}</td>
                 <td class="num hide-m">{it?.weight_kg ? `${nf(it.weight_kg * qtyOf(r), 1)} kg` : '—'}</td>
                 <td class="num hide-m">{it?.power_w ? `${nf(it.power_w * qtyOf(r))} W` : '—'}</td>
                 <td><div class="dl-actions">
                   {#if a.accessory?.kind === 'panel'}<button class="btn sm ghost" onclick={() => (panelOf = a)}><Icon name="grid" size="sm" />{writable ? 'Modifier' : 'Voir'}</button>{/if}
+                  {#if it?.modular}<button class="btn sm" onclick={() => (chassisOf = a)}><Icon name="grid" size="sm" />Modules</button>{/if}
                   {#if inst.length}<button class="btn sm ghost" onclick={() => toggle(a.id)} aria-expanded={open.has(a.id)}>{inst.length} repère{inst.length > 1 ? 's' : ''}<Icon name="chevd" size="sm" /></button>{/if}
                   {#if writable}<button class="btn sm ghost" title="Déplacer" onclick={() => (moving = { a, target: '', instance: inst.at(-1)?.id ?? null })}><Icon name="arrowr" size="sm" /></button><button class="btn sm ghost danger" title="Supprimer" onclick={() => (confirmDel = { kind: 'article', id: a.id, name: a.label })}><Icon name="trash" size="sm" /></button>{/if}
                 </div></td>
               </tr>
+              {#if it?.modular && modulesOf(a).length}
+                {#each modulesOf(a) as mo (mo.id)}
+                  {@const mi = item(mo)}
+                  <tr class="mod-row">
+                    <td><div class="art-name"><span><b><span class="slotn mono">S{mo.host!.slot}</span>{mo.label}</b><span class="small muted">Module · {view.instances.find((i) => i.article_id === mo.id)?.tag ?? ''}{mi?.brand ? ` · ${mi.brand}` : ''}</span></span></div></td>
+                    <td class="muted">1</td>
+                    <td class="num hide-m">—</td>
+                    <td class="num hide-m">{mi?.weight_kg ? `${nf(mi.weight_kg, 1)} kg` : '—'}</td>
+                    <td class="num hide-m">{mi?.power_w ? `${nf(mi.power_w)} W` : '—'}</td>
+                    <td><div class="dl-actions">{#if writable}<button class="btn sm ghost danger" title="Retirer du châssis" onclick={() => (confirmDel = { kind: 'article', id: mo.id, name: mo.label })}><Icon name="x" size="sm" /></button>{/if}</div></td>
+                  </tr>
+                {/each}
+              {/if}
               {#if open.has(a.id)}
                 <tr><td colspan="6" style="background:var(--surface-2)">
                   <div class="inst-grid">
@@ -364,6 +383,7 @@
   </Confirm>
 {/if}
 
+{#if chassisOf}<ChassisDialog {view} host={chassisOf} {writable} onclose={() => (chassisOf = null)} ondone={reload} />{/if}
 {#if panelOf}<ProjectPanel article={panelOf} readonly={!writable} eyebrow="Panel du projet" onclose={() => (panelOf = null)} ondone={reload} />{/if}
 
 <style>
@@ -375,6 +395,9 @@
   .pop-menu b { font-size: 13.5px; font-weight: 600; }
   .pop-menu small { font-size: 12px; color: var(--fg-3); }
   .pop-menu :global(.ic) { margin-top: 2px; color: var(--fg-3); }
+  .mod-row td { background: color-mix(in srgb, var(--surface-2) 55%, transparent); font-size: 13.5px; }
+  .mod-row .art-name { padding-left: 22px; border-left: 2px solid var(--line-2); margin-left: 8px; }
+  .slotn { display: inline-block; margin-right: 8px; padding: 1px 6px; border-radius: 5px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line); font-size: 11px; color: var(--fg-2); }
   .sec-row td { padding: 14px 0 4px; border-bottom: 1px solid var(--line); background: none; }
   .sec-row .lbl-t { color: var(--fg-2); }
   .kind-vis { display: grid; place-items: center; width: 84px; height: 148px; --ki: var(--sig-v); }

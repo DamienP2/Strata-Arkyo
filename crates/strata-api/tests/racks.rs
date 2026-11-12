@@ -4250,3 +4250,149 @@ async fn project_points_restore_export_import() {
         .unwrap();
     assert!(res.status().is_client_error());
 }
+
+#[tokio::test]
+async fn chassis_receives_modules() {
+    let Setup {
+        app, o, pid, cid, ..
+    } = setup().await;
+    let post = |b: Value| {
+        let app = app.clone();
+        let o = o.clone();
+        async move { call(&app, "POST", "/api/catalog/items", Some(b), Some(&o)).await }
+    };
+    // Deux modules (1 et 2 emplacements), un châssis de 4 emplacements avec le premier par défaut.
+    let card = post(json!({"kind": "equipment", "data": {"name": "Carte SDI", "functions": ["V"], "format": {"kind": "free", "length_mm": 200, "width_mm": 20, "height_mm": 80},
+        "modular": {"role": "component", "slots": 1},
+        "ports": [{"connector_id": "bnc", "signal_id": "sdi-3g", "direction": "in", "gender": "F", "quantity": 2, "label": "SDI IN"}]}})).await;
+    assert_eq!(card.status, StatusCode::CREATED, "{:?}", card.body);
+    let card = card.body["item"]["id"].as_str().unwrap().to_string();
+    let wide = post(json!({"kind": "equipment", "data": {"name": "Carte double", "functions": ["V"], "format": {"kind": "free", "length_mm": 200, "width_mm": 40, "height_mm": 80},
+        "modular": {"role": "component", "slots": 2}}})).await.body["item"]["id"].as_str().unwrap().to_string();
+    let frame = post(json!({"kind": "equipment", "data": {"name": "Châssis 2U", "functions": ["V"], "format": {"kind": "rack", "height_u": 2, "depth_mm": 400},
+        "modular": {"role": "host", "slots": 4, "default_composition": [{"equipment_id": card, "slot": 1}]},
+        "ports": [{"connector_id": "bnc", "signal_id": "sdi-3g", "direction": "in", "gender": "F", "quantity": 1, "label": "REF"}]}})).await;
+    assert_eq!(frame.status, StatusCode::CREATED, "{:?}", frame.body);
+    let frame = frame.body["item"]["id"].as_str().unwrap().to_string();
+    let r = call(
+        &app,
+        "GET",
+        "/api/catalog/items?kind=equipment&modular=component",
+        None,
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.body["total"], 2);
+
+    // Ajout du châssis : son module par défaut est glissé dans l'emplacement 1.
+    let r = call(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid}/articles"),
+        Some(json!({"container_id": cid, "nature": "equipment", "item_id": frame})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::CREATED, "{:?}", r.body);
+    let host = r.body["article"]["id"].as_str().unwrap().to_string();
+    assert_eq!(r.body["modules"].as_array().unwrap().len(), 1);
+    assert_eq!(r.body["modules"][0]["host"]["slot"], 1);
+
+    // Un module de 2 emplacements tient en 2-3, pas en 4 ; l'emplacement 1 est pris.
+    let add = |slot: u32, item: &str| {
+        let (app, o, host) = (app.clone(), o.clone(), host.clone());
+        let item = item.to_string();
+        async move {
+            call(
+                &app,
+                "POST",
+                &format!("/api/articles/{host}/modules"),
+                Some(json!({"item_id": item, "slot": slot})),
+                Some(&o),
+            )
+            .await
+        }
+    };
+    assert_eq!(add(1, &card).await.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(add(4, &wide).await.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let m = add(2, &wide).await;
+    assert_eq!(m.status, StatusCode::CREATED, "{:?}", m.body);
+    let module = m.body["id"].as_str().unwrap().to_string();
+    assert_eq!(add(3, &card).await.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(
+        add(1, &frame).await.status,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    // Un module suit son châssis et reste à l'unité.
+    let r = call(
+        &app,
+        "PATCH",
+        &format!("/api/articles/{module}"),
+        Some(json!({"rev": m.body["rev"], "quantity": 2})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let r = call(
+        &app,
+        "POST",
+        &format!("/api/articles/{module}/move"),
+        Some(json!({"rev": m.body["rev"], "location_id": null, "container_id": cid})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
+
+    // Synoptique : un seul nœud pour le châssis, avec les ports de ses modules préfixés.
+    let r = call(
+        &app,
+        "GET",
+        &format!("/api/projects/{pid}/synoptic?view=container:{cid}"),
+        None,
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    let nodes = r.body["nodes"].as_array().unwrap();
+    assert!(!nodes.iter().any(|n| n["label"] == "Carte SDI"));
+    let ch = nodes.iter().find(|n| n["label"] == "Châssis 2U").unwrap();
+    let labels: Vec<&str> = ch["ports"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["label"].as_str().unwrap())
+        .collect();
+    assert_eq!(labels, vec!["REF", "S1 · SDI IN 1", "S1 · SDI IN 2"]);
+
+    // Le rack ne propose pas les modules à placer ; supprimer le châssis supprime ses modules.
+    let r = call(
+        &app,
+        "GET",
+        &format!("/api/containers/{cid}/rack"),
+        None,
+        Some(&o),
+    )
+    .await;
+    assert!(
+        !r.body["pending"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|p| p["label"] == "Carte SDI" || p["label"] == "Carte double")
+    );
+    assert_eq!(
+        call(
+            &app,
+            "DELETE",
+            &format!("/api/articles/{host}"),
+            None,
+            Some(&o)
+        )
+        .await
+        .status,
+        StatusCode::NO_CONTENT
+    );
+    let r = call(&app, "GET", &format!("/api/projects/{pid}"), None, Some(&o)).await;
+    let arts = r.body["articles"].as_array().unwrap();
+    assert!(!arts.iter().any(|a| a["host"].is_object()), "{arts:?}");
+}

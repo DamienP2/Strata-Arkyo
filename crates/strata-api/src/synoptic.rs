@@ -165,8 +165,21 @@ pub(crate) async fn project_nodes(store: &Store, pid: &str) -> ApiResult<Vec<Nod
             }
         }
     }
+    // Modules glissés dans un châssis : leurs ports rejoignent le nœud du châssis.
+    let mut modules_of: HashMap<&str, Vec<&strata_store::Article>> = HashMap::new();
+    for a in inv.articles.iter() {
+        if let Some(h) = &a.host {
+            modules_of.entry(h.article_id.as_str()).or_default().push(a);
+        }
+    }
+    for v in modules_of.values_mut() {
+        v.sort_by_key(|a| a.host.as_ref().map(|h| h.slot).unwrap_or(0));
+    }
     let mut out = Vec::new();
     for a in &inv.articles {
+        if a.host.is_some() {
+            continue;
+        }
         let where_ = a
             .container_id
             .as_deref()
@@ -196,55 +209,82 @@ pub(crate) async fn project_nodes(store: &Store, pid: &str) -> ApiResult<Vec<Nod
                     .and_then(|f| f.get("height_u"))
                     .and_then(Value::as_f64)
                     .unwrap_or(1.0);
+                let item_groups = |id: &str| -> Vec<strata_domain::catalog::PortGroup> {
+                    items
+                        .get(id)
+                        .and_then(|it| it.data.get("ports").cloned())
+                        .and_then(|v| serde_json::from_value(v).ok())
+                        .unwrap_or_default()
+                };
                 for inst in inv.instances.iter().filter(|i| i.article_id == a.id) {
+                    // Le châssis d'abord, puis chaque module dans l'ordre des emplacements.
+                    let mut sources: Vec<(String, Vec<strata_domain::catalog::PortGroup>, String)> =
+                        vec![(inst.id.clone(), groups.clone(), String::new())];
+                    for mo in modules_of
+                        .get(a.id.as_str())
+                        .map(|v| v.as_slice())
+                        .unwrap_or(&[])
+                    {
+                        let Some(mi) = inv.instances.iter().find(|i| i.article_id == mo.id) else {
+                            continue;
+                        };
+                        let slot = mo.host.as_ref().map(|h| h.slot).unwrap_or(0);
+                        sources.push((
+                            mi.id.clone(),
+                            item_groups(mo.item_id.as_deref().unwrap_or_default()),
+                            format!("S{slot} · "),
+                        ));
+                    }
                     let mut ports = Vec::new();
-                    for (g, pg) in groups.iter().enumerate() {
-                        let (family, ip, sname) = pg
-                            .signal_id
-                            .as_deref()
-                            .and_then(|s| sig.get(s).cloned())
-                            .unwrap_or((None, false, String::new()));
-                        let base = pg
-                            .label
-                            .clone()
-                            .filter(|l| !l.trim().is_empty())
-                            .unwrap_or_else(|| {
-                                if sname.is_empty() {
-                                    conn_name(&pg.connector_id)
-                                } else {
-                                    sname.clone()
-                                }
-                            });
-                        let q = pg.quantity.clamp(1, 1024);
-                        for n in 1..=q {
-                            let dir = match pg.direction {
-                                strata_domain::catalog::Direction::In => Dir::In,
-                                strata_domain::catalog::Direction::Out => Dir::Out,
-                                strata_domain::catalog::Direction::Bidir => Dir::Bidir,
-                            };
-                            ports.push(Port {
-                                r: PortRef::Instance {
-                                    instance: inst.id.clone(),
-                                    group: g as u32,
-                                    n,
-                                }
-                                .to_string(),
-                                label: if q > 1 {
-                                    format!("{base} {n}")
-                                } else {
-                                    base.clone()
-                                },
-                                connector: pg.connector_id.clone(),
-                                signal: pg.signal_id.clone(),
-                                family: family.clone(),
-                                dir,
-                                gender: Some(format!("{:?}", pg.gender)),
-                                variant: pg.variant.clone(),
-                                side: if dir == Dir::In { 'l' } else { 'r' },
-                                ip,
-                                switching: pg.network_role
-                                    == Some(strata_domain::catalog::NetworkRole::Switching),
-                            });
+                    for (src_inst, groups, prefix) in &sources {
+                        for (g, pg) in groups.iter().enumerate() {
+                            let (family, ip, sname) = pg
+                                .signal_id
+                                .as_deref()
+                                .and_then(|s| sig.get(s).cloned())
+                                .unwrap_or((None, false, String::new()));
+                            let base = pg
+                                .label
+                                .clone()
+                                .filter(|l| !l.trim().is_empty())
+                                .unwrap_or_else(|| {
+                                    if sname.is_empty() {
+                                        conn_name(&pg.connector_id)
+                                    } else {
+                                        sname.clone()
+                                    }
+                                });
+                            let q = pg.quantity.clamp(1, 1024);
+                            for n in 1..=q {
+                                let dir = match pg.direction {
+                                    strata_domain::catalog::Direction::In => Dir::In,
+                                    strata_domain::catalog::Direction::Out => Dir::Out,
+                                    strata_domain::catalog::Direction::Bidir => Dir::Bidir,
+                                };
+                                ports.push(Port {
+                                    r: PortRef::Instance {
+                                        instance: src_inst.clone(),
+                                        group: g as u32,
+                                        n,
+                                    }
+                                    .to_string(),
+                                    label: if q > 1 {
+                                        format!("{prefix}{base} {n}")
+                                    } else {
+                                        format!("{prefix}{base}")
+                                    },
+                                    connector: pg.connector_id.clone(),
+                                    signal: pg.signal_id.clone(),
+                                    family: family.clone(),
+                                    dir,
+                                    gender: Some(format!("{:?}", pg.gender)),
+                                    variant: pg.variant.clone(),
+                                    side: if dir == Dir::In { 'l' } else { 'r' },
+                                    ip,
+                                    switching: pg.network_role
+                                        == Some(strata_domain::catalog::NetworkRole::Switching),
+                                });
+                            }
                         }
                     }
                     out.push(Node {
