@@ -2408,7 +2408,7 @@ checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 
 [[package]]
 name = "strata"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "axum",
@@ -2425,7 +2425,7 @@ dependencies = [
 
 [[package]]
 name = "strata-api"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "argon2",
  "axum",
@@ -2463,7 +2463,7 @@ dependencies = [
 
 [[package]]
 name = "strata-backup"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "chrono",
  "hex",
@@ -2480,7 +2480,7 @@ dependencies = [
 
 [[package]]
 name = "strata-domain"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "rand 0.9.5",
  "serde",
@@ -2492,7 +2492,7 @@ dependencies = [
 
 [[package]]
 name = "strata-release"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2505,7 +2505,7 @@ dependencies = [
 
 [[package]]
 name = "strata-store"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -2521,7 +2521,7 @@ dependencies = [
 
 [[package]]
 name = "strata-update"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "axum",
  "base64 0.22.1",
