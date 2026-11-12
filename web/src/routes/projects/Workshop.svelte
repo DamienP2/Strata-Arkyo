@@ -23,6 +23,8 @@
   let clearing = $state(false);
   const writable = $derived(can('projets', 'ecriture'));
   const pid = $derived(view.project.id);
+  let cview = $state<'inventory' | 'cabling' | 'equipment'>('inventory');
+  async function consExport(f: 'pdf' | 'csv' | 'doc') { if (!cur) return; try { const { construction } = await import('../../lib/construction'); await construction(view, cur, cview, f); } catch (e) { fail(e); } }
 
   async function loadSums() {
     try {
@@ -124,6 +126,7 @@
           <div class="ws-big">
             <span class="eyebrow">Contrôles de construction</span>
             <h2>{sheet.container.name}</h2>
+            <div class="cons"><select class="input sm" bind:value={cview} aria-label="Vue du dossier de construction"><option value="inventory">Inventaire</option><option value="cabling">Câblage</option><option value="equipment">Par équipement</option></select>{#each [['pdf', 'PDF'], ['csv', 'Tableur'], ['doc', 'Word']] as [f, l]}<button class="btn sm ghost" onclick={() => consExport(f as 'pdf' | 'csv' | 'doc')}><Icon name="download" size="sm" />{l}</button>{/each}</div>
             <div class="ws-num"><b class="mono">{p.done}</b><span class="mono">/ {p.total}</span><span class="chip {p.total && p.done === p.total ? 'ok' : ''}">{pct(p.done, p.total)} %</span></div>
             <span class="bar big"><i style="width:{pct(p.done, p.total)}%"></i></span>
           </div>
@@ -167,6 +170,8 @@
 {/if}
 
 <style>
+  .cons { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 6px 0; }
+  .cons select { width: auto; height: 32px; }
   .ws { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 18px; align-items: start; }
   .ws-side { padding: 14px; display: grid; gap: 12px; position: sticky; top: 12px; }
   .ws-all { display: grid; gap: 4px; padding: 4px 6px 10px; border-bottom: 1px solid var(--line); }
