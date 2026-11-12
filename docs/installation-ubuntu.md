@@ -109,6 +109,8 @@ ls web/dist/index.html    # le fichier doit exister
 
 ## Étape 6 — Compiler le programme et fabriquer le paquet Debian
 
+> **Conseillé :** si vous voulez faire les mises à jour suivantes depuis l'application (OTA), créez d'abord votre clé de publication (section **Mises à jour OTA**, étape A1) et faites `export STRATA_RELEASE_PUBKEY=$(cat ~/strata-keys/release.pub)` avant la commande ci-dessous. Sinon, vous pourrez le faire plus tard.
+
 ```sh
 cargo install cargo-deb          # outil de fabrication du paquet, une seule fois
 cargo deb -p strata              # compile en mode release, puis fabrique le paquet
@@ -293,7 +295,124 @@ sudo apt install ./target/debian/strata-arkyo_*_amd64.deb
 systemctl status strata-arkyo --no-pager
 ```
 
-La base de données est migrée automatiquement au démarrage. Les mises à jour par paquet signé (`.saupd`, en ligne ou hors ligne) sont décrites dans le [README](../README.md#mises-à-jour-ota).
+La base de données est migrée automatiquement au démarrage. Pour mettre à jour sans recompiler sur le serveur, voyez la section **Mises à jour OTA** ci-dessous.
+
+---
+
+## Mises à jour OTA (depuis l'application)
+
+Une mise à jour OTA se fait depuis **Administration → Mises à jour**, sans recompiler sur le serveur : on dépose un paquet signé `.saupd` (ou le serveur le télécharge lui-même). Le moteur vérifie la signature, essaie la nouvelle version sur une copie de la base, fait une sauvegarde, bascule, puis redémarre. Si la nouvelle version ne démarre pas, il revient seul à l'ancienne.
+
+Deux conditions, vérifiées par le moteur :
+
+1. **La version installée connaît votre clé de publication.** Le moteur n'accepte que les paquets signés par une clé qu'il a reçue à la compilation (`STRATA_RELEASE_PUBKEY`). Un moteur compilé sans clé, comme avec les étapes 5 et 6 ci-dessus, refuse toute mise à jour OTA.
+2. **Le paquet porte un numéro de version plus élevé** que la version installée (`strata version`).
+
+### A. Une seule fois : créer la clé et passer le serveur en OTA
+
+À faire sur la machine où vous compilez (le serveur ou un autre poste Ubuntu).
+
+**A1. Créer la paire de clés.**
+
+```sh
+cd ~/Strata-Arkyo
+cargo run --release -p strata-release -- keygen --out ~/strata-keys
+```
+
+Cela crée `~/strata-keys/release.key` (clé **privée**) et `~/strata-keys/release.pub` (clé publique).
+
+> **La clé privée ne se perd pas et ne se partage pas.** Copiez `release.key` sur un support sauvegardé (coffre, clé USB rangée). Ne la mettez jamais dans le dépôt Git. Sans elle, plus aucune mise à jour OTA n'est possible : il faudrait repasser par l'étape A3 avec une nouvelle clé. Avec elle, n'importe qui pourrait signer une mise à jour acceptée par vos serveurs.
+
+**A2. Compiler en intégrant la clé publique.**
+
+```sh
+cd ~/Strata-Arkyo
+git pull
+(cd web && npm ci && npm run build)
+export STRATA_RELEASE_PUBKEY=$(cat ~/strata-keys/release.pub)
+cargo deb -p strata
+```
+
+`STRATA_RELEASE_PUBKEY` doit être défini **à chaque compilation** : sinon la version produite refusera les mises à jour suivantes. Pour ne pas l'oublier, ajoutez la ligne `export …` à la fin de `~/.bashrc`.
+
+**A3. Installer ce paquet une dernière fois « à la main ».**
+
+C'est la dernière fois que le `.deb` sert : la version installée connaît désormais votre clé.
+
+```sh
+sudo -u strata strata backup --label "avant passage en OTA"
+sudo apt install ./target/debian/strata-arkyo_*_amd64.deb
+strata version                                   # attendu : Strata Arkyo 0.2.0
+systemctl status strata-arkyo --no-pager
+```
+
+Les données sont conservées et la base est migrée au démarrage.
+
+### B. À chaque nouvelle version : fabriquer et déposer le paquet signé
+
+**B1. Monter le numéro de version** dans `Cargo.toml` (ligne `version = "…"` de `[workspace.package]`), par exemple de `0.2.0` à `0.2.1`. C'est déjà fait dans le code quand une nouvelle version vous est livrée.
+
+**B2. Compiler et signer.**
+
+```sh
+cd ~/Strata-Arkyo
+git pull
+(cd web && npm ci && npm run build)
+export STRATA_RELEASE_PUBKEY=$(cat ~/strata-keys/release.pub)
+cargo build --release -p strata
+target/release/strata version                    # vérifiez le nouveau numéro
+cargo run --release -p strata-release -- pack \
+    --binary target/release/strata --key ~/strata-keys/release.key --out dist
+ls dist/                                          # strata-arkyo_<version>_x86_64.saupd
+```
+
+**B3. Installer depuis l'application.**
+
+1. Connectez-vous avec un compte qui a le droit **Paramètres et site : admin**.
+2. **Administration → Mises à jour → Installer un paquet hors ligne**, puis choisissez le fichier `.saupd`.
+3. Le moteur vérifie, essaie, sauvegarde, puis annonce le redémarrage aux utilisateurs connectés (60 s par défaut) et bascule.
+4. Après le redémarrage, la page indique la nouvelle version.
+
+Le même paquet s'installe aussi en ligne de commande sur le serveur :
+
+```sh
+sudo -u strata strata update install /chemin/vers/strata-arkyo_0.2.1_x86_64.saupd
+sudo systemctl restart strata-arkyo
+```
+
+**Revenir en arrière :** Administration → Mises à jour → bouton « Revenir à <version précédente> », ou `sudo -u strata strata update rollback` puis `sudo systemctl restart strata-arkyo`.
+
+### C. Facultatif : mises à jour proposées automatiquement
+
+Au lieu de déposer le fichier, vous pouvez publier les versions sur un serveur web (ou une clé USB) que le moteur consulte chaque jour :
+
+```sh
+cargo run --release -p strata-release -- publish \
+    --package dist/strata-arkyo_0.2.1_x86_64.saupd \
+    --channel stable --key ~/strata-keys/release.key --site ~/strata-site --note "Corrections"
+```
+
+Servez le dossier `~/strata-site` en HTTPS, puis indiquez son adresse au moteur dans `/etc/default/strata-arkyo` :
+
+```sh
+STRATA_UPDATE_URL=https://updates.exemple.fr/strata-arkyo
+```
+
+```sh
+sudo systemctl restart strata-arkyo
+```
+
+L'administration signale alors chaque nouvelle version ; l'installation reste toujours décidée par un administrateur, tout de suite ou la nuit à 03:30.
+
+### Messages d'erreur fréquents
+
+| Message | Cause | Solution |
+| --- | --- | --- |
+| « aucune clé de publication dans cette version » | La version installée a été compilée sans clé | Faire les étapes A2 et A3 |
+| « signature invalide » | Paquet signé avec une autre clé que celle intégrée au moteur | Signer avec la bonne `release.key`, ou refaire A2 et A3 |
+| « La version … n'est pas plus récente que la version installée » | Numéro de version identique ou plus ancien | Monter le numéro (B1) puis refaire B2 |
+| Bouton « Installer un paquet » grisé | Installation qui ne vient pas du paquet Debian (lancée à la main) | Installer avec le `.deb` (étape 7) |
+| Le dépôt du fichier échoue derrière nginx | Taille d'envoi limitée | `client_max_body_size 200m;` (étape 13) |
 
 ---
 
