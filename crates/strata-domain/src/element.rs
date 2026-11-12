@@ -299,7 +299,8 @@ pub fn validate_details(kind: ContainerKind, d: &mut ElementDetails) -> Vec<Fiel
             }
             n.drum_count = o.drum_count;
         }
-        K::Rack | K::FlightCase | K::HardCase | K::WaterproofCase | K::Furniture => {}
+        K::Rack | K::FlightCase | K::HardCase | K::WaterproofCase | K::Furniture | K::Casquette => {
+        }
     }
     *d = n;
     e

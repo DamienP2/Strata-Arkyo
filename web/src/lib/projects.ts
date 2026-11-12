@@ -4,7 +4,7 @@ export type Status = 'preparation' | 'ready' | 'in_progress' | 'done' | 'cancell
 export type Intervention = 'prestation' | 'integration';
 export type Regie = 'flight_case' | 'car' | 'fixed';
 export type ContainerKind = 'rack' | 'flight_case' | 'hard_case' | 'waterproof_case' | 'furniture'
-  | 'monitor_wall' | 'desk' | 'operator_position'
+  | 'monitor_wall' | 'desk' | 'operator_position' | 'casquette'
   | 'zone' | 'camera_position' | 'field_box' | 'rf_mast'
   | 'site_point' | 'power' | 'external_feed'
   | 'display' | 'cable_drum';
@@ -39,6 +39,8 @@ export interface ContainerData {
   length_mm: number | null; width_mm: number | null; outer_height_mm: number | null; wheels: boolean;
   empty_weight_kg: number | null; max_weight_kg: number | null; max_power_w: number | null; cable_code: string; notes: string | null;
   details: ElementDetails;
+  /** Casquette : mobilier qui la porte, position depuis son bord gauche, inclinaison. */
+  parent_id?: string | null; offset_mm?: number | null; tilt_deg?: number | null;
 }
 export interface Container extends ContainerData { id: string; project_id: string; location_id: string; name: string; position: number; rev: number; totals: ContainerTotals }
 export type Accessory = { kind: 'plate'; variant: 'blank' | 'brush' | 'vented'; height_u: number } | { kind: 'shelf'; depth_mm: number; height_u: number } | { kind: 'drawer'; depth_mm: number; height_u: number } | { kind: 'lacing_bar'; depth_mm: number; height_u: number } | { kind: 'panel'; panel: import('./panel').PanelData };
@@ -77,15 +79,16 @@ export const ELEMENT_FAMILIES: { key: ElementFamily; label: string; help: string
   { key: 'diffusion', label: 'Diffusion et logistique', help: 'Écrans publics et câbles à prévoir.' },
 ];
 /** Types d'éléments : libellé, famille, rackable par défaut, mobile (roulettes possibles). */
-export const CONTAINER_KINDS: Record<ContainerKind, { label: string; family: ElementFamily; rackable: boolean; mobile: boolean; canRack?: boolean; help: string }> = {
+export const CONTAINER_KINDS: Record<ContainerKind, { label: string; family: ElementFamily; rackable: boolean; mobile: boolean; canRack?: boolean; hidden?: boolean; help: string }> = {
   rack: { label: 'Baie 19″', family: 'contenants', rackable: true, mobile: false, canRack: true, help: 'Baie fixe ou sur roulettes' },
   flight_case: { label: 'Flight-case', family: 'contenants', rackable: true, mobile: true, canRack: true, help: 'Rack de tournée' },
   hard_case: { label: 'Valise rigide', family: 'contenants', rackable: true, mobile: true, canRack: true, help: 'Petit rack de transport' },
   waterproof_case: { label: 'Valise étanche', family: 'contenants', rackable: false, mobile: true, help: 'Matériel en mousse' },
-  furniture: { label: 'Mobilier', family: 'contenants', rackable: false, mobile: false, help: 'Meuble, armoire, étagère' },
+  furniture: { label: 'Meuble / armoire', family: 'contenants', rackable: false, mobile: false, help: 'Meuble, armoire, étagère ; casquettes possibles' },
   monitor_wall: { label: 'Mur d’écrans', family: 'regie', rackable: false, mobile: false, help: 'Grille d’écrans et sources affichées' },
-  desk: { label: 'Pupitre', family: 'regie', rackable: false, mobile: false, help: 'Console découpée en postes' },
+  desk: { label: 'Mobilier', family: 'regie', rackable: false, mobile: false, help: 'Pupitre, console : postes et casquettes rackables' },
   operator_position: { label: 'Poste opérateur', family: 'regie', rackable: false, mobile: false, help: 'Commentateur, HF, intercom…' },
+  casquette: { label: 'Casquette', family: 'regie', rackable: true, mobile: false, canRack: true, hidden: true, help: 'Bloc rackable posé sur un mobilier' },
   zone: { label: 'Emplacement libre', family: 'terrain', rackable: false, mobile: false, help: 'Table, sol ou loge, sans rack' },
   camera_position: { label: 'Position caméra', family: 'terrain', rackable: false, mobile: false, help: 'Caméra, support et liaison' },
   field_box: { label: 'Boîtier de terrain', family: 'terrain', rackable: false, mobile: true, help: 'Stagebox, éclateur fibre' },

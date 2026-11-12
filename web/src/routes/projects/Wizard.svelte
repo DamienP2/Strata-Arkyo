@@ -151,7 +151,7 @@
       {:else if cur === 'container'}
         <h2>Premier élément</h2>
         <div class="choices" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr))">
-          {#each Object.entries(CONTAINER_KINDS) as [k, v]}<button type="button" class="choice" class:on={c.kind === k} onclick={() => setKind(k as ContainerKind)}><b style="font-size:17px">{v.label}</b></button>{/each}
+          {#each Object.entries(CONTAINER_KINDS).filter(([, v]) => !v.hidden) as [k, v]}<button type="button" class="choice" class:on={c.kind === k} onclick={() => setKind(k as ContainerKind)}><b style="font-size:17px">{v.label}</b></button>{/each}
         </div>
         <div class="form-grid">
           <div class="field"><label for="wz-cn">Nom</label><input class="input" id="wz-cn" bind:value={cname} maxlength="120"><FieldError message={errors.cname} /></div>

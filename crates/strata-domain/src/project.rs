@@ -252,6 +252,8 @@ pub enum ContainerKind {
     MonitorWall,
     Desk,
     OperatorPosition,
+    /// Bloc rackable posé sur un mobilier (pupitre, console) : il en suit l'emplacement.
+    Casquette,
     // Terrain et plateau
     Zone,
     CameraPosition,
@@ -270,8 +272,15 @@ impl ContainerKind {
     pub fn default_rackable(self) -> bool {
         matches!(
             self,
-            ContainerKind::Rack | ContainerKind::FlightCase | ContainerKind::HardCase
+            ContainerKind::Rack
+                | ContainerKind::FlightCase
+                | ContainerKind::HardCase
+                | ContainerKind::Casquette
         )
+    }
+    /// Mobilier qui peut recevoir des casquettes.
+    pub fn takes_casquettes(self) -> bool {
+        matches!(self, ContainerKind::Desk | ContainerKind::Furniture)
     }
     pub fn mobile(self) -> bool {
         matches!(
@@ -285,9 +294,10 @@ impl ContainerKind {
             ContainerKind::FlightCase => "Flight-case",
             ContainerKind::HardCase => "Valise rigide",
             ContainerKind::WaterproofCase => "Valise étanche",
-            ContainerKind::Furniture => "Mobilier",
+            ContainerKind::Furniture => "Meuble / armoire",
             ContainerKind::MonitorWall => "Mur d'écrans",
-            ContainerKind::Desk => "Pupitre",
+            ContainerKind::Desk => "Mobilier",
+            ContainerKind::Casquette => "Casquette",
             ContainerKind::OperatorPosition => "Poste opérateur",
             ContainerKind::Zone => "Emplacement libre",
             ContainerKind::CameraPosition => "Position caméra",
@@ -304,7 +314,10 @@ impl ContainerKind {
     pub fn can_rack(self) -> bool {
         matches!(
             self,
-            ContainerKind::Rack | ContainerKind::FlightCase | ContainerKind::HardCase
+            ContainerKind::Rack
+                | ContainerKind::FlightCase
+                | ContainerKind::HardCase
+                | ContainerKind::Casquette
         )
     }
 }
@@ -331,6 +344,10 @@ pub struct ContainerData {
     pub details: crate::element::ElementDetails,
     /// Règles de numérotation des câbles propres à l'élément ; sinon celles du site.
     pub numbering: Option<crate::numbering::NumberingRules>,
+    /// Casquette : mobilier qui la porte, position depuis son bord gauche, inclinaison.
+    pub parent_id: Option<String>,
+    pub offset_mm: Option<f64>,
+    pub tilt_deg: Option<f64>,
 }
 
 impl Default for ContainerData {
@@ -352,6 +369,9 @@ impl Default for ContainerData {
             notes: None,
             details: Default::default(),
             numbering: None,
+            parent_id: None,
+            offset_mm: None,
+            tilt_deg: None,
         }
     }
 }
@@ -377,6 +397,25 @@ pub fn validate_container(name: &mut String, c: &mut ContainerData) -> Vec<Field
     }
     if !c.kind.can_rack() {
         c.rackable = false;
+    }
+    if c.kind == ContainerKind::Casquette {
+        c.rackable = true;
+        c.wheels = false;
+        if c.parent_id.as_deref().is_none_or(|p| p.trim().is_empty()) {
+            e.push(err("parent_id", "Une casquette se pose sur un mobilier."));
+        }
+        if c.height_u.is_some_and(|h| h > 24.0) {
+            e.push(err("height_u", "Une casquette fait de 1 à 24 U."));
+        }
+        if c.depth_mm.is_none() {
+            c.depth_mm = Some(350.0);
+        }
+        range(&mut e, "offset_mm", c.offset_mm, 0.0, 10_000.0, "mm");
+        range(&mut e, "tilt_deg", c.tilt_deg, 0.0, 60.0, "°");
+    } else {
+        c.parent_id = None;
+        c.offset_mm = None;
+        c.tilt_deg = None;
     }
     e.extend(crate::element::validate_details(c.kind, &mut c.details));
     if let Some(r) = &mut c.numbering {

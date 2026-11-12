@@ -867,6 +867,11 @@ async fn create_container(
         .ok_or_else(|| one("location_id", "Choisissez un emplacement du projet."))?;
     location_in(&st.store, &pid, &lid).await?;
     fields(validate_container(&mut b.name, &mut b.data))?;
+    // Une casquette prend l'emplacement de son mobilier.
+    let lid = match casquette_parent(&st.store, &pid, &b.data).await? {
+        Some(p) => p.location_id,
+        None => lid,
+    };
     // Un élément neuf n'a pas encore de matériel : aucun écran ni poste ne peut en citer.
     b.data.details.map_instances(&|_| None);
     // Nom unique dans le projet : suffixe automatique en cas de collision.
@@ -926,6 +931,12 @@ async fn update_container(
         .ok_or(ApiError::NotFound("Élément"))?;
     location_in(&st.store, &before.project_id, &b.location_id).await?;
     fields(validate_container(&mut b.name, &mut b.data))?;
+    if let Some(p) = casquette_parent(&st.store, &before.project_id, &b.data).await? {
+        if p.id == id {
+            return Err(one("parent_id", "Choisissez un autre mobilier."));
+        }
+        b.location_id = p.location_id;
+    }
     // Tuiles et postes ne citent que des exemplaires du matériel de l'élément.
     let own = own_instances(&st.store, &before.project_id, &id).await?;
     b.data
@@ -973,6 +984,23 @@ async fn update_container(
     )
     .await?;
     Ok(Json(after))
+}
+
+/// Mobilier qui porte une casquette : il doit exister dans le projet et accepter des casquettes.
+async fn casquette_parent(
+    store: &Store,
+    pid: &str,
+    data: &ContainerData,
+) -> ApiResult<Option<Container>> {
+    let Some(parent) = data.parent_id.as_deref() else {
+        return Ok(None);
+    };
+    let p = store
+        .container(parent)
+        .await?
+        .filter(|c| c.project_id == pid && c.data.kind.takes_casquettes())
+        .ok_or_else(|| one("parent_id", "Choisissez un mobilier de ce projet."))?;
+    Ok(Some(p))
 }
 
 async fn delete_container(

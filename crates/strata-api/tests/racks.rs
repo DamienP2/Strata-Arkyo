@@ -4396,3 +4396,56 @@ async fn chassis_receives_modules() {
     let arts = r.body["articles"].as_array().unwrap();
     assert!(!arts.iter().any(|a| a["host"].is_object()), "{arts:?}");
 }
+
+#[tokio::test]
+async fn desk_carries_casquettes() {
+    let Setup { app, o, pid, .. } = setup().await;
+    let r = call(&app, "GET", &format!("/api/projects/{pid}"), None, Some(&o)).await;
+    let lid = r.body["locations"][0]["id"].as_str().unwrap().to_string();
+    let desk = call(&app, "POST", &format!("/api/projects/{pid}/containers"), Some(json!({"location_id": lid, "name": "Pupitre", "kind": "desk", "rackable": false, "length_mm": 2400, "width_mm": 900, "outer_height_mm": 750, "cable_code": "", "details": {"positions": []}})), Some(&o)).await;
+    assert_eq!(desk.status, StatusCode::CREATED, "{:?}", desk.body);
+    let did = desk.body["id"].as_str().unwrap().to_string();
+    // Sans mobilier, pas de casquette ; avec, elle est rackable et prend son emplacement.
+    let bad = call(&app, "POST", &format!("/api/projects/{pid}/containers"), Some(json!({"location_id": lid, "name": "C", "kind": "casquette", "height_u": 6, "cable_code": ""})), Some(&o)).await;
+    assert_eq!(bad.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let c = call(&app, "POST", &format!("/api/projects/{pid}/containers"), Some(json!({"location_id": lid, "name": "Casquette 1", "kind": "casquette", "rackable": false, "height_u": 6, "parent_id": did, "offset_mm": 100, "tilt_deg": 15, "cable_code": ""})), Some(&o)).await;
+    assert_eq!(c.status, StatusCode::CREATED, "{:?}", c.body);
+    assert_eq!(c.body["rackable"], true);
+    assert_eq!(c.body["parent_id"], did);
+    let too_tall = call(&app, "POST", &format!("/api/projects/{pid}/containers"), Some(json!({"location_id": lid, "name": "C2", "kind": "casquette", "height_u": 30, "parent_id": did, "cable_code": ""})), Some(&o)).await;
+    assert_eq!(too_tall.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let cid = c.body["id"].as_str().unwrap().to_string();
+    assert_eq!(
+        call(
+            &app,
+            "GET",
+            &format!("/api/containers/{cid}/rack"),
+            None,
+            Some(&o)
+        )
+        .await
+        .status,
+        StatusCode::OK
+    );
+    // Supprimer le mobilier supprime ses casquettes.
+    assert_eq!(
+        call(
+            &app,
+            "DELETE",
+            &format!("/api/containers/{did}"),
+            None,
+            Some(&o)
+        )
+        .await
+        .status,
+        StatusCode::NO_CONTENT
+    );
+    let r = call(&app, "GET", &format!("/api/projects/{pid}"), None, Some(&o)).await;
+    assert!(
+        !r.body["containers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c["kind"] == "casquette")
+    );
+}

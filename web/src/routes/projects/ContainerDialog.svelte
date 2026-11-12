@@ -54,7 +54,7 @@
         <section>
           <div class="gal-h"><span class="lbl-t">{f.label}</span><span class="muted small">{f.help}</span></div>
           <div class="gal-g">
-            {#each Object.entries(CONTAINER_KINDS).filter(([, v]) => v.family === f.key) as [k, v] (k)}
+            {#each Object.entries(CONTAINER_KINDS).filter(([, v]) => v.family === f.key && !v.hidden) as [k, v] (k)}
               <button type="button" class="kc" onclick={() => pick(k as ContainerKind)}>
                 <KindIll kind={k as ContainerKind} size={84} />
                 <b>{v.label}</b><span class="muted small">{v.help}</span>

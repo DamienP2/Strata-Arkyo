@@ -34,6 +34,10 @@
     <path class="b" d="M8 40h80l-6 10H14z" />
     {#each [0, 1, 2] as c}<rect class={c === 1 ? 'a' : 'f'} x={18 + c * 21} y="18" width="18" height="13" rx="1.5" /><path d="M{27 + c * 21} 31v5" />{/each}
     <path d="M18 50v8M78 50v8" /><rect class="f" x="40" y="42" width="16" height="4" rx="1" />
+  {:else if kind === 'casquette'}
+    <path class="b" d="M30 54L36 10h28l6 44z" />
+    {#each [0, 1, 2, 3] as r}<rect class={r === 1 ? 'a' : 'f'} x={38 - r * 0.6} y={15 + r * 9} width={24 + r * 1.2} height="6" rx="1" />{/each}
+    <path d="M14 56h68" />
   {:else if kind === 'operator_position'}
     <path class="b" d="M14 42h50l-4 8H18z" />
     <rect class="f" x="26" y="20" width="24" height="16" rx="1.5" /><path d="M38 36v6" />

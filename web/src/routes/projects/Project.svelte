@@ -26,6 +26,7 @@
   import Tasks from './Tasks.svelte';
   import History from './History.svelte';
   import Racks from './Racks.svelte';
+  import Furniture from './Furniture.svelte';
 
   let { id }: { id: string } = $props();
   let view = $state<ProjectView | null>(null);
@@ -55,6 +56,7 @@
     { key: 'taches', label: 'Tâches', href: `/projets/${id}/taches`, icon: 'check', badge: view?.tasks.filter((t) => t.status === 'todo' || t.status === 'in_progress').length || undefined },
   ] }, { label: 'Conception', lock: true, items: [
     { key: 'racks', label: 'Racks', href: `/projets/${id}/racks`, icon: 'server' },
+    { key: 'mobilier', label: 'Mobilier', href: `/projets/${id}/mobilier`, icon: 'layers' },
     { key: 'planche', label: 'Planche d’élévations', href: `/projets/${id}/planche`, icon: 'sheet' },
     { key: 'synoptique', label: 'Synoptique', href: `/projets/${id}/synoptique`, icon: 'syn' },
     { key: 'cables', label: 'Liste des câbles', href: `/projets/${id}/cables`, icon: 'cable' },
@@ -130,6 +132,7 @@
     {:else if sub === 'taches'}<Tasks bind:view reload={load} />
     {:else if sub === 'historique'}<History projectId={id} />
     {:else if sub === 'racks'}<Racks {view} />
+    {:else if sub === 'mobilier'}<Furniture {view} reload={load} />
     {:else}<p class="lead">Section introuvable.</p>{/if}
     </div>
   </Workspace>

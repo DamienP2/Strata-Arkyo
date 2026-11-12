@@ -561,6 +561,19 @@ impl Store {
             .bind(id)
             .execute(&mut *tx)
             .await?;
+        // Les casquettes d'un mobilier le suivent, avec leur matériel.
+        sqlx::query(
+            "UPDATE containers SET location_id = ? WHERE json_extract(data, '$.parent_id') = ?",
+        )
+        .bind(location_id)
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query("UPDATE articles SET location_id = ? WHERE container_id IN (SELECT id FROM containers WHERE json_extract(data, '$.parent_id') = ?)")
+            .bind(location_id)
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
         touch_project(&mut tx, &pid).await?;
         tx.commit().await?;
         self.container(id).await?.ok_or(StoreError::NotFound)
@@ -569,6 +582,11 @@ impl Store {
     /// Supprime un contenant avec ses articles et leurs exemplaires.
     pub async fn delete_container(&self, id: &str) -> Result<()> {
         let mut tx = self.pool.begin().await?;
+        // Supprimer un mobilier supprime ses casquettes.
+        sqlx::query("DELETE FROM containers WHERE json_extract(data, '$.parent_id') = ?")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
         let pid: Option<String> =
             sqlx::query_scalar("DELETE FROM containers WHERE id = ? RETURNING project_id")
                 .bind(id)
