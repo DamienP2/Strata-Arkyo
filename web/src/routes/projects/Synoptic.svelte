@@ -11,7 +11,6 @@
   import Dialog from '../../components/Dialog.svelte';
   import { withLightTheme, standalone, raster, pdf as toPdf, save } from '../../lib/svgexport';
   import { PAPERS, type Paper } from '../../lib/sheet';
-  import ConnGlyph from '../../components/ConnGlyph.svelte';
   import RemoteCursors from '../../components/RemoteCursors.svelte';
   import ProjectLinks from '../../components/ProjectLinks.svelte';
   import { sendCursor, sendSelection, type PresenceMember } from '../../lib/live.svelte';
@@ -22,7 +21,6 @@
   import { join } from '../../lib/live.svelte';
   import { relative, nf } from '../../lib/format';
   import { loadRefs, refById, fnColor } from '../../lib/catalog.svelte';
-  import { family } from '../../lib/panel';
   import type { ProjectView } from '../../lib/projects';
 
   interface Port { ref: string; label: string; connector: string; signal: string | null; family: string | null; dir: 'in' | 'out' | 'bidir' | 'through'; gender: string | null; variant: string | null; side: 'l' | 'r' }
@@ -137,7 +135,7 @@
   onDestroy(() => { stopBeat(); if (started) fetch(`/api/projects/${pid}/synoptic/lock`, { method: 'DELETE', headers: { 'X-Strata-Request': '1' }, keepalive: true }); });
 
   // ----- Géométrie -----
-  const NW = 270, HH = 52, PS = 28, TAG_GAP = 12;
+  const NW = 270, HH = 52, PS = 28, TAG_GAP = 26;
   const left = (n: SNode) => n.ports.filter((p) => p.side === 'l');
   const right = (n: SNode) => n.ports.filter((p) => p.side === 'r');
   const nodeH = (n: SNode) => HH + Math.max(left(n).length, right(n).length, 1) * PS + 12;
@@ -784,7 +782,7 @@
                     {@const out = si === 1}
                     {@const x = out ? NW : 0}
                     {@const y = HH + i * PS + PS / 2 + 4}
-                    {@const s = short(p.connector)}
+                    {@const s = short(p.connector) + (p.gender === 'M' ? ' M' : p.gender === 'F' ? ' F' : '')}
                     {@const cw = s.length * 6.3 + 12}
                     {@const cx0 = out ? NW - 16 - cw : 16}
                     {@const room = (si === 0 ? right(n) : left(n)).length > i ? 9 : 20}
@@ -792,7 +790,7 @@
                       onclick={(e) => clickPort(p, n, e)} onkeydown={() => {}}>
                       <title>{p.label} · {refById('connectors', p.connector)?.name ?? p.connector}{p.variant ? ` ${p.variant}` : ''}{p.gender ? ` · ${p.gender === 'M' ? 'mâle' : p.gender === 'F' ? 'femelle' : 'neutre'}` : ''}{p.signal ? ` · ${refById('signals', p.signal)?.name ?? p.signal}` : ''}</title>
                       <circle class="ph" cx={x} cy={y} r="13" />
-                      <g class="glyph"><ConnGlyph f={family(p.connector)} {x} cy={y} /></g>
+                      <circle class="pdot" cx={x} cy={y} r="4.5" />
                       <g class="cchip"><rect x={cx0} y={y - 8.5} width={cw} height="17" rx="4" /><text x={cx0 + cw / 2} y={y + 3.6} text-anchor="middle">{s}</text></g>
                       <text class="pn" x={out ? cx0 - 7 : cx0 + cw + 7} y={y + 4.5} text-anchor={out ? 'end' : 'start'}>{p.label.length > room ? p.label.slice(0, room - 1) + '…' : p.label}{p.dir === 'bidir' ? ' ↔' : ''}</text>
                     </g>
@@ -1067,6 +1065,8 @@
   .node.panel .box { stroke-dasharray: 5 3; }
   .port { cursor: pointer; }
   .port .ph { fill: transparent; }
+  .pdot { fill: var(--node-bg, var(--surface)); stroke: var(--c); stroke-width: 2; }
+  .port.used .pdot { fill: var(--c); }
   .port:hover .ph, .port.armed .ph { fill: color-mix(in srgb, var(--c) 22%, transparent); }
   .port.armed .ph { stroke: var(--c); stroke-width: 2; }
   .port :global(.cg-shell) { fill: var(--node-bg, var(--surface)); stroke: var(--c); stroke-width: 2.2; }

@@ -458,10 +458,10 @@ export class RackScene {
       gc.fillStyle = '#00214c'; gc.fillRect(0, 225, 90, 75); gc.fillStyle = '#ffffff'; gc.fillRect(90, 225, 90, 75); gc.fillStyle = '#32006a'; gc.fillRect(180, 225, 90, 75); gc.fillStyle = '#131313'; gc.fillRect(270, 225, 242, 75);
       gc.fillStyle = 'rgba(0,0,0,.6)'; gc.fillRect(8, 8, 120, 26); gc.fillStyle = '#fff'; gc.font = 'bold 18px Helvetica'; gc.fillText(e.tag ?? 'PGM', 14, 28);
       const t = tex(c);
-      const scr = new THREE.Mesh(new THREE.PlaneGeometry(w - 0.016, h - 0.022), new THREE.MeshPhysicalMaterial({ map: t, emissiveMap: t, emissive: '#ffffff', emissiveIntensity: 0.62, roughness: 0.15, clearcoat: 1, clearcoatRoughness: 0.05 }));
+      const scr = new THREE.Mesh(new THREE.PlaneGeometry(w - 0.016, h - 0.022), new THREE.MeshPhysicalMaterial({ map: t, emissiveMap: t, emissive: '#ffffff', emissiveIntensity: 0.22, roughness: 0.35, clearcoat: 0.6, clearcoatRoughness: 0.05 }));
       scr.position.set(0, h / 2 + 0.03 + 0.003, 0.0231); scr.userData.hit = hit; this.pick.push(scr); g.add(scr);
       const foot = new THREE.Mesh(new THREE.BoxGeometry(w * 0.4, 0.03, 0.12), m.blackPlastic); foot.position.set(0, 0.015, -0.02); foot.castShadow = true; g.add(foot);
-      const led = new THREE.Mesh(new THREE.BoxGeometry(0.003, 0.002, 0.001), new THREE.MeshStandardMaterial({ color: '#45f58a', emissive: '#45f58a', emissiveIntensity: 4 })); led.position.set(w / 2 - 0.012, 0.035, 0.0232); g.add(led);
+      const led = new THREE.Mesh(new THREE.BoxGeometry(0.003, 0.002, 0.001), new THREE.MeshStandardMaterial({ color: '#45f58a', emissive: '#45f58a', emissiveIntensity: 1.5 })); led.position.set(w / 2 - 0.012, 0.035, 0.0232); g.add(led);
     } else {
       const w = Math.min(slot - 0.01, 0.3), h = Math.max(0.04, shelfU * U * 0.7);
       const body = new THREE.Mesh(new RoundedBoxGeometry(w, h, 0.22, 3, 0.006), m.chassis); body.position.y = h / 2; body.castShadow = true; g.add(body);
