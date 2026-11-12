@@ -735,7 +735,8 @@
 
 <style>
   .pl-head { padding: 12px 16px; display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
-  .pl-maps { display: flex; gap: 8px; align-items: center; }
+  .pl-maps { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; max-width: 100%; }
+  @media (max-width: 600px) { .pl-maps select { min-width: 0; flex: 1 1 100%; } }
   .pl-maps select { width: auto; min-width: 220px; height: 40px; }
   .pl-stats { display: flex; gap: 16px; flex: 1; flex-wrap: wrap; color: var(--fg-2); }
   .pl-stats b { color: var(--fg); }

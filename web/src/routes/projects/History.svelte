@@ -3,6 +3,7 @@
   import { api } from '../../lib/api';
   import { fail } from '../../lib/toast.svelte';
   import { dateTime } from '../../lib/format';
+  import ProjectPoints from '../../components/ProjectPoints.svelte';
   import type { AuditEntry, Member } from '../../lib/types';
 
   let { projectId }: { projectId: string } = $props();
@@ -33,6 +34,8 @@
     return a.name ?? a.title ?? '';
   }
 </script>
+
+<ProjectPoints pid={projectId} onrestored={() => location.reload()} />
 
 <section class="card" style="padding:6px 18px 10px">
   <div class="tbl-wrap"><table class="tbl">

@@ -45,6 +45,14 @@
   async function cancelRestore() {
     try { await api.del('/admin/restore'); toast('Restauration annulée.'); } catch (e) { fail(e); } finally { await load(); }
   }
+
+  // Points de restauration de projet : fréquence et projets supprimés (section 13.2).
+  let pInterval = $state(1);
+  let orphans = $state<{ id: string; project_name: string; label: string | null; created_at: string }[]>([]);
+  async function loadPoints() { try { pInterval = (await api.get<{ interval_h: number }>('/site/points')).interval_h; orphans = (await api.get<{ points: typeof orphans }>('/points/orphans')).points; } catch { /* droits insuffisants */ } }
+  loadPoints();
+  async function setInterval_(h: number) { try { pInterval = (await api.put<{ interval_h: number }>('/site/points', { interval_h: h })).interval_h; toast('Fréquence enregistrée.'); } catch (e) { fail(e); } }
+  async function restoreOrphan(o: (typeof orphans)[number]) { if (!confirm(`Restaurer le projet supprimé « ${o.project_name} » ?`)) return; try { await api.post(`/points/${o.id}/restore`); toast('Projet restauré.'); await loadPoints(); } catch (e) { fail(e); } }
 </script>
 
 {#if error}<Unavailable message={error} />
@@ -92,6 +100,15 @@
     </div>
   </section>
 {:else}<span class="spin"></span>{/if}
+
+<section class="card stack" style="margin-top:20px">
+  <div class="card-head"><div><h2>Points de restauration des projets</h2><span class="muted small">Un point automatique est pris si le projet a changé ; les 48 derniers sont gardés par projet.</span></div></div>
+  <div class="seg" role="group" aria-label="Fréquence">{#each [1, 6, 24] as h}<button class:on={pInterval === h} onclick={() => setInterval_(h)}>Toutes les {h} h</button>{/each}</div>
+  <h3 style="margin:10px 0 0;font-size:15px">Projets supprimés</h3>
+  {#each orphans as o (o.id)}
+    <div style="display:flex;gap:10px;align-items:center;border-top:1px solid var(--line);padding:6px 0"><span style="flex:1"><b>{o.project_name}</b> <span class="muted small">{o.label ?? 'point'} · {dateTime(o.created_at)}</span></span><button class="icon-btn sm" aria-label="Télécharger" onclick={() => download(`/points/${o.id}/download`)}><Icon name="download" size="sm" /></button><button class="btn sm" onclick={() => restoreOrphan(o)}>Restaurer</button></div>
+  {:else}<p class="muted small">Aucun projet supprimé n’a de point de restauration.</p>{/each}
+</section>
 
 {#if restoring}
   <Confirm title="Restaurer cette sauvegarde ?" eyebrow={dateTime(restoring.manifest.created_at)} confirmLabel="Restaurer et redémarrer" danger onconfirm={() => restore(true)} onclose={() => (restoring = null)}>

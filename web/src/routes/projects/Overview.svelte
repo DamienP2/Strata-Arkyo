@@ -61,6 +61,8 @@
   const openTasks = $derived(view.tasks.filter((t) => t.status === 'todo' || t.status === 'in_progress').length);
 </script>
 
+<svelte:window onbeforeunload={(e) => { if (dirty) e.preventDefault(); }} />
+
 {#if todo}
   <section class="card td">
     <div class="td-doms">

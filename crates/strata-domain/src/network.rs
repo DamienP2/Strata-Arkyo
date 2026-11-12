@@ -159,6 +159,25 @@ pub fn validate_vlan(v: &mut VlanData) -> Vec<FieldError> {
 
 // ----- Ports réseau -----
 
+/// Protocoles d'un port réseau.
+pub const PROTOCOLS: [&str; 7] = [
+    "st2110-20",
+    "st2110-30",
+    "st2110-40",
+    "dante",
+    "ndi",
+    "madi-ip",
+    "generic",
+];
+/// Rôles d'un VLAN.
+pub const ROLES: [&str; 5] = [
+    "Gestion",
+    "Média principal",
+    "Média secondaire",
+    "Dante",
+    "Autre",
+];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PortMode {
@@ -218,6 +237,14 @@ pub fn validate_port(p: &mut NetPort, vids: &HashSet<u16>) -> Vec<FieldError> {
         match parse_ip(ip) {
             Some(v) => p.ip = Some(ip_string(v)),
             None => e.push(("ip", "Adresse IPv4 invalide.".into())),
+        }
+    }
+    if let Some(pr) = &p.protocol {
+        if !PROTOCOLS.contains(&pr.as_str()) {
+            e.push((
+                "protocol",
+                "Protocole : ST 2110-20, -30, -40, Dante, NDI, MADI-IP ou générique.".into(),
+            ));
         }
     }
     if let Some(h) = &p.hostname {

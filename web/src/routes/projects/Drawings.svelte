@@ -74,7 +74,28 @@
   // ----- Enregistrement automatique -----
   let dirty = $state(false), saving = $state(false);
   let saveT: ReturnType<typeof setTimeout> | null = null;
-  function changed() { if (!mine) return; dirty = true; lastAction = Date.now(); if (saveT) clearTimeout(saveT); saveT = setTimeout(persist, 700); }
+  // Annuler / rétablir sur 50 états : on garde l'état validé avant chaque modification.
+  let committed = '';
+  let undoStack = $state<string[]>([]), redoStack = $state<string[]>([]);
+  $effect(() => { pg?.id; untrack(() => { committed = pg ? JSON.stringify($state.snapshot(pg.elements)) : ''; undoStack = []; redoStack = []; }); });
+  function changed(record = true) {
+    if (!mine || !pg) return;
+    const now = JSON.stringify($state.snapshot(pg.elements));
+    if (record && now !== committed) { undoStack = [...undoStack.slice(-49), committed]; redoStack = []; }
+    committed = now;
+    dirty = true; lastAction = Date.now(); if (saveT) clearTimeout(saveT); saveT = setTimeout(persist, 700);
+  }
+  function undo() { if (!pg || !undoStack.length) return; redoStack = [...redoStack, JSON.stringify($state.snapshot(pg.elements))]; pg.elements = JSON.parse(undoStack.at(-1)!); undoStack = undoStack.slice(0, -1); sel = new Set(); changed(false); }
+  function redo() { if (!pg || !redoStack.length) return; undoStack = [...undoStack, JSON.stringify($state.snapshot(pg.elements))]; pg.elements = JSON.parse(redoStack.at(-1)!); redoStack = redoStack.slice(0, -1); sel = new Set(); changed(false); }
+  // Presse-papiers interne : les blocs équipement (uniques) et les liens ne se copient pas.
+  let clip: El[] = [];
+  function copySel() { clip = selList.filter((e) => e.type !== 'equipment' && e.type !== 'link').map((e) => structuredClone($state.snapshot(e)) as El); if (clip.length) toast(`${clip.length} élément${clip.length > 1 ? 's' : ''} copié${clip.length > 1 ? 's' : ''}.`, 'info'); }
+  function paste() {
+    if (!pg || !clip.length) return;
+    const copies = clip.map((e) => { const c = structuredClone(e); c.id = uid(); if (c.type === 'line') c.points = c.points.map((q: number[]) => [q[0]! + 5, q[1]! + 5]); else { c.x += 5; c.y += 5; } return c; });
+    clip = copies.map((c) => structuredClone(c));
+    pg.elements = [...pg.elements, ...copies]; sel = new Set(copies.map((c) => c.id)); changed();
+  }
   async function persist() {
     if (!pg || !dirty) return;
     saveT = null; saving = true; dirty = false;
@@ -293,6 +314,11 @@
     if (!mine) return;
     if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); removeSel(); }
     if ((e.ctrlKey || e.metaKey) && e.key === 'd') { e.preventDefault(); duplicateSel(); }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') { copySel(); }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'x') { copySel(); removeSel(); }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') { e.preventDefault(); paste(); }
     if (e.key.startsWith('Arrow') && sel.size) {
       e.preventDefault(); const st = e.shiftKey ? 10 : (pg?.grid_mm || 1), dx = e.key === 'ArrowLeft' ? -st : e.key === 'ArrowRight' ? st : 0, dy = e.key === 'ArrowUp' ? -st : e.key === 'ArrowDown' ? st : 0;
       pg!.elements = pg!.elements.map((el) => (!sel.has(el.id) ? el : el.type === 'line' ? { ...el, points: el.points.map((q: number[]) => [q[0]! + dx, q[1]! + dy]) } : el.type === 'link' ? el : { ...el, x: el.x + dx, y: el.y + dy }));
@@ -380,7 +406,7 @@
   const pageName = (id: string) => idx?.pages.find((p) => p.id === id)?.name ?? '';
 </script>
 
-<svelte:window onkeydown={key} />
+<svelte:window onkeydown={key} onbeforeunload={(e) => { if (dirty || saving) { e.preventDefault(); void persist(); } }} />
 <input type="file" accept="image/png,image/jpeg,image/svg+xml" hidden bind:this={imgInput} onchange={(e) => { onImage((e.target as HTMLInputElement).files?.[0]); (e.target as HTMLInputElement).value = ''; }}>
 
 {#if !idx}<span class="spin"></span>
@@ -423,6 +449,8 @@
                 <button class:on={tool === t && !placing} title={l} aria-label={l} onclick={() => setTool(t as Tool)}><Icon name={ic} size="sm" /></button>
               {/each}
             </div>
+            <button class="icon-btn sm" aria-label="Annuler (Ctrl+Z)" title="Annuler (Ctrl+Z)" disabled={!undoStack.length} onclick={undo}><Icon name="undo" size="sm" /></button>
+            <button class="icon-btn sm" aria-label="Rétablir (Ctrl+Maj+Z)" title="Rétablir (Ctrl+Maj+Z)" disabled={!redoStack.length} onclick={redo}><span style="display:inline-flex;transform:scaleX(-1)"><Icon name="undo" size="sm" /></span></button>
             <button class="btn sm ghost" onclick={sync} title="Met à jour les blocs depuis la nomenclature et retire les orphelins"><Icon name="refresh" size="sm" />Synchroniser</button>
           {/if}
           <span style="flex:1"></span>

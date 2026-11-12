@@ -132,6 +132,8 @@
   }
 </script>
 
+<svelte:window onbeforeunload={(e) => { if (dirty > 0) e.preventDefault(); }} />
+
 {#if !rows}<span class="spin"></span>
 {:else}
   <div class="ct-bar">

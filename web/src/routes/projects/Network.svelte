@@ -21,6 +21,8 @@
   const pid = $derived(view.project.id);
   const writable = $derived(can('conception', 'ecriture'));
   const ESS: Record<Flow['essence'], string> = { video: 'Vidéo', audio: 'Audio', data: 'Données' };
+  const PROTO: [string, string][] = [['st2110-20', 'ST 2110-20'], ['st2110-30', 'ST 2110-30'], ['st2110-40', 'ST 2110-40'], ['dante', 'Dante'], ['ndi', 'NDI'], ['madi-ip', 'MADI-IP'], ['generic', 'Générique']];
+  let mapVlan = $state<number | ''>('');
 
   let r = $state<R | null>(null);
   let tab = $state<'ports' | 'vlans' | 'flows' | 'map'>('ports');
@@ -118,6 +120,16 @@
     if (sw.length) { col(sw, 20 + NW + 160); col(right, 20 + 2 * NW + 320); } else col(right, 20 + NW + 200);
     return { pos, w, h };
   });
+  // Carte : liaisons regroupées par paire d'équipements (épaisseur selon le nombre), filtre VLAN.
+  const mapLinks = $derived.by(() => {
+    if (!r) return [] as (MapLink & { count: number })[];
+    const g = new Map<string, MapLink & { count: number }>();
+    for (const l of r.map.links.filter((x) => mapVlan === '' || x.vlans.includes(mapVlan as number))) {
+      const k = [l.a, l.b].sort().join('|'); const e = g.get(k);
+      if (e) { e.count++; e.trunk ||= l.trunk; e.vlans = [...new Set([...e.vlans, ...l.vlans])]; } else g.set(k, { ...l, count: 1 });
+    }
+    return [...g.values()];
+  });
   const linkColor = (l: MapLink) => l.redundancy === 'A' ? '#3A7BD5' : l.redundancy === 'B' ? '#E0A030' : (l.vlans.length === 1 ? vlanOf(l.vlans[0]!)?.color : null) ?? 'var(--fg-3)';
 </script>
 
@@ -173,7 +185,7 @@
         <div class="tbl-wrap"><table class="tbl ct-tbl nw-tbl">
           <thead><tr>
             {#if writable}<th class="ck"><input type="checkbox" checked={allPicked} onchange={pickAll} aria-label="Tout choisir"></th>{/if}
-            <th>Équipement</th><th>Port</th><th>Mode</th><th>VLAN</th><th>Adresse IP</th><th>Nom d’hôte</th><th>Réseau</th><th>Relié à</th>
+            <th>Équipement</th><th>Port</th><th>Mode</th><th>VLAN</th><th>Adresse IP</th><th>Nom d’hôte</th><th>Protocole</th><th>Réseau</th><th>Relié à</th>
           </tr></thead>
           <tbody>
             {#each shown as p (p.ref)}
@@ -196,6 +208,7 @@
                 </td>
                 <td><input class="cell mono" value={p.ip ?? ''} placeholder={v?.cidr ?? '—'} disabled={!writable} aria-label="Adresse IP" onchange={(e) => setPorts([p.ref], { ip: (e.target as HTMLInputElement).value.trim() || null })}></td>
                 <td><input class="cell mono" value={p.hostname ?? ''} placeholder="—" disabled={!writable} aria-label="Nom d’hôte" onchange={(e) => setPorts([p.ref], { hostname: (e.target as HTMLInputElement).value.trim() || null })}></td>
+                <td><select class="cell" value={p.protocol ?? ''} disabled={!writable} aria-label="Protocole" onchange={(e) => setPorts([p.ref], { protocol: (e.target as HTMLSelectElement).value || null })}><option value="">—</option>{#each PROTO as [k, l]}<option value={k}>{l}</option>{/each}</select></td>
                 <td><select class="cell" value={p.redundancy ?? ''} disabled={!writable} aria-label="Réseau" onchange={(e) => setPorts([p.ref], { redundancy: (e.target as HTMLSelectElement).value || null })}><option value="">—</option><option value="A">A</option><option value="B">B</option></select></td>
                 <td class="small">{p.peer ?? ''}</td>
               </tr>
@@ -266,14 +279,14 @@
     {#if !r.map.nodes.length}
       <section class="card empty-card"><h3>Carte vide</h3><p class="muted">Elle se dessine à partir des équipements à ports IP et de leurs câbles.</p></section>
     {:else}
-      <div class="ct-bar small muted"><span class="lg"><i style="background:#3A7BD5"></i>Réseau A</span><span class="lg"><i style="background:#E0A030"></i>Réseau B</span><span class="lg"><i class="dash"></i>Trunk</span>{#each r.vlans as v}<span class="lg"><i style="background:{v.color}"></i>VLAN {v.vid}</span>{/each}</div>
+      <div class="ct-bar small muted"><select class="input" bind:value={mapVlan} aria-label="Filtrer par VLAN"><option value="">Tous les VLAN</option>{#each r.vlans as v}<option value={v.vid}>VLAN {v.vid} · {v.name}</option>{/each}</select><span class="lg"><i style="background:#3A7BD5"></i>Réseau A</span><span class="lg"><i style="background:#E0A030"></i>Réseau B</span><span class="lg"><i class="dash"></i>Trunk</span>{#each r.vlans as v}<span class="lg"><i style="background:{v.color}"></i>VLAN {v.vid}</span>{/each}</div>
       <section class="card nw-map">
         <svg viewBox="0 0 {layout.w} {layout.h}" width={layout.w} height={layout.h} role="img" aria-label="Carte du réseau">
-          {#each r.map.links as l}
+          {#each mapLinks as l}
             {@const a = layout.pos.get(l.a)}{@const b = layout.pos.get(l.b)}
             {#if a && b}
               {@const ax = a.x < b.x ? a.x + NW : a.x}{@const bx = a.x < b.x ? b.x : b.x + NW}
-              <path d="M{ax} {a.y + NH / 2} C{(ax + bx) / 2} {a.y + NH / 2} {(ax + bx) / 2} {b.y + NH / 2} {bx} {b.y + NH / 2}" fill="none" stroke={linkColor(l)} stroke-width={l.trunk ? 3 : 2} stroke-dasharray={l.trunk ? '7 4' : undefined}><title>{l.a_port} ↔ {l.b_port}{l.vlans.length ? ` · VLAN ${l.vlans.join(', ')}` : ''}</title></path>
+              <path d="M{ax} {a.y + NH / 2} C{(ax + bx) / 2} {a.y + NH / 2} {(ax + bx) / 2} {b.y + NH / 2} {bx} {b.y + NH / 2}" fill="none" stroke={linkColor(l)} stroke-width={Math.min(10, (l.trunk ? 3 : 2) + (l.count - 1) * 1.5)} stroke-dasharray={l.trunk ? '7 4' : undefined}><title>{l.count > 1 ? `${l.count} liaisons · ` : ''}{l.a_port} ↔ {l.b_port}{l.vlans.length ? ` · VLAN ${l.vlans.join(', ')}` : ''}</title></path>
             {/if}
           {/each}
           {#each r.map.nodes as n (n.key)}
@@ -302,7 +315,7 @@
       <div class="field"><label for="v-name">Nom</label><input class="input" id="v-name" bind:value={edit.name} placeholder="Production 2110">{#if errs?.field('name')}<span class="ferr">{errs.field('name')}</span>{/if}</div>
       <div class="field"><label for="v-cidr">Sous-réseau</label><input class="input mono" id="v-cidr" bind:value={edit.cidr} placeholder="10.10.20.0/24">{#if errs?.field('cidr')}<span class="ferr">{errs.field('cidr')}</span>{/if}</div>
       <div class="field"><label for="v-gw">Passerelle</label><input class="input mono" id="v-gw" bind:value={edit.gateway} placeholder="10.10.20.1">{#if errs?.field('gateway')}<span class="ferr">{errs.field('gateway')}</span>{/if}</div>
-      <div class="field"><label for="v-role">Rôle</label><input class="input" id="v-role" bind:value={edit.role} list="v-roles" placeholder="Production, contrôle, gestion…"><datalist id="v-roles">{#each ['Production', 'Contrôle', 'Gestion', 'Dante', 'PTP', 'Intercom', 'Internet'] as x}<option value={x}></option>{/each}</datalist></div>
+      <div class="field"><label for="v-role">Rôle</label><input class="input" id="v-role" bind:value={edit.role} list="v-roles" placeholder="Gestion, média principal, Dante…"><datalist id="v-roles">{#each ['Gestion', 'Média principal', 'Média secondaire', 'Dante', 'Autre'] as x}<option value={x}></option>{/each}</datalist></div>
       <div class="field"><span class="flabel">Couleur</span><div class="sw-row">{#each PALETTE as c}<button type="button" class="swc" class:on={edit.color === c} style="--c:{c}" aria-label="Couleur {c}" onclick={() => (edit!.color = c)}></button>{/each}</div>{#if errs?.field('color')}<span class="ferr">{errs.field('color')}</span>{/if}</div>
     </div>
     {#snippet footer()}<button class="btn" onclick={() => (edit = null)}>Annuler</button><button class="btn primary" onclick={saveVlan}>{edit?.id ? 'Enregistrer' : 'Ajouter'}</button>{/snippet}

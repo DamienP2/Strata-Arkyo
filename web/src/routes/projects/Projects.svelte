@@ -4,10 +4,11 @@
   import Vu from '../../components/Vu.svelte';
   import StatusChip from '../../components/StatusChip.svelte';
   import Wizard from './Wizard.svelte';
+  import Dialog from '../../components/Dialog.svelte';
   import { api } from '../../lib/api';
   import { can } from '../../lib/session.svelte';
   import { fail } from '../../lib/toast.svelte';
-  import { route } from '../../lib/router.svelte';
+  import { route, navigate } from '../../lib/router.svelte';
   import { STATUS, STATUS_ORDER, REGIE, keyDate, daysBetween, fdate, urgency, type ProjectSummary, type Status, type Regie, type Intervention } from '../../lib/projects';
 
   // Recherche, tri et filtres mémorisés sur cet appareil.
@@ -32,12 +33,24 @@
   const filters = $derived(f.st.length + f.regie.length);
   const toggle = <T,>(arr: T[], v: T) => (arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
   const clients = $derived([...new Set(projects.map((p) => p.client).filter(Boolean))] as string[]);
+
+  // Import d'un fichier portable (section 13.2) : aperçu, puis Remplacer ou Copie.
+  let imp = $state<{ file: File; name: string; exists: boolean; counts: Record<string, number>; catalog: number; warnings: string[] } | null>(null);
+  let importing = $state(false);
+  async function previewImport(f: File) {
+    try { const r = await api.upload<any>('/projects/import?mode=preview', f, 'application/octet-stream'); imp = { file: f, ...r }; } catch (e) { fail(e); }
+  }
+  async function runImport(mode: 'replace' | 'copy') {
+    if (!imp) return; importing = true;
+    try { const r = await api.upload<{ project_id: string; catalog_added: number; warnings: string[] }>(`/projects/import?mode=${mode}`, imp.file, 'application/octet-stream'); imp = null; navigate(`/projets/${r.project_id}`); }
+    catch (e) { fail(e); } finally { importing = false; }
+  }
 </script>
 
 <div class="page">
   <div class="page-head">
     <div><p class="eyebrow">{projects.filter((p) => !['done', 'cancelled'].includes(p.status)).length} projets actifs sur {projects.length}</p><h1 class="display">Projets</h1></div>
-    {#if can('projets', 'ecriture')}<div class="head-actions"><button class="btn primary" onclick={() => (wizard = true)}><Icon name="plus" />Nouveau projet</button></div>{/if}
+    {#if can('projets', 'ecriture')}<div class="head-actions"><label class="btn"><Icon name="upload" />Importer<input type="file" accept=".strata" hidden onchange={(e) => { const f = (e.target as HTMLInputElement).files?.[0]; (e.target as HTMLInputElement).value = ''; if (f) previewImport(f); }}></label><button class="btn primary" onclick={() => (wizard = true)}><Icon name="plus" />Nouveau projet</button></div>{/if}
   </div>
 
   <div class="toolbar" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
@@ -78,4 +91,13 @@
   {/if}
 </div>
 
+{#if imp}
+  <Dialog title="Importer « {imp.name} »" eyebrow="Projet" onclose={() => (imp = null)}>
+    <p class="small">{Object.entries(imp.counts).filter(([k]) => ['containers', 'articles', 'instances', 'cables', 'drawings', 'plan_maps', 'net_vlans'].includes(k)).map(([k, v]) => `${v} ${({ containers: 'élément(s)', articles: 'article(s)', instances: 'exemplaire(s)', cables: 'câble(s)', drawings: 'page(s) de dessin', plan_maps: 'carte(s)', net_vlans: 'VLAN' } as Record<string, string>)[k]}`).join(' · ')}</p>
+    <p class="small">{imp.catalog} fiche(s) du catalogue jointe(s) : seules les manquantes sont ajoutées, aucune fiche existante n’est modifiée.</p>
+    {#each imp.warnings as w}<p class="small" style="color:var(--warn,#B78400)">{w}</p>{/each}
+    {#if imp.exists}<p class="small"><b>Ce projet existe déjà ici.</b> Remplacer le remet dans l’état du fichier (l’état actuel est gardé dans un point de restauration) ; Copie crée un nouveau projet « (copie) ».</p>{/if}
+    {#snippet footer()}<button class="btn" onclick={() => (imp = null)}>Annuler</button>{#if imp?.exists}<button class="btn" disabled={importing} onclick={() => runImport('replace')}>Remplacer</button>{/if}<button class="btn primary" disabled={importing} onclick={() => runImport(imp?.exists ? 'copy' : 'replace')}>{imp?.exists ? 'Copie' : 'Importer'}</button>{/snippet}
+  </Dialog>
+{/if}
 {#if wizard}<Wizard {clients} onclose={() => (wizard = false)} />{/if}

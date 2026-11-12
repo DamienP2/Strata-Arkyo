@@ -284,6 +284,16 @@ async fn serve(
         }
     });
 
+    // Points de restauration automatiques des projets modifiés (section 13.2).
+    let points_store = store.clone();
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(Duration::from_secs(600));
+        loop {
+            tick.tick().await;
+            strata_api::points::auto_points(&points_store).await;
+        }
+    });
+
     let state = AppState::new(store.clone(), secure_cookies, Some(ops));
     // Les présences sans battement expirent.
     let hub = state.hub.clone();

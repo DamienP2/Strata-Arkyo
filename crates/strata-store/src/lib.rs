@@ -23,6 +23,7 @@ pub mod links;
 pub mod network;
 pub mod panels;
 pub mod plans;
+pub mod points;
 pub mod prep;
 pub mod projects;
 pub mod racks;

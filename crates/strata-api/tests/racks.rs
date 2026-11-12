@@ -4026,3 +4026,227 @@ async fn links_between_projects() {
     assert!(v["links"].as_array().unwrap().is_empty(), "{v:?}");
     let _ = ports;
 }
+
+#[tokio::test]
+async fn project_points_restore_export_import() {
+    let Setup {
+        app, o, pid, cid, ..
+    } = setup().await;
+    let count = |v: &Value| v["instances"].as_array().map(|a| a.len()).unwrap_or(0);
+    let before = call(&app, "GET", &format!("/api/projects/{pid}"), None, Some(&o))
+        .await
+        .body;
+    let n0 = count(&before);
+    assert!(n0 > 0);
+    // Une carte et un VLAN : les nouvelles tables suivent le projet.
+    call(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid}/network/vlans"),
+        Some(json!({"vid": 30, "name": "Contrôle"})),
+        Some(&o),
+    )
+    .await;
+    let r = call(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid}/points"),
+        Some(json!({"label": "Avant essais"})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    let pt = r.body["id"].as_str().unwrap().to_string();
+    // Changement : un article de plus, VLAN supprimé.
+    let item = before["articles"][0]["item_id"].clone();
+    call(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid}/articles"),
+        Some(json!({"container_id": cid, "nature": "equipment", "item_id": item})),
+        Some(&o),
+    )
+    .await;
+    let vl = call(
+        &app,
+        "GET",
+        &format!("/api/projects/{pid}/network"),
+        None,
+        Some(&o),
+    )
+    .await
+    .body["vlans"][0]["id"]
+        .clone();
+    call(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid}/network/vlans/delete"),
+        Some(json!({"id": vl})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(
+        count(
+            &call(&app, "GET", &format!("/api/projects/{pid}"), None, Some(&o))
+                .await
+                .body
+        ),
+        n0 + 1
+    );
+    // Restauration : retour à l'état du point, avec un point « Avant restauration ».
+    let r = call(
+        &app,
+        "POST",
+        &format!("/api/points/{pt}/restore"),
+        None,
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    let after = call(&app, "GET", &format!("/api/projects/{pid}"), None, Some(&o))
+        .await
+        .body;
+    assert_eq!(count(&after), n0);
+    assert_eq!(
+        after["instances"].as_array().unwrap().len(),
+        before["instances"].as_array().unwrap().len()
+    );
+    let net = call(
+        &app,
+        "GET",
+        &format!("/api/projects/{pid}/network"),
+        None,
+        Some(&o),
+    )
+    .await
+    .body;
+    assert_eq!(net["vlans"][0]["vid"], 30);
+    let pts = call(
+        &app,
+        "GET",
+        &format!("/api/projects/{pid}/points"),
+        None,
+        Some(&o),
+    )
+    .await
+    .body;
+    assert!(
+        pts["points"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|p| p["label"] == "Avant restauration")
+    );
+    // Projet supprimé : son point le ramène.
+    let r = call(
+        &app,
+        "DELETE",
+        &format!("/api/projects/{pid}"),
+        None,
+        Some(&o),
+    )
+    .await;
+    assert!(r.status.is_success(), "{:?}", r.body);
+    let orph = call(&app, "GET", "/api/points/orphans", None, Some(&o))
+        .await
+        .body;
+    assert!(
+        orph["points"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|p| p["id"] == pt.as_str())
+    );
+    let r = call(
+        &app,
+        "POST",
+        &format!("/api/points/{pt}/restore"),
+        None,
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    assert_eq!(
+        count(
+            &call(&app, "GET", &format!("/api/projects/{pid}"), None, Some(&o))
+                .await
+                .body
+        ),
+        n0
+    );
+    // Export portable puis import en copie : nouveaux identifiants, nom « (copie) ».
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/projects/{pid}/export"))
+                .header(header::COOKIE, o.clone())
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let file = to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap()
+        .to_vec();
+    let imp = |mode: &str, body: Vec<u8>| {
+        Request::builder()
+            .method("POST")
+            .uri(format!("/api/projects/import?mode={mode}"))
+            .header(CSRF_HEADER, "1")
+            .header(header::CONTENT_TYPE, "application/octet-stream")
+            .header(header::COOKIE, o.clone())
+            .body(Body::from(body))
+            .unwrap()
+    };
+    let res = app
+        .clone()
+        .oneshot(imp("preview", file.clone()))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let pv: Value =
+        serde_json::from_slice(&to_bytes(res.into_body(), usize::MAX).await.unwrap()).unwrap();
+    assert_eq!(pv["exists"], true);
+    assert!(pv["catalog"].as_u64().unwrap() >= 1);
+    let res = app
+        .clone()
+        .oneshot(imp("copy", file.clone()))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let cp: Value =
+        serde_json::from_slice(&to_bytes(res.into_body(), usize::MAX).await.unwrap()).unwrap();
+    let new = cp["project_id"].as_str().unwrap().to_string();
+    assert_ne!(new, pid);
+    let copy = call(&app, "GET", &format!("/api/projects/{new}"), None, Some(&o))
+        .await
+        .body;
+    assert_eq!(copy["project"]["name"], "Finale (copie)");
+    assert_eq!(count(&copy), n0);
+    assert!(
+        copy["containers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|c| c["id"] != cid.as_str()),
+        "identifiants renouvelés"
+    );
+    // Le projet d'origine est intact.
+    assert_eq!(
+        count(
+            &call(&app, "GET", &format!("/api/projects/{pid}"), None, Some(&o))
+                .await
+                .body
+        ),
+        n0
+    );
+    let res = app
+        .clone()
+        .oneshot(imp("preview", b"pas un projet".to_vec()))
+        .await
+        .unwrap();
+    assert!(res.status().is_client_error());
+}

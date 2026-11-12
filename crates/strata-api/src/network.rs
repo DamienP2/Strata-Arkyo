@@ -337,6 +337,39 @@ fn issues(v: &View) -> Vec<Issue> {
             refs: ps.iter().map(|p| p.r.clone()).collect(),
         });
     }
+    // Mode : un port en accès porte exactement un VLAN ; un trunk au moins un, natif compris.
+    if !v.vlans.is_empty() {
+        for p in &v.ports {
+            let s = &p.settings;
+            let name = format!("{} {} › {}", p.equipment, p.tag, p.port);
+            match s.mode {
+                PortMode::Access
+                    if s.vlan.is_none() && (s.ip.is_some() || p.peer_ref.is_some()) =>
+                {
+                    out.push(Issue {
+                        kind: "mode",
+                        message: format!("{name} : port en accès sans VLAN."),
+                        refs: vec![p.r.clone()],
+                    })
+                }
+                PortMode::Trunk if s.vlans.is_empty() => out.push(Issue {
+                    kind: "mode",
+                    message: format!("{name} : trunk sans VLAN transporté."),
+                    refs: vec![p.r.clone()],
+                }),
+                PortMode::Trunk if s.vlan.is_some_and(|n| !s.vlans.contains(&n)) => {
+                    out.push(Issue {
+                        kind: "mode",
+                        message: format!(
+                            "{name} : le VLAN natif doit être transporté par le trunk."
+                        ),
+                        refs: vec![p.r.clone()],
+                    })
+                }
+                _ => {}
+            }
+        }
+    }
     // Liaisons : VLAN et réseau A/B cohérents des deux côtés.
     let by_ref: HashMap<&str, &PortRow> = v.ports.iter().map(|p| (p.r.as_str(), p)).collect();
     let carries = |p: &NetPort| -> BTreeSet<u16> {

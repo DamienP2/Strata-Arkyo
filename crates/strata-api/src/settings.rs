@@ -95,8 +95,8 @@ async fn set_site(
         "Renommer le site demande « Paramètres : écriture ».",
     )?;
     let name = b.name.trim();
-    if name.is_empty() || name.chars().count() > 80 {
-        return Err(one("name", "Le nom compte de 1 à 80 caractères."));
+    if name.is_empty() || name.chars().count() > 200 {
+        return Err(one("name", "Le nom compte de 1 à 200 caractères."));
     }
     st.store.set_meta(SITE_NAME, Some(name)).await?;
     st.store

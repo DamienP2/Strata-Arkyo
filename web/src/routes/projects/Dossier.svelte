@@ -175,7 +175,9 @@
 
 <style>
   .dz { display: grid; gap: 14px; }
-  .steps { display: flex; gap: 6px; list-style: none; padding: 0; margin: 0; flex-wrap: wrap; }
+  .steps { display: flex; gap: 6px; list-style: none; padding: 0; margin: 0; overflow-x: auto; }
+  .steps li { flex: none; }
+  .steps button { white-space: nowrap; }
   .steps button { display: inline-flex; gap: 8px; align-items: center; border: 1px solid var(--line); background: var(--surface); border-radius: 99px; padding: 6px 12px 6px 6px; font: 600 13px var(--font); color: var(--fg-2); cursor: pointer; }
   .steps .n { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-2); font-size: 12px; }
   .steps li.on button { border-color: var(--fg); color: var(--fg); }
