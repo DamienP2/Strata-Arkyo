@@ -13,7 +13,6 @@
   import { STATUS, STATUS_ORDER, REGIE, keyDate, daysBetween, period, urgency, type ProjectView, type Status } from '../../lib/projects';
   import Overview from './Overview.svelte';
   import Inventory from './Inventory.svelte';
-  import Regies from './Regies.svelte';
   import Workshop from './Workshop.svelte';
   import RackSheet from './RackSheet.svelte';
   import Synoptic from './Synoptic.svelte';
@@ -53,7 +52,6 @@
   const groups = $derived<SecGroup[]>([{ label: 'Projet', items: [
     { key: '', label: 'Vue d’ensemble', href: `/projets/${id}`, icon: 'grid' },
     { key: 'inventaire', label: 'Inventaire', href: `/projets/${id}/inventaire`, icon: 'box' },
-    { key: 'regies', label: 'Régies', href: `/projets/${id}/regies`, icon: 'layers' },
     { key: 'taches', label: 'Tâches', href: `/projets/${id}/taches`, icon: 'check', badge: view?.tasks.filter((t) => t.status === 'todo' || t.status === 'in_progress').length || undefined },
   ] }, { label: 'Conception', lock: true, items: [
     { key: 'racks', label: 'Racks', href: `/projets/${id}/racks`, icon: 'server' },
@@ -119,7 +117,6 @@
     <div class="page">
     {#if sub === ''}<Overview bind:view reload={load} />
     {:else if sub === 'inventaire'}<Inventory bind:view reload={load} />
-    {:else if sub === 'regies'}<Regies {view} />
     {:else if sub === 'atelier'}<Workshop {view} />
     {:else if sub === 'planche'}<RackSheet {view} />
     {:else if sub === 'synoptique'}<Synoptic {view} />

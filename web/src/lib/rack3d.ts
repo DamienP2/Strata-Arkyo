@@ -110,8 +110,11 @@ function faceCanvases(e: El3D, wPx: number, hPx: number) {
   if (ear) {
     for (const x of [ear / 2, wPx - ear / 2]) {
       g.fillStyle = alu ? 'rgba(0,0,0,.08)' : 'rgba(255,255,255,.04)'; g.fillRect(x - ear / 2, 0, ear, hPx);
-      for (let k = 0; k < Math.max(1, Math.round(e.height_u)); k++) {
-        const y = hPx * ((k + 0.5) / Math.max(1, Math.round(e.height_u)));
+      // Deux vis par oreille en 1U (haut et bas), une par U au-delà.
+      const nU = Math.max(1, Math.round(e.height_u));
+      const ys = nU === 1 ? [0.27, 0.73] : Array.from({ length: nU }, (_, k) => (k + 0.5) / nU);
+      for (const fy of ys) {
+        const y = hPx * fy;
         const sg = g.createRadialGradient(x - 2, y - 2, 1, x, y, ear * 0.28);
         sg.addColorStop(0, '#f2f3f5'); sg.addColorStop(1, '#6b6e74'); g.fillStyle = sg; g.beginPath(); g.arc(x, y, ear * 0.26, 0, Math.PI * 2); g.fill();
         g.strokeStyle = '#3a3c40'; g.lineWidth = 2; g.beginPath(); g.moveTo(x - ear * 0.16, y); g.lineTo(x + ear * 0.16, y); g.moveTo(x, y - ear * 0.16); g.lineTo(x, y + ear * 0.16); g.stroke();
@@ -171,6 +174,7 @@ function faceCanvases(e: El3D, wPx: number, hPx: number) {
     case 'intercom': lcd(x0, 110, 'IC-1', '#ffb02e'); keys(x0 + 130, 8); break;
     case 'ccu': lcd(x0, 100, 'CAM 3', '#7cc8ff'); keys(x0 + 120, 6); break;
     case 'rx': lcd(x0, 140, '606.125', '#7cc8ff'); lcd(x0 + 170, 140, '614.450', '#7cc8ff'); break;
+    case 'monitor': { const w = Math.min(avail * 0.55, hPx * 2.2), hh = hPx * 0.8, y = hPx * 0.1; roundRect(g, x0, y, w, hh, 3); g.fillStyle = '#05070a'; g.fill(); const bars = ['#c0c0c0', '#c0c000', '#00c0c0', '#00c000', '#c000c0', '#c00000', '#0000c0']; bars.forEach((c, i) => { ge.fillStyle = c; ge.globalAlpha = 0.08; ge.fillRect(x0 + 4 + i * (w - 8) / 7, y + 4, (w - 8) / 7, hh * 0.7); g.fillStyle = c; g.fillRect(x0 + 4 + i * (w - 8) / 7, y + 4, (w - 8) / 7, hh * 0.7); }); ge.globalAlpha = 1; keys(x0 + w + 16, 4); led(x1 - 20, hPx / 2, '#45f58a'); break; }
     case 'vent': vents(x0, x1); break;
     case 'brush': { roundRect(g, x0, hPx * 0.3, avail, hPx * 0.4, 6); g.fillStyle = '#060607'; g.fill(); for (let i = 0; i < avail; i += 2) { g.strokeStyle = `rgba(30,30,32,${0.5 + r() * 0.5})`; g.beginPath(); g.moveTo(x0 + i, hPx * 0.3); g.lineTo(x0 + i + (r() - 0.5) * 3, hPx * 0.5); g.moveTo(x0 + i, hPx * 0.7); g.lineTo(x0 + i + (r() - 0.5) * 3, hPx * 0.5); g.stroke(); } break; }
     case 'drawer': { roundRect(g, mid - 80, hPx * 0.38, 160, hPx * 0.24, 6); g.fillStyle = '#9aa0a8'; g.fill(); break; }
@@ -271,7 +275,7 @@ export class RackScene {
   constructor(private host: HTMLElement) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, alpha: false });
     this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping; this.renderer.toneMappingExposure = 1.12;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping; this.renderer.toneMappingExposure = 1.28;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.shadowMap.enabled = true; this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     host.appendChild(this.renderer.domElement);
@@ -280,25 +284,27 @@ export class RackScene {
     this.controls.enableDamping = true; this.controls.dampingFactor = 0.08; this.controls.minDistance = 0.3; this.controls.maxDistance = 12; this.controls.maxPolarAngle = Math.PI * 0.495;
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    this.scene.environmentIntensity = 0.85;
-    this.scene.background = new THREE.Color('#2b2e33');
-    this.scene.fog = new THREE.Fog('#2b2e33', 6, 16);
+    this.scene.environmentIntensity = 1.2;
+    this.scene.background = new THREE.Color('#3a3e44');
+    this.scene.fog = new THREE.Fog('#3a3e44', 7, 18);
     // Lumières : clé avec ombres douces, contre-jour froid.
-    const key = new THREE.DirectionalLight('#fff4e6', 2.2); key.position.set(2.2, 4, 3.2); key.castShadow = true;
+    const key = new THREE.DirectionalLight('#fff4e6', 2.9); key.position.set(2.2, 4, 3.2); key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048); key.shadow.camera.left = -2; key.shadow.camera.right = 2; key.shadow.camera.top = 3; key.shadow.camera.bottom = -1; key.shadow.bias = -0.0004; key.shadow.radius = 6; key.shadow.normalBias = 0.02;
     this.scene.add(key);
     const rim = new THREE.DirectionalLight('#b8d4ff', 1.1); rim.position.set(-3, 2.5, -2.5); this.scene.add(rim);
-    this.scene.add(new THREE.HemisphereLight('#dfe8ff', '#2a2420', 0.35));
+    this.scene.add(new THREE.HemisphereLight('#eef2ff', '#3a342e', 0.8));
+    // Débouchage de face : on lit les façades même en vue de face.
+    const fill = new THREE.DirectionalLight('#ffffff', 0.75); fill.position.set(0.4, 1.6, 5); this.scene.add(fill);
     // Sol : béton lissé, rugosité variable.
     const floorTex = tex(noise(512, 120, 40, 3), true, [8, 8]);
     const floorR = tex(noise(512, 170, 70, 5), false, [8, 8]);
-    const floor = new THREE.Mesh(new THREE.CircleGeometry(9, 64), new THREE.MeshStandardMaterial({ color: '#8c8f93', map: floorTex, roughnessMap: floorR, roughness: 0.85, metalness: 0 }));
+    const floor = new THREE.Mesh(new THREE.CircleGeometry(9, 64), new THREE.MeshStandardMaterial({ color: '#6a6d72', map: floorTex, roughnessMap: floorR, roughness: 0.92, metalness: 0 }));
     floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; this.scene.add(floor);
     this.scene.add(this.root);
     this.mats = this.materials();
     this.composer = new EffectComposer(this.renderer);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
-    this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(512, 512), 0.55, 0.4, 1.15));
+    this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(512, 512), 0.35, 0.35, 1.6));
     this.composer.addPass(new OutputPass());
     this.resize();
     this.renderer.domElement.addEventListener('pointermove', this.hover);
@@ -515,6 +521,19 @@ export class RackScene {
     const g = new THREE.Group(); g.position.set(cx, y, zFace + dir * 0.0015); if (rear) g.rotation.y = Math.PI;
     const depth = Math.max(0.02, Math.min((e.depth_mm ?? (e.nature === 'accessory' ? 30 : 350)) / 1000, Math.abs(frontRail - rearRail) + 0.12));
     const shelf = e.accessory?.kind === 'shelf';
+    if (e.accessory?.kind === 'lacing_bar') {
+      // Barre de laçage : deux équerres fixées au rail et une barre ronde déportée.
+      const off = Math.max(0.03, (e.accessory.depth_mm || 100) / 1000);
+      for (const s of [-1, 1]) {
+        const ear = new THREE.Mesh(new THREE.BoxGeometry(0.018, h * 0.8, 0.002), m.blackMetal); ear.position.set(s * (W19 / 2 - 0.01), 0, 0); ear.castShadow = true; g.add(ear);
+        const arm = new THREE.Mesh(new THREE.BoxGeometry(0.003, h * 0.5, off), m.blackMetal); arm.position.set(s * (OPEN / 2 - 0.004), 0, off / 2); arm.castShadow = true; g.add(arm);
+      }
+      const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.0045, 0.0045, OPEN - 0.006, 16), m.chrome); rod.rotation.z = Math.PI / 2; rod.position.set(0, 0, off); rod.castShadow = true; g.add(rod);
+      const hit = new THREE.Mesh(new THREE.BoxGeometry(OPEN, h, off), new THREE.MeshBasicMaterial({ visible: false })); hit.position.z = off / 2;
+      hit.userData.hit = { label: e.label, tag: e.tag, u: e.u_start, height: e.height_u, face: e.face } as Hit; this.pick.push(hit); g.add(hit);
+      this.root.add(g);
+      return;
+    }
     if (shelf) {
       const tray = new THREE.Mesh(new THREE.BoxGeometry(OPEN - 0.004, 0.002, depth), m.powder); tray.position.set(0, -h / 2 + 0.001, -depth / 2); tray.castShadow = tray.receiveShadow = true; g.add(tray);
       for (const s of [-1, 1]) { const lip = new THREE.Mesh(new THREE.BoxGeometry(0.002, 0.02, depth), m.powder); lip.position.set(s * (OPEN / 2 - 0.003), -h / 2 + 0.01, -depth / 2); g.add(lip); }
@@ -570,7 +589,11 @@ export class RackScene {
     const p = { front: [0, H * 0.55, dist], rear: [0, H * 0.55, -dist], quarter: [dist * 0.62, H * 0.62 + dist * 0.18, dist * 0.78], side: [dist, H * 0.55, 0], top: [0.01, H + dist, 0.35] }[v];
     this.camera.position.set(p[0]!, p[1]!, p[2]!); this.controls.target.copy(t); this.controls.update();
   }
-  setDoors(open: boolean) { this.doors.forEach((d, i) => (d.target = open ? (i === 0 ? -1.9 : 1.9) : 0)); }
+  /** Portes : fermées, ouvertes, ou retirées. */
+  setDoors(mode: boolean | 'closed' | 'open' | 'removed') {
+    const m = mode === true ? 'open' : mode === false ? 'closed' : mode;
+    this.doors.forEach((d, i) => { d.pivot.visible = m !== 'removed'; d.target = m === 'open' ? (i === 0 ? -1.9 : 1.9) : 0; });
+  }
   setSides(visible: boolean) { this.sides.forEach((s) => (s.visible = visible)); }
 
   private hover = (ev: PointerEvent) => {

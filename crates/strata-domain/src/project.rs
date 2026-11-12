@@ -475,6 +475,14 @@ pub enum Accessory {
         depth_mm: u32,
         height_u: u32,
     },
+    /// Barre de laçage : se pose à l'arrière, à une distance du rail (déport), pour attacher
+    /// les câbles qui sortent des équipements.
+    LacingBar {
+        height_u: u32,
+        /// Déport depuis le rail, en mm.
+        #[serde(default)]
+        depth_mm: u32,
+    },
     /// Panel de brassage : instance propre au projet, copiée depuis la bibliothèque.
     Panel {
         panel: crate::panel::PanelData,
@@ -486,7 +494,8 @@ impl Accessory {
         match self {
             Accessory::Plate { height_u, .. }
             | Accessory::Shelf { height_u, .. }
-            | Accessory::Drawer { height_u, .. } => *height_u,
+            | Accessory::Drawer { height_u, .. }
+            | Accessory::LacingBar { height_u, .. } => *height_u,
             Accessory::Panel { panel } => panel.height_u,
         }
     }
@@ -498,6 +507,7 @@ impl Accessory {
                 Some(*depth_mm as f64)
             }
             Accessory::Panel { panel } => Some(panel.rear_depth_mm as f64),
+            Accessory::LacingBar { depth_mm, .. } => Some(*depth_mm as f64),
             Accessory::Plate { .. } => None,
         }
     }
@@ -518,6 +528,13 @@ impl Accessory {
             }
             Accessory::Drawer { depth_mm, height_u } => {
                 format!("Tiroir {height_u}U · {depth_mm}mm")
+            }
+            Accessory::LacingBar { height_u, depth_mm } => {
+                if *depth_mm > 0 {
+                    format!("Barre de laçage {height_u}U · déport {depth_mm}mm")
+                } else {
+                    format!("Barre de laçage {height_u}U")
+                }
             }
             Accessory::Panel { panel } => panel.name.clone(),
         }
@@ -546,6 +563,10 @@ impl Accessory {
                     "Tiroir : de 200 à 500 mm, par pas de 50.",
                 ))
             }
+            Accessory::LacingBar { depth_mm, .. } if *depth_mm > 300 => e.push(err(
+                "accessory.depth_mm",
+                "Barre de laçage : déport de 0 à 300 mm.",
+            )),
             _ => {}
         }
         e

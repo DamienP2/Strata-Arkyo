@@ -77,6 +77,33 @@
     try { const r = await api.post<{ name: string }>(`/containers/${c.id}/save-as-template`, { name: c.name }); toast(`Modèle « ${r.name} » enregistré en brouillon. Activez-le dans Catalogue › Modèles.`); }
     catch (e) { fail(e); }
   }
+  // Modèles de régie, au niveau du lieu : tout le contenu du lieu en un modèle, ou un modèle
+  // recopié dans le lieu (ses éléments et leur matériel).
+  let menuOpen = $state(false);
+  let regiePick = $state<{ lib: { id: string; name: string; members: { name: string }[] }[]; id: string; busy: boolean } | null>(null);
+  async function saveLocAsRegie() {
+    menuOpen = false;
+    if (!loc || !conts.length) { toast('Ce lieu ne contient aucun élément.', 'warn'); return; }
+    try {
+      const r = await api.post<{ id: string }>(`/projects/${view.project.id}/regies`, { name: loc.name, kind: view.project.regie, service_type: view.project.service_type, notes: null, members: conts.map((c) => c.id) });
+      const m = await api.post<{ name: string; members: unknown[] }>(`/regies/${r.id}/save-as-template`, {});
+      await api.del(`/regies/${r.id}`).catch(() => {});
+      toast(`Modèle de régie « ${m.name} » créé avec ${m.members.length} élément${m.members.length > 1 ? 's' : ''} (en brouillon, à activer dans Catalogue › Modèles › Régies).`);
+    } catch (e) { fail(e); }
+  }
+  async function openRegiePick() {
+    menuOpen = false;
+    try { const l = (await api.get<{ regies: any[] }>('/regies')).regies; regiePick = { lib: l, id: l[0]?.id ?? '', busy: false }; } catch (e) { fail(e); }
+  }
+  async function addRegie() {
+    if (!regiePick?.id || !selLoc) return;
+    regiePick.busy = true;
+    try {
+      const r = await api.post<{ regie: { members: unknown[] }; skipped_items: number }>(`/projects/${view.project.id}/regies/from-template`, { regie_id: regiePick.id, location_id: selLoc });
+      toast(`${r.regie.members.length} élément${r.regie.members.length > 1 ? 's' : ''} ajouté${r.regie.members.length > 1 ? 's' : ''}${r.skipped_items ? ` · ${r.skipped_items} article(s) introuvable(s) dans le catalogue` : ''}.`);
+      regiePick = null; await reload();
+    } catch (e) { fail(e); if (regiePick) regiePick.busy = false; }
+  }
   let moving = $state<{ a: Article; target: string; instance: string | null } | null>(null);
   let confirmDel = $state<{ kind: 'container' | 'article' | 'location'; id: string; name: string } | null>(null);
   let open = $state<Set<string>>(new Set());
@@ -88,6 +115,38 @@
       const r = l.id ? await api.patch<Location>(`/locations/${l.id}`, { rev: l.rev, name: l.name, code: l.code }) : await api.post<Location>(`/projects/${view.project.id}/locations`, { name: l.name, code: l.code });
       toast(l.id ? 'Emplacement enregistré.' : 'Emplacement ajouté.'); locEdit = null; selLoc = r.id; await reload();
     } catch (x) { if (x instanceof ApiError) locErr = Object.fromEntries(x.fields.map((f) => [f.field, f.message])); if (!(x instanceof ApiError && x.fields.length)) fail(x); }
+  }
+  // Matériel rangé par nature ; les accessoires et panels identiques (une pièce par article,
+  // chacune posée à sa place) sont regroupés sur une ligne avec un compteur.
+  type Row = { key: string; a: Article; list: Article[] };
+  const SECTIONS: [string, string][] = [['equipment', 'Équipements'], ['panel', 'Panels de brassage'], ['accessory', 'Accessoires'], ['adapter', 'Adaptateurs']];
+  const sectionOf = (a: Article) => (a.nature === 'accessory' ? (a.accessory?.kind === 'panel' ? 'panel' : 'accessory') : a.nature);
+  const grouped = $derived.by(() => {
+    const rows = new Map<string, Row>();
+    for (const a of arts) {
+      const unit = a.nature === 'accessory' || item(a)?.modular;
+      const key = unit ? `${sectionOf(a)}|${a.item_id ?? ''}|${JSON.stringify(a.accessory ?? null)}` : a.id;
+      const r = rows.get(key);
+      if (r) r.list.push(a); else rows.set(key, { key, a, list: [a] });
+    }
+    return SECTIONS.map(([k, label]) => ({ k, label, rows: [...rows.values()].filter((r) => sectionOf(r.a) === k) })).filter((g) => g.rows.length);
+  });
+  const qtyOf = (r: Row) => r.list.reduce((n, a) => n + a.quantity, 0);
+  /** + / − sur une ligne : quantité de l'article, ou une pièce de plus ou de moins. */
+  async function step(r: Row, d: 1 | -1) {
+    const unit = r.list.length > 1 || r.a.nature === 'accessory' || item(r.a)?.modular;
+    if (!unit) return setQty(r.a, r.a.quantity + d);
+    try {
+      if (d > 0) {
+        const a = r.list[r.list.length - 1]!;
+        await api.post(`/projects/${view.project.id}/articles`, { container_id: a.container_id, location_id: a.container_id ? null : a.location_id, nature: a.nature, item_id: a.item_id, accessory: a.accessory, quantity: 1 });
+      } else {
+        const a = r.list[r.list.length - 1]!;
+        if (r.list.length === 1) { confirmDel = { kind: 'article', id: a.id, name: a.label }; return; }
+        await api.del(`/articles/${a.id}`);
+      }
+      await reload();
+    } catch (e) { fail(e); await reload(); }
   }
   async function setQty(a: Article, q: number) {
     if (q < 1) { confirmDel = { kind: 'article', id: a.id, name: a.label }; return; }
@@ -138,6 +197,7 @@
   }
 </script>
 
+<svelte:window onclick={(e) => { if (menuOpen && !(e.target as Element).closest('.menu-wrap')) menuOpen = false; }} />
 <div class="inv">
   <div class="card loc-list" style="align-items:center">
     {#each view.locations as l (l.id)}
@@ -159,7 +219,16 @@
         {#if writable}<div class="head-actions">
           <button class="btn sm" onclick={() => (locEdit = { id: loc.id, rev: loc.rev, name: loc.name, code: loc.code })}><Icon name="pen" size="sm" />Renommer</button>
           <button class="btn sm ghost danger" onclick={() => (confirmDel = { kind: 'location', id: loc.id, name: loc.name })}><Icon name="trash" size="sm" /></button>
-          <button class="btn sm" onclick={() => (fromTemplate = true)}><Icon name="copy" size="sm" />Depuis un modèle</button>
+          <div class="menu-wrap">
+            <button class="btn sm" aria-expanded={menuOpen} onclick={() => (menuOpen = !menuOpen)}><Icon name="copy" size="sm" />Modèles<Icon name="chevd" size="sm" /></button>
+            {#if menuOpen}
+              <div class="pop-menu" role="menu">
+                <button role="menuitem" onclick={() => { menuOpen = false; fromTemplate = true; }}><Icon name="case" size="sm" /><span><b>Ajouter un élément depuis un modèle</b><small>Une baie, un flight-case… avec son contenu</small></span></button>
+                <button role="menuitem" onclick={openRegiePick}><Icon name="layers" size="sm" /><span><b>Ajouter une régie depuis un modèle</b><small>Plusieurs éléments d’un coup, dans ce lieu</small></span></button>
+                {#if can('catalogue', 'ecriture')}<button role="menuitem" onclick={saveLocAsRegie}><Icon name="download" size="sm" /><span><b>Enregistrer ce lieu comme modèle de régie</b><small>Tous ses éléments et leur matériel</small></span></button>{/if}
+              </div>
+            {/if}
+          </div>
           <button class="btn sm primary" onclick={() => (contEdit = { c: null })}><Icon name="plus" size="sm" />Ajouter un élément</button>
         </div>{/if}
       </div>
@@ -208,15 +277,18 @@
         <div class="tbl-wrap"><table class="tbl">
           <thead><tr><th>Article</th><th>Quantité</th><th class="num hide-m">Hauteur</th><th class="num hide-m">Poids</th><th class="num hide-m">Conso</th><th></th></tr></thead>
           <tbody>
-            {#each arts as a (a.id)}
+            {#each grouped as g (g.k)}
+            <tr class="sec-row"><td colspan="6"><span class="lbl-t">{g.label}</span> <span class="muted small">{g.rows.reduce((n, r) => n + qtyOf(r), 0)}</span></td></tr>
+            {#each g.rows as r (r.key)}
+              {@const a = r.a}
               {@const it = item(a)}
               {@const inst = instOf(a)}
               <tr>
                 <td><div class="art-name"><span><b>{a.label}</b><span class="small muted">{a.nature === 'equipment' ? 'Équipement' : a.nature === 'adapter' ? 'Adaptateur' : a.accessory?.kind === 'panel' ? `Panel · ${a.accessory.panel.slots.length} connecteur${a.accessory.panel.slots.length > 1 ? 's' : ''}` : 'Accessoire'}{it?.brand ? ` · ${it.brand}` : ''}{it && !it.active ? ' · fiche inactive' : ''}</span></span></div></td>
-                <td>{#if writable && a.nature !== 'accessory' && !it?.modular}<span class="stepper"><button onclick={() => setQty(a, a.quantity - 1)} aria-label="Retirer un">−</button><span>{a.quantity}</span><button onclick={() => setQty(a, a.quantity + 1)} aria-label="Ajouter un">+</button></span>{:else}{a.quantity}{/if}</td>
-                <td class="num hide-m">{heightOf(a) ? `${nf(heightOf(a)! * a.quantity, 1).replace(',0', '')} U` : '—'}</td>
-                <td class="num hide-m">{it?.weight_kg ? `${nf(it.weight_kg * a.quantity, 1)} kg` : '—'}</td>
-                <td class="num hide-m">{it?.power_w ? `${nf(it.power_w * a.quantity)} W` : '—'}</td>
+                <td>{#if writable}<span class="stepper"><button onclick={() => step(r, -1)} aria-label="Retirer un">−</button><span>{qtyOf(r)}</span><button onclick={() => step(r, 1)} aria-label="Ajouter un">+</button></span>{:else}{qtyOf(r)}{/if}</td>
+                <td class="num hide-m">{heightOf(a) ? `${nf(heightOf(a)! * qtyOf(r), 1).replace(',0', '')} U` : '—'}</td>
+                <td class="num hide-m">{it?.weight_kg ? `${nf(it.weight_kg * qtyOf(r), 1)} kg` : '—'}</td>
+                <td class="num hide-m">{it?.power_w ? `${nf(it.power_w * qtyOf(r))} W` : '—'}</td>
                 <td><div class="dl-actions">
                   {#if a.accessory?.kind === 'panel'}<button class="btn sm ghost" onclick={() => (panelOf = a)}><Icon name="grid" size="sm" />{writable ? 'Modifier' : 'Voir'}</button>{/if}
                   {#if inst.length}<button class="btn sm ghost" onclick={() => toggle(a.id)} aria-expanded={open.has(a.id)}>{inst.length} repère{inst.length > 1 ? 's' : ''}<Icon name="chevd" size="sm" /></button>{/if}
@@ -236,6 +308,7 @@
                   </div>
                 </td></tr>
               {/if}
+            {/each}
             {:else}<tr><td colspan="6" class="empty">Rien ici pour l’instant.{#if writable} <button class="ilink" onclick={() => (adding = true)}>Ajouter du matériel</button>{/if}</td></tr>{/each}
           </tbody>
         </table></div>
@@ -256,6 +329,16 @@
 {#if contEdit && selLoc}<ContainerDialog {view} container={contEdit.c} locationId={selLoc} onclose={() => (contEdit = null)} ondone={async (id) => { contEdit = null; await reload(); const c = view.containers.find((x) => x.id === id); if (c) { selLoc = c.location_id; selCont = id; } }} />{/if}
 {#if fromTemplate && selLoc}<TemplatePick {view} locationId={selLoc} onclose={() => (fromTemplate = false)} ondone={async (id) => { fromTemplate = false; await reload(); selCont = id; }} />{/if}
 {#if adding && selLoc}<AddArticle {view} container={cont} locationId={selLoc} onclose={() => (adding = false)} ondone={async () => { await reload(); }} />{/if}
+{#if regiePick}
+  <Dialog title="Ajouter une régie depuis un modèle" eyebrow={loc?.name ?? ''} onclose={() => (regiePick = null)}>
+    {#if !regiePick.lib.length}<p class="muted">Aucun modèle de régie : enregistrez un lieu comme modèle, ou créez-en un dans <a class="ilink" href="/catalogue/regies">Catalogue › Modèles › Régies</a>.</p>
+    {:else}
+      <div class="field"><label for="rp-m">Modèle</label><select class="input" id="rp-m" bind:value={regiePick.id}>{#each regiePick.lib as r}<option value={r.id}>{r.name} · {r.members.length} élément{r.members.length > 1 ? 's' : ''}</option>{/each}</select>
+        <span class="help">{regiePick.lib.find((r) => r.id === regiePick!.id)?.members.map((m) => m.name).join(', ') || 'vide'}</span></div>
+    {/if}
+    {#snippet footer()}<button class="btn ghost" onclick={() => (regiePick = null)}>Annuler</button><button class="btn primary" disabled={!regiePick?.id || regiePick?.busy} onclick={addRegie}>Ajouter dans {loc?.name}</button>{/snippet}
+  </Dialog>
+{/if}
 {#if moving}
   <Dialog title="Déplacer « {moving.a.label} »" eyebrow={view.project.name} onclose={() => (moving = null)}>
     {#if moving.a.nature === 'equipment' && moving.a.quantity > 1}
@@ -284,6 +367,16 @@
 {#if panelOf}<ProjectPanel article={panelOf} readonly={!writable} eyebrow="Panel du projet" onclose={() => (panelOf = null)} ondone={reload} />{/if}
 
 <style>
+  .menu-wrap { position: relative; }
+  .pop-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 40; min-width: 330px; display: flex; flex-direction: column; gap: 2px; padding: 6px; border-radius: 12px; background: var(--surface); box-shadow: var(--e3); }
+  .pop-menu button { display: flex; align-items: flex-start; gap: 10px; padding: 8px 10px; border: 0; border-radius: 8px; background: none; text-align: left; color: var(--fg); }
+  .pop-menu button:hover { background: var(--surface-2); }
+  .pop-menu span { display: flex; flex-direction: column; gap: 1px; }
+  .pop-menu b { font-size: 13.5px; font-weight: 600; }
+  .pop-menu small { font-size: 12px; color: var(--fg-3); }
+  .pop-menu :global(.ic) { margin-top: 2px; color: var(--fg-3); }
+  .sec-row td { padding: 14px 0 4px; border-bottom: 1px solid var(--line); background: none; }
+  .sec-row .lbl-t { color: var(--fg-2); }
   .kind-vis { display: grid; place-items: center; width: 84px; height: 148px; --ki: var(--sig-v); }
   .inst-grid { display: grid; grid-template-columns: 80px repeat(3, minmax(0, 1fr)); gap: 8px 10px; align-items: center; padding: 6px 0; }
   .inst-grid .input { height: 36px; font-size: 13.5px; }

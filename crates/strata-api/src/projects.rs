@@ -143,6 +143,9 @@ pub(crate) struct ItemView {
     pub(crate) width: strata_domain::catalog::Width,
     pub(crate) rear_reserve_mm: Option<f64>,
     pub(crate) function: Option<String>,
+    /// Type du catalogue et visuel choisi : la face en baie en est déduite.
+    pub(crate) type_id: Option<String>,
+    pub(crate) visual: Option<String>,
 }
 
 pub(crate) async fn item_views(
@@ -211,6 +214,12 @@ pub(crate) fn view_of(
             .get("functions")
             .and_then(|f| f.get(0))
             .and_then(Value::as_str)
+            .map(str::to_string),
+        type_id: d.get("type_id").and_then(Value::as_str).map(str::to_string),
+        visual: d
+            .get("visual")
+            .and_then(Value::as_str)
+            .filter(|v| !v.is_empty())
             .map(str::to_string),
     }
 }

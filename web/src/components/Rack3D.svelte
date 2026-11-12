@@ -5,7 +5,7 @@
   import Icon from './Icon.svelte';
   import { api } from '../lib/api';
   import { fnColor, refById } from '../lib/catalog.svelte';
-  import { faceType, ALU, accessoryFace } from '../lib/faceplate';
+  import { ALU, accessoryFace, visualOf } from '../lib/faceplate';
   import type { RackScene, El3D, Hit } from '../lib/rack3d';
 
   let { container, elements, title }: { container: any; elements: any[]; title: string } = $props();
@@ -13,7 +13,7 @@
   let scene: RackScene | null = null;
   let loading = $state(true);
   let error = $state<string | null>(null);
-  let doors = $state(true), sides = $state(true);
+  let doors = $state<'closed' | 'open' | 'removed'>('open'), sides = $state(true);
   let hover = $state<{ h: Hit; x: number; y: number } | null>(null);
   const portsCache = new Map<string, any[]>();
 
@@ -24,7 +24,7 @@
   }
   async function toEls(): Promise<El3D[]> {
     return Promise.all(elements.map(async (e) => {
-      const kind = e.nature === 'accessory' ? (e.accessory?.kind === 'panel' ? 'panel' : e.accessory?.kind === 'plate' ? (e.accessory.variant === 'brush' ? 'brush' : e.accessory.variant === 'vented' ? 'vent' : 'blank') : accessoryFace(e.label)) : faceType(e.label);
+      const kind = e.nature === 'accessory' ? (e.accessory?.kind === 'panel' ? 'panel' : e.accessory?.kind === 'plate' ? (e.accessory.variant === 'brush' ? 'brush' : e.accessory.variant === 'vented' ? 'vent' : 'blank') : accessoryFace(e.label)) : visualOf(e);
       const ps = (await ports(e.item_id)).map((p: any) => ({ face: p.face ?? 'rear', connector: p.connector_id ?? '', quantity: p.quantity ?? 1, color: p.signal_id ? (refById('signals', p.signal_id)?.data?.color ?? null) : null, label: p.label ?? null }));
       return { id: e.placement.id, label: e.label, tag: e.tag, nature: e.nature, height_u: e.height_u, depth_mm: e.depth_mm, function: e.function, brand: e.brand ?? null, face: e.placement.face, u_start: e.placement.u_start, width: e.placement.width, col: e.placement.col, kind, alu: ALU.has(kind), accessory: e.accessory, ports: ps, fnColor: fnColor(e.function), shelf_id: e.placement.shelf_id ?? null } as El3D;
     }));
@@ -52,8 +52,8 @@
 <div class="r3">
   <div class="r3-bar">
     <div class="seg" role="group" aria-label="Cadrage">{#each [['quarter', '3/4'], ['front', 'Avant'], ['rear', 'Arrière'], ['side', 'Côté'], ['top', 'Dessus']] as [k, l]}<button onclick={() => scene?.frame(k as any)}>{l}</button>{/each}</div>
-    {#if !isCase}<label class="toggle-row small"><input type="checkbox" bind:checked={doors}>Portes ouvertes</label>{/if}
-    <label class="toggle-row small"><input type="checkbox" bind:checked={sides}>Panneaux latéraux</label>
+    {#if !isCase}<span class="r3-l">Portes</span><div class="seg" role="group" aria-label="Portes">{#each [['closed', 'Fermées'], ['open', 'Ouvertes'], ['removed', 'Retirées']] as [k, l]}<button class:on={doors === k} onclick={() => (doors = k as typeof doors)}>{l}</button>{/each}</div>{/if}
+    <span class="r3-l">{isCase ? 'Parois' : 'Flancs'}</span><div class="seg" role="group" aria-label="Panneaux latéraux"><button class:on={sides} onclick={() => (sides = true)}>Avec</button><button class:on={!sides} onclick={() => (sides = false)}>Sans</button></div>
     <span style="flex:1"></span>
     <span class="muted small">Glisser : tourner · molette : zoom · clic droit : déplacer</span>
     <button class="btn sm ghost" onclick={shot}><Icon name="download" size="sm" />PNG</button>
@@ -73,4 +73,5 @@
   .r3-spin { position: absolute; left: 50%; top: 50%; }
   .r3-err { position: absolute; inset: 0; display: grid; place-items: center; color: #fff; }
   .r3-tip { position: absolute; pointer-events: none; background: rgba(15, 16, 18, .9); color: #fff; padding: 6px 9px; border-radius: 8px; font-size: 12.5px; line-height: 1.35; max-width: 280px; }
+  .r3-l { font: 600 10px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--fg-3); }
 </style>

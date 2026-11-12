@@ -20,6 +20,45 @@ export function accessoryFace(label: string): string {
   if (/aérée/i.test(label)) return 'vent';
   if (/tiroir/i.test(label)) return 'drawer';
   if (/étagère/i.test(label)) return 'drawer';
+  if (/laçage/i.test(label)) return 'lacing';
   return 'blank';
 }
 DECOR.blank = '';
+DECOR.lacing = '<i class="lace"></i>';
+
+// ----- Visuel en baie -----
+// Choisi dans la fiche équipement, sinon déduit du type du catalogue (et de son type parent),
+// sinon du nom. Sert à la vue réelle et à la 3D.
+import { refById } from './catalog.svelte';
+
+/** Visuels proposés dans la fiche équipement. */
+export const VISUALS: [string, string][] = [
+  ['monitor', 'Moniteur'], ['switch', 'Switch réseau'], ['server', 'Serveur / ordinateur'], ['router', 'Grille / routeur vidéo'],
+  ['mixer', 'Mélangeur / console'], ['rec', 'Enregistreur'], ['replay', 'Serveur vidéo / replay'], ['mv', 'Multiviewer'],
+  ['cards', 'Châssis de cartes / convertisseurs'], ['sync', 'Synchro / timecode'], ['dist', 'Distributeur'], ['ccu', 'CCU / voie caméra'],
+  ['intercom', 'Intercom'], ['rx', 'Récepteur HF'], ['stage', 'Stagebox / E-S audio'], ['scope', 'Forme d’onde'],
+  ['ups', 'Onduleur'], ['pdu', 'PDU'], ['rjp', 'Panel RJ45'], ['bnc', 'Panel BNC'], ['xlr', 'Panel XLR'], ['gen', 'Générique'],
+];
+const BY_TYPE: [RegExp, string][] = [
+  [/moniteur|écran|monitor|lcd|oled/i, 'monitor'], [/multiviewer/i, 'mv'], [/forme d.onde|waveform|wfm|technique/i, 'scope'],
+  [/switch|routeur réseau|firewall|sd-wan|vpn|bonded/i, 'switch'], [/routeur vid|grille|matrice vid|^ip \/|^sdi$/i, 'router'],
+  [/serveur vid|replay|ralenti|playout/i, 'replay'], [/enregistreur|ingest/i, 'rec'],
+  [/serveur|nas|san|stockage|gpu|^pc$|^mac$|ordinateur|time server/i, 'server'],
+  [/mélangeur|console|surface de contr|pupitre/i, 'mixer'], [/sync|timecode|ptp|genlock|black burst|tri-level/i, 'sync'],
+  [/onduleur|ups|batterie/i, 'ups'], [/pdu|distribution motoris|inverseur/i, 'pdu'], [/intercom|beltpack|station|4-wire/i, 'intercom'],
+  [/ccu|voie caméra/i, 'ccu'], [/stagebox|i\/o|splitter audio/i, 'stage'], [/amplificateur de distribution|distributeur|splitter/i, 'dist'],
+  [/récepteur|émetteur|antenne|iem|micro hf|combineur/i, 'rx'],
+  [/convertisseur|frame sync|embedder|processeur|gateway|encodeur|décodeur|up\/down/i, 'cards'], [/patch panel/i, 'rjp'],
+];
+/** Visuel d'un équipement : choisi, sinon selon son type (sous-type puis type), sinon selon son nom. */
+export function visualOf(e: { visual?: string | null; type_id?: string | null; label: string }): string {
+  if (e.visual) return e.visual;
+  const t = e.type_id ? refById('types', e.type_id) : null;
+  const names = [t?.name, t?.parent_id ? refById('types', t.parent_id)?.name : null].filter(Boolean) as string[];
+  for (const n of names) { const hit = BY_TYPE.find(([re]) => re.test(n)); if (hit) return hit[1]; }
+  return faceType(e.label);
+}
+const MON = '<svg viewBox="0 0 70 20" preserveAspectRatio="none" aria-hidden="true">' +
+  ['#c0c0c0', '#c0c000', '#00c0c0', '#00c000', '#c000c0', '#c00000', '#0000c0'].map((c, i) => `<rect x="${i * 10}" y="0" width="10" height="14" fill="${c}"/>`).join('') +
+  '<rect x="0" y="14" width="70" height="6" fill="#111"/></svg>';
+DECOR.monitor = `<i class="scr mon">${MON}</i><i class="knob"></i>`;

@@ -11,18 +11,19 @@
   import { join } from '../../lib/live.svelte';
   import { nf, relative } from '../../lib/format';
   import { refById } from '../../lib/catalog.svelte';
-  import { faceType, ALU, decor, accessoryFace } from '../../lib/faceplate';
+  import { faceType, ALU, decor, accessoryFace, visualOf } from '../../lib/faceplate';
   import { CONTAINER_KINDS, type Accessory, type Article, type ProjectView } from '../../lib/projects';
   import PanelFace from '../../components/PanelFace.svelte';
   import ProjectPanel from './ProjectPanel.svelte';
   import Rack3D from '../../components/Rack3D.svelte';
+  import AllRacks from './AllRacks.svelte';
 
   let { view }: { view: ProjectView } = $props();
   type Face = 'front' | 'rear' | 'rear_inner';
   type W = 'full' | 'half' | 'third' | 'quarter';
   interface Placement { id: string; article_id: string; instance_id: string | null; face: Face; u_start: number; width: W; col: number; circuit_id: string | null; shelf_id: string | null; rev: number }
-  interface RackEl { placement: Placement; label: string; tag: string | null; nature: string; height_u: number; depth_mm: number | null; rear_reserve_mm: number | null; weight_kg: number | null; power_w: number | null; function: string | null; category: string | null; brand: string | null; accessory: Accessory | null; article_rev: number }
-  interface Pending { article_id: string; instance_id?: string; tag?: string; label: string; nature: string; height_u: number | null; width: W | null; rackable: boolean; function: string | null; accessory: Accessory | null }
+  interface RackEl { placement: Placement; label: string; tag: string | null; nature: string; height_u: number; depth_mm: number | null; rear_reserve_mm: number | null; weight_kg: number | null; power_w: number | null; function: string | null; category: string | null; brand: string | null; accessory: Accessory | null; article_rev: number; type_id?: string | null; visual?: string | null }
+  interface Pending { article_id: string; instance_id?: string; tag?: string; label: string; nature: string; height_u: number | null; width: W | null; rackable: boolean; function: string | null; accessory: Accessory | null; type_id?: string | null; visual?: string | null }
   interface Circuit { id: string; name: string; phase: 'L1' | 'L2' | 'L3'; rating_a: number; rev: number }
   interface Rack {
     container: any; elements: RackEl[]; pending: Pending[]; circuits: Circuit[]; faces: Face[];
@@ -33,7 +34,8 @@
   }
 
   const racks = $derived(view.containers.filter((c) => c.rackable));
-  const cid = $derived(route.path.split('/')[4] ?? racks[0]?.id ?? null);
+  const all = $derived(route.path.split('/')[4] === 'tout');
+  const cid = $derived(all ? null : (route.path.split('/')[4] ?? racks[0]?.id ?? null));
   $effect(() => { if (!route.path.split('/')[4] && racks[0]) navigate(`/projets/${view.project.id}/racks/${racks[0].id}`, true); });
 
   let rack = $state<Rack | null>(null);
@@ -181,7 +183,7 @@
     const n = cols(e.placement.width), l = (100 * e.placement.col) / n, w = 100 / n;
     return `--c:${mode === 'schematic' ? catColor(e.category) : fnColor(e.function)};bottom:calc(${e.placement.u_start - 1} * var(--u) + 1px);height:calc(${e.height_u} * var(--u) - 2px);left:calc(${l}% + 2px);width:calc(${w}% - 4px)` + (mode === 'schematic' ? `;--fp-bg:linear-gradient(180deg,color-mix(in srgb,${catColor(e.category)} 72%,#fff),${catColor(e.category)});--fp-ink:#fff` : '');
   }
-  const typeOf = (e: RackEl) => (e.nature === 'accessory' ? accessoryFace(e.label) : faceType(e.label));
+  const typeOf = (e: RackEl) => (e.nature === 'accessory' ? accessoryFace(e.label) : visualOf(e));
   const dw = (e: RackEl) => !!rack?.warnings.some((w) => w.placement_id === e.placement.id);
   // Vue de côté : corps (profondeur) et réserve de câbles, avant depuis la gauche, arrière depuis la droite.
   const depth = $derived(rack?.container.depth_mm ?? 600);
@@ -200,7 +202,9 @@
 
 <svelte:window onbeforeunload={leave} onkeydown={(e) => { if (e.key === 'Escape') { armed = null; sel = null; } }} />
 
-{#if !racks.length}
+{#if all && racks.length}
+  <AllRacks {view} />
+{:else if !racks.length}
   <div class="empty">Aucun élément rackable dans ce projet. Ajoutez une baie ou un flight-case depuis l’<a class="ilink" href="/projets/{view.project.id}/inventaire">inventaire</a>.</div>
 {:else if rack}
   {@const t = rack.totals}
@@ -223,6 +227,7 @@
     </div>
     <div class="dtool">
       <select class="input" value={cid} onchange={(e) => navigate(`/projets/${view.project.id}/racks/${(e.target as HTMLSelectElement).value}`)} aria-label="Élément">
+        {#if racks.length > 1}<option value="tout">Toutes les baies côte à côte</option>{/if}
         {#each racks as c}<option value={c.id}>{c.name} · {c.height_u} U</option>{/each}
       </select>
       <div class="seg" role="group" aria-label="Face">{#each [...rack.faces, 'side'] as f}<button class:on={face === f} onclick={() => { face = f as Face | 'side'; armed = null; }}>{FACES[f as Face]}</button>{/each}</div>
@@ -240,7 +245,7 @@
           {#if mine}<p class="small muted">Choisissez un élément, puis une position dans la baie. Échap pour annuler.</p>{/if}
           {#each wanted as p (p.instance_id ?? p.article_id)}
             <button class="pend withfp" class:on={armed === p} disabled={!mine || face === 'side'} onclick={() => (armed = armed === p ? null : p)}>
-              <span class="pend-fp"><span class="fpv" style="--h:{p.height_u ?? 1}"><span class="ritem {p.nature === 'accessory' ? 'acc' : ''} {ALU.has(faceType(p.label)) ? 'alu' : ''} {(p.height_u ?? 1) <= 1 ? 'u1' : ''}" style="--c:{fnColor(p.function)}">{#if p.nature !== 'accessory'}<i class="led"></i>{/if}<span class="rn">{p.label}</span><span class="dec">{@html decor(p.nature === 'accessory' ? accessoryFace(p.label) : faceType(p.label))}</span>{#if p.tag}<span class="rr">{p.tag}</span>{/if}</span></span></span>
+              <span class="pend-fp"><span class="fpv" style="--h:{p.height_u ?? 1}"><span class="ritem {p.nature === 'accessory' ? 'acc' : ''} {ALU.has(visualOf(p)) ? 'alu' : ''} {(p.height_u ?? 1) <= 1 ? 'u1' : ''}" style="--c:{fnColor(p.function)}">{#if p.nature !== 'accessory'}<i class="led"></i>{/if}<span class="rn">{p.label}</span><span class="dec">{@html decor(p.nature === 'accessory' ? accessoryFace(p.label) : visualOf(p))}</span>{#if p.tag}<span class="rr">{p.tag}</span>{/if}</span></span></span>
               <span class="pend-row"><span class="ph">{p.height_u} U{p.width && p.width !== 'full' ? ` · ${p.width === 'half' ? '1/2' : p.width === 'third' ? '1/3' : '1/4'}` : ''}</span><span class="pend-t"><b>{p.label}</b><span>{p.tag ?? 'Accessoire'}</span></span></span>
             </button>
           {:else}<p class="small muted">Tout est posé.</p>{/each}

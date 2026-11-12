@@ -164,6 +164,7 @@ async fn rack_view(st: &AppState, c: &Container, token: &str) -> ApiResult<Value
             "height_u": h, "depth_mm": it.and_then(|i| i.depth_mm).or(a.accessory.as_ref().and_then(|x| x.depth_mm())), "accessory": a.accessory, "article_rev": a.rev,
             "rear_reserve_mm": it.and_then(|i| i.rear_reserve_mm), "weight_kg": it.and_then(|i| i.weight_kg), "power_w": it.and_then(|i| i.power_w),
             "function": it.and_then(|i| i.function.clone()), "category": it.and_then(|i| i.category.clone()), "brand": it.and_then(|i| i.brand.clone()), "item_id": a.item_id,
+            "type_id": it.and_then(|i| i.type_id.clone()), "visual": it.and_then(|i| i.visual.clone()),
         }));
     }
     // À placer : exemplaires non posés, et accessoires non posés.
@@ -179,7 +180,7 @@ async fn rack_view(st: &AppState, c: &Container, token: &str) -> ApiResult<Value
     let mut pending = Vec::new();
     for a in &ctx.articles {
         let geo = ctx.geometry(a);
-        let base = json!({ "article_id": a.id, "label": article_label(a, &ctx.items), "nature": a.nature, "height_u": geo.map(|g| g.0), "width": geo.map(|g| g.1), "rackable": geo.is_some(), "function": ctx.item(a).and_then(|i| i.function.clone()), "accessory": a.accessory });
+        let base = json!({ "article_id": a.id, "label": article_label(a, &ctx.items), "nature": a.nature, "height_u": geo.map(|g| g.0), "width": geo.map(|g| g.1), "rackable": geo.is_some(), "function": ctx.item(a).and_then(|i| i.function.clone()), "accessory": a.accessory, "type_id": ctx.item(a).and_then(|i| i.type_id.clone()), "visual": ctx.item(a).and_then(|i| i.visual.clone()) });
         match a.nature {
             ArticleNature::Equipment => {
                 for i in inv

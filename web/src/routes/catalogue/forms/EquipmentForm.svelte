@@ -6,6 +6,7 @@
   import SynNode from '../../../components/SynNode.svelte';
   import { refList, refById, refName, FACES, WIDTHS } from '../../../lib/catalog.svelte';
   import { nf } from '../../../lib/format';
+  import { VISUALS, visualOf, decor, ALU } from '../../../lib/faceplate';
 
   let { data = $bindable(), err }: { data: any; err: (f: string) => string | undefined } = $props();
 
@@ -83,6 +84,15 @@
       <div class="field"><span class="flabel">Largeur</span><div class="seg">{#each WIDTHS as [k, l]}<button type="button" class:on={data.format.width === k} onclick={() => (data.format.width = k)}>{l}</button>{/each}</div></div>
       <NumField id="e-depth" label="Profondeur" unit="mm" bind:value={data.format.depth_mm} suggestions={dims('depth_mm')} error={err('format.depth_mm')} />
       <NumField id="e-rear" label="Réserve arrière" unit="mm" bind:value={data.format.rear_reserve_mm} suggestions={dims('rear_reserve_mm')} error={err('format.rear_reserve_mm')} help="Place pour les câbles derrière l’appareil." />
+    </div>
+    <div class="vis-row">
+      <div class="field"><label for="e-vis">Visuel en baie</label>
+        <select class="input" id="e-vis" value={data.visual ?? ''} onchange={(e) => (data.visual = (e.target as HTMLSelectElement).value || null)}>
+          <option value="">Automatique · {VISUALS.find(([k]) => k === visualOf({ type_id: data.type_id, label: data.name ?? '' }))?.[1] ?? 'Générique'}</option>
+          {#each VISUALS as [k, l]}<option value={k}>{l}</option>{/each}
+        </select>
+        <span class="help">Façade dessinée dans les vues réelle et 3D. Automatique : d’après le type, puis le nom.</span></div>
+      <div class="vis-prev" aria-hidden="true"><span class="ritem {ALU.has(visualOf({ visual: data.visual, type_id: data.type_id, label: data.name ?? '' })) ? 'alu' : ''} {(data.format.height_u ?? 1) <= 1 ? 'u1' : ''}" style="--c:{refById('functions', data.functions[0])?.data?.color ?? 'var(--fg-3)'}"><i class="led"></i><span class="rn">{data.name || 'Équipement'}</span><span class="dec">{@html decor(visualOf({ visual: data.visual, type_id: data.type_id, label: data.name ?? '' }))}</span></span></div>
     </div>
   {:else}
     <div class="fg3" style="margin-top:16px">
@@ -223,4 +233,8 @@
     .pprev { grid-column: 1 / -1; grid-row: 1; position: static; }
   }
   @media (max-width: 760px) { .ports3 { grid-template-columns: minmax(0, 1fr); } }
+  .vis-row { display: grid; grid-template-columns: minmax(220px, 320px) minmax(0, 1fr); gap: 16px; align-items: end; margin-top: 14px; }
+  .vis-prev { position: relative; height: 44px; padding: 0 14px; border-radius: 8px; background: #111418; display: flex; align-items: center; }
+  .vis-prev .ritem { position: relative; inset: auto; width: 100%; height: 30px; }
+  @media (max-width: 760px) { .vis-row { grid-template-columns: minmax(0, 1fr); } }
 </style>

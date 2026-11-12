@@ -481,6 +481,8 @@ pub struct Equipment {
     pub brand_id: Option<String>,
     pub category_id: Option<String>,
     pub type_id: Option<String>,
+    /// Visuel en baie (moniteur, switch…) ; vide : déduit du type.
+    pub visual: Option<String>,
     /// Clés de fonctions.
     pub functions: Vec<String>,
     pub phases: Vec<String>,
