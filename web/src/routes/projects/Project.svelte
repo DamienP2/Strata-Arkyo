@@ -10,7 +10,7 @@
   import { toast, fail } from '../../lib/toast.svelte';
   import { route, navigate } from '../../lib/router.svelte';
   import { join, live } from '../../lib/live.svelte';
-  import { STATUS, STATUS_ORDER, REGIE, keyDate, daysBetween, fdate, urgency, type ProjectView, type Status } from '../../lib/projects';
+  import { STATUS, STATUS_ORDER, REGIE, keyDate, daysBetween, period, urgency, type ProjectView, type Status } from '../../lib/projects';
   import Overview from './Overview.svelte';
   import Inventory from './Inventory.svelte';
   import Regies from './Regies.svelte';
@@ -94,7 +94,7 @@
         <a class="ws-back" href="/projets"><Icon name="chevr" size="sm" />Projets</a>
         <div class="ws-proj">
           <b title={p.name}>{p.name}</b>
-          <span>{p.intervention === 'prestation' ? 'Prestation' : 'Intégration'} · {REGIE[p.regie].label}</span>
+          <span>{[REGIE[p.regie].label, p.service_type].filter(Boolean).join(' · ')}</span>
         </div>
         <label class="st-select sm" style="--c:{STATUS[p.status].color}"><i class="dot"></i>
           <select value={p.status} aria-label="Statut du projet" disabled={!can('projets', 'ecriture')} onchange={(e) => setStatus((e.target as HTMLSelectElement).value as Status)}>{#each STATUS_ORDER as s}<option value={s}>{STATUS[s].label}</option>{/each}</select>
@@ -109,7 +109,7 @@
         </div>
         <div class="ws-top-meta">
           {#if days != null && days >= 0 && !['done', 'cancelled'].includes(p.status)}<span class="tally" style="--c:{urgency(days)}">J-{days}</span>{/if}
-          <span>{p.intervention === 'prestation' ? `Tournage ${fdate(p.shoot_start)} → ${fdate(p.shoot_end)}` : `Mise en service ${fdate(p.commissioning)}`}</span>
+          <span>Exploitation {period(p)}</span>
           {#if p.venue}<span class="hide-m">{p.venue}</span>{/if}
           <span class="hide-m">{p.client ?? 'Projet interne'}</span>
           {#if presence.length}<span class="presence" title="Présents sur ce projet">{#each presence as m (m.id)}<Avatar name={m.name} color={m.color} size="sm" />{/each}</span><span class="mode live"><i></i><span>En direct</span></span>{/if}

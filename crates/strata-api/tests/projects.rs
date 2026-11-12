@@ -172,7 +172,7 @@ async fn wizard_creates_project_location_and_container() {
         "Un projet porte déjà ce nom."
     );
 
-    // Date passée refusée à la création, régie fixe refusée pour une prestation.
+    // Date passée refusée à la création ; toutes les régies sont permises.
     let mut bad = wizard("Autre");
     bad["shoot_start"] = json!(days(-2));
     bad["regie"] = json!("fixed");
@@ -183,7 +183,7 @@ async fn wizard_creates_project_location_and_container() {
         .iter()
         .map(|f| f["field"].as_str().unwrap())
         .collect();
-    assert!(f.contains(&"shoot_start") && f.contains(&"regie"), "{f:?}");
+    assert!(f.contains(&"shoot_start") && !f.contains(&"regie"), "{f:?}");
 
     // Contenant refusé : le projet est créé quand même et l'échec est rendu.
     let mut half = wizard("Concert");
@@ -193,7 +193,7 @@ async fn wizard_creates_project_location_and_container() {
     assert!(r.body["container"].is_null());
     assert_eq!(r.body["container_error"]["fields"][0]["field"], "height_u");
 
-    // Fiche : le type d'intervention ne change pas ; les dates d'intégration sont vidées.
+    // Fiche : un seul type de projet ; une ancienne date de mise en service est absorbée.
     let p = call(&app, "GET", &format!("/api/projects/{pid}"), None, Some(&o)).await;
     let mut data = p.body["project"].clone();
     data["intervention"] = json!("integration");

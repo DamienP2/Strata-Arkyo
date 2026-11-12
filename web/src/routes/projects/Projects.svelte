@@ -9,11 +9,11 @@
   import { can } from '../../lib/session.svelte';
   import { fail } from '../../lib/toast.svelte';
   import { route, navigate } from '../../lib/router.svelte';
-  import { STATUS, STATUS_ORDER, REGIE, keyDate, daysBetween, fdate, urgency, type ProjectSummary, type Status, type Regie, type Intervention } from '../../lib/projects';
+  import { STATUS, STATUS_ORDER, REGIE, keyDate, daysBetween, fdate, period, urgency, type ProjectSummary, type Status, type Regie } from '../../lib/projects';
 
   // Recherche, tri et filtres mémorisés sur cet appareil.
   const saved = (() => { try { return JSON.parse(localStorage.getItem('sa-projects') ?? '{}'); } catch { return {}; } })();
-  let f = $state<{ inter: Intervention; q: string; st: Status[]; regie: Regie[]; sort: 'updated' | 'name' }>({ inter: 'prestation', q: '', st: [], regie: [], sort: 'updated', ...saved });
+  let f = $state<{ q: string; st: Status[]; regie: Regie[]; sort: 'updated' | 'name' | 'date'; view: 'cards' | 'list' }>({ q: '', st: [], regie: [], sort: 'updated', view: 'cards', ...saved });
   $effect(() => { const v = JSON.stringify(f); try { localStorage.setItem('sa-projects', v); } catch { /* indisponible */ } });
 
   let projects = $state<ProjectSummary[]>([]);
@@ -25,8 +25,10 @@
   const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
   const list = $derived.by(() => {
     const q = norm(f.q.trim());
-    let l = projects.filter((p) => p.intervention === f.inter && (!f.st.length || f.st.includes(p.status)) && (!f.regie.length || f.regie.includes(p.regie)) && (!q || norm([p.name, p.client, p.venue, p.service_type, p.description].filter(Boolean).join(' ')).includes(q)));
-    l = f.sort === 'name' ? [...l].sort((a, b) => a.name.localeCompare(b.name, 'fr')) : [...l].sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+    let l = projects.filter((p) => (!f.st.length || f.st.includes(p.status)) && (!f.regie.length || f.regie.includes(p.regie)) && (!q || norm([p.name, p.client, p.venue, p.service_type, p.description].filter(Boolean).join(' ')).includes(q)));
+    l = f.sort === 'name' ? [...l].sort((a, b) => a.name.localeCompare(b.name, 'fr'))
+      : f.sort === 'date' ? [...l].sort((a, b) => (keyDate(a) ?? '9999').localeCompare(keyDate(b) ?? '9999'))
+      : [...l].sort((a, b) => b.updated_at.localeCompare(a.updated_at));
     return l;
   });
   const groups = $derived(STATUS_ORDER.map((s) => ({ s, items: list.filter((p) => p.status === s) })).filter((g) => g.items.length));
@@ -53,24 +55,51 @@
     {#if can('projets', 'ecriture')}<div class="head-actions"><label class="btn"><Icon name="upload" />Importer<input type="file" accept=".strata" hidden onchange={(e) => { const f = (e.target as HTMLInputElement).files?.[0]; (e.target as HTMLInputElement).value = ''; if (f) previewImport(f); }}></label><button class="btn primary" onclick={() => (wizard = true)}><Icon name="plus" />Nouveau projet</button></div>{/if}
   </div>
 
-  <div class="toolbar" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-    <div class="seg">{#each [['prestation', 'Prestations'], ['integration', 'Intégrations']] as [k, l]}<button class:on={f.inter === k} onclick={() => (f.inter = k as Intervention)}>{l} <span class="muted">{projects.filter((p) => p.intervention === k).length}</span></button>{/each}</div>
-    <label class="search" style="flex:1;min-width:220px"><Icon name="search" /><input class="input" bind:value={f.q} placeholder="Nom, client, lieu, type de prestation…" aria-label="Rechercher un projet"></label>
-    <div class="seg">{#each [['updated', 'Récents'], ['name', 'A → Z']] as [k, l]}<button class:on={f.sort === k} onclick={() => (f.sort = k as typeof f.sort)}>{l}</button>{/each}</div>
-  </div>
-  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:-24px">
-    {#each STATUS_ORDER as s}<button class="fchip" class:on={f.st.includes(s)} style="--c:{STATUS[s].color}" onclick={() => (f.st = toggle(f.st, s))}>{STATUS[s].label}</button>{/each}
-    {#each Object.entries(REGIE) as [k, r]}{#if f.inter === 'integration' || k !== 'fixed'}<button class="fchip cxf" class:on={f.regie.includes(k as Regie)} onclick={() => (f.regie = toggle(f.regie, k as Regie))}>{r.label}</button>{/if}{/each}
-    {#if filters}<button class="btn ghost sm" onclick={() => { f.st = []; f.regie = []; }}>Effacer {filters} filtre{filters > 1 ? 's' : ''}</button>{/if}
+  <div class="pj-bar">
+    <div class="pj-row">
+      <label class="search pj-search"><Icon name="search" /><input class="input" bind:value={f.q} placeholder="Nom, client, lieu, type de projet…" aria-label="Rechercher un projet"></label>
+      <div class="seg" aria-label="Tri">{#each [['updated', 'Récents'], ['date', 'Date'], ['name', 'A → Z']] as [k, l]}<button class:on={f.sort === k} onclick={() => (f.sort = k as typeof f.sort)}>{l}</button>{/each}</div>
+      <div class="seg" aria-label="Affichage"><button class:on={f.view === 'cards'} onclick={() => (f.view = 'cards')} title="Cartes"><Icon name="grid" size="sm" /></button><button class:on={f.view === 'list'} onclick={() => (f.view = 'list')} title="Liste"><Icon name="list" size="sm" /></button></div>
+    </div>
+    <div class="pj-row">
+      <span class="pj-lbl">Statut</span>
+      {#each STATUS_ORDER as s}<button class="fchip" class:on={f.st.includes(s)} style="--c:{STATUS[s].color}" onclick={() => (f.st = toggle(f.st, s))}>{STATUS[s].label} <span class="muted">{projects.filter((p) => p.status === s).length}</span></button>{/each}
+      <span class="pj-sep"></span>
+      <span class="pj-lbl">Régie</span>
+      {#each Object.entries(REGIE) as [k, r]}<button class="fchip cxf" class:on={f.regie.includes(k as Regie)} onclick={() => (f.regie = toggle(f.regie, k as Regie))}>{r.label}</button>{/each}
+      {#if filters}<button class="btn ghost sm" onclick={() => { f.st = []; f.regie = []; }}>Effacer {filters} filtre{filters > 1 ? 's' : ''}</button>{/if}
+    </div>
   </div>
 
   {#if loading}<span class="spin"></span>
   {:else if !groups.length}
     <div class="empty">{projects.length ? 'Aucun projet ne correspond à ces filtres.' : 'Aucun projet pour l’instant.'}{#if !projects.length && can('projets', 'ecriture')} <button class="ilink" onclick={() => (wizard = true)}>Créer le premier</button>{/if}</div>
+  {:else if f.view === 'list'}
+    <section class="card" style="padding-top:6px">
+      <div class="tbl-wrap"><table class="tbl pj-tbl">
+        <thead><tr><th>Projet</th><th>Statut</th><th>Régie</th><th>Client · lieu</th><th>Exploitation</th><th class="num">Échéance</th><th>Fiche</th></tr></thead>
+        <tbody>
+          {#each list as p (p.id)}
+            {@const kd = keyDate(p)}
+            {@const d = kd ? daysBetween(today, kd) : null}
+            {@const act = !['done', 'cancelled'].includes(p.status)}
+            <tr class="click" onclick={() => navigate(`/projets/${p.id}`)}>
+              <td><a href="/projets/{p.id}" class="pj-name" onclick={(e) => e.stopPropagation()}>{p.name}</a>{#if p.service_type}<span class="muted small">&nbsp;· {p.service_type}</span>{/if}</td>
+              <td><StatusChip status={p.status} /></td>
+              <td>{REGIE[p.regie].label}</td>
+              <td class="pj-cl">{p.client ?? 'Projet interne'}{p.venue ? ` · ${p.venue}` : ''}</td>
+              <td class="tnum">{period(p)}</td>
+              <td class="num">{#if act && d != null && d >= 0}<span class="tally" style="--c:{urgency(d)}">J-{d}</span>{:else if act && d != null}<span class="muted small">passée</span>{:else}<span class="muted small">—</span>{/if}</td>
+              <td style="width:150px"><Vu value={p.completion} n={16} cls={p.completion >= 80 ? 'ok' : ''} /> <span class="muted small tnum">{p.completion} %</span></td>
+            </tr>
+          {/each}
+        </tbody>
+      </table></div>
+    </section>
   {:else}
-    <div class="pgroups" style="display:flex;flex-wrap:wrap;gap:40px 24px">
+    <div class="pj-groups">
       {#each groups as g (g.s)}
-        <section class="pgroup" style="--n:{Math.min(g.items.length, 4)}">
+        <section class="pj-group">
           <div class="group-h"><StatusChip status={g.s} /><span class="count">{g.items.length}</span></div>
           <div class="proj-grid">
             {#each g.items as p (p.id)}
@@ -80,8 +109,8 @@
               <a class="pcard" class:off={!act} href="/projets/{p.id}" style="--c:{STATUS[p.status].color};text-decoration:none">
                 <span class="pc-vis"><Ill kind={REGIE[p.regie].ill} /><span class="pc-tag lbl-t">{REGIE[p.regie].label}</span>
                   <span class="pc-j">{#if act && d != null && d >= 0}<span class="tally" style="--c:{urgency(d)}">J-{d}</span>{:else if !act}<span class="tally off">{p.status === 'done' ? 'Livré' : 'Annulé'}</span>{/if}</span></span>
-                <span class="pc-body"><span class="lbl-t">{p.service_type ?? '—'} · {p.intervention === 'prestation' ? 'Prestation' : 'Intégration'}</span><b class="pc-name">{p.name}</b><span class="pc-sub">{p.client ?? 'Projet interne'}{p.venue ? ` · ${p.venue}` : ''}</span>
-                  <span class="pc-foot"><span><span class="lbl-t">{p.intervention === 'prestation' ? 'Tournage' : 'Mise en service'}</span><b>{fdate(kd, { day: 'numeric', month: 'short', year: 'numeric' })}</b></span><span><span class="lbl-t">Fiche · {p.completion} %</span><Vu value={p.completion} n={20} cls={p.completion >= 80 ? 'ok' : ''} /></span></span></span>
+                <span class="pc-body">{#if p.service_type}<span class="lbl-t">{p.service_type}</span>{/if}<b class="pc-name">{p.name}</b><span class="pc-sub">{p.client ?? 'Projet interne'}{p.venue ? ` · ${p.venue}` : ''}</span>
+                  <span class="pc-foot"><span><span class="lbl-t">Exploitation</span><b>{kd ? fdate(kd, { day: 'numeric', month: 'short', year: 'numeric' }) : 'à fixer'}</b></span><span><span class="lbl-t">Fiche · {p.completion} %</span><Vu value={p.completion} n={20} cls={p.completion >= 80 ? 'ok' : ''} /></span></span></span>
               </a>
             {/each}
           </div>
@@ -101,3 +130,30 @@
   </Dialog>
 {/if}
 {#if wizard}<Wizard {clients} onclose={() => (wizard = false)} />{/if}
+
+<style>
+  .pj-bar { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border-radius: 12px; background: var(--surface); box-shadow: 0 0 0 1px var(--line), 0 1px 2px rgba(0, 0, 0, .04); }
+  .pj-row { display: flex; align-items: center; gap: 8px 10px; flex-wrap: wrap; min-width: 0; }
+  .pj-search { flex: 1 1 320px; max-width: none; }
+  .pj-lbl { font: 600 10px/1 var(--mono); letter-spacing: .09em; text-transform: uppercase; color: var(--fg-3); margin-right: 2px; }
+  .pj-sep { width: 1px; height: 20px; background: var(--line); margin: 0 4px; }
+  .fchip .muted { font: 600 11px var(--mono); }
+  .pj-groups { display: flex; flex-direction: column; gap: 28px; }
+  .pj-group { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  .pj-group :global(.group-h .chip.st) { font: 650 17px/1 var(--display); }
+  .pj-group .proj-grid { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+  .pj-group :global(.pcard) { border-radius: 12px; box-shadow: 0 0 0 1px var(--line), 0 1px 2px rgba(0, 0, 0, .04); }
+  .pj-group :global(.pc-vis) { height: 128px; padding-top: 30px; }
+  .pj-group :global(.pc-tag), .pj-group :global(.pc-j) { z-index: 1; top: 8px; }
+  .pj-group :global(.pc-tag) { left: 10px; padding: 4px 7px; border-radius: 6px; background: color-mix(in srgb, var(--surface) 88%, transparent); box-shadow: 0 0 0 1px var(--line); }
+  .pj-group :global(.pc-vis .ill) { width: auto; max-width: min(78%, 220px); max-height: 92px; }
+  .pj-group :global(.pc-name) { font-size: 17px; }
+  .pj-group :global(.pc-body) { padding: 12px 14px 14px; gap: 3px; }
+  .pj-group :global(.pc-sub) { font-size: 12.5px; }
+  .pj-group :global(.pc-foot) { margin-top: 8px; padding-top: 10px; gap: 14px; }
+  .pj-group :global(.pc-foot b) { font-size: 13px; }
+  .pj-name { font-weight: 650; color: var(--fg); text-decoration: none; }
+  .pj-name:hover { color: var(--accent); }
+  .pj-cl { color: var(--fg-2); max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pj-tbl td { white-space: nowrap; }
+</style>

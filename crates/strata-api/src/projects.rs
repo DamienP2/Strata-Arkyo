@@ -552,8 +552,6 @@ async fn update(
 ) -> ApiResult<Json<Project>> {
     write(&m)?;
     let before = project_of(&st.store, &id).await?;
-    // Le type d'intervention est fixé à la création.
-    b.data.intervention = before.data.intervention;
     fields(validate_project(&mut b.data, false, &today()))?;
     if st.store.project_name_taken(&b.data.name, Some(&id)).await? {
         return Err(one("name", "Un projet porte déjà ce nom."));
@@ -640,18 +638,11 @@ async fn dashboard(State(st): State<AppState>, m: Member) -> ApiResult<Json<Valu
         .iter()
         .filter(|t| matches!(t.data.status, TaskStatus::Done | TaskStatus::Validated))
         .count();
-    let key_date = |s: &Summary| match s.project.data.intervention {
-        Intervention::Prestation => s.project.data.shoot_start.clone(),
-        Intervention::Integration => s.project.data.commissioning.clone(),
-    };
+    let key_date = |s: &Summary| s.project.data.key_date().cloned();
     let next = active
         .iter()
-        .filter(|s| s.project.data.intervention == Intervention::Prestation)
         .filter_map(|s| {
-            s.project
-                .data
-                .shoot_start
-                .clone()
+            key_date(s)
                 .filter(|d| d.as_str() > t.as_str())
                 .map(|d| (d, *s))
         })

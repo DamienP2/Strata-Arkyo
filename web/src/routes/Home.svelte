@@ -42,7 +42,7 @@
     <header class="hero">
       <p class="eyebrow">{today}</p>
       <h1 class="display">Bonjour {first}.</h1>
-      <p class="lead">{lead}{#if dash?.next}{' '}Le plus proche, <a class="ilink" href="/projets/{dash.next.project.id}">{dash.next.project.name}</a>, tourne {fdate(dash.next.project.shoot_start, { weekday: 'long', day: 'numeric', month: 'long' })}.{/if}</p>
+      <p class="lead">{lead}{#if dash?.next}{' '}Le plus proche, <a class="ilink" href="/projets/{dash.next.project.id}">{dash.next.project.name}</a>, démarre {fdate(dash.next.project.shoot_start ?? dash.next.project.commissioning, { weekday: 'long', day: 'numeric', month: 'long' })}.{/if}</p>
       <div class="head-actions">
         {#if can('projets', 'ecriture')}<a class="btn primary" href="/projets?nouveau=1"><Icon name="plus" />Nouveau projet</a>{/if}
         {#if can('projets', 'lecture')}<a class="btn" href="/projets">Tous les projets</a>{/if}
@@ -51,12 +51,12 @@
     {#if dash?.next}
       {@const n = dash.next}
       <a class="next" href="/projets/{n.project.id}">
-        <span class="next-top"><span class="lbl-t">Prochain tournage · {REGIE[n.project.regie].label}</span><span class="tally">J-{n.days}</span></span>
+        <span class="next-top"><span class="lbl-t">Prochaine exploitation · {REGIE[n.project.regie].label}</span><span class="tally">J-{n.days}</span></span>
         <span class="next-vis"><Ill kind={REGIE[n.project.regie].ill} cables pulse w={380} /></span>
         <span class="next-name">{n.project.name}</span>
         <span class="next-sub">{n.project.client ?? 'Projet interne'}{n.project.venue ? ` · ${n.project.venue}` : ''}</span>
         <span class="next-meta">
-          <span><span class="lbl-t">Tournage</span><b>{fdate(n.project.shoot_start, { weekday: 'short', day: 'numeric' })} → {fdate(n.project.shoot_end, { weekday: 'short', day: 'numeric', month: 'short' })}</b></span>
+          <span><span class="lbl-t">Exploitation</span><b>{fdate(n.project.shoot_start ?? n.project.commissioning, { weekday: 'short', day: 'numeric' })} → {fdate(n.project.shoot_end ?? n.project.shoot_start ?? n.project.commissioning, { weekday: 'short', day: 'numeric', month: 'short' })}</b></span>
           <span><span class="lbl-t">Fiche · {n.completion} %</span><Vu value={n.completion} n={24} /></span>
           <span></span>
         </span>

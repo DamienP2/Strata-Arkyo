@@ -15,13 +15,14 @@ fn err(field: impl Into<String>, message: impl Into<String>) -> FieldError {
 
 // ----- Projet -----
 
+/// Ancienne distinction prestation / intégration : gardée pour relire les anciennes
+/// fiches, elle ne change plus rien. Un projet a une période de préparation et une
+/// période d'exploitation (tournage, mise en service…).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Intervention {
-    /// Événementiel : période de tournage.
     #[default]
     Prestation,
-    /// Installation permanente : date de mise en service.
     Integration,
 }
 
@@ -32,12 +33,6 @@ pub enum Regie {
     FlightCase,
     Car,
     Fixed,
-}
-
-impl Regie {
-    pub fn allowed(self, i: Intervention) -> bool {
-        !(i == Intervention::Prestation && self == Regie::Fixed)
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -58,7 +53,7 @@ impl ProjectStatus {
     }
 }
 
-/// Fiche du projet. Le type d'intervention ne change plus après la création.
+/// Fiche du projet.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ProjectData {
@@ -74,9 +69,18 @@ pub struct ProjectData {
     pub status: ProjectStatus,
     pub planning_start: Option<String>,
     pub planning_end: Option<String>,
+    /// Période d'exploitation : tournage, événement, mise en service.
     pub shoot_start: Option<String>,
     pub shoot_end: Option<String>,
+    /// Ancienne date de mise en service : reprise comme période d'exploitation.
     pub commissioning: Option<String>,
+}
+
+impl ProjectData {
+    /// Date clé du projet : début de l'exploitation.
+    pub fn key_date(&self) -> Option<&String> {
+        self.shoot_start.as_ref().or(self.commissioning.as_ref())
+    }
 }
 
 pub fn is_date(s: &str) -> bool {
@@ -112,7 +116,7 @@ fn trim_opt(v: &mut Option<String>, max: usize, field: &str, e: &mut Vec<FieldEr
 }
 
 /// Vérifie et normalise une fiche. `creating` : à la création, aucune date ne peut être
-/// passée. Les dates qui ne concernent pas le type d'intervention sont vidées.
+/// passée. Une ancienne date de mise en service devient la période d'exploitation.
 pub fn validate_project(p: &mut ProjectData, creating: bool, today: &str) -> Vec<FieldError> {
     let mut e = Vec::new();
     p.name = p.name.trim().to_string();
@@ -125,12 +129,6 @@ pub fn validate_project(p: &mut ProjectData, creating: bool, today: &str) -> Vec
     trim_opt(&mut p.venue, 200, "venue", &mut e);
     trim_opt(&mut p.description, 4000, "description", &mut e);
     trim_opt(&mut p.service_type, 60, "service_type", &mut e);
-    if !p.regie.allowed(p.intervention) {
-        e.push(err(
-            "regie",
-            "Une prestation se fait en flight-case ou en car régie.",
-        ));
-    }
     for (f, v) in [
         ("planning_start", &mut p.planning_start),
         ("planning_end", &mut p.planning_end),
@@ -150,11 +148,11 @@ pub fn validate_project(p: &mut ProjectData, creating: bool, today: &str) -> Vec
             }
         }
     }
-    match p.intervention {
-        Intervention::Prestation => p.commissioning = None,
-        Intervention::Integration => {
-            p.shoot_start = None;
-            p.shoot_end = None;
+    p.intervention = Intervention::Prestation;
+    if let Some(c) = p.commissioning.take() {
+        if p.shoot_start.is_none() {
+            p.shoot_start = Some(c.clone());
+            p.shoot_end.get_or_insert(c);
         }
     }
     let before =
@@ -166,25 +164,17 @@ pub fn validate_project(p: &mut ProjectData, creating: bool, today: &str) -> Vec
         ));
     }
     if before(&p.shoot_start, &p.shoot_end) {
-        e.push(err("shoot_end", "La fin du tournage précède son début."));
-    }
-    if let (Some(c), Some(end)) = (&p.commissioning, &p.planning_end) {
-        if c <= end {
-            e.push(err(
-                "commissioning",
-                "La mise en service suit la fin de la planification.",
-            ));
-        }
+        e.push(err(
+            "shoot_end",
+            "La fin de l'exploitation précède son début.",
+        ));
     }
     e
 }
 
 /// Taux de complétion de la fiche, en pourcentage arrondi.
 pub fn completion(p: &ProjectData, locations: usize, containers: usize, articles: usize) -> u32 {
-    let dates = match p.intervention {
-        Intervention::Prestation => p.shoot_start.is_some() && p.shoot_end.is_some(),
-        Intervention::Integration => p.commissioning.is_some(),
-    };
+    let dates = (p.shoot_start.is_some() && p.shoot_end.is_some()) || p.commissioning.is_some();
     let checks = [
         p.client.is_some(),
         p.venue.is_some(),
@@ -746,30 +736,25 @@ mod tests {
         assert_eq!(p.name, "Finale Coupe");
         assert_eq!(
             p.commissioning, None,
-            "date d'intégration vidée pour une prestation"
+            "ancienne date de mise en service reprise"
         );
+        assert_eq!(p.shoot_start.as_deref(), Some("2026-11-15"));
         let mut p = base();
         assert!(
             validate_project(&mut p, true, "2026-11-13")
                 .iter()
                 .any(|e| e.field == "planning_start")
         );
+        // Toutes les régies sont permises ; une ancienne intégration devient globale.
         let mut p = base();
         p.regie = Regie::Fixed;
-        assert!(
-            validate_project(&mut p, false, "2026-11-11")
-                .iter()
-                .any(|e| e.field == "regie")
-        );
-        let mut p = base();
         p.intervention = Intervention::Integration;
-        p.commissioning = Some("2026-11-14".into());
-        assert!(
-            validate_project(&mut p, false, "2026-11-11")
-                .iter()
-                .any(|e| e.field == "commissioning")
-        );
-        assert_eq!(p.shoot_start, None);
+        p.shoot_start = None;
+        p.shoot_end = None;
+        assert!(validate_project(&mut p, false, "2026-11-11").is_empty());
+        assert_eq!(p.shoot_start.as_deref(), Some("2026-12-01"));
+        assert_eq!(p.shoot_end.as_deref(), Some("2026-12-01"));
+        assert_eq!(p.intervention, Intervention::Prestation);
         assert!(!is_date("2026-02-30"));
         assert!(is_date("2028-02-29"));
     }

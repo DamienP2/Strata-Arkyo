@@ -116,8 +116,14 @@ export const PRIORITY: Record<Priority, { label: string; chip: string }> = {
 };
 export const U_PRESETS = [6, 9, 12, 18, 24, 30, 36, 42, 45, 48];
 
-/** Date clé : début de tournage (prestation) ou mise en service (intégration). */
-export const keyDate = (p: ProjectData) => (p.intervention === 'prestation' ? p.shoot_start : p.commissioning);
+/** Date clé : début de l'exploitation (ou ancienne date de mise en service). */
+export const keyDate = (p: ProjectData) => p.shoot_start ?? p.commissioning;
+/** Période d'exploitation lisible : « 15 nov. → 16 nov. », un seul jour si identiques. */
+export function period(p: ProjectData): string {
+  const a = p.shoot_start ?? p.commissioning, b = p.shoot_end ?? a;
+  if (!a) return 'dates à fixer';
+  return a === b ? fdate(a) : `${fdate(a)} → ${fdate(b)}`;
+}
 
 export function daysBetween(from: string, to: string): number {
   return Math.round((Date.parse(to + 'T12:00:00Z') - Date.parse(from + 'T12:00:00Z')) / 86_400_000);

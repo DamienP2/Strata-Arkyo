@@ -174,7 +174,7 @@
       <div class="field"><span class="flabel">Type</span>
         <div class="kinds">{#each Object.entries(REGIE) as [k, v]}<button type="button" class="kind" class:on={edit.kind === k} onclick={() => (edit!.kind = k as RegieKind)}><Ill kind={v.ill} /><b>{v.label}</b></button>{/each}</div>
       </div>
-      <div class="field"><label for="rg-s">Type de prestation</label><input class="input" id="rg-s" bind:value={edit.service_type} maxlength="80" placeholder="Sport, concert, TV…">{#if errs.service_type}<span class="ferr">{errs.service_type}</span>{/if}</div>
+      <div class="field"><label for="rg-s">Type de projet</label><input class="input" id="rg-s" bind:value={edit.service_type} maxlength="80" placeholder="Sport, concert, TV…">{#if errs.service_type}<span class="ferr">{errs.service_type}</span>{/if}</div>
       <div class="field"><label for="rg-no">Notes</label><textarea class="input" id="rg-no" rows="3" bind:value={edit.notes} maxlength="2000"></textarea></div>
     </form>
     {#snippet footer()}<button class="btn ghost" onclick={() => (edit = null)}>Annuler</button><button class="btn primary" type="submit" form="rgf">{edit!.r ? 'Enregistrer' : 'Créer la régie'}</button>{/snippet}

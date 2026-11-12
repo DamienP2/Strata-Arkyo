@@ -228,7 +228,7 @@ export async function build(view: ProjectView, defs: DocDef[], opts: DocOpt[], d
     if (o.key === 'sheet') {
       const d = await start(paper, landscape); sections.push({ title, page: d.getNumberOfPages() });
       const p = view.project as any, h = projectHeader(p, title);
-      const rows: [string, string][] = [['Projet', p.name], ['Client', h.client], ['Lieu', h.venue], ['Type d’intervention', p.intervention === 'prestation' ? 'Prestation' : 'Intégration'], ['Type de prestation', p.service_type ?? ''], ['Dates', h.dates], ['Statut', STATUS[p.status as keyof typeof STATUS]?.label ?? p.status], ['Description', p.description ?? ''], ['Lieux', view.locations.map((l) => l.name).join(', ')], ['Éléments', view.containers.map((x) => x.name).join(', ')]];
+      const rows: [string, string][] = [['Projet', p.name], ['Client', h.client], ['Lieu', h.venue], ['Type de projet', p.service_type ?? ''], ['Dates', h.dates], ['Statut', STATUS[p.status as keyof typeof STATUS]?.label ?? p.status], ['Description', p.description ?? ''], ['Lieux', view.locations.map((l) => l.name).join(', ')], ['Éléments', view.containers.map((x) => x.name).join(', ')]];
       drawTable(d, h, [{ label: 'Rubrique', w: 40 }, { label: 'Valeur', w: 140 }], rows.map(([a, b]) => [a, b]), paper, landscape);
       continue;
     }

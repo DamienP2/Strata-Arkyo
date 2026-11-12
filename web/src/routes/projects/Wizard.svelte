@@ -8,14 +8,14 @@
   import { api, ApiError } from '../../lib/api';
   import { navigate } from '../../lib/router.svelte';
   import { toast } from '../../lib/toast.svelte';
-  import { REGIE, CONTAINER_KINDS, U_PRESETS, blankContainer, fdate, type ContainerKind, type Intervention, type Regie } from '../../lib/projects';
+  import { REGIE, CONTAINER_KINDS, U_PRESETS, blankContainer, fdate, type ContainerKind, type Regie } from '../../lib/projects';
 
   let { onclose, clients = [] }: { onclose: () => void; clients?: string[] } = $props();
   const today = new Date().toISOString().slice(0, 10);
 
   let d = $state({
-    intervention: 'prestation' as Intervention, regie: 'car' as Regie, name: '', external: true, client: '',
-    planning_start: today, planning_end: '', shoot_start: '', shoot_end: '', commissioning: '', venue: '', location: '', description: '', service_type: '',
+    regie: 'car' as Regie, name: '', external: true, client: '',
+    planning_start: today, planning_end: '', shoot_start: '', shoot_end: '', venue: '', location: '', description: '', service_type: '',
   });
   let cname = $state('Baie 1');
   let c = $state(blankContainer('rack'));
@@ -28,7 +28,7 @@
   const STEPS = ['regie', 'name', 'client', 'planning', 'dates', 'venue', 'location', 'container', 'description', 'recap'] as const;
   type Step = (typeof STEPS)[number];
   const cur = $derived(STEPS[step]!);
-  const FIELD_STEP: Record<string, Step> = { regie: 'regie', name: 'name', client: 'client', planning_start: 'planning', planning_end: 'planning', shoot_start: 'dates', shoot_end: 'dates', commissioning: 'dates', venue: 'venue', service_type: 'venue', description: 'description' };
+  const FIELD_STEP: Record<string, Step> = { regie: 'regie', name: 'name', client: 'client', planning_start: 'planning', planning_end: 'planning', shoot_start: 'dates', shoot_end: 'dates', venue: 'venue', service_type: 'venue', description: 'description' };
 
   function checkName() {
     clearTimeout(timer);
@@ -37,7 +37,6 @@
     timer = setTimeout(async () => { taken = (await api.get<{ taken: boolean }>(`/projects/check-name?name=${encodeURIComponent(n)}`)).taken; }, 250);
   }
   function setKind(k: ContainerKind) { c = { ...blankContainer(k), empty_weight_kg: c.empty_weight_kg }; }
-  $effect(() => { if (d.intervention === 'prestation' && d.regie === 'fixed') d.regie = 'car'; });
 
   /** Erreur bloquante de l'étape courante, avant d'aller plus loin. */
   function stepError(s: Step): Record<string, string> {
@@ -50,12 +49,9 @@
       else if (d.planning_end < d.planning_start) e.planning_end = 'La fin précède le début.';
     }
     if (s === 'dates') {
-      if (d.intervention === 'prestation') {
-        if (!d.shoot_start || !d.shoot_end) e.shoot_end = 'Le début et la fin du tournage sont obligatoires.';
-        else if (d.shoot_start < today) e.shoot_start = 'La date est passée.';
-        else if (d.shoot_end < d.shoot_start) e.shoot_end = 'La fin précède le début.';
-      } else if (!d.commissioning) e.commissioning = 'La date de mise en service est obligatoire.';
-      else if (d.commissioning <= d.planning_end) e.commissioning = 'La mise en service suit la fin de la planification.';
+      if (!d.shoot_start || !d.shoot_end) e.shoot_end = 'Le début et la fin de l’exploitation sont obligatoires.';
+      else if (d.shoot_start < today) e.shoot_start = 'La date est passée.';
+      else if (d.shoot_end < d.shoot_start) e.shoot_end = 'La fin précède le début.';
     }
     if (s === 'location' && !d.location.trim()) e.location = 'Le nom de l’emplacement est obligatoire.';
     if (s === 'container' && !cname.trim()) e.cname = 'Le nom de l’élément est obligatoire.';
@@ -70,8 +66,8 @@
     busy = true; errors = {};
     const body = {
       name: d.name, client: d.external ? d.client : null, venue: d.venue || null, description: d.description || null, service_type: d.service_type || null,
-      intervention: d.intervention, regie: d.regie, planning_start: d.planning_start, planning_end: d.planning_end,
-      shoot_start: d.shoot_start || null, shoot_end: d.shoot_end || null, commissioning: d.commissioning || null,
+      regie: d.regie, planning_start: d.planning_start, planning_end: d.planning_end,
+      shoot_start: d.shoot_start || null, shoot_end: d.shoot_end || null,
       location: { name: d.location }, container: { name: cname, ...c },
     };
     try {
@@ -89,11 +85,11 @@
     } finally { busy = false; }
   }
   const recap = $derived([
-    ['regie', 'Régie', `${d.intervention === 'prestation' ? 'Prestation' : 'Intégration'} · ${REGIE[d.regie].label}`],
+    ['regie', 'Régie', REGIE[d.regie].label],
     ['name', 'Nom', d.name],
     ['client', 'Client', d.external ? d.client : 'Projet interne'],
-    ['planning', 'Planification', `${fdate(d.planning_start)} → ${fdate(d.planning_end)}`],
-    ['dates', d.intervention === 'prestation' ? 'Tournage' : 'Mise en service', d.intervention === 'prestation' ? `${fdate(d.shoot_start)} → ${fdate(d.shoot_end)}` : fdate(d.commissioning)],
+    ['planning', 'Préparation', `${fdate(d.planning_start)} → ${fdate(d.planning_end)}`],
+    ['dates', 'Exploitation', `${fdate(d.shoot_start)} → ${fdate(d.shoot_end)}`],
     ['venue', 'Lieu', [d.venue, d.service_type].filter(Boolean).join(' · ') || '—'],
     ['location', 'Emplacement', d.location],
     ['container', 'Élément', `${cname} · ${CONTAINER_KINDS[c.kind].label}${c.rackable ? ` · ${c.height_u} U` : ''}`],
@@ -111,19 +107,15 @@
     </div>
     <form class="wz-body" onsubmit={(e) => { e.preventDefault(); if (cur === 'recap') create(); else next(); }}>
       {#if cur === 'regie'}
-        <h2>Quel type de projet ?</h2>
-        <div class="seg" style="align-self:flex-start">
-          <button type="button" class:on={d.intervention === 'prestation'} onclick={() => (d.intervention = 'prestation')}>Prestation (événementiel)</button>
-          <button type="button" class:on={d.intervention === 'integration'} onclick={() => (d.intervention = 'integration')}>Intégration (installation)</button>
-        </div>
+        <h2>Quel type de régie ?</h2>
         <div class="choices">
           {#each Object.entries(REGIE) as [k, r]}
-            <button type="button" class="choice" class:on={d.regie === k} disabled={k === 'fixed' && d.intervention === 'prestation'} onclick={() => (d.regie = k as Regie)}>
+            <button type="button" class="choice" class:on={d.regie === k} onclick={() => (d.regie = k as Regie)}>
               <span class="ch-vis"><Ill kind={r.ill} /></span><b>{r.label}</b>
             </button>
           {/each}
         </div>
-        <p class="muted small">Le type d’intervention ne pourra plus changer ensuite.</p>
+        <p class="muted small">Modifiable ensuite dans la fiche du projet.</p>
       {:else if cur === 'name'}
         <h2>Comment s’appelle-t-il ?</h2>
         <div class="field"><label for="wz-name">Nom du projet</label><input class="input" id="wz-name" bind:value={d.name} oninput={checkName} maxlength="120" autocomplete="off" placeholder="Ex. Finale Coupe Atlantique">
@@ -133,27 +125,24 @@
         <div class="seg" style="align-self:flex-start"><button type="button" class:on={!d.external} onclick={() => (d.external = false)}>Projet interne</button><button type="button" class:on={d.external} onclick={() => (d.external = true)}>Client externe</button></div>
         {#if d.external}<div class="field"><label for="wz-client">Nom du client</label><input class="input" id="wz-client" bind:value={d.client} list="wz-clients" maxlength="120"><datalist id="wz-clients">{#each clients as cl}<option value={cl}></option>{/each}</datalist><FieldError message={errors.client} /></div>{/if}
       {:else if cur === 'planning'}
-        <h2>Période de planification</h2>
+        <h2>Période de préparation</h2>
+        <p class="muted">Conception, commandes, câblage en atelier.</p>
         <div class="form-grid">
           <div class="field"><label for="wz-ps">Début</label><input class="input" type="date" id="wz-ps" bind:value={d.planning_start} min={today}><FieldError message={errors.planning_start} /></div>
           <div class="field"><label for="wz-pe">Fin</label><input class="input" type="date" id="wz-pe" bind:value={d.planning_end} min={d.planning_start || today}><FieldError message={errors.planning_end} /></div>
         </div>
       {:else if cur === 'dates'}
-        {#if d.intervention === 'prestation'}
-          <h2>Quand tourne-t-on ?</h2>
-          <div class="form-grid">
-            <div class="field"><label for="wz-ss">Début du tournage</label><input class="input" type="date" id="wz-ss" bind:value={d.shoot_start} min={today}><FieldError message={errors.shoot_start} /></div>
-            <div class="field"><label for="wz-se">Fin du tournage</label><input class="input" type="date" id="wz-se" bind:value={d.shoot_end} min={d.shoot_start || today}><FieldError message={errors.shoot_end} /></div>
-          </div>
-        {:else}
-          <h2>Date de mise en service</h2>
-          <div class="field"><label for="wz-cm">Mise en service</label><input class="input" type="date" id="wz-cm" bind:value={d.commissioning} min={d.planning_end || today}><span class="help">Après la fin de la planification ({fdate(d.planning_end)}).</span><FieldError message={errors.commissioning} /></div>
-        {/if}
+        <h2>Période d’exploitation</h2>
+        <p class="muted">Tournage, événement ou mise en service : un seul jour si début et fin sont identiques.</p>
+        <div class="form-grid">
+          <div class="field"><label for="wz-ss">Début</label><input class="input" type="date" id="wz-ss" bind:value={d.shoot_start} min={today}><FieldError message={errors.shoot_start} /></div>
+          <div class="field"><label for="wz-se">Fin</label><input class="input" type="date" id="wz-se" bind:value={d.shoot_end} min={d.shoot_start || today}><FieldError message={errors.shoot_end} /></div>
+        </div>
       {:else if cur === 'venue'}
         <h2>Où se passe-t-il ?</h2>
         <div class="form-grid">
           <div class="field"><label for="wz-venue">Lieu</label><input class="input" id="wz-venue" bind:value={d.venue} placeholder="Ex. Arena Loire, Nantes"></div>
-          <div class="field"><label for="wz-tp">Type de prestation</label><input class="input" id="wz-tp" bind:value={d.service_type} list="wz-tps" placeholder="Sport, concert, TV…"><datalist id="wz-tps">{#each ['Sport', 'Concert', 'Plateau TV', 'Conférence', 'Théâtre', 'Studio'] as t}<option value={t}></option>{/each}</datalist></div>
+          <div class="field"><label for="wz-tp">Type de projet</label><input class="input" id="wz-tp" bind:value={d.service_type} list="wz-tps" placeholder="Sport, concert, TV…"><datalist id="wz-tps">{#each ['Sport', 'Concert', 'Plateau TV', 'Conférence', 'Théâtre', 'Studio'] as t}<option value={t}></option>{/each}</datalist></div>
         </div>
       {:else if cur === 'location'}
         <h2>Premier emplacement</h2>

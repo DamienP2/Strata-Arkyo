@@ -46,9 +46,9 @@
     !p.client && 'le client',
     !p.venue && 'le lieu',
     !p.description && 'une description',
-    !p.service_type && 'le type de prestation',
-    !(p.planning_start && p.planning_end) && 'la période de planification',
-    !(p.intervention === 'prestation' ? p.shoot_start && p.shoot_end : p.commissioning) && (p.intervention === 'prestation' ? 'les dates de tournage' : 'la date de mise en service'),
+    !p.service_type && 'le type de projet',
+    !(p.planning_start && p.planning_end) && 'la période de préparation',
+    !((p.shoot_start && p.shoot_end) || p.commissioning) && 'la période d’exploitation',
     !view.locations.length && 'un emplacement',
     !view.containers.length && 'un élément',
     !view.articles.length && 'du matériel',
@@ -83,23 +83,18 @@
 
 <div class="grid-2" style="grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);align-items:start">
   <section class="card">
-    <div class="card-head"><h2>Fiche du projet</h2><span class="chip">{p.intervention === 'prestation' ? 'Prestation' : 'Intégration'} · {REGIE[p.regie].label}</span></div>
+    <div class="card-head"><h2>Fiche du projet</h2><span class="chip">{REGIE[p.regie].label}</span></div>
     <form class="form-grid" style="margin-top:16px" onsubmit={save}>
       <fieldset disabled={!writable} style="display:contents">
         <div class="field span"><label for="o-name">Nom</label><input class="input" id="o-name" bind:value={form.name} required maxlength="120"><FieldError message={errors.name} /></div>
         <div class="field"><label for="o-client">Client</label><input class="input" id="o-client" value={form.client ?? ''} oninput={txt('client')} placeholder="Vide : projet interne"></div>
-        <div class="field"><label for="o-tp">Type de prestation</label><input class="input" id="o-tp" value={form.service_type ?? ''} oninput={txt('service_type')} placeholder="Sport, concert, TV…"></div>
+        <div class="field"><label for="o-tp">Type de projet</label><input class="input" id="o-tp" value={form.service_type ?? ''} oninput={txt('service_type')} placeholder="Sport, concert, TV…"></div>
         <div class="field span"><label for="o-venue">Lieu</label><input class="input" id="o-venue" value={form.venue ?? ''} oninput={txt('venue')}></div>
-        <div class="field"><label for="o-ps">Planification : début</label><input class="input" type="date" id="o-ps" value={form.planning_start ?? ''} oninput={txt('planning_start')}><FieldError message={errors.planning_start} /></div>
-        <div class="field"><label for="o-pe">Planification : fin</label><input class="input" type="date" id="o-pe" value={form.planning_end ?? ''} oninput={txt('planning_end')}><FieldError message={errors.planning_end} /></div>
-        {#if form.intervention === 'prestation'}
-          <div class="field"><label for="o-ss">Tournage : début</label><input class="input" type="date" id="o-ss" value={form.shoot_start ?? ''} oninput={txt('shoot_start')}><FieldError message={errors.shoot_start} /></div>
-          <div class="field"><label for="o-se">Tournage : fin</label><input class="input" type="date" id="o-se" value={form.shoot_end ?? ''} oninput={txt('shoot_end')}><FieldError message={errors.shoot_end} /></div>
-        {:else}
-          <div class="field"><label for="o-cm">Mise en service</label><input class="input" type="date" id="o-cm" value={form.commissioning ?? ''} oninput={txt('commissioning')}><FieldError message={errors.commissioning} /></div>
-          <div class="field"><label for="o-regie">Type de régie</label><select class="input" id="o-regie" bind:value={form.regie}>{#each Object.entries(REGIE) as [k, r]}<option value={k}>{r.label}</option>{/each}</select></div>
-        {/if}
-        {#if form.intervention === 'prestation'}<div class="field span"><span class="flabel">Type de régie</span><div class="seg">{#each Object.entries(REGIE).filter(([k]) => k !== 'fixed') as [k, r]}<button type="button" class:on={form.regie === k} onclick={() => (form.regie = k as Project['regie'])}>{r.label}</button>{/each}</div></div>{/if}
+        <div class="field"><label for="o-ps">Préparation : début</label><input class="input" type="date" id="o-ps" value={form.planning_start ?? ''} oninput={txt('planning_start')}><FieldError message={errors.planning_start} /></div>
+        <div class="field"><label for="o-pe">Préparation : fin</label><input class="input" type="date" id="o-pe" value={form.planning_end ?? ''} oninput={txt('planning_end')}><FieldError message={errors.planning_end} /></div>
+        <div class="field"><label for="o-ss">Exploitation : début</label><input class="input" type="date" id="o-ss" value={form.shoot_start ?? form.commissioning ?? ''} oninput={txt('shoot_start')}><FieldError message={errors.shoot_start} /></div>
+        <div class="field"><label for="o-se">Exploitation : fin</label><input class="input" type="date" id="o-se" value={form.shoot_end ?? form.commissioning ?? ''} oninput={txt('shoot_end')}><FieldError message={errors.shoot_end} /></div>
+        <div class="field span"><span class="flabel">Type de régie</span><div class="seg">{#each Object.entries(REGIE) as [k, r]}<button type="button" class:on={form.regie === k} onclick={() => (form.regie = k as Project['regie'])}>{r.label}</button>{/each}</div></div>
         <div class="field span"><label for="o-desc">Description</label><textarea class="input" id="o-desc" rows="4" style="height:auto;padding:12px 14px" value={form.description ?? ''} oninput={txt('description')}></textarea></div>
         {#if writable}<div class="span row-actions"><button class="btn ghost" type="button" disabled={!dirty} onclick={() => { form = structuredClone($state.snapshot(view.project)); errors = {}; }}>Annuler</button><button class="btn primary" disabled={!dirty || busy}>{#if busy}<span class="spin"></span>{/if}Enregistrer</button></div>{/if}
       </fieldset>

@@ -1,13 +1,11 @@
 <script lang="ts">
-  // Nœud du synoptique : en-tête à la couleur de la fonction, entrées à gauche, sorties
-  // à droite, chaque port avec le dessin de son connecteur et la couleur de son signal.
-  // Sert d'aperçu dans la fiche équipement ; le synoptique (lot 6) dessinera de même.
+  // Nœud du synoptique, dessiné comme dans le synoptique : en-tête à la couleur de la
+  // fonction, entrées à gauche, sorties et E/S à droite, un point par port à la couleur
+  // du signal, le connecteur et son genre (M/F). Aperçu de la fiche équipement.
   import { refById } from '../lib/catalog.svelte';
-  import { family } from '../lib/panel';
-  import ConnGlyph from './ConnGlyph.svelte';
 
   interface Port { connector_id: string; signal_id: string | null; direction: string; gender: string; quantity: number; label: string | null; variant: string | null }
-  let { name, subtitle = '', fn = null, ports, maxPerSide = 12 }: { name: string; subtitle?: string; fn?: string | null; ports: Port[]; maxPerSide?: number } = $props();
+  let { name, subtitle = '', fn = null, ports, maxPerSide = 48, hl = null }: { name: string; subtitle?: string; fn?: string | null; ports: Port[]; maxPerSide?: number; hl?: number | null } = $props();
 
   const NW = 270, HH = 52, PS = 28;
   const uid = $props.id();
@@ -19,11 +17,12 @@
   };
   /** Un port par exemplaire : « SDI IN 1 », « SDI IN 2 »… */
   function expand(list: Port[]) {
-    const out: { label: string; p: Port }[] = [];
+    const out: { label: string; p: Port; g: number }[] = [];
     for (const p of list) {
+      const g = ports.indexOf(p);
       const q = Math.max(1, Math.min(Number(p.quantity) || 1, 1024));
       const base = p.label?.trim() || refById('signals', p.signal_id)?.name || short(p.connector_id);
-      for (let i = 1; i <= q; i++) out.push({ label: q > 1 ? `${base} ${i}` : base, p });
+      for (let i = 1; i <= q; i++) out.push({ label: q > 1 ? `${base} ${i}` : base, p, g });
     }
     return out;
   }
@@ -38,16 +37,18 @@
   const chipW = (s: string) => s.length * 6.3 + 12;
 </script>
 
-{#snippet port(e: { label: string; p: Port }, i: number, out: boolean)}
+{#snippet port(e: { label: string; p: Port; g: number }, i: number, out: boolean)}
   {@const x = out ? NW : 0}
-  {@const s = short(e.p.connector_id)}
+  {@const s = short(e.p.connector_id) + (e.p.gender === 'M' ? ' M' : e.p.gender === 'F' ? ' F' : '')}
+  {@const room = (out ? shownIn : shownOut).length > i ? 9 : 20}
   {@const cw = chipW(s)}
   {@const cx0 = out ? NW - 16 - cw : 16}
-  <g class="port" style="--c:{color(e.p)}">
+  <g class="port" class:hl={hl === e.g} class:dim={hl != null && hl !== e.g} style="--c:{color(e.p)}">
     <title>{e.label} · {refById('connectors', e.p.connector_id)?.name ?? e.p.connector_id}{e.p.variant ? ` ${e.p.variant}` : ''} {e.p.gender === 'M' ? 'mâle' : 'femelle'}{e.p.signal_id ? ` · ${refById('signals', e.p.signal_id)?.name ?? ''}` : ''}{e.p.direction === 'bidir' ? ' · bidirectionnel' : ''}</title>
-    <ConnGlyph f={family(e.p.connector_id)} {x} cy={y(i)} />
+    {#if hl === e.g}<rect class="hlbar" x={out ? NW / 2 + 2 : 2} y={y(i) - 13} width={NW / 2 - 4} height="26" rx="6" />{/if}
+    <circle class="pdot" cx={x} cy={y(i)} r="4.5" />
     <g class="cchip"><rect x={cx0} y={y(i) - 8.5} width={cw} height="17" rx="4" /><text x={cx0 + cw / 2} y={y(i) + 3.6} text-anchor="middle">{s}</text></g>
-    <text class="pn" x={out ? cx0 - 7 : cx0 + cw + 7} y={y(i) + 4.5} text-anchor={out ? 'end' : 'start'}>{e.label}{e.p.direction === 'bidir' ? ' ↔' : ''}</text>
+    <text class="pn" x={out ? cx0 - 7 : cx0 + cw + 7} y={y(i) + 4.5} text-anchor={out ? 'end' : 'start'}>{e.label.length > room ? e.label.slice(0, room - 1) + '…' : e.label}{e.p.direction === 'bidir' ? ' ↔' : ''}</text>
   </g>
 {/snippet}
 
@@ -80,10 +81,11 @@
   .nt { font: 650 15px var(--font); fill: var(--fg); }
   .ns { font: 500 11px var(--mono); fill: var(--fg-3); }
   .more { font: 600 11.5px var(--mono); fill: var(--fg-3); }
-  .port :global(.cg-shell) { fill: var(--node-bg); stroke: var(--c); stroke-width: 2.2; }
-  .port :global(.cg-ring) { fill: none; stroke: var(--c); stroke-width: 1.2; opacity: .75; }
-  .port :global(.cg-pin), .port :global(.cg-key) { fill: var(--c); }
-  .port:hover :global(.cg-shell) { fill: color-mix(in srgb, var(--c) 22%, var(--node-bg)); }
+  .pdot { fill: var(--node-bg, var(--surface)); stroke: var(--c); stroke-width: 2; }
+  .port:hover .pdot, .port.hl .pdot { fill: var(--c); }
+  .port { transition: opacity .15s; }
+  .port.dim { opacity: .35; }
+  .hlbar { fill: color-mix(in srgb, var(--c) 12%, transparent); }
   .cchip rect { fill: color-mix(in srgb, var(--fg) 7%, transparent); stroke: color-mix(in srgb, var(--fg) 14%, transparent); stroke-width: .8; }
   .cchip text { font: 600 9.5px var(--mono); letter-spacing: .03em; fill: var(--fg-3); }
   .pn { font: 500 13px var(--font); fill: var(--fg-2); }

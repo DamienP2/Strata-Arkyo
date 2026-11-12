@@ -113,13 +113,13 @@
   }
 
   // ----- Étiquettes (section 11.7) -----
-  let lbl = $state<{ sheets: import('../../lib/pdfkit').LabelSheet[]; key: string; perEnd: boolean; skip: number; scope: 'rule' | 'shown' } | null>(null);
+  let lbl = $state<{ sheets: import('../../lib/pdfkit').LabelSheet[]; key: string; perEnd: boolean; skip: number; scope: 'all' | 'internal' | 'shown' } | null>(null);
   async function openLabels() {
-    try { const r = await api.get<{ items: import('../../lib/pdfkit').LabelSheet[] }>('/print/label-sheets'); const act = r.items.filter((x) => x.active); lbl = { sheets: act, key: act[0]?.key ?? '', perEnd: true, skip: 0, scope: 'rule' }; } catch (e) { fail(e); }
+    try { const r = await api.get<{ items: import('../../lib/pdfkit').LabelSheet[] }>('/print/label-sheets'); const act = r.items.filter((x) => x.active); lbl = { sheets: act, key: act[0]?.key ?? '', perEnd: true, skip: 0, scope: 'all' }; } catch (e) { fail(e); }
   }
-  // Règle : en intégration tous les câbles, en prestation le câblage interne des éléments.
-  const ruleRows = $derived((rows ?? []).filter((r) => view.project.intervention === 'integration' || (r.a.container_id && r.a.container_id === r.b.container_id)));
-  const labelRows = $derived((lbl?.scope === 'shown' ? shown : ruleRows).filter((r) => val(r, 'number')));
+  // Tous les câbles, le câblage interne des éléments (pré-câblé en atelier), ou la sélection des filtres.
+  const internalRows = $derived((rows ?? []).filter((r) => r.a.container_id && r.a.container_id === r.b.container_id));
+  const labelRows = $derived((lbl?.scope === 'shown' ? shown : lbl?.scope === 'internal' ? internalRows : (rows ?? [])).filter((r) => val(r, 'number')));
   async function printLabels() {
     if (!lbl) return;
     const sh = lbl.sheets.find((x) => x.key === lbl!.key); if (!sh) return;
@@ -197,7 +197,8 @@
     {:else}
       <label class="field">Planche<select class="input" bind:value={lbl.key}>{#each lbl.sheets as s}<option value={s.key}>{s.name} · {s.reference}{s.brand ? ` · ${s.brand}` : ''} ({s.cols} × {s.rows}{s.diam_min ? `, Ø ${s.diam_min}–${s.diam_max} mm` : ''})</option>{/each}</select></label>
       <div class="field"><span class="flabel">Câbles</span>
-        <label class="toggle-row small"><input type="radio" bind:group={lbl.scope} value="rule">{view.project.intervention === 'integration' ? 'Tous les câbles (intégration)' : 'Câblage interne des éléments (prestation)'}</label>
+        <label class="toggle-row small"><input type="radio" bind:group={lbl.scope} value="all">Tous les câbles</label>
+        <label class="toggle-row small"><input type="radio" bind:group={lbl.scope} value="internal">Câblage interne des éléments (pré-câblé en atelier)</label>
         <label class="toggle-row small"><input type="radio" bind:group={lbl.scope} value="shown">Les câbles affichés par les filtres</label>
       </div>
       <label class="toggle-row small"><input type="checkbox" bind:checked={lbl.perEnd}>Une étiquette par extrémité (deux par câble)</label>

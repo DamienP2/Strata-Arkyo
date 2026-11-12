@@ -96,11 +96,11 @@ export async function svgPage(doc: Doc, svg: SVGSVGElement, w: number, h: number
 }
 
 export interface Header { title: string; project: string; client: string; venue: string; dates: string }
-export function projectHeader(p: { name: string; client: string | null; venue: string | null; intervention: string; shoot_start?: string | null; shoot_end?: string | null; commissioning?: string | null }, title: string): Header {
+export function projectHeader(p: { name: string; client: string | null; venue: string | null; shoot_start?: string | null; shoot_end?: string | null; commissioning?: string | null }, title: string): Header {
   const f = (d?: string | null) => (d ? new Date(d).toLocaleDateString('fr-FR') : '');
   return {
     title, project: p.name, client: p.client ?? 'Projet interne', venue: p.venue ?? '',
-    dates: p.intervention === 'prestation' ? `Tournage ${f(p.shoot_start)} au ${f(p.shoot_end)}` : `Mise en service ${f(p.commissioning)}`,
+    dates: p.shoot_start ? `Exploitation ${f(p.shoot_start)} au ${f(p.shoot_end ?? p.shoot_start)}` : `Exploitation ${f(p.commissioning)}`,
   };
 }
 

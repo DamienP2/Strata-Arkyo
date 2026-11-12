@@ -4,7 +4,7 @@
   import ChipPicker from '../../../components/ChipPicker.svelte';
   import FieldError from '../../../components/FieldError.svelte';
   import SynNode from '../../../components/SynNode.svelte';
-  import { refList, refById, refName, FACES, DIRECTIONS, WIDTHS } from '../../../lib/catalog.svelte';
+  import { refList, refById, refName, FACES, WIDTHS } from '../../../lib/catalog.svelte';
   import { nf } from '../../../lib/format';
 
   let { data = $bindable(), err }: { data: any; err: (f: string) => string | undefined } = $props();
@@ -35,10 +35,16 @@
   }
   const suggestedBtu = $derived(data.power_w ? Math.round(data.power_w * 3.412) : null);
 
-  function addPort() {
-    const last = data.ports.at(-1);
-    data.ports = [...data.ports, last ? { ...last, label: null } : { face: 'rear', connector_id: 'bnc', variant: null, signal_id: null, direction: 'in', gender: 'F', quantity: 1, label: null, network_role: null, redundancy: true }];
+  /** Nouveau groupe du côté voulu, sur le modèle du dernier groupe de ce côté. */
+  function addPort(direction: 'in' | 'out' | 'bidir') {
+    const same = data.ports.filter((p: any) => (direction === 'in' ? p.direction === 'in' : p.direction !== 'in')).at(-1) ?? data.ports.at(-1);
+    const base = same ? { ...same, label: null } : { face: 'rear', connector_id: 'bnc', variant: null, signal_id: null, gender: 'F', quantity: 1, label: null, network_role: null, redundancy: true };
+    data.ports = [...data.ports, { ...base, direction }];
+    hl = data.ports.length - 1;
   }
+  let hl = $state<number | null>(null);
+  const side = (inSide: boolean) => data.ports.map((p: any, i: number) => ({ p, i })).filter(({ p }: any) => (p.direction === 'in') === inSide);
+  const countOf = (inSide: boolean) => side(inSide).reduce((n: number, { p }: any) => n + (Number(p.quantity) || 0), 0);
   const removePort = (i: number) => (data.ports = data.ports.filter((_: unknown, j: number) => j !== i));
   const sigsFor = (c: string) => signals.filter((s) => (s.data.connectors ?? []).includes(c));
   const variantsOf = (c: string): string[] => refById('connectors', c)?.data.variants ?? [];
@@ -100,36 +106,50 @@
   </div>
 </section>
 
-<section class="card">
-  <div class="card-head"><div><h2>Ports</h2><span class="muted small">{totalPorts} port{totalPorts > 1 ? 's' : ''} en {data.ports.length} groupe{data.ports.length > 1 ? 's' : ''}</span></div><button type="button" class="btn sm" onclick={addPort}><Icon name="plus" size="sm" />Ajouter un groupe</button></div>
-  {#if data.ports.length}
-    <div class="tbl-wrap">
-      <table class="tbl ports-tbl">
-        <thead><tr><th>Face</th><th>Connecteur</th><th>Variante</th><th>Signal</th><th>Sens</th><th>Genre</th><th>Nombre</th><th>Libellé</th><th></th></tr></thead>
-        <tbody>
-          {#each data.ports as p, i}
-            <tr>
-              <td><select class="input" bind:value={p.face} aria-label="Face">{#each FACES as [k, l]}<option value={k}>{l}</option>{/each}</select></td>
-              <td><select class="input" class:err={!!err(`ports[${i}].connector_id`)} bind:value={p.connector_id} aria-label="Connecteur" onchange={() => { p.variant = null; if (p.signal_id && !sigsFor(p.connector_id).some((s) => s.id === p.signal_id)) p.signal_id = null; }}>{#each connectors as c}<option value={c.id}>{c.name}</option>{/each}</select></td>
-              <td><select class="input" value={p.variant ?? ''} aria-label="Variante" disabled={!variantsOf(p.connector_id).length} onchange={(e) => (p.variant = (e.target as HTMLSelectElement).value || null)}><option value="">—</option>{#each variantsOf(p.connector_id) as v}<option value={v}>{v}</option>{/each}</select></td>
-              <td><select class="input" class:err={!!err(`ports[${i}].signal_id`)} value={p.signal_id ?? ''} aria-label="Signal" onchange={(e) => (p.signal_id = (e.target as HTMLSelectElement).value || null)}><option value="">—</option>{#each sigsFor(p.connector_id) as s}<option value={s.id}>{s.name}</option>{/each}</select></td>
-              <td><select class="input" bind:value={p.direction} aria-label="Sens">{#each DIRECTIONS as [k, l]}<option value={k}>{l}</option>{/each}</select></td>
-              <td><select class="input" bind:value={p.gender} aria-label="Genre"><option value="F">F</option><option value="M">M</option></select></td>
-              <td><input class="input mono qty" type="number" min="1" max="1024" bind:value={p.quantity} aria-label="Nombre"></td>
-              <td><input class="input" value={p.label ?? ''} aria-label="Libellé" placeholder="ex. SDI IN" oninput={(e) => (p.label = (e.target as HTMLInputElement).value || null)}></td>
-              <td><button type="button" class="btn sm ghost danger" title="Retirer" onclick={() => removePort(i)}><Icon name="x" size="sm" /></button></td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
+{#snippet group(p: any, i: number, inSide: boolean)}
+  <div class="pg" class:on={hl === i} style="--c:{refById('signals', p.signal_id)?.data?.color ?? refById('connectors', p.connector_id)?.data?.color ?? 'var(--fg-3)'}" role="group" aria-label="Groupe de ports {i + 1}"
+    onmouseenter={() => (hl = i)} onfocusin={() => (hl = i)}>
+    <div class="pg-row">
+      <input class="input mono pg-q" type="number" min="1" max="1024" bind:value={p.quantity} aria-label="Nombre de ports" title="Nombre de ports">
+      <span class="pg-x">×</span>
+      <select class="input pg-conn" class:err={!!err(`ports[${i}].connector_id`)} bind:value={p.connector_id} aria-label="Connecteur" onchange={() => { p.variant = null; if (p.signal_id && !sigsFor(p.connector_id).some((s) => s.id === p.signal_id)) p.signal_id = null; }}>{#each connectors as c}<option value={c.id}>{c.name}</option>{/each}</select>
+      <div class="seg pg-g" aria-label="Genre"><button type="button" class:on={p.gender === 'F'} onclick={() => (p.gender = 'F')} title="Femelle">F</button><button type="button" class:on={p.gender === 'M'} onclick={() => (p.gender = 'M')} title="Mâle">M</button></div>
+      <button type="button" class="icon-btn sm pg-del" title="Retirer ce groupe" aria-label="Retirer ce groupe" onclick={() => { removePort(i); hl = null; }}><Icon name="x" size="sm" /></button>
     </div>
-    <FieldError message={err('ports')} />
-  {:else}<p class="empty">Aucun port. Ajoutez un groupe par type de connecteur et de signal (ex. 12 × BNC, SDI 3G, entrée).</p>{/if}
-</section>
+    <div class="pg-row">
+      <i class="pg-dot"></i>
+      <select class="input" class:err={!!err(`ports[${i}].signal_id`)} value={p.signal_id ?? ''} aria-label="Signal" onchange={(e) => (p.signal_id = (e.target as HTMLSelectElement).value || null)}><option value="">Signal —</option>{#each sigsFor(p.connector_id) as s}<option value={s.id}>{s.name}</option>{/each}</select>
+      {#if variantsOf(p.connector_id).length}<select class="input pg-var" value={p.variant ?? ''} aria-label="Variante" onchange={(e) => (p.variant = (e.target as HTMLSelectElement).value || null)}><option value="">Variante —</option>{#each variantsOf(p.connector_id) as v}<option value={v}>{v}</option>{/each}</select>{/if}
+    </div>
+    <div class="pg-row">
+      <input class="input" value={p.label ?? ''} aria-label="Libellé" placeholder={inSide ? 'Libellé, ex. SDI IN' : 'Libellé, ex. PGM OUT'} oninput={(e) => (p.label = (e.target as HTMLInputElement).value || null)}>
+      <select class="input pg-face" bind:value={p.face} aria-label="Face" title="Face">{#each FACES as [k, l]}<option value={k}>{l}</option>{/each}</select>
+      {#if inSide}
+        <button type="button" class="btn sm ghost" title="Passer en sortie" onclick={() => (p.direction = 'out')}>Sortie →</button>
+      {:else}
+        <div class="seg pg-g" aria-label="Sens"><button type="button" class:on={p.direction === 'out'} onclick={() => (p.direction = 'out')} title="Sortie">Sortie</button><button type="button" class:on={p.direction === 'bidir'} onclick={() => (p.direction = 'bidir')} title="Bidirectionnel (entrée-sortie)">E/S</button><button type="button" onclick={() => (p.direction = 'in')} title="Passer en entrée">← Entrée</button></div>
+      {/if}
+    </div>
+  </div>
+{/snippet}
 
-<section class="card syn-preview">
-  <div class="card-head"><div><h2>Aperçu dans le synoptique</h2><span class="muted small">Entrées à gauche, sorties et ports bidirectionnels à droite ; couleur du signal, dessin du connecteur. Survolez un port pour son détail.</span></div></div>
-  <div class="syn-canvas"><SynNode name={data.name} subtitle={[refName('brands', data.brand_id), data.reference].filter(Boolean).join(' · ')} fn={data.functions[0] ?? null} ports={data.ports} /></div>
+<section class="card ports-card">
+  <div class="card-head"><div><h2>Ports</h2><span class="muted small">{totalPorts} port{totalPorts > 1 ? 's' : ''} en {data.ports.length} groupe{data.ports.length > 1 ? 's' : ''} · un groupe = des ports identiques (ex. 12 × BNC F, SDI 3G)</span></div></div>
+  <div class="ports3" role="presentation" onmouseleave={() => (hl = null)}>
+    <div class="pcol">
+      <div class="pcol-h"><b>Entrées</b><span class="muted small tnum">{countOf(true)}</span><button type="button" class="btn sm" onclick={() => addPort('in')}><Icon name="plus" size="sm" />Entrée</button></div>
+      {#each side(true) as { p, i } (i)}{@render group(p, i, true)}{:else}<p class="pcol-empty">Aucune entrée.</p>{/each}
+    </div>
+    <div class="pprev">
+      <SynNode name={data.name} subtitle={[refName('brands', data.brand_id), data.reference].filter(Boolean).join(' · ')} fn={data.functions[0] ?? null} ports={data.ports} {hl} />
+      <span class="muted small">Aperçu dans le synoptique</span>
+    </div>
+    <div class="pcol">
+      <div class="pcol-h"><b>Sorties et E/S</b><span class="muted small tnum">{countOf(false)}</span><button type="button" class="btn sm" onclick={() => addPort('out')}><Icon name="plus" size="sm" />Sortie</button><button type="button" class="btn sm" onclick={() => addPort('bidir')}><Icon name="plus" size="sm" />E/S</button></div>
+      {#each side(false) as { p, i } (i)}{@render group(p, i, false)}{:else}<p class="pcol-empty">Aucune sortie.</p>{/each}
+    </div>
+  </div>
+  <FieldError message={err('ports')} />
 </section>
 
 <section class="card">
@@ -177,3 +197,30 @@
     <FieldError message={err('documents')} />
   </div>
 </section>
+
+<style>
+  .ports3 { display: grid; grid-template-columns: minmax(300px, 1fr) minmax(330px, auto) minmax(300px, 1fr); gap: 18px; align-items: start; margin-top: 14px; }
+  .pcol { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .pcol-h { display: flex; align-items: center; gap: 8px; min-height: 30px; }
+  .pcol-h b { font: 650 14px var(--display); }
+  .pcol-h .muted { margin-right: auto; }
+  .pcol-empty { color: var(--fg-3); font-size: 13px; padding: 14px; border-radius: 9px; border: 1px dashed var(--line-2); text-align: center; }
+  .pprev { position: sticky; top: 70px; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 4px; }
+  .pg { display: flex; flex-direction: column; gap: 6px; padding: 8px 8px 8px 12px; border-radius: 10px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line), inset 3px 0 0 var(--c); transition: box-shadow .12s, background .12s; }
+  .pg.on { background: color-mix(in srgb, var(--c) 6%, var(--surface)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 45%, var(--line)), inset 3px 0 0 var(--c); }
+  .pg-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .pg-row > .input { flex: 1 1 0; min-width: 0; height: 30px; font-size: 13px; }
+  .pg .pg-q { flex: 0 0 58px; text-align: right; }
+  .pg-x { color: var(--fg-3); font-size: 13px; }
+  .pg .pg-face { flex: 0 0 104px; }
+  .pg .pg-var { flex: 0 1 120px; }
+  .pg-g { flex: none; }
+  .pg-g button { height: 24px; padding: 0 8px; font-size: 12px; }
+  .pg-del { flex: none; width: 26px; height: 26px; }
+  .pg-dot { flex: none; width: 9px; height: 9px; margin: 0 3px 0 1px; border-radius: 50%; border: 2px solid var(--c); background: var(--node-bg, var(--surface)); }
+  @media (max-width: 1280px) {
+    .ports3 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    .pprev { grid-column: 1 / -1; grid-row: 1; position: static; }
+  }
+  @media (max-width: 760px) { .ports3 { grid-template-columns: minmax(0, 1fr); } }
+</style>

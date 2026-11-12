@@ -91,7 +91,7 @@
     <form id="rtf" class="stack" onsubmit={save}>
       <div class="fg2">
         <div class="field"><label for="rt-n">Nom</label><input class="input" id="rt-n" bind:value={edit.name} maxlength="120" required placeholder="Car HD 6 caméras">{#if errs.name}<span class="ferr">{errs.name}</span>{/if}</div>
-        <div class="field"><label for="rt-s">Type de prestation</label><input class="input" id="rt-s" bind:value={edit.service_type} maxlength="80" placeholder="Sport, concert, TV…"></div>
+        <div class="field"><label for="rt-s">Type de projet</label><input class="input" id="rt-s" bind:value={edit.service_type} maxlength="80" placeholder="Sport, concert, TV…"></div>
       </div>
       <div class="field"><span class="flabel">Type</span><div class="seg">{#each Object.entries(REGIE) as [k, v]}<button type="button" class:on={edit.kind === k} onclick={() => (edit!.kind = k as RegieKind)}>{v.label}</button>{/each}</div></div>
       <div class="field"><span class="flabel">Éléments, dans l’ordre</span>
