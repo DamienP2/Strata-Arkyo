@@ -7,6 +7,7 @@ Strata Arkyo est un seul programme Rust installé sur un serveur Ubuntu du site.
 - Cahier des charges et revue d'ingénieur : document « Cahier des charges fonctionnel — Strata Arkyo »
 - Architecture technique : document « Architecture technique — Strata Arkyo »
 - Maquette interactive : [`maquette/`](maquette/)
+- **Installer sur Ubuntu, pas à pas : [`docs/installation-ubuntu.md`](docs/installation-ubuntu.md)**
 
 ## État d'avancement
 
@@ -36,6 +37,7 @@ Strata Arkyo est un seul programme Rust installé sur un serveur Ubuntu du site.
 | `crates/strata-update` | Paquets signés, versions côte à côte, bascule, garde de démarrage, retour arrière |
 | `crates/strata-backup` | Sauvegardes vérifiées du site, restauration au démarrage |
 | `crates/strata-release` | Outil de l'éditeur : clés, paquets `.saupd`, manifestes de canal |
+| `docs/` | Guides d'exploitation, dont l'installation sur Ubuntu |
 | `packaging/` | Service systemd, réglages, scripts du paquet Debian |
 | `maquette/` | Maquettes interactives : `index.html` (v1), `v2/` (design « Strates » retenu) |
 
@@ -205,6 +207,8 @@ La sauvegarde complète du site se fait chaque jour à 03:00 (les 7 dernières s
 Une restauration est préparée (archive vérifiée, extraite), annulable, puis appliquée au démarrage suivant. Les données actuelles sont alors mises de côté dans `set-aside/<date>/`, jamais effacées. Si la restauration échoue sans pouvoir remettre les données d'origine, le moteur refuse de démarrer sur une base vide et indique le dossier à remettre en place.
 
 ## Paquet Debian
+
+Pour une installation complète commentée (prérequis, compilation, premier compte, pare-feu, HTTPS, dépannage), suivez le [guide d'installation sur Ubuntu](docs/installation-ubuntu.md).
 
 ```sh
 cargo install cargo-deb
