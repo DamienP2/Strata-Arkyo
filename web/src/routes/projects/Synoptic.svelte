@@ -66,7 +66,7 @@
   async function validate() { try { issues = await api.get(`/projects/${pid}/synoptic/validate`); } catch (e) { fail(e); } }
   function pickCable(id: string, e: MouseEvent) {
     e.stopPropagation();
-    if (tool !== 'select') return;
+    if (tool !== 'select' || (armed.length && cab.mode === 'multipoint')) return;
     const cb = syn?.cables.find((x) => x.id === id);
     if (cb && lockedFam.has(famOf(cb))) { toast('Calque verrouillé : déverrouillez-le pour choisir ce câble.', 'info'); return; }
     if (e.ctrlKey || e.metaKey || e.shiftKey) { const m = new Set(multi); if (m.has(id)) m.delete(id); else m.add(id); multi = m; }
@@ -79,6 +79,25 @@
     if (i.cables[0]) { sel = i.cables[0]; multi = new Set(i.cables); }
   }
   let armed = $state<Port[]>([]);
+  // Barre de câblage : nombre de câbles, tracé automatique ou multipoint, style, câbles parallèles.
+  type CabPrefs = { count: 'simple' | 'multiple'; mode: 'auto' | 'multipoint'; style: 'orthogonal' | 'rounded' | 'arrow'; parallel: 'stacked' | 'spread' };
+  let cab = $state<CabPrefs>({ count: 'simple', mode: 'auto', style: 'rounded', parallel: 'stacked', ...(() => { try { return JSON.parse(localStorage.getItem('syn-cab') ?? '{}'); } catch { return {}; } })() });
+  $effect(() => { const v = JSON.stringify(cab); try { localStorage.setItem('syn-cab', v); } catch { /* indisponible */ } });
+  /** Points de passage posés pendant un câblage multipoint. */
+  let wps = $state<[number, number][]>([]);
+  const snap8 = (v: number) => Math.round(v / 8) * 8;
+  /** Style par défaut des prochains câbles ; appliqué aussi aux câbles sélectionnés. */
+  async function setStyle(st: CabPrefs['style']) {
+    cab.style = st;
+    const ids = [...new Set([...(sel ? [sel] : []), ...multi])];
+    const list = (syn?.cables ?? []).filter((c) => ids.includes(c.id) && c.fields.style !== st);
+    if (!list.length || !mine) return;
+    try {
+      for (const c of list) await api.patch(`/cables/${c.id}`, { rev: c.rev, ...c.fields, style: st });
+      toast(`Style appliqué à ${list.length} câble${list.length > 1 ? 's' : ''}.`);
+      await load();
+    } catch (e) { fail(e); await load(); }
+  }
   let mouse = $state<[number, number] | null>(null);
   let confirmReplace = $state<{ body: object; n: number } | null>(null);
   let confirmDelete = $state(false);
@@ -142,7 +161,7 @@
   const right = (n: SNode) => n.ports.filter((p) => p.side === 'r');
   // Libellés des ports par ligne : l'entrée et la sortie se partagent la place (mesurée en pixels).
   const portChip = (p: SNode['ports'][number]) => short(p.connector) + (p.gender === 'M' ? ' M' : p.gender === 'F' ? ' F' : '');
-  const portText = (p: SNode['ports'][number]) => p.label + (p.dir === 'bidir' ? ' ↔' : '');
+  const portText = (p: SNode['ports'][number]) => p.label;
   const chipWidth = (s: string) => s.length * 6.3 + 12;
   const fitCache = new Map<string, { l: string; r: string }[]>();
   function fittedLabels(n: SNode): { l: string; r: string }[] {
@@ -153,8 +172,7 @@
     const rows: { l: string; r: string }[] = [];
     for (let i = 0; i < Math.max(L.length, R.length); i++) {
       const a = L[i], b = R[i];
-      const from = a ? 16 + chipWidth(portChip(a)) + 7 : 10;
-      const to = b ? NW - 16 - chipWidth(portChip(b)) - 7 : NW - 10;
+      const from = 24, to = NW - 24;
       const [wl, wr] = shareRow(a ? textWidth(portText(a)) : null, b ? textWidth(portText(b)) : null, to - from);
       rows.push({ l: a ? fitText(portText(a), wl) : '', r: b ? fitText(portText(b), wr) : '' });
     }
@@ -210,6 +228,7 @@
     for (const c of syn.cables) {
       if (!c.a_in_view || !c.b_in_view || hiddenFam.has(famOf(c))) continue;
       const A = portXY(c.a), B = portXY(c.b); if (!A || !B) continue;
+      if (c.fields.waypoints?.length) continue; // tracé multipoint : posé à la main
       reqs.push({ id: c.id, a: { x: A[0], y: A[1], side: A[2] }, b: { x: B[0], y: B[1], side: B[2] }, out: tagW(c) + TAG_GAP * 2 + 12 });
     }
     return routeAll(reqs, boxes as [number, number, number, number][]);
@@ -219,9 +238,33 @@
     if (!A || !B) return null;
     const w = tagW(c);
     const tagAt = (sd: 'l' | 'r', x: number, y: number) => (sd === 'r' ? [x + TAG_GAP, y] : [x - TAG_GAP - w, y]) as [number, number];
-    const r = routed.get(c.id);
-    const d = r ? (c.fields.style === 'rounded' ? rounded(r.pts, 12) : rounded(r.pts, 4)) : `M${A[0]} ${A[1]}L${B[0]} ${B[1]}`;
-    return { d, t1: tagAt(A[2], A[0], A[1]), t2: tagAt(B[2], B[0], B[1]) };
+    const st = c.fields.style;
+    let pts: [number, number][];
+    const wp = c.fields.waypoints ?? [];
+    if (wp.length) {
+      // Multipoint : sortie droite du port, points de passage, entrée droite du port.
+      const out = TAG_GAP * 2 + w;
+      const raw: [number, number][] = [[A[0], A[1]], [A[0] + (A[2] === 'r' ? out : -out), A[1]], ...wp, [B[0] + (B[2] === 'r' ? out : -out), B[1]], [B[0], B[1]]];
+      pts = [raw[0]!];
+      for (let i = 1; i < raw.length; i++) {
+        const p = pts[pts.length - 1]!, q = raw[i]!;
+        if (st !== 'arrow' && p[0] !== q[0] && p[1] !== q[1]) pts.push([q[0], p[1]]);
+        pts.push(q);
+      }
+    } else {
+      const r = routed.get(c.id);
+      pts = r ? r.pts : [[A[0], A[1]], [B[0], B[1]]];
+    }
+    const d = st === 'rounded' ? rounded(pts, 12) : st === 'arrow' && wp.length ? pts.map((q, i) => `${i ? 'L' : 'M'}${q[0]} ${q[1]}`).join('') : rounded(pts, 4);
+    // Flèche : pointe sur l'extrémité d'arrivée.
+    let ah = '';
+    if (st === 'arrow' && pts.length > 1) {
+      const [x2, y2] = pts[pts.length - 1]!, [x1, y1] = pts[pts.length - 2]!;
+      const a = Math.atan2(y2 - y1, x2 - x1), L = 11, W = 5;
+      const bx = x2 - Math.cos(a) * 6, by = y2 - Math.sin(a) * 6;
+      ah = `M${bx} ${by}L${bx - Math.cos(a) * L + Math.sin(a) * W} ${by - Math.sin(a) * L - Math.cos(a) * W}L${bx - Math.cos(a) * L - Math.sin(a) * W} ${by - Math.sin(a) * L + Math.cos(a) * W}Z`;
+    }
+    return { d, ah, t1: tagAt(A[2], A[0], A[1]), t2: tagAt(B[2], B[0], B[1]) };
   }
   function stub(c: CableV) {
     const inside = c.a_in_view ? c.a : c.b;
@@ -386,6 +429,10 @@
   }
   function down(e: PointerEvent) {
     const t = e.target as Element;
+    // Câblage multipoint : tout clic hors d'un port ou d'un nœud pose un point de passage.
+    if (mine && armed.length && cab.mode === 'multipoint' && !t.closest('.port') && !t.closest('[data-node]')) {
+      const [wx, wy] = toWorld(e); wps = [...wps, [snap8(wx), snap8(wy)]]; e.stopPropagation(); return;
+    }
     if (t.closest('.port') || (tool === 'select' && (t.closest('.cable') || t.closest('.lbl')))) return;
     const nodeEl = t.closest<SVGGElement>('[data-node]');
     const annEl = t.closest<SVGGElement>('[data-ann]');
@@ -481,18 +528,21 @@
     if (armed.length === 1 && n.kind !== 'adapter' && isAdIn(armed[0]!) && armed[0]!.connector === p.connector) { const a = armed[0]!; armed = []; mouse = null; attachTo(a, p); return; }
     if (armed.length === 1 && isAdIn(p) && nodeOf(armed[0]!.ref)?.kind !== 'adapter' && armed[0]!.connector === p.connector) { const t = armed[0]!; armed = []; mouse = null; attachTo(p, t); return; }
     const first = nodeOf(armed[0]!.ref);
-    if (e.shiftKey && first?.key === n.key) { armed = [...armed, p]; return; }
+    if ((e.shiftKey || cab.count === 'multiple') && first?.key === n.key) { armed = [...armed, p]; return; }
     // Cible : ports consécutifs du même côté, à partir du port cliqué.
     const list = p.side === 'l' ? left(n) : right(n);
     const start = list.indexOf(p);
     const srcs = [...armed].sort((a, b) => (portXY(a.ref)?.[1] ?? 0) - (portXY(b.ref)?.[1] ?? 0));
     const targets = list.slice(start, start + srcs.length);
     if (targets.length < srcs.length) { toast(`Pas assez de ports à partir de « ${p.label} » : ${srcs.length} demandés.`, 'warn'); return; }
-    const body = { cables: srcs.map((s, i) => ({ a: s.ref, b: targets[i]!.ref })) };
-    armed = []; mouse = null;
+    // Multipoint : les points de passage posés ; écartés, les câbles suivants sont décalés.
+    const pts = cab.mode === 'multipoint' ? wps : [];
+    const body = { cables: srcs.map((s, i) => ({ a: s.ref, b: targets[i]!.ref, style: cab.style,
+      waypoints: pts.map(([x, y]) => (cab.parallel === 'spread' ? [x + i * 10, y + i * 10] : [x, y]) as [number, number]) })) };
+    armed = []; mouse = null; wps = [];
     place(body, false);
   }
-  async function place(body: { cables: { a: string; b: string }[] }, replace: boolean) {
+  async function place(body: { cables: { a: string; b: string; style?: string; waypoints?: [number, number][] }[] }, replace: boolean) {
     try {
       const r = await api.post<{ created: { id: string }[]; warnings: string[][] }>(`/projects/${pid}/cables`, { ...body, replace });
       push({ label: `${body.cables.length} câble(s)`, undo: async () => { const ids = body.cables.map((c) => findCable(c.a, c.b)?.id).filter(Boolean); if (ids.length) await api.post(`/projects/${pid}/cables/delete`, { ids }); }, redo: () => api.post(`/projects/${pid}/cables`, { ...body, replace: true }) });
@@ -547,7 +597,8 @@
   }
   function key(e: KeyboardEvent) {
     if ((e.target as Element).closest('input,textarea,select')) return;
-    if (e.key === 'Escape') { armed = []; mouse = null; sel = null; multi = new Set(); hl = { cables: new Set(), nodes: new Set() }; }
+    if (e.key === 'Backspace' && armed.length && wps.length) { e.preventDefault(); wps = wps.slice(0, -1); return; }
+    if (e.key === 'Escape') { wps = []; armed = []; mouse = null; sel = null; multi = new Set(); hl = { cables: new Set(), nodes: new Set() }; }
     if ((e.key === 'Delete' || e.key === 'Backspace') && mine) {
       if (annMulti.size > 1) { e.preventDefault(); cutAnns(); }
       else if (annSel) { e.preventDefault(); deleteAnn(annSel); }
@@ -665,7 +716,9 @@
   }
   const armedPreview = $derived.by(() => {
     if (!armed.length || !mouse) return '';
-    return armed.map((a) => { const P = portXY(a.ref); if (!P) return ''; const [x, y, s] = P; const mx = x + (s === 'r' ? 30 : -30); return `M${x} ${y}H${mx}L${mouse![0]} ${mouse![1]}`; }).join(' ');
+    return armed.map((a, i) => { const P = portXY(a.ref); if (!P) return ''; const [x, y, s] = P; const mx = x + (s === 'r' ? 30 : -30);
+      const via = wps.map(([wx, wy]) => (cab.parallel === 'spread' ? `L${wx + i * 10} ${wy + i * 10}` : `L${wx} ${wy}`)).join('');
+      return `M${x} ${y}H${mx}${via}L${mouse![0]} ${mouse![1]}`; }).join(' ');
   });
   const endName = (ref: string, info: Far | null) => { const n = nodeOf(ref); const p = n?.ports.find((x) => x.ref === ref); return n && p ? `${n.label} › ${p.label}` : info ? `${info.label} › ${info.port}` : 'Extrémité manquante'; };
 </script>
@@ -717,6 +770,21 @@
       <button class="btn sm" class:on={tab === 'issues'} onclick={() => { tab = tab === 'issues' ? 'cable' : 'issues'; if (tab === 'issues') validate(); }}><Icon name="check" size="sm" />Anomalies{#if issues} <span class="mono">{issues.counts.error + issues.counts.warning}</span>{/if}</button>
       {#if mine}<button class="btn sm primary" onclick={() => (numbering = true)}><Icon name="hash" size="sm" />Numéroter</button>{/if}
     </div>
+    {#if mine && !syn.overview}
+      <div class="cab-bar" role="toolbar" aria-label="Câblage">
+        <span class="cb-l">Nombre</span>
+        <div class="seg"><button class:on={cab.count === 'simple'} onclick={() => (cab.count = 'simple')} title="Un câble à la fois">Simple</button><button class:on={cab.count === 'multiple'} onclick={() => (cab.count = 'multiple')} title="Cliquez plusieurs ports d’un équipement, puis le premier port d’arrivée">Multiple</button></div>
+        <span class="cb-l">Mode</span>
+        <div class="seg"><button class:on={cab.mode === 'auto'} onclick={() => { cab.mode = 'auto'; wps = []; }} title="Tracé calculé : parallèle, sans chevauchement">Auto</button><button class:on={cab.mode === 'multipoint'} onclick={() => (cab.mode = 'multipoint')} title="Posez les points de passage en cliquant sur le fond">Multipoint</button></div>
+        <span class="cb-l">Style</span>
+        <div class="seg">{#each [['orthogonal', 'Orthogonal'], ['rounded', 'Arrondi'], ['arrow', 'Flèche']] as [k, l]}<button class:on={cab.style === k} onclick={() => setStyle(k as CabPrefs['style'])}>{l}</button>{/each}</div>
+        {#if cab.count === 'multiple' && cab.mode === 'multipoint'}
+          <span class="cb-l">Parallèle</span>
+          <div class="seg"><button class:on={cab.parallel === 'stacked'} onclick={() => (cab.parallel = 'stacked')}>Superposé</button><button class:on={cab.parallel === 'spread'} onclick={() => (cab.parallel = 'spread')}>Écarté</button></div>
+        {/if}
+        {#if armed.length && cab.mode === 'multipoint'}<span class="cb-hint"><Icon name="info" size="sm" />Cliquez le fond pour poser un point ({wps.length}) · cliquez le port d’arrivée pour finir · Retour arrière : enlever le dernier · Échap : annuler</span>{/if}
+      </div>
+    {/if}
     <div class="syn-body">
       <div class="syn-stage" bind:this={stageEl} bind:clientWidth={stageW} bind:clientHeight={stageH}><svg bind:this={svgEl} class="syn-canvas" class:arming={armed.length > 0} role="application" aria-label="Synoptique"
         onwheel={wheel} onpointerdown={down} onpointermove={move} onpointerup={up}>
@@ -768,7 +836,7 @@
                 {#if g}
                   <g class="cable" class:off={hiddenFam.has(famOf(c))} class:attach={c.fields.attach} class:harnessed={!!harnessOf(c)} class:sel={multi.has(c.id) || sel === c.id} class:rsel={rsel.has(c.id)} class:hl={hl.cables.has(c.id)} class:warn={c.warnings.length > 0} style="--c:{cableColor(c)};--h:{harnessOf(c)?.color ?? 'transparent'};--rs:{rsel.get(c.id) ?? 'transparent'}" role="button" tabindex="-1" onclick={(e) => pickCable(c.id, e)} onkeydown={() => {}}>
                     <title>{c.fields.number ?? 'Sans numéro'} · {endName(c.a, c.a_info)} → {endName(c.b, c.b_info)}</title>
-                    <path class="case" d={g.d} /><path class="vis" d={g.d} /><path class="hit" d={g.d} />
+                    <path class="case" d={g.d} /><path class="vis" d={g.d} /><path class="hit" d={g.d} />{#if g.ah}<path class="ahead" d={g.ah} />{/if}
                   </g>
                 {/if}
               {:else}
@@ -801,15 +869,17 @@
                     {@const x = out ? NW : 0}
                     {@const y = HH + i * PS + PS / 2 + 4}
                     {@const s = portChip(p)}
-                    {@const cw = s.length * 6.3 + 12}
-                    {@const cx0 = out ? NW - 16 - cw : 16}
+                    {@const mk = out ? NW - 19 : 12}
+                    {@const tx = out ? NW - 24 : 24}
                     <g class="port" class:used={used.has(p.ref)} class:armed={armed.some((a) => a.ref === p.ref)} style="--c:{portColor(p)}" role="button" tabindex="-1"
                       onclick={(e) => clickPort(p, n, e)} onkeydown={() => {}}>
                       <title>{p.label} · {refById('connectors', p.connector)?.name ?? p.connector}{p.variant ? ` ${p.variant}` : ''}{p.gender ? ` · ${p.gender === 'M' ? 'mâle' : p.gender === 'F' ? 'femelle' : 'neutre'}` : ''}{p.signal ? ` · ${refById('signals', p.signal)?.name ?? p.signal}` : ''}</title>
                       <circle class="ph" cx={x} cy={y} r="13" />
                       <circle class="pdot" cx={x} cy={y} r="4.5" />
-                      <g class="cchip"><rect x={cx0} y={y - 8.5} width={cw} height="17" rx="4" /><text x={cx0 + cw / 2} y={y + 3.6} text-anchor="middle">{s}</text></g>
-                      <text class="pn" x={out ? cx0 - 7 : cx0 + cw + 7} y={y + 4.5} text-anchor={out ? 'end' : 'start'}>{out ? fittedLabels(n)[i]?.r : fittedLabels(n)[i]?.l}</text>
+                      {#if p.dir === 'in' || p.dir === 'out'}<path class="pmk" d="M{mk} {y - 4.5}l7 4.5-7 4.5z" />
+                      {:else}<path class="pmk" d="M{mk + 3.5} {y - 4.5}l-3.5 4.5 3.5 4.5z" /><path class="pmk2" d="M{mk + 3.5} {y - 4.5}l3.5 4.5-3.5 4.5z" />{/if}
+                      <text class="pn" x={tx} y={y - 0.5} text-anchor={out ? 'end' : 'start'}>{out ? fittedLabels(n)[i]?.r : fittedLabels(n)[i]?.l}</text>
+                      <text class="pc" x={tx} y={y + 10} text-anchor={out ? 'end' : 'start'}>{s}</text>
                     </g>
                   {/each}
                 {/each}
@@ -855,6 +925,7 @@
             </g>
           {/each}
           {#if armedPreview}<path class="preview" d={armedPreview} />{/if}
+          {#each wps as w}<circle class="wp" cx={w[0]} cy={w[1]} r="4" />{/each}
         </g>
       </svg>
       {#if !syn.overview}
@@ -1113,7 +1184,15 @@
   .port :global(.cg-pin), .port :global(.cg-key) { fill: var(--c); }
   .cchip rect { fill: color-mix(in srgb, var(--fg) 7%, transparent); stroke: color-mix(in srgb, var(--fg) 14%, transparent); stroke-width: .8; }
   .cchip text { font: 600 9.5px var(--mono); fill: var(--fg-3); }
-  .pn { font: 500 13px var(--font); fill: var(--fg-2); }
+  .pn { font: 600 12px var(--font); fill: var(--fg); }
+  .cab-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 12px; border-bottom: 1px solid var(--line); background: var(--surface); }
+  .cb-l { font: 600 10px var(--mono); letter-spacing: .09em; text-transform: uppercase; color: var(--fg-3); margin-left: 6px; }
+  .cb-hint { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; font-size: 12.5px; color: var(--accent); }
+  .wp { fill: var(--surface); stroke: var(--accent); stroke-width: 2; }
+  .cable .ahead { fill: var(--c); stroke: none; pointer-events: none; }
+  .pc { font: 500 8.5px var(--mono); letter-spacing: .03em; fill: var(--fg-3); }
+  .pmk { fill: var(--c); }
+  .pmk2 { fill: var(--fg-2); }
   /* Câbles */
   .cable { cursor: pointer; }
   .cable .case { fill: none; stroke: var(--surface-2); stroke-width: 6; }

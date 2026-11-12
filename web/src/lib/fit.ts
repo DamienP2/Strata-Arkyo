@@ -5,7 +5,7 @@
 let ctx: CanvasRenderingContext2D | null = null;
 const cache = new Map<string, number>();
 
-export const PORT_FONT = '500 13px "Inter Variable", Inter, system-ui, sans-serif';
+export const PORT_FONT = '600 12px "Inter Variable", Inter, system-ui, sans-serif';
 
 /** Largeur d'un texte en pixels (approximation si le canvas est indisponible). */
 export function textWidth(text: string, font = PORT_FONT): number {

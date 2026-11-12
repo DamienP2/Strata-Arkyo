@@ -37,14 +37,13 @@
   const y = (i: number) => HH + i * PS + PS / 2 + 4;
   const chipW = (s: string) => s.length * 6.3 + 12;
   const chipOf = (p: Port) => short(p.connector_id) + (p.gender === 'M' ? ' M' : p.gender === 'F' ? ' F' : '');
-  const text = (e: { label: string; p: Port }) => e.label + (e.p.direction === 'bidir' ? ' ↔' : '');
+  const text = (e: { label: string; p: Port }) => e.label;
   /** Libellés de chaque ligne, raccourcis pour que l'entrée et la sortie ne se chevauchent pas. */
   const fitted = $derived.by(() => {
     const out: { l: string; r: string }[] = [];
     for (let i = 0; i < Math.max(shownIn.length, shownOut.length); i++) {
       const L = shownIn[i], R = shownOut[i];
-      const from = L ? 16 + chipW(chipOf(L.p)) + 7 : 10;
-      const to = R ? NW - 16 - chipW(chipOf(R.p)) - 7 : NW - 10;
+      const from = 24, to = NW - 24;
       const [wl, wr] = shareRow(L ? textWidth(text(L)) : null, R ? textWidth(text(R)) : null, to - from);
       out.push({ l: L ? fitText(text(L), wl) : '', r: R ? fitText(text(R), wr) : '' });
     }
@@ -57,14 +56,16 @@
 {#snippet port(e: { label: string; p: Port; g: number }, i: number, out: boolean)}
   {@const x = out ? NW : 0}
   {@const s = chipOf(e.p)}
-  {@const cw = chipW(s)}
-  {@const cx0 = out ? NW - 16 - cw : 16}
+  {@const mk = out ? NW - 19 : 12}
+  {@const tx = out ? NW - 24 : 24}
   <g class="port" class:hl={hl === e.g} class:dim={hl != null && hl !== e.g} style="--c:{color(e.p)}">
     <title>{e.label} · {refById('connectors', e.p.connector_id)?.name ?? e.p.connector_id}{e.p.variant ? ` ${e.p.variant}` : ''} {e.p.gender === 'M' ? 'mâle' : 'femelle'}{e.p.signal_id ? ` · ${refById('signals', e.p.signal_id)?.name ?? ''}` : ''}{e.p.direction === 'bidir' ? ' · bidirectionnel' : ''}</title>
     {#if hl === e.g}<rect class="hlbar" x={out ? NW / 2 + 2 : 2} y={y(i) - 13} width={NW / 2 - 4} height="26" rx="6" />{/if}
     <circle class="pdot" cx={x} cy={y(i)} r="4.5" />
-    <g class="cchip"><rect x={cx0} y={y(i) - 8.5} width={cw} height="17" rx="4" /><text x={cx0 + cw / 2} y={y(i) + 3.6} text-anchor="middle">{s}</text></g>
-    <text class="pn" x={out ? cx0 - 7 : cx0 + cw + 7} y={y(i) + 4.5} text-anchor={out ? 'end' : 'start'}>{out ? fitted[i]?.r : fitted[i]?.l}</text>
+    {#if e.p.direction === 'bidir'}<path class="pmk" d="M{mk + 3.5} {y(i) - 4.5}l-3.5 4.5 3.5 4.5z" /><path class="pmk2" d="M{mk + 3.5} {y(i) - 4.5}l3.5 4.5-3.5 4.5z" />
+    {:else}<path class="pmk" d="M{mk} {y(i) - 4.5}l7 4.5-7 4.5z" />{/if}
+    <text class="pn" x={tx} y={y(i) - 0.5} text-anchor={out ? 'end' : 'start'}>{out ? fitted[i]?.r : fitted[i]?.l}</text>
+    <text class="pc" x={tx} y={y(i) + 10} text-anchor={out ? 'end' : 'start'}>{s}</text>
   </g>
 {/snippet}
 
@@ -102,7 +103,8 @@
   .port { transition: opacity .15s; }
   .port.dim { opacity: .35; }
   .hlbar { fill: color-mix(in srgb, var(--c) 12%, transparent); }
-  .cchip rect { fill: color-mix(in srgb, var(--fg) 7%, transparent); stroke: color-mix(in srgb, var(--fg) 14%, transparent); stroke-width: .8; }
-  .cchip text { font: 600 9.5px var(--mono); letter-spacing: .03em; fill: var(--fg-3); }
-  .pn { font: 500 13px var(--font); fill: var(--fg-2); }
+  .pn { font: 600 12px var(--font); fill: var(--fg); }
+  .pc { font: 500 8.5px var(--mono); letter-spacing: .03em; fill: var(--fg-3); }
+  .pmk { fill: var(--c); }
+  .pmk2 { fill: var(--fg-2); }
 </style>
