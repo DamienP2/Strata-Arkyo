@@ -488,18 +488,14 @@ export class RackScene {
     const add = (geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number, parent: THREE.Object3D = this.root) => {
       const o = new THREE.Mesh(geo, mat); o.position.set(x, y, z); o.castShadow = true; o.receiveShadow = true; parent.add(o); return o;
     };
-    // Matières : plateau anthracite mat, noyer veiné, alu brossé, cuir, filet LED.
-    const grain = (() => {
-      const [c, g] = canvas(1024, 256); g.fillStyle = '#6b4329'; g.fillRect(0, 0, 1024, 256);
-      for (let i = 0; i < 140; i++) { const y = Math.random() * 256, a = 0.05 + Math.random() * 0.12; g.strokeStyle = `rgba(${Math.random() < 0.5 ? '40,22,12' : '150,100,62'},${a})`; g.lineWidth = 0.6 + Math.random() * 2.2; g.beginPath(); g.moveTo(0, y); for (let x = 0; x <= 1024; x += 64) g.lineTo(x, y + Math.sin(x / (90 + i)) * 5 + (Math.random() - 0.5) * 2); g.stroke(); }
-      return tex(c, true, [2, 1]);
-    })();
-    const walnut = new THREE.MeshPhysicalMaterial({ color: '#ffffff', map: grain, roughness: 0.45, clearcoat: 0.55, clearcoatRoughness: 0.35 });
-    const wood = new THREE.MeshPhysicalMaterial({ color: '#16181b', roughness: 0.82, metalness: 0.02, clearcoat: 0.06 });
-    const leather = new THREE.MeshPhysicalMaterial({ color: '#17181b', roughness: 0.82, sheen: 0.6, sheenRoughness: 0.5, sheenColor: new THREE.Color('#3a3d44') });
+    // Matières : plateau noir mat, bandeau noir laqué, alu satiné, cuir, filet LED.
+    // Noir satiné pour la coque, noir laqué pour le bandeau et les joues des casquettes.
+    const walnut = new THREE.MeshPhysicalMaterial({ color: '#0b0c0e', roughness: 0.35, metalness: 0.1, clearcoat: 0.5, clearcoatRoughness: 0.3, envMapIntensity: 0.4 });
+    const wood = new THREE.MeshPhysicalMaterial({ color: '#050506', roughness: 0.9, metalness: 0, specularIntensity: 0.25, envMapIntensity: 0.2 });
+    const leather = new THREE.MeshPhysicalMaterial({ color: '#111214', roughness: 0.82, envMapIntensity: 0.3, sheen: 0.6, sheenRoughness: 0.5, sheenColor: new THREE.Color('#3a3d44') });
     const led = new THREE.MeshStandardMaterial({ color: '#9cc8ff', emissive: '#5aa8ff', emissiveIntensity: 1.3 });
     const satin = new THREE.MeshStandardMaterial({ color: '#8d939b', metalness: 0.85, roughness: 0.42 });
-    // Plateau : anthracite à l'arrière, bandeau en noyer et repose-poignets en cuir côté opérateur.
+    // Plateau : noir mat à l'arrière, bandeau laqué et repose-poignets en cuir côté opérateur.
     const T = 0.032, band = 0.11;
     add(new RoundedBoxGeometry(L - 0.002, T, D - band, 3, 0.008), wood, 0, Hd - T / 2, -band / 2);
     add(new RoundedBoxGeometry(L, T, band, 3, 0.01), walnut, 0, Hd - T / 2, D / 2 - band / 2);
@@ -516,24 +512,26 @@ export class RackScene {
     add(new RoundedBoxGeometry(L - 0.1, Hd * 0.42, 0.02, 2, 0.005), wood, 0, Hd - T - Hd * 0.21, -D / 2 + 0.16);
     add(new THREE.BoxGeometry(L - 0.12, 0.08, 0.12), m.steel, 0, Hd - T - 0.06, -D / 2 + 0.08);
     add(new THREE.BoxGeometry(L - 0.1, 0.04, 0.04), satin, 0, 0.12, -D / 2 + 0.2);
-    // Casquettes : passage 19″, joues, dessus ; base sur le plateau, au fond.
+    // Casquettes encastrées : elles s'enfoncent dans le plateau et s'adossent à un gradin noir
+    // continu sur toute la longueur, qui les relie comme une seule pièce de mobilier.
     let topY = Hd;
+    const deckD = Math.max(0.15, ...casq.map((c) => Math.min(D - 0.05, c.depth_mm / 1000)));
+    const deckH = casq.length ? Math.max(...casq.map((c) => Math.max(1, c.units) * U + 0.05)) * 0.55 : 0;
+    if (casq.length) {
+      add(new RoundedBoxGeometry(L - 0.004, deckH, deckD * 0.6, 3, 0.01), wood, 0, Hd + deckH / 2, -D / 2 + deckD * 0.3 + 0.01);
+      add(new THREE.BoxGeometry(L - 0.1, 0.004, 0.006), led, 0, Hd + deckH - 0.004, -D / 2 + deckD * 0.6 + 0.012).castShadow = false;
+    }
     for (const c of casq) {
       const units = Math.max(1, c.units), dC = Math.max(0.15, Math.min(D - 0.05, c.depth_mm / 1000));
       const Wc = W19 + 0.05, Hc = units * U + 0.05;
       const g = new THREE.Group();
       const x = -L / 2 + c.offset_mm / 1000 + Wc / 2;
       g.position.set(Math.max(-L / 2 + Wc / 2, Math.min(L / 2 - Wc / 2, x)), Hd, -D / 2 + dC / 2 + 0.02);
-      // Pivot au pied de la face : la casquette se couche vers l'arrière, sur un socle en coin
-      // qui comble l'espace sous l'avant.
-      const th = THREE.MathUtils.degToRad(c.tilt_deg), lift = dC * Math.sin(th);
-      const tilt = new THREE.Group(); tilt.position.set(0, lift, dC / 2); tilt.rotation.x = -th; g.add(tilt);
-      if (lift > 0.002) {
-        const zf = dC / 2, zb = dC / 2 - dC * Math.cos(th);
-        const sh = new THREE.Shape(); sh.moveTo(-zf, 0); sh.lineTo(-zf, lift); sh.lineTo(-zb, 0); sh.closePath();
-        const wedge = new THREE.Mesh(new THREE.ExtrudeGeometry(sh, { depth: Wc, bevelEnabled: false }), walnut);
-        wedge.rotation.y = Math.PI / 2; wedge.position.set(-Wc / 2, 0, 0); wedge.castShadow = wedge.receiveShadow = true; g.add(wedge);
-      }
+      // Pivot au ras du plateau, à l'avant : le pied arrière s'enfonce dans le meuble.
+      const th = THREE.MathUtils.degToRad(c.tilt_deg), lift = 0;
+      const tilt = new THREE.Group(); tilt.position.set(0, 0, dC / 2); tilt.rotation.x = -th; g.add(tilt);
+      // Cadre d'encastrement : un liseré alu au ras du plateau autour de l'ouverture.
+      add(new THREE.BoxGeometry(Wc + 0.02, 0.003, 0.012), satin, 0, 0.0015, dC / 2 + 0.006, g);
       const body = new THREE.Group(); body.position.set(0, 0, -dC / 2); tilt.add(body);
       for (const sx of [-1, 1]) this.sides.push(add(new RoundedBoxGeometry(0.022, Hc, dC, 3, 0.006), walnut, sx * (Wc / 2 - 0.011), Hc / 2, 0, body));
       add(new RoundedBoxGeometry(Wc + 0.01, 0.02, dC + 0.01, 3, 0.008), wood, 0, Hc - 0.01, 0, body);

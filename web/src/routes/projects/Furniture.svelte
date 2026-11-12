@@ -125,6 +125,7 @@
           <div class="plan" bind:clientWidth={planW} style="height:{planH + 40}px" role="presentation" onpointermove={moveDrag} onpointerup={endDrag}>
             <div class="desk" style="width:{L * s}px;height:{Hd * s}px">
               <span class="top"></span><span class="pad"></span><span class="led"></span>
+              {#if casq.length}<span class="deck" style="height:{Math.max(...casq.map((c) => c.height_u ?? 6)) * 44.45 * s * 0.55}px"><i></i></span>{/if}
               <span class="leg l"></span><span class="leg r"></span><span class="voile"></span><span class="tray"></span>
               <span class="floor"></span>
               <span class="dim mono"><i></i>{nf(L)} mm<i></i></span>
@@ -209,8 +210,10 @@
   .g2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .plan { position: relative; display: flex; align-items: flex-end; justify-content: center; padding: 20px 60px 50px; box-sizing: content-box; min-height: 380px; touch-action: none; }
   .desk { position: relative; flex: none; }
-  /* Plateau : anthracite, bandeau noyer côté opérateur, repose-poignets cuir, filet LED. */
-  .desk .top { position: absolute; left: -2px; right: -2px; top: 0; height: 14px; border-radius: 5px 5px 3px 3px; background: linear-gradient(180deg, #a2724a 0%, #7a5236 45%, #5a3a24 100%), repeating-linear-gradient(90deg, rgba(0,0,0,.08) 0 3px, transparent 3px 11px); background-blend-mode: multiply; box-shadow: inset 0 1px 0 rgba(255,255,255,.25), 0 2px 0 #1a1b1e, 0 14px 26px -14px rgba(0,0,0,.65); z-index: 2; }
+  /* Plateau : noir mat, bandeau noir laqué côté opérateur, repose-poignets cuir, filet LED. */
+  .desk .top { position: absolute; left: -2px; right: -2px; top: 0; height: 14px; border-radius: 5px 5px 3px 3px; background: linear-gradient(180deg, #3a3d42 0%, #16171a 40%, #0b0c0e 100%); box-shadow: inset 0 1px 0 rgba(255,255,255,.25), 0 2px 0 #1a1b1e, 0 14px 26px -14px rgba(0,0,0,.65); z-index: 2; }
+  .desk .deck { position: absolute; left: 0; right: 0; bottom: 100%; border-radius: 6px 6px 0 0; background: linear-gradient(180deg, #2a2c31, #111215); box-shadow: inset 0 1px 0 rgba(255,255,255,.08); z-index: 1; }
+  .desk .deck i { position: absolute; left: 3%; right: 3%; top: 3px; height: 2px; border-radius: 2px; background: #9cc8ff; box-shadow: 0 0 6px 1px rgba(90,168,255,.8); }
   .desk .pad { position: absolute; left: 8%; right: 8%; top: -6px; height: 8px; border-radius: 6px; background: linear-gradient(180deg, #34373d, #141517); box-shadow: 0 1px 2px rgba(0,0,0,.5); z-index: 3; }
   .desk .led { position: absolute; left: 4%; right: 4%; top: 15px; height: 2px; border-radius: 2px; background: #9cc8ff; box-shadow: 0 0 6px 1px rgba(90,168,255,.85), 0 0 18px 4px rgba(90,168,255,.35); z-index: 2; }
   .desk .leg { position: absolute; top: 12px; bottom: 0; width: 20px; border-radius: 3px; background: linear-gradient(90deg, #8c939b, #e3e6ea 35%, #b9bec5 60%, #7f868e); box-shadow: inset 0 0 0 1px rgba(0,0,0,.25); z-index: 1; }
@@ -223,8 +226,8 @@
   .desk .dim i:first-child::before, .desk .dim i:last-child::after { content: ''; position: absolute; top: -4px; width: 1px; height: 9px; background: var(--fg-3); }
   .desk .dim i:first-child::before { left: 0; } .desk .dim i:last-child::after { right: 0; }
   .desk .dimh { position: absolute; left: -48px; top: 50%; transform: translateY(-50%); font-size: 11px; color: var(--fg-3); }
-  /* Casquette : joues en noyer, dessus anthracite, liseré alu. */
-  .cq { position: absolute; bottom: 100%; margin-bottom: 6px; padding: 0 calc(25 * var(--u) / 44.45) calc(25 * var(--u) / 44.45); box-sizing: border-box; border-radius: 7px 7px 2px 2px; background: linear-gradient(90deg, #5a3a24, #8a5d3c 6%, #2b2e33 6.5%, #2b2e33 93.5%, #8a5d3c 94%, #5a3a24); box-shadow: inset 0 3px 0 #1b1d21, inset 0 4px 0 rgba(220,224,230,.6), 0 0 0 1px #0d0e10, 0 14px 22px -14px rgba(0,0,0,.75); cursor: grab; touch-action: none; z-index: 2; }
+  /* Casquette encastrée : joues noir laqué, dessus noir, liseré alu ; gradin continu derrière. */
+  .cq { position: absolute; bottom: 100%; margin-bottom: 0; padding: 0 calc(25 * var(--u) / 44.45) calc(25 * var(--u) / 44.45); box-sizing: border-box; border-radius: 7px 7px 2px 2px; background: linear-gradient(90deg, #050506, #2a2c31 5%, #141518 6.5%, #141518 93.5%, #2a2c31 95%, #050506); box-shadow: inset 0 3px 0 #1b1d21, inset 0 4px 0 rgba(220,224,230,.6), 0 0 0 1px #0d0e10, 0 14px 22px -14px rgba(0,0,0,.75); cursor: grab; touch-action: none; z-index: 2; }
   .cq.sel { box-shadow: inset 0 3px 0 #1b1d21, inset 0 4px 0 rgba(220,224,230,.6), 0 0 0 3px var(--accent), 0 14px 22px -14px rgba(0,0,0,.75); }
   .cq.dragging { cursor: grabbing; opacity: .9; }
   .cq-name { position: absolute; left: 0; right: 0; bottom: 100%; margin-bottom: 4px; text-align: center; font: 600 11px var(--font); color: var(--fg-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
