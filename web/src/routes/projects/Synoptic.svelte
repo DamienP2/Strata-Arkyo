@@ -12,6 +12,7 @@
   import { withLightTheme, standalone, raster, pdf as toPdf, save } from '../../lib/svgexport';
   import { PAPERS, type Paper } from '../../lib/sheet';
   import RemoteCursors from '../../components/RemoteCursors.svelte';
+  import { routeAll, rounded, type Routed, type Req as RouteReq } from '../../lib/cableroute';
   import ProjectLinks from '../../components/ProjectLinks.svelte';
   import { sendCursor, sendSelection, type PresenceMember } from '../../lib/live.svelte';
   import { api, ApiError } from '../../lib/api';
@@ -178,32 +179,26 @@
   }
   const tagW = (c: CableV) => (c.fields.number ? c.fields.number.length * 6.9 + 19 : 22);
   const boxes = $derived(syn ? nodes.map((n) => { const p = pos[n.key] ?? { x: 0, y: 0 }; return [p.x - 6, p.y - 8, p.x + NW + 6, p.y + nodeH(n) + 8]; }) : []);
-  const laneFree = (xa: number, xb: number, y: number) => { const a = Math.min(xa, xb), b = Math.max(xa, xb); return !boxes.some(([x0, y0, x1, y1]) => y > y0! && y < y1! && b > x0! && a < x1!); };
-  const colFree = (x: number, ya: number, yb: number) => { const a = Math.min(ya, yb), b = Math.max(ya, yb); return !boxes.some(([x0, y0, x1, y1]) => x > x0! && x < x1! && b > y0! && a < y1!); };
-  function findLane(xa: number, xb: number, y: number, dir = 0) {
-    if (laneFree(xa, xb, y)) return y;
-    for (let k = 1; k < 80; k++) for (const s of dir ? [dir] : [1, -1]) { const yy = y + s * k * 12; if (laneFree(xa, xb, yy)) return yy; }
-    return y;
-  }
-  const jit = (id: string) => ((id.charCodeAt(id.length - 1) + id.charCodeAt(id.length - 2)) % 5 - 2) * 7;
+  // Routage global : couloirs attribués à tous les câbles de la vue à la fois (aucun
+  // chevauchement, écart constant, faisceaux parallèles, nœuds contournés).
+  const routed = $derived.by(() => {
+    if (!syn || syn.overview) return new Map<string, Routed>();
+    const reqs: RouteReq[] = [];
+    for (const c of syn.cables) {
+      if (!c.a_in_view || !c.b_in_view || hiddenFam.has(famOf(c))) continue;
+      const A = portXY(c.a), B = portXY(c.b); if (!A || !B) continue;
+      reqs.push({ id: c.id, a: { x: A[0], y: A[1], side: A[2] }, b: { x: B[0], y: B[1], side: B[2] }, out: tagW(c) + TAG_GAP * 2 + 12 });
+    }
+    return routeAll(reqs, boxes as [number, number, number, number][]);
+  });
   function cPath(c: CableV) {
     const A = portXY(c.a), B = portXY(c.b);
     if (!A || !B) return null;
-    const [x1, y1, s1] = A, [x2, y2, s2] = B, w = tagW(c), run = w + TAG_GAP * 2, j = jit(c.id);
-    const tagAt = (s: 'l' | 'r', x: number, y: number) => (s === 'r' ? [x + TAG_GAP, y] : [x - TAG_GAP - w, y]) as [number, number];
-    const t1 = tagAt(s1, x1, y1), t2 = tagAt(s2, x2, y2);
-    // Sortie à droite vers une entrée plus à droite : couloirs entre les colonnes.
-    const [ax, ay, as, bx, by, bs] = s1 === 'l' && s2 === 'r' ? [x2, y2, s2, x1, y1, s1] : [x1, y1, s1, x2, y2, s2];
-    if (as === 'r' && bs === 'l' && bx - ax > run * 2 + 20) {
-      const m1 = ax + run + 12 + j, m2 = bx - run - 12 + j;
-      const mx = Math.round(m2 - m1 < 40 ? (m1 + m2) / 2 : m1);
-      if (colFree(mx, ay, by) && laneFree(ax, mx, ay) && laneFree(mx, bx, by)) return { d: `M${ax} ${ay}H${mx}V${by}H${bx}`, t1, t2 };
-      const ly = findLane(m1, m2, (ay + by) / 2);
-      return { d: `M${ax} ${ay}H${m1}V${ly}H${m2}V${by}H${bx}`, t1, t2 };
-    }
-    const d1 = s1 === 'r' ? run + 12 + j : -(run + 12 + j), d2 = s2 === 'r' ? run + 12 - j : -(run + 12 - j);
-    const ym = findLane(x1 + d1, x2 + d2, Math.max(y1, y2) + 30 + Math.abs(j), 1);
-    return { d: `M${x1} ${y1}H${x1 + d1}V${ym}H${x2 + d2}V${y2}H${x2}`, t1, t2 };
+    const w = tagW(c);
+    const tagAt = (sd: 'l' | 'r', x: number, y: number) => (sd === 'r' ? [x + TAG_GAP, y] : [x - TAG_GAP - w, y]) as [number, number];
+    const r = routed.get(c.id);
+    const d = r ? (c.fields.style === 'rounded' ? rounded(r.pts, 12) : rounded(r.pts, 4)) : `M${A[0]} ${A[1]}L${B[0]} ${B[1]}`;
+    return { d, t1: tagAt(A[2], A[0], A[1]), t2: tagAt(B[2], B[0], B[1]) };
   }
   function stub(c: CableV) {
     const inside = c.a_in_view ? c.a : c.b;
