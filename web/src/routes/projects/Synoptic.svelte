@@ -59,7 +59,7 @@
   const rsel = $derived(new Map(Object.values(remoteSel).flatMap((r) => r.ids.map((id) => [id, r.member.color] as const))));
   $effect(() => { const ids = [...new Set([...(sel ? [sel] : []), ...multi])]; if (syn?.view) sendSelection(`project:${pid}/syn:${syn.view}`, ids); });
   let numbering = $state(false);
-  let tab = $state<'cable' | 'issues'>('cable');
+  let tab = $state<'cable' | 'issues' | 'layers' | 'harness'>('cable');
   interface Issue { code: number; severity: 'error' | 'warning' | 'info'; title: string; detail: string; cables: string[]; nodes: string[]; view: string | null }
   let issues = $state<{ counts: { error: number; warning: number; info: number }; issues: Issue[] } | null>(null);
   let hl = $state<{ cables: Set<string>; nodes: Set<string> }>({ cables: new Set(), nodes: new Set() });
@@ -118,7 +118,7 @@
       if (sel && !s.cables.some((c) => c.id === sel)) sel = null;
       multi = new Set([...multi].filter((id) => s.cables.some((c) => c.id === id)));
       if (pendingHl && pendingHl.view === s.view) { const i = pendingHl; pendingHl = null; if (i.cables[0]) { sel = i.cables[0]; multi = new Set(i.cables); } }
-      if (tab === 'issues') validate();
+      validate();
       // La position de chaque nœud est enregistrée une fois : les zones et la validation en dépendent.
       if (s.lock?.mine && !s.overview) {
         const missing = s.nodes.filter((n) => !s.layout[n.key] && pos[n.key]).map((n) => ({ node: n.key, ...pos[n.key]! }));
@@ -144,6 +144,8 @@
   async function release() { stopBeat(); try { await api.del(`/projects/${pid}/synoptic/lock`); } catch { /* déjà libre */ } await load(); }
   async function requestHand() { try { await api.post(`/projects/${pid}/synoptic/lock/request`); toast(`Demande envoyée à ${syn?.lock?.account_name}.`, 'info'); } catch (e) { fail(e); } }
 
+  // Toute sélection ramène l'onglet Propriétés (sauf pendant la validation).
+  $effect(() => { if (sel || selNodes.size || selAnn || armed.length) untrack(() => { if (tab === 'layers' || tab === 'harness') tab = 'cable'; }); });
   let started = false;
   $effect(() => { wanted; untrack(async () => { armed = []; sel = null; await load(); if (!started) { started = true; await take(); } }); });
   $effect(() => join(`project:${pid}`, (c) => {
@@ -331,8 +333,8 @@
     const ys = nodes.flatMap((n) => [pos[n.key]!.y - 40, pos[n.key]!.y + nodeH(n) + 60]);
     const r = svgEl.getBoundingClientRect();
     const w = Math.max(...xs) - Math.min(...xs), h = Math.max(...ys) - Math.min(...ys);
-    k = Math.min(1.2, Math.max(0.2, Math.min(r.width / w, r.height / h)));
-    tx = -Math.min(...xs) * k + (r.width - w * k) / 2; ty = -Math.min(...ys) * k + 10;
+    k = Math.min(1.2, Math.max(0.2, Math.min(r.width / w, (r.height - 60) / h)));
+    tx = -Math.min(...xs) * k + (r.width - w * k) / 2; ty = -Math.min(...ys) * k + 60;
   }
   let fitted = '';
   function start() {
@@ -611,8 +613,8 @@
     const f = drag.from!;
     let nx = Math.round((f.x + dx) / 10) * 10, ny = Math.round((f.y + dy) / 10) * 10;
     const tol = 8 / k, n = nodes.find((x) => x.key === drag!.key);
-    for (const gx of guides.v) for (const off of [0, NW / 2, NW]) if (Math.abs(nx + off - gx) < tol) nx = gx - off;
-    if (n) for (const gy of guides.h) for (const off of [0, nodeH(n) / 2, nodeH(n)]) if (Math.abs(ny + off - gy) < tol) ny = gy - off;
+    for (const gx of rulers ? guides.v : []) for (const off of [0, NW / 2, NW]) if (Math.abs(nx + off - gx) < tol) nx = gx - off;
+    if (n && rulers) for (const gy of guides.h) for (const off of [0, nodeH(n) / 2, nodeH(n)]) if (Math.abs(ny + off - gy) < tol) ny = gy - off;
     const ddx = nx - f.x, ddy = ny - f.y;
     for (const [k2, p0] of Object.entries(drag.group ?? {})) pos[k2] = { x: p0.x + ddx, y: p0.y + ddy };
   }
@@ -838,6 +840,9 @@
   }
   const centerOf = (): [number, number] => { const xs = nodes.map((n) => pos[n.key]!.x + NW / 2), ys = nodes.map((n) => pos[n.key]!.y + nodeH(n) / 2); return xs.length ? [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2] : [0, 0]; };
   let help = $state(false);
+  let rulers = $state(lsGet('rulers', false));
+  let showMap = $state(lsGet('map', true));
+  let moreEl = $state<HTMLDetailsElement | null>(null);
 
   let newHarness = $state<{ name: string; color: string } | null>(null);
   const harnessOf = (c: CableV) => syn?.harnesses.find((h) => h.id === c.fields.harness_id) ?? null;
@@ -1023,62 +1028,54 @@
 {#if !syn}<span class="spin"></span>
 {:else}
   <div class="syn card" style="padding:0;overflow:hidden">
-    <div class="lockbar" class:mine class:other={!mine}>
-      {#if mine}
-        <span class="lk"><span class="key-i"><Icon name="lock" /></span><span><b>Vous avez la main</b> sur le synoptique du projet.</span></span>
-        <span class="sp">{#if requested}<span class="chip warn">{requested} demande la main</span>{/if}<button class="btn sm" onclick={() => { requested = null; release(); }}>Céder la main</button></span>
-      {:else if syn.lock}
-        <span class="lk"><span class="key-i"><Icon name="lock" /></span><span><b>{syn.lock.account_name}</b> a la main depuis {relative(syn.lock.taken_at)}. Vous voyez la dernière version enregistrée.</span></span>
-        <span class="sp">{#if canDesign}<button class="btn sm" onclick={requestHand}>Demander la main</button>{/if}</span>
-      {:else}
-        <span class="lk"><span class="key-i"><Icon name="unlock" /></span><span>Personne ne modifie le synoptique.</span></span>
-        <span class="sp">{#if canDesign}<button class="btn sm primary" onclick={take}>Prendre la main</button>{:else}<span class="muted small">Lecture seule : votre rôle ne permet pas de concevoir.</span>{/if}</span>
-      {/if}
-    </div>
     <div class="dtool">
       <select class="input" aria-label="Vue du synoptique" value={syn.view} onchange={(e) => navigate(viewUrl((e.target as HTMLSelectElement).value))}>
         <option value="overview">Vue générale (liaisons entre lieux)</option>
         <optgroup label="Éléments">{#each syn.views.containers as c}<option value="container:{c.id}">{c.name}</option>{/each}</optgroup>
         <optgroup label="Lieux">{#each syn.views.locations as l}<option value="location:{l.id}">{l.name} (tout le lieu)</option>{/each}</optgroup>
       </select>
-{#if !syn.overview}      <label class="toggle-row small"><input type="checkbox" bind:checked={showEmpty} onchange={() => { if (syn) pos = { ...autoLayout(syn.nodes.filter((n) => showEmpty || n.ports.length)), ...syn.layout }; }}>Sans port{hidden ? ` (${hidden})` : ''}</label>
-      <span class="muted small">{nodes.length} nœud{nodes.length > 1 ? 's' : ''} · {syn.cables.length} câble{syn.cables.length > 1 ? 's' : ''}{warnCount ? ` · ${warnCount} à vérifier` : ''}</span>{:else}<span class="muted small">{syn.overview.locations.length} lieu{syn.overview.locations.length > 1 ? 'x' : ''} · {nf(syn.overview.totals.weight_kg, 1)} kg · {nf(syn.overview.totals.power_w)} W · double-clic sur un lieu pour l’ouvrir</span>{/if}
+      {#if !syn.overview}<span class="muted small">{nodes.length} nœud{nodes.length > 1 ? 's' : ''} · {syn.cables.length} câble{syn.cables.length > 1 ? 's' : ''}</span>{:else}<span class="muted small">{syn.overview.locations.length} lieu{syn.overview.locations.length > 1 ? 'x' : ''} · {nf(syn.overview.totals.weight_kg, 1)} kg · {nf(syn.overview.totals.power_w)} W · double-clic sur un lieu pour l’ouvrir</span>{/if}
       <span style="flex:1"></span>
-      <button class="icon-btn sm" title="Zoom arrière" aria-label="Zoom arrière" onclick={() => (k = Math.max(0.2, k / 1.2))}><Icon name="zout" size="sm" /></button>
-      <span class="mono small">{Math.round(k * 100)} %</span>
-      <button class="icon-btn sm" title="Zoom avant" aria-label="Zoom avant" onclick={() => (k = Math.min(2.5, k * 1.2))}><Icon name="zin" size="sm" /></button>
-      <button class="btn sm" onclick={fit}><Icon name="fit" size="sm" />Tout afficher</button>
+      {#if mine}
+        {#if requested}<span class="chip warn">{requested} demande la main</span>{/if}
+        <span class="lockchip mine" title="Vous seul pouvez modifier le synoptique"><i></i>Vous avez la main · <button onclick={() => { requested = null; release(); }}>Céder</button></span>
+      {:else if syn.lock}
+        <span class="lockchip other" title="Vous voyez la dernière version enregistrée"><Icon name="lock" size="sm" />{syn.lock.account_name} a la main{#if canDesign} · <button onclick={requestHand}>Demander</button>{/if}</span>
+      {:else if canDesign}
+        <button class="btn sm primary" onclick={take}><Icon name="unlock" size="sm" />Prendre la main</button>
+      {:else}<span class="lockchip other"><Icon name="lock" size="sm" />Lecture seule</span>{/if}
+      <button class="btn sm valid" class:ok={issues && !issues.counts.error && !issues.counts.warning} class:bad={issues && (issues.counts.error || issues.counts.warning)} class:on={tab === 'issues'} title="Validation du câblage" onclick={() => { tab = tab === 'issues' ? 'cable' : 'issues'; if (tab === 'issues') validate(); }}><Icon name={issues && (issues.counts.error || issues.counts.warning) ? 'alert' : 'check'} size="sm" />Validation{#if issues} <span class="mono">{issues.counts.error + issues.counts.warning}</span>{/if}</button>
       <button class="btn sm" onclick={() => (exp = { format: 'pdf', paper: 'A3', landscape: true, frame: 'all', revision: '', title: 'Synoptique', busy: false })}><Icon name="download" size="sm" />Exporter</button>
-      {#if mine && !syn.overview}
-        <details class="more"><summary class="btn sm ghost">Plus</summary><div class="more-m">
+      <details class="more" bind:this={moreEl}><summary class="btn sm" aria-label="Plus d’actions">⋯</summary><div class="more-m" role="menu" tabindex="-1" onclick={() => moreEl?.removeAttribute('open')} onkeydown={() => {}}>
+        {#if !syn.overview}
+          <label class="mi"><input type="checkbox" bind:checked={showEmpty} onchange={() => { if (syn) pos = { ...autoLayout(syn.nodes.filter((n) => showEmpty || n.ports.length)), ...syn.layout }; }}>Afficher les nœuds sans port{hidden ? ` (${hidden})` : ''}</label>
+          <label class="mi"><input type="checkbox" checked={rulers} onchange={() => { rulers = !rulers; lsSet('rulers', rulers); }}>Règles et repères</label>
+          <label class="mi"><input type="checkbox" checked={showMap} onchange={() => { showMap = !showMap; lsSet('map', showMap); }}>Mini-carte</label>
+        {/if}
+        <button onclick={() => (help = true)}>Raccourcis clavier</button>
+        {#if mine && !syn.overview}
+          <hr />
           <button onclick={() => (unnumber = true)}>Supprimer la numérotation de la vue</button>
           <button class="danger" onclick={() => (unplug = true)}>Décâbler la vue…</button>
-        </div></details>
-      {/if}
-      <button class="btn sm" class:on={tab === 'issues'} onclick={() => { tab = tab === 'issues' ? 'cable' : 'issues'; if (tab === 'issues') validate(); }}><Icon name="check" size="sm" />Anomalies{#if issues} <span class="mono">{issues.counts.error + issues.counts.warning}</span>{/if}</button>
+        {/if}
+      </div></details>
       {#if mine}<button class="btn sm primary" title="Numérotation (N)" onclick={() => (numbering = true)}><Icon name="hash" size="sm" />Numéroter</button>{/if}
-      <button class="icon-btn sm" title="Raccourcis clavier (?)" aria-label="Raccourcis clavier" onclick={() => (help = true)}><Icon name="keys" size="sm" /></button>
     </div>
-    {#if mine && !syn.overview && tool !== 'cable'}
-      <div class="cab-bar" role="toolbar" aria-label="Outil">
-        <span class="cb-l">{TOOLS.find((x) => x.id === tool)?.label}</span>
-        <span class="cb-tip">{tool === 'select' ? 'Cliquez un nœud, un câble ou un port câblé · glissez le fond pour sélectionner au rectangle · clic droit : actions · un port libre lance un câble' : tool === 'pan' ? 'Glissez pour faire défiler (ou Espace maintenu avec un autre outil)' : tool === 'lasso' ? 'Entourez les câbles, nœuds et annotations à sélectionner' : tool === 'label' ? 'Cliquez pour poser un texte, puis réglez-le à droite' : tool === 'zone' ? 'Glissez pour tracer une zone' : 'Cliquez un câble, un port câblé ou une annotation pour l’effacer (Ctrl+Z pour annuler)'}</span>
-      </div>
-    {:else if mine && !syn.overview}
-      <div class="cab-bar" role="toolbar" aria-label="Câblage">
-        <span class="cb-l">Nombre</span>
-        <div class="seg"><button class:on={cab.count === 'simple'} onclick={() => (cab.count = 'simple')} title="Un câble à la fois (1)">Simple</button><button class:on={cab.count === 'multiple'} onclick={() => (cab.count = 'multiple')} title="Premier port, puis dernier port de la plage, puis premier port d’arrivée (2)">Multiple</button></div>
-        <span class="cb-l">Mode</span>
-        <div class="seg"><button class:on={cab.mode === 'auto'} onclick={() => { cab.mode = 'auto'; wps = []; }} title="Tracé calculé : parallèle, sans chevauchement (Maj+A)">Auto</button><button class:on={cab.mode === 'multipoint'} onclick={() => (cab.mode = 'multipoint')} title="Posez les points de passage en cliquant sur le fond (M)">Multipoint</button></div>
-        <span class="cb-l">Style</span>
-        <div class="seg">{#each [['orthogonal', 'Orthogonal', 'Q'], ['rounded', 'Arrondi', 'W'], ['arrow', 'Flèche', '']] as [k, l, sc]}<button class:on={cab.style === k} title={k === 'arrow' ? 'Renvoi à chaque extrémité, sans trait de bout en bout' : `(${sc})`} onclick={() => setStyle(k as CabPrefs['style'])}>{l}</button>{/each}</div>
-        <span class="cb-l">Parallèle</span>
-        <div class="seg"><button class:on={cab.parallel === 'stacked'} onclick={() => (cab.parallel = 'stacked')} title="Câbles multiples : même chemin">Superposé</button><button class:on={cab.parallel === 'spread'} onclick={() => (cab.parallel = 'spread')} title="Câbles multiples : chemins décalés de l’écart entre les ports">Écarté</button></div>
-        <label class="toggle-row small" title="Proposer un modèle de câble après chaque pose"><input type="checkbox" bind:checked={cab.askModel}>Modèle après pose</label>
-        <span class="cb-hint"><Icon name="info" size="sm" />{#if !armed.length}{cab.count === 'multiple' ? 'Cliquez le premier port de la plage, puis le dernier.' : 'Cliquez ou glissez d’un port vers un autre.'}{:else if cab.mode === 'multipoint'}Cliquez le fond pour poser un point ({wps.length}) · port d’arrivée pour finir · Retour arrière · Échap{:else}{armed.length} port{armed.length > 1 ? 's' : ''} : cliquez le {armed.length > 1 ? 'premier ' : ''}port d’arrivée · Échap pour annuler{/if}</span>
-      </div>
-    {/if}
-    <div class="syn-body">
+    <div class="syn-body" class:norail={!!syn.overview}>
+      {#if !syn.overview}
+        <nav class="rail" aria-label="Outils">
+          {#each TOOLS.filter((x) => !x.edit || mine) as t, i (t.id)}
+            {#if i > 0 && t.edit && !TOOLS.filter((x) => !x.edit || mine)[i - 1]!.edit}<span class="rail-sep"></span>{/if}
+            <button class:on={tool === t.id} title="{t.label} ({t.key})" aria-label={t.label} onclick={() => setTool(t.id)}><Icon name={t.icon} size="sm" /></button>
+          {/each}
+          {#if mine}<span class="rail-sep"></span>
+            <button title="Annuler (Ctrl+Z)" aria-label="Annuler" disabled={!past.length} onclick={undo}><Icon name="undo" size="sm" /></button>
+            <button class="flip" title="Rétablir (Ctrl+Maj+Z)" aria-label="Rétablir" disabled={!future.length} onclick={redo}><Icon name="undo" size="sm" /></button>
+          {/if}
+          <span style="flex:1"></span>
+          <button title="Raccourcis clavier (?)" aria-label="Raccourcis clavier" onclick={() => (help = true)}><Icon name="keys" size="sm" /></button>
+        </nav>
+      {/if}
       <div class="syn-stage" bind:this={stageEl} bind:clientWidth={stageW} bind:clientHeight={stageH}><svg bind:this={svgEl} class="syn-canvas t-{panning() ? 'pan' : tool}" class:arming={armed.length > 0} role="application" aria-label="Synoptique"
         onwheel={wheel} onpointerdown={down} onpointermove={move} onpointerup={up} oncontextmenu={contextMenu}
         ondblclick={(e) => { if (!(e.target as Element).closest('[data-node],[data-cable],[data-ann],.port')) fit(); }}>
@@ -1095,8 +1092,8 @@
           {/each}
           {#if draft}<rect class="draft" x={draft.x} y={draft.y} width={draft.w} height={draft.h} rx="12" />{/if}
           {#each anns.filter((a) => annMulti.has(a.id)) as a (a.id)}<rect class="amulti" x={a.data.x - 6} y={a.data.y - (a.kind === 'zone' ? 6 : 18)} width={(a.data.w ?? 120) + 12} height={(a.data.h ?? 24) + 12} rx="10" />{/each}
-          {#each guides.v as gx, i}<line class="syn-guide" x1={gx} x2={gx} y1={-1e5} y2={1e5} role="separator" tabindex="-1" onpointerdown={(e) => guideStart(e, 'v', i)} ondblclick={() => { guides = { ...guides, v: guides.v.filter((_, j) => j !== i) }; saveGuides(); }} />{/each}
-          {#each guides.h as gy, i}<line class="syn-guide" x1={-1e5} x2={1e5} y1={gy} y2={gy} role="separator" tabindex="-1" onpointerdown={(e) => guideStart(e, 'h', i)} ondblclick={() => { guides = { ...guides, h: guides.h.filter((_, j) => j !== i) }; saveGuides(); }} />{/each}
+          {#each rulers ? guides.v : [] as gx, i}<line class="syn-guide" x1={gx} x2={gx} y1={-1e5} y2={1e5} role="separator" tabindex="-1" onpointerdown={(e) => guideStart(e, 'v', i)} ondblclick={() => { guides = { ...guides, v: guides.v.filter((_, j) => j !== i) }; saveGuides(); }} />{/each}
+          {#each rulers ? guides.h : [] as gy, i}<line class="syn-guide" x1={-1e5} x2={1e5} y1={gy} y2={gy} role="separator" tabindex="-1" onpointerdown={(e) => guideStart(e, 'h', i)} ondblclick={() => { guides = { ...guides, h: guides.h.filter((_, j) => j !== i) }; saveGuides(); }} />{/each}
           {#if gdrag}{#if gdrag.axis === 'v'}<line class="syn-guide live" x1={gdrag.at} x2={gdrag.at} y1={-1e5} y2={1e5} />{:else}<line class="syn-guide live" x1={-1e5} x2={1e5} y1={gdrag.at} y2={gdrag.at} />{/if}{/if}
           {#if lasso && lasso.length > 1}<polygon class="lasso" points={lasso.map((p) => p.join(',')).join(' ')} />{/if}
           {#if syn.overview}
@@ -1240,12 +1237,11 @@
           {#each wps as w}<circle class="wp" cx={w[0]} cy={w[1]} r="4" />{/each}
         </g>
       </svg>
-      {#if !syn.overview}
+      {#if !syn.overview && rulers}
         <svg class="ruler rt" aria-hidden="true" onpointerdown={(e) => guideStart(e, 'h', null)}><rect width="100%" height="20" class="rbg" />{#each ticks(-tx / k, (stageW - tx) / k) as v}<line x1={tx + v * k} x2={tx + v * k} y1="12" y2="20" class="rtk" /><text x={tx + v * k + 3} y="11" class="rlb">{v}</text>{/each}</svg>
         <svg class="ruler rl" aria-hidden="true" onpointerdown={(e) => guideStart(e, 'v', null)}><rect width="20" height="100%" class="rbg" />{#each ticks(-ty / k, (stageH - ty) / k) as v}<line y1={ty + v * k} y2={ty + v * k} x1="12" x2="20" class="rtk" /><text transform="translate(11 {ty + v * k - 3}) rotate(-90)" class="rlb">{v}</text>{/each}</svg>
-        <span class="ruler-hint muted small">Tirez une règle pour poser un repère</span>
       {/if}
-      {#if mm}
+      {#if mm && showMap}
         <div class="minimap" style="width:{mm.w}px;height:{mm.h}px" role="slider" tabindex="-1" aria-label="Mini-carte" aria-valuenow={0} onpointerdown={mmGo}>
           <svg width={mm.w} height={mm.h}>
             {#each anns.filter((a) => a.kind === 'zone') as a (a.id)}<rect x={(a.data.x - mm.x0) * mm.sc} y={(a.data.y - mm.y0) * mm.sc} width={a.data.w * mm.sc} height={a.data.h * mm.sc} fill={a.data.color ?? '#4F6BFF'} opacity=".18" />{/each}
@@ -1255,17 +1251,23 @@
         </div>
       {/if}
       {#if syn.view}<RemoteCursors room={`project:${pid}/syn:${syn.view}`} toScreen={(x, y) => [tx + x * k, ty + y * k]} bind:selections={remoteSel} />{/if}
-      {#if !syn.overview}
-        <div class="palette" role="toolbar" aria-label="Outils">
-          {#each TOOLS.filter((x) => !x.edit || mine) as t (t.id)}
-            <button class:on={tool === t.id} title="{t.label} ({t.key})" aria-label={t.label} onclick={() => setTool(t.id)}><Icon name={t.icon} size="sm" /></button>
-          {/each}
-          {#if mine}<span class="pal-sep"></span>
-            <button title="Annuler (Ctrl+Z)" aria-label="Annuler" disabled={!past.length} onclick={undo}><Icon name="undo" size="sm" /></button>
-            <button class="flip" title="Rétablir (Ctrl+Maj+Z)" aria-label="Rétablir" disabled={!future.length} onclick={redo}><Icon name="undo" size="sm" /></button>
-          {/if}
+      {#if mine && !syn.overview && tool === 'cable'}
+        <div class="capsule" role="toolbar" aria-label="Options du câble">
+          <span class="cb-l">Câble</span>
+          <div class="seg"><button class:on={cab.count === 'simple'} onclick={() => (cab.count = 'simple')} title="Un câble à la fois (1)">Simple</button><button class:on={cab.count === 'multiple'} onclick={() => (cab.count = 'multiple')} title="Premier port, puis dernier port de la plage, puis premier port d’arrivée (2)">Multiple</button></div>
+          <div class="seg"><button class:on={cab.mode === 'auto'} onclick={() => { cab.mode = 'auto'; wps = []; }} title="Tracé calculé (Maj+A)">Auto</button><button class:on={cab.mode === 'multipoint'} onclick={() => (cab.mode = 'multipoint')} title="Points de passage posés sur le fond (M)">Multipoint</button></div>
+          <div class="seg">{#each [['orthogonal', 'Ortho', 'Orthogonal (Q)'], ['rounded', 'Arrondi', 'Arrondi (W)'], ['arrow', 'Flèche', 'Renvoi à chaque extrémité']] as [k2, l, t2]}<button class:on={cab.style === k2} title={t2} onclick={() => setStyle(k2 as CabPrefs['style'])}>{l}</button>{/each}</div>
+          <div class="seg"><button class:on={cab.parallel === 'stacked'} onclick={() => (cab.parallel = 'stacked')} title="Câbles multiples : même chemin">Superposé</button><button class:on={cab.parallel === 'spread'} onclick={() => (cab.parallel = 'spread')} title="Câbles multiples : décalés de l’écart entre les ports">Écarté</button></div>
+          <label class="cap-chk" title="Proposer un modèle de câble après chaque pose"><input type="checkbox" bind:checked={cab.askModel}>Modèle</label>
         </div>
+        <div class="cap-hint">{#if !armed.length}{cab.count === 'multiple' ? 'Cliquez le premier port de la plage, puis le dernier' : 'Cliquez ou glissez d’un port vers un autre'}{:else if cab.mode === 'multipoint'}Cliquez le fond pour poser un point ({wps.length}) · port d’arrivée pour finir · Échap pour annuler{:else}{armed.length} port{armed.length > 1 ? 's' : ''} : cliquez le {armed.length > 1 ? 'premier ' : ''}port d’arrivée · Échap pour annuler{/if}</div>
       {/if}
+      <div class="zoomer" role="group" aria-label="Zoom">
+        <button title="Zoom arrière" aria-label="Zoom arrière" onclick={() => (k = Math.max(0.2, k / 1.2))}><Icon name="zout" size="sm" /></button>
+        <span class="mono">{Math.round(k * 100)} %</span>
+        <button title="Zoom avant" aria-label="Zoom avant" onclick={() => (k = Math.min(2.5, k * 1.2))}><Icon name="zin" size="sm" /></button>
+        <button title="Tout afficher (F)" aria-label="Tout afficher" onclick={fit}><Icon name="fit" size="sm" /></button>
+      </div>
       {#if armed.length && hoverPort && !armedRefs.has(hoverPort.p.ref)}
         {@const why = incompat(armed[0]!, hoverPort.p)}
         {#if why.length}<div class="incompat" style="left:{Math.max(8, Math.min(hoverPort.sx + 14, stageW - 300))}px;top:{hoverPort.sy + 18}px"><b><Icon name="alert" size="sm" />Connexion non recommandée</b>{#each why as w}<span>{w}</span>{/each}</div>{/if}
@@ -1278,7 +1280,36 @@
       {/if}</div>
 
       <aside class="syn-side">
-        {#if annSel && tab !== 'issues'}
+        <div class="stabs" role="tablist">
+          {#each [['cable', 'Propriétés'], ['layers', 'Calques'], ['harness', 'Faisceaux']] as [t2, l]}<button role="tab" aria-selected={tab === t2} class:on={tab === t2} onclick={() => (tab = t2 as typeof tab)}>{l}</button>{/each}
+          {#if tab === 'issues'}<button role="tab" aria-selected="true" class="on">Validation</button>{/if}
+        </div>
+        <div class="sbody">
+        {#if tab === 'layers'}
+          <section>
+            {#if families.length}
+              <div class="seg" role="group" aria-label="Calques par">{#each [['family', 'Par famille'], ['signal', 'Par signal']] as [kk, l]}<button class:on={layerBy === kk} onclick={() => { layerBy = kk as typeof layerBy; lsSet('layerby', kk); }}>{l}</button>{/each}</div>
+              {#each families as f (f)}
+                {@const n = syn.cables.filter((c) => famOf(c) === f).length}
+                <div class="hrow lay" class:locked={lockedFam.has(f)}>
+                  <label class="toggle-row small" style="flex:1;min-width:0"><input type="checkbox" checked={!hiddenFam.has(f)} onchange={() => toggleFam(f)} aria-label="Afficher {layerName(f)}"><i class="dot" style="--c:{layerColor(f)}"></i><span class="ln">{layerName(f)}</span><span class="muted mono">{n}</span></label>
+                  <button class="icon-btn sm" title={lockedFam.has(f) ? 'Déverrouiller' : 'Verrouiller'} aria-label={lockedFam.has(f) ? 'Déverrouiller' : 'Verrouiller'} onclick={() => toggleLock(f)}><Icon name={lockedFam.has(f) ? 'lock' : 'unlock'} size="sm" /></button>
+                  <button class="icon-btn sm" title="Renommer" aria-label="Renommer {layerName(f)}" onclick={() => renameLayer(f)}><Icon name="pen" size="sm" /></button>
+                  <button class="btn sm ghost" onclick={() => isolateFam(f)} title="Isoler">Isoler</button>
+                </div>
+              {/each}
+              {#if hiddenFam.size}<button class="btn sm ghost" onclick={() => { hiddenFam = new Set(); try { localStorage.removeItem('syn-hidden'); } catch { /* */ } }}>Tout afficher</button>{/if}
+            {:else}<p class="muted small">Aucun câble dans cette vue.</p>{/if}
+          </section>
+        {:else if tab === 'harness'}
+          <section>
+            {#each syn.harnesses as h (h.id)}
+              {@const n = syn.cables.filter((c) => c.fields.harness_id === h.id).length}
+              <div class="hrow"><button class="hname" onclick={() => showHarness(h)}><i class="dot" style="--c:{h.color}"></i><b>{h.name}</b><span class="muted small">{n} câble{n > 1 ? 's' : ''} dans la vue</span></button>{#if mine}<button class="icon-btn sm" aria-label="Supprimer le faisceau {h.name}" onclick={() => dropHarness(h)}><Icon name="trash" size="sm" /></button>{/if}</div>
+            {:else}<span class="muted small">Aucun faisceau. Choisissez des câbles, puis clic droit › « Créer un faisceau ».</span>{/each}
+            {#if mine}<button class="btn sm ghost" style="justify-self:start" onclick={() => (newHarness = { name: '', color: '#2459E0' })}><Icon name="plus" size="sm" />Faisceau</button>{/if}
+          </section>
+        {:else if annSel && tab !== 'issues'}
           {@const a = annSel}
           {@const d = a.data}
           <section>
@@ -1407,7 +1438,7 @@
           </section>
         {:else}
           <section>
-            <span class="lbl-t">Câblage</span>
+            <span class="lbl-t">Rien de sélectionné</span>
             <p class="muted small" style="margin:0">{mine ? 'Outil Câble (C) : cliquez ou glissez d’un port à l’autre ; les ports compatibles s’allument. Outil Sélection (V) : cliquez un nœud ou un câble, glissez le fond pour sélectionner au rectangle. Clic droit : actions. ? : raccourcis.' : 'Cliquez un câble ou un port câblé pour voir ses détails.'}</p>
             {#if warnCount}
               <span class="lbl-t" style="margin-top:8px">À vérifier</span>
@@ -1415,28 +1446,9 @@
                 <button class="warn-row" onclick={() => (sel = w.id)}><Icon name="alert" size="sm" /><span><b>{w.fields.number ?? 'Sans numéro'}</b><span class="muted small">{w.warnings.join(' ')}</span></span></button>
               {/each}
             {/if}
-            {#if families.length}
-              <span class="lbl-t" style="margin-top:8px">Calques</span>
-              <div class="seg" role="group" aria-label="Calques par">{#each [['family', 'Par famille'], ['signal', 'Par signal']] as [kk, l]}<button class:on={layerBy === kk} onclick={() => { layerBy = kk as typeof layerBy; lsSet('layerby', kk); }}>{l}</button>{/each}</div>
-              {#each families as f (f)}
-                {@const n = syn.cables.filter((c) => famOf(c) === f).length}
-                <div class="hrow lay" class:locked={lockedFam.has(f)}>
-                  <label class="toggle-row small" style="flex:1;min-width:0"><input type="checkbox" checked={!hiddenFam.has(f)} onchange={() => toggleFam(f)} aria-label="Afficher {layerName(f)}"><i class="dot" style="--c:{layerColor(f)}"></i><span class="ln">{layerName(f)}</span><span class="muted mono">{n}</span></label>
-                  <button class="icon-btn sm" title={lockedFam.has(f) ? 'Déverrouiller' : 'Verrouiller'} aria-label={lockedFam.has(f) ? 'Déverrouiller' : 'Verrouiller'} onclick={() => toggleLock(f)}><Icon name={lockedFam.has(f) ? 'lock' : 'unlock'} size="sm" /></button>
-                  <button class="icon-btn sm" title="Renommer" aria-label="Renommer {layerName(f)}" onclick={() => renameLayer(f)}><Icon name="pen" size="sm" /></button>
-                  <button class="btn sm ghost" onclick={() => isolateFam(f)} title="Isoler">Isoler</button>
-                </div>
-              {/each}
-              {#if hiddenFam.size}<button class="btn sm ghost" onclick={() => { hiddenFam = new Set(); try { localStorage.removeItem('syn-hidden'); } catch { /* */ } }}>Tout afficher</button>{/if}
-            {/if}
-            <span class="lbl-t" style="margin-top:8px">Faisceaux</span>
-            {#each syn.harnesses as h (h.id)}
-              {@const n = syn.cables.filter((c) => c.fields.harness_id === h.id).length}
-              <div class="hrow"><button class="hname" onclick={() => showHarness(h)}><i class="dot" style="--c:{h.color}"></i><b>{h.name}</b><span class="muted small">{n} câble{n > 1 ? 's' : ''} dans la vue</span></button>{#if mine}<button class="icon-btn sm" aria-label="Supprimer le faisceau {h.name}" onclick={() => dropHarness(h)}><Icon name="trash" size="sm" /></button>{/if}</div>
-            {:else}<span class="muted small">Aucun faisceau. Choisissez des câbles puis « Ranger dans… ».</span>{/each}
-            {#if mine}<button class="btn sm ghost" onclick={() => (newHarness = { name: '', color: '#2459E0' })}><Icon name="plus" size="sm" />Faisceau</button>{/if}
           </section>
         {/if}
+        </div>
       </aside>
     </div>
   </div>
@@ -1521,7 +1533,7 @@
 {/if}
 
 <style>
-  .dtool { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 10px 16px; border-top: 1px solid var(--line); }
+  .dtool { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-height: 54px; padding: 8px 12px; }
   .dtool select { width: auto; min-width: 220px; height: 38px; }
   .syn-stage { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
   .ruler { position: absolute; z-index: 4; cursor: copy; }
@@ -1530,12 +1542,11 @@
   .rbg { fill: color-mix(in srgb, var(--surface) 90%, transparent); }
   .rtk { stroke: var(--fg-3); stroke-width: 1; }
   .rlb { font: 600 9px var(--font-mono, monospace); fill: var(--fg-3); }
-  .ruler-hint { position: absolute; left: 80px; top: 22px; z-index: 4; pointer-events: none; opacity: .7; }
   :global(.syn-guide) { stroke: #E23C7A; stroke-width: 1; vector-effect: non-scaling-stroke; stroke-dasharray: 6 4; cursor: move; }
   :global(.syn-guide.live) { stroke-dasharray: none; }
   :global(.lasso) { fill: color-mix(in srgb, var(--accent, #4F6BFF) 10%, transparent); stroke: var(--accent, #4F6BFF); stroke-width: 1.5; vector-effect: non-scaling-stroke; stroke-dasharray: 5 4; }
   :global(.amulti) { fill: none; stroke: var(--accent, #4F6BFF); stroke-width: 2; vector-effect: non-scaling-stroke; stroke-dasharray: 4 3; }
-  .minimap { position: absolute; right: 12px; bottom: 12px; z-index: 4; background: color-mix(in srgb, var(--surface) 92%, transparent); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 6px 20px -8px rgba(0,0,0,.35); cursor: pointer; overflow: hidden; }
+  .minimap { position: absolute; right: 12px; bottom: 60px; z-index: 4; background: color-mix(in srgb, var(--surface) 92%, transparent); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 6px 20px -8px rgba(0,0,0,.35); cursor: pointer; overflow: hidden; }
   .minimap svg { display: block; }
   .mmn { fill: var(--fg-3); }
   .mmv { fill: color-mix(in srgb, var(--accent, #4F6BFF) 12%, transparent); stroke: var(--accent, #4F6BFF); stroke-width: 1.5; }
@@ -1545,11 +1556,46 @@
      décalait le canevas par rapport au calcul des coordonnées de la souris. */
   .syn-stage > .syn-canvas { height: 100%; padding: 0; margin: 0; border-radius: 0; box-shadow: none; display: block; background-image: none; }
   :global(.cable.rsel) path { filter: drop-shadow(0 0 2.5px var(--rs)) drop-shadow(0 0 2.5px var(--rs)); }
-  .syn-body { display: grid; grid-template-columns: minmax(0, 1fr) 320px; border-top: 1px solid var(--line); height: calc(100vh - 220px); min-height: 520px; }
+  .syn-body { display: grid; grid-template-columns: 52px minmax(0, 1fr) 320px; border-top: 1px solid var(--line); height: calc(100vh - 196px); min-height: 520px; }
+  .syn-body.norail { grid-template-columns: minmax(0, 1fr) 320px; }
+  /* Rail d'outils (hors du dessin) */
+  .rail { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 10px 0; border-right: 1px solid var(--line); background: var(--surface); }
+  .rail button { width: 36px; height: 36px; display: grid; place-items: center; border: 0; border-radius: 9px; background: none; color: var(--fg-2); cursor: pointer; }
+  .rail button:hover:not(:disabled) { background: var(--surface-2); color: var(--fg); }
+  .rail button.on { background: var(--accent); color: #fff; }
+  .rail button:disabled { opacity: .3; cursor: default; }
+  .rail-sep { width: 24px; height: 1px; margin: 5px 0; background: var(--line); }
+  /* Options de l'outil Câble : capsule flottante, sans décaler le dessin */
+  .capsule { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); z-index: 6; display: flex; align-items: center; gap: 6px; padding: 5px 6px; border-radius: 12px; background: var(--surface); box-shadow: 0 10px 28px -12px rgba(0, 0, 0, .35), 0 0 0 1px var(--line); white-space: nowrap; max-width: calc(100% - 24px); overflow-x: auto; }
+  .capsule .seg button { padding: 5px 10px; font-size: 12.5px; }
+  .capsule .cb-l { margin: 0 2px 0 6px; }
+  .cap-chk { display: inline-flex; align-items: center; gap: 5px; padding: 0 6px; font-size: 12.5px; color: var(--fg-2); cursor: pointer; }
+  .cap-hint { position: absolute; left: 50%; top: 62px; transform: translateX(-50%); z-index: 5; padding: 3px 10px; border-radius: 99px; font-size: 12px; color: var(--accent); background: color-mix(in srgb, var(--surface) 88%, transparent); white-space: nowrap; pointer-events: none; }
+  /* Zoom et mini-carte en bas à droite */
+  .zoomer { position: absolute; right: 12px; bottom: 12px; z-index: 5; display: flex; align-items: center; gap: 2px; padding: 4px; border-radius: 11px; background: var(--surface); box-shadow: 0 8px 22px -10px rgba(0, 0, 0, .3), 0 0 0 1px var(--line); }
+  .zoomer button { width: 30px; height: 30px; display: grid; place-items: center; border: 0; border-radius: 8px; background: none; color: var(--fg-2); cursor: pointer; }
+  .zoomer button:hover { background: var(--surface-2); color: var(--fg); }
+  .zoomer .mono { min-width: 46px; text-align: center; font-size: 12px; }
+  /* Barre unique */
+  .lockchip { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 99px; font-size: 13px; font-weight: 600; white-space: nowrap; }
+  .lockchip.mine { background: color-mix(in srgb, var(--ok, #1E8E4F) 13%, transparent); color: var(--ok, #1E8E4F); }
+  .lockchip.mine i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .lockchip.other { background: var(--surface-2); color: var(--fg-2); }
+  .lockchip button { border: 0; background: none; padding: 0; font: inherit; color: inherit; text-decoration: underline; cursor: pointer; }
+  .valid.ok { color: var(--ok, #1E8E4F); }
+  .valid.bad { color: var(--warn, #B78400); }
+  .more-m .mi { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px; font-size: 14px; cursor: pointer; }
+  .more-m .mi:hover { background: var(--surface-2); }
+  .more-m hr { border: 0; border-top: 1px solid var(--line); margin: 4px 2px; }
+  /* Panneau à onglets */
+  .stabs { display: flex; gap: 2px; padding: 8px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--surface); z-index: 1; }
+  .stabs button { flex: 1; padding: 7px 4px; border: 0; border-radius: 8px; background: none; font: inherit; font-size: 13.5px; font-weight: 600; color: var(--fg-3); cursor: pointer; }
+  .stabs button.on { background: var(--surface-2); color: var(--fg); }
+  .sbody { padding: 16px; }
   .syn-canvas { width: 100%; height: 100%; display: block; background: var(--surface-2); touch-action: none; cursor: grab; user-select: none; }
   .syn-canvas:active { cursor: grabbing; }
   .syn-canvas.arming { cursor: crosshair; }
-  .syn-side { border-left: 1px solid var(--line); padding: 16px; overflow: auto; background: var(--surface); }
+  .syn-side { border-left: 1px solid var(--line); padding: 0; overflow: auto; background: var(--surface); }
   .syn-side section { display: grid; gap: 10px; }
   .ends { display: grid; gap: 8px; }
   .ends > div { display: flex; flex-direction: column; padding: 10px; border-radius: 12px; background: var(--surface-2); }
@@ -1584,13 +1630,8 @@
   .cchip rect { fill: color-mix(in srgb, var(--fg) 7%, transparent); stroke: color-mix(in srgb, var(--fg) 14%, transparent); stroke-width: .8; }
   .cchip text { font: 600 9.5px var(--mono); fill: var(--fg-3); }
   .pn { font: 600 12px var(--font); fill: var(--fg); }
-  .cab-bar { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; height: 50px; padding: 0 12px; overflow-x: auto; overflow-y: hidden; border-bottom: 1px solid var(--line); background: var(--surface); }
-  .cab-bar > * { flex: none; }
-  .cab-bar > .cb-hint, .cab-bar > .cb-tip { flex: 1 1 120px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
   .cb-l { font: 600 10px var(--mono); letter-spacing: .09em; text-transform: uppercase; color: var(--fg-3); margin-left: 6px; }
-  .cb-tip { font-size: 13px; color: var(--fg-3); padding: 7px 0; }
   .port:focus, .port:focus-visible { outline: none; }
-  .cb-hint { align-items: center; gap: 6px; margin-left: auto; text-align: right; font-size: 12.5px; color: var(--accent); }
   .wp { fill: var(--surface); stroke: var(--accent); stroke-width: 2; }
   .cable .ahead { fill: var(--c); stroke: none; pointer-events: none; }
   .pc { font: 500 8.5px var(--mono); letter-spacing: .03em; fill: var(--fg-3); }
@@ -1655,12 +1696,6 @@
   .more-m button:hover { background: var(--surface-2); }
   .more-m button.danger { color: var(--err); }
   .seg.wrap { flex-wrap: wrap; }
-  .palette { position: absolute; left: 30px; top: 30px; z-index: 5; display: flex; flex-direction: column; gap: 2px; padding: 4px; border-radius: 12px; background: var(--surface); box-shadow: 0 8px 24px -10px rgba(0, 0, 0, .35), 0 0 0 1px var(--line); }
-  .palette button { width: 34px; height: 34px; display: grid; place-items: center; border: 0; border-radius: 8px; background: none; color: var(--fg-2); cursor: pointer; }
-  .palette button:hover:not(:disabled) { background: var(--surface-2); color: var(--fg); }
-  .palette button.on { background: var(--accent); color: #fff; }
-  .palette button:disabled { opacity: .35; cursor: default; }
-  .pal-sep { height: 1px; margin: 3px 4px; background: var(--line); }
   .syn-canvas.t-select { cursor: default; } .syn-canvas.t-pan { cursor: grab; } .syn-canvas.t-pan:active { cursor: grabbing; }
   .syn-canvas.t-cable, .syn-canvas.t-zone, .syn-canvas.t-lasso { cursor: crosshair; } .syn-canvas.t-label { cursor: text; }
   .syn-canvas.t-eraser { cursor: not-allowed; } .syn-canvas.t-eraser .cable:hover .vis { stroke: var(--err); stroke-dasharray: 4 3; }
@@ -1705,5 +1740,5 @@
   kbd { font: 600 11.5px var(--mono); padding: 2px 6px; border-radius: 5px; background: var(--surface-2); box-shadow: inset 0 -1px 0 var(--line); justify-self: start; }
   @media (max-width: 700px) { .keys { grid-template-columns: 1fr; } }
   .preview { fill: none; stroke: var(--accent, #4F6BFF); stroke-width: 2; stroke-dasharray: 6 4; pointer-events: none; }
-  @media (max-width: 1000px) { .syn-body { grid-template-columns: 1fr; height: auto; } .syn-canvas, .syn-stage { height: 70vh; } .syn-side { border-left: 0; border-top: 1px solid var(--line); } }
+  @media (max-width: 1000px) { .syn-body, .syn-body.norail { grid-template-columns: 1fr; height: auto; } .rail { flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--line); padding: 6px; } .rail-sep { width: 1px; height: 24px; margin: 0 4px; } .syn-canvas, .syn-stage { height: 70vh; } .syn-side { border-left: 0; border-top: 1px solid var(--line); } }
 </style>
