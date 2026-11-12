@@ -20,7 +20,7 @@
   const racks = $derived(view.containers.filter((c) => c.rackable));
   let data = $state<Record<string, R>>({});
   let face = $state<Face>('front');
-  let scale = $state(16);
+  let scale = $state(24);
   let busy = $state(false);
   const canDesign = $derived(can('conception', 'ecriture'));
 
@@ -94,7 +94,7 @@
     {#each racks as c}<option value={c.id}>{c.name} · {c.height_u} U</option>{/each}
   </select>
   <div class="seg" role="group" aria-label="Face"><button class:on={face === 'front'} onclick={() => (face = 'front')}>Avant</button><button class:on={face === 'rear'} onclick={() => (face = 'rear')}>Arrière</button></div>
-  <div class="seg" role="group" aria-label="Taille"><button class:on={scale === 12} onclick={() => (scale = 12)}>S</button><button class:on={scale === 16} onclick={() => (scale = 16)}>M</button><button class:on={scale === 21} onclick={() => (scale = 21)}>L</button></div>
+  <div class="seg" role="group" aria-label="Taille"><button class:on={scale === 18} onclick={() => (scale = 18)}>S</button><button class:on={scale === 24} onclick={() => (scale = 24)}>M</button><button class:on={scale === 32} onclick={() => (scale = 32)}>L</button></div>
   <span class="muted small">{#if canDesign}Glissez un équipement vers une autre baie : il change d’élément dans l’inventaire.{:else}Lecture seule.{/if}</span>
   {#if busy}<span class="spin"></span>{/if}
 </div>
@@ -107,7 +107,7 @@
       <div class="ar-head"><b>{c.name}</b><span class="muted small">{view.locations.find((l) => l.id === c.location_id)?.name} · {units} U</span>
         {#if r?.lock && !r.lock.mine}<span class="chip warn"><Icon name="lock" />{r.lock.account_name}</span>{/if}
         <a class="btn sm ghost" href="/projets/{view.project.id}/racks/{c.id}" title="Ouvrir cette baie"><Icon name="arrowr" size="sm" /></a></div>
-      <div class="rack" style="--units:{units};--u:{scale}px;--bw:{scale === 12 ? 230 : scale === 16 ? 300 : 400}px">
+      <div class="rack" style="--units:{units};--u:{scale}px;--bw:{Math.round(scale * 10.86) - 22}px">
         <div class="rack-scale">{#each Array(units) as _, i}<span>{units - i}</span>{/each}</div>
         <div class="rack-body" role="grid" tabindex="-1" aria-label="Élévation de {c.name}" class:target={over?.cid === c.id}
           ondragover={(ev) => { if (drag) { ev.preventDefault(); over = { cid: c.id, u: uAt(ev, ev.currentTarget as HTMLElement, units) }; } }}
@@ -117,7 +117,7 @@
             <div class="ritem {e.nature === 'accessory' ? 'acc' : ''} {ALU.has(typeOf(e)) ? 'alu' : ''} {e.height_u <= 1 ? 'u1' : ''} {e.placement.width !== 'full' ? `half c${e.placement.col}` : ''}" class:dragged={drag?.e === e}
               style={style(e)} role="button" tabindex="0" draggable={canDesign && !busy} title="{e.label}{e.tag ? ` · ${e.tag}` : ''} · U{e.placement.u_start}"
               ondragstart={(ev) => { drag = { from: c.id, e }; ev.dataTransfer?.setData('text/plain', e.placement.id); }} ondragend={() => { drag = null; over = null; }}>
-              {#if e.nature !== 'accessory'}<i class="led"></i>{/if}<span class="rn">{e.label}</span>{#if panelOf(e)}<span class="pdec"><PanelFace panel={panelOf(e)!} /></span>{:else}<span class="dec">{@html decor(typeOf(e))}</span>{/if}{#if e.tag && scale > 12}<span class="rr">{e.tag}</span>{/if}
+              {#if e.nature !== 'accessory'}<i class="led"></i>{/if}<span class="rn">{e.label}</span>{#if panelOf(e)}<span class="pdec"><PanelFace panel={panelOf(e)!} /></span>{:else}<span class="dec">{@html decor(typeOf(e))}</span>{/if}{#if e.tag && scale > 18}<span class="rr">{e.tag}</span>{/if}
             </div>
           {/each}
           {#if drag && over?.cid === c.id}

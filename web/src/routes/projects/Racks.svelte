@@ -50,7 +50,9 @@
   let confirmClear = $state(false);
   const canDesign = $derived(can('conception', 'ecriture'));
   const mine = $derived(!!rack?.lock?.mine);
-  const U = 21;
+  // Proportions réelles d'un 19" : façade 482,6 mm pour 44,45 mm par U (≈ 10,86).
+  const U = 34;
+  const BW = Math.round(U * 10.86) - 22;
   const units = $derived(rack?.container.height_u ?? 0);
   const cols = (w: W) => ({ full: 1, half: 2, third: 3, quarter: 4 })[w];
 
@@ -244,15 +246,14 @@
           <h2>À placer <span class="muted">· {wanted.length}</span></h2>
           {#if mine}<p class="small muted">Choisissez un élément, puis une position dans la baie. Échap pour annuler.</p>{/if}
           {#each wanted as p (p.instance_id ?? p.article_id)}
-            <button class="pend withfp" class:on={armed === p} disabled={!mine || face === 'side'} onclick={() => (armed = armed === p ? null : p)}>
-              <span class="pend-fp"><span class="fpv" style="--h:{p.height_u ?? 1}"><span class="ritem {p.nature === 'accessory' ? 'acc' : ''} {ALU.has(visualOf(p)) ? 'alu' : ''} {(p.height_u ?? 1) <= 1 ? 'u1' : ''}" style="--c:{fnColor(p.function)}">{#if p.nature !== 'accessory'}<i class="led"></i>{/if}<span class="rn">{p.label}</span><span class="dec">{@html decor(p.nature === 'accessory' ? accessoryFace(p.label) : visualOf(p))}</span>{#if p.tag}<span class="rr">{p.tag}</span>{/if}</span></span></span>
-              <span class="pend-row"><span class="ph">{p.height_u} U{p.width && p.width !== 'full' ? ` · ${p.width === 'half' ? '1/2' : p.width === 'third' ? '1/3' : '1/4'}` : ''}</span><span class="pend-t"><b>{p.label}</b><span>{p.tag ?? 'Accessoire'}</span></span></span>
+            <button class="pend mini" class:on={armed === p} disabled={!mine || face === 'side'} onclick={() => (armed = armed === p ? null : p)} title="{p.label}{p.tag ? ` · ${p.tag}` : ''}">
+              <i class="pm-c" style="--c:{fnColor(p.function)}"></i><span class="pm-l">{p.label}</span>{#if p.tag}<span class="pm-t">{p.tag}</span>{/if}<span class="pm-u">{p.height_u} U{p.width && p.width !== 'full' ? ` · ${p.width === 'half' ? '½' : p.width === 'third' ? '⅓' : '¼'}` : ''}</span>
             </button>
           {:else}<p class="small muted">Tout est posé.</p>{/each}
           {#if notRackable.length}
             <h2 style="margin-top:8px">Sur étagère <span class="muted">· {notRackable.length}</span></h2>
             <p class="small muted">Hors format rack : choisissez une étagère posée dans la baie, puis « Poser ».</p>
-            {#each notRackable as p (p.instance_id ?? p.article_id)}<div class="pend" style="cursor:default"><span class="ph">—</span><span class="pend-t"><b>{p.label}</b><span>{p.tag ?? ''}</span></span></div>{/each}
+            {#each notRackable as p (p.instance_id ?? p.article_id)}<div class="pend mini" style="cursor:default"><i class="pm-c" style="--c:{fnColor(p.function)}"></i><span class="pm-l">{p.label}</span>{#if p.tag}<span class="pm-t">{p.tag}</span>{/if}</div>{/each}
           {/if}
         </section>
       </aside>
@@ -263,7 +264,7 @@
         {:else if face === 'side'}
           <div class="rack-wrap">
             <span class="rack-title"><Icon name="server" />{rack.container.name} · côté</span>
-            <div class="rack" style="--units:{units};grid-template-columns:28px auto">
+            <div class="rack" style="--units:{units};--u:{U}px;grid-template-columns:28px auto">
               <div class="rack-scale">{#each Array(units) as _, i}<span>{units - i}</span>{/each}</div>
               <div>
                 <div class="side-body" style="--w:{SW}px">
@@ -279,7 +280,7 @@
         {:else}
           <div class="rack-wrap">
             <span class="rack-title"><Icon name="server" />{rack.container.name} · {FACES[face].toLowerCase()}</span>
-            <div class="rack" class:placing={!!armed} style="--units:{units};--u:{U}px">
+            <div class="rack" class:placing={!!armed} style="--units:{units};--u:{U}px;--bw:{BW}px">
               <div class="rack-scale">{#each Array(units) as _, i}<span>{units - i}</span>{/each}</div>
               <div class="rack-body" role="grid" tabindex="-1" aria-label="Élévation"
                 onmousemove={(e) => { if (armed) hoverU = slotFromEvent(e, e.currentTarget as HTMLElement); }}
@@ -311,7 +312,7 @@
         {#if selected}
           {@const p = selected.placement}
           <section>
-            <h2>{selected.label}</h2>
+            <h2 class="sel-h"><span>{selected.label}</span><button class="icon-btn sm" title="Désélectionner (Échap)" onclick={() => (sel = null)}><Icon name="x" /></button></h2>
             <dl class="kv"><dt>Repère</dt><dd class="mono">{selected.tag ?? '—'}</dd><dt>Position</dt><dd>U{p.u_start}{selected.height_u > 1 ? `–${p.u_start + Math.ceil(selected.height_u) - 1}` : ''} · {FACES[p.face]}</dd>
               <dt>Profondeur</dt><dd>{selected.depth_mm ? `${nf(selected.depth_mm)} mm` : '—'}</dd><dt>Puissance</dt><dd>{selected.power_w ? `${nf(selected.power_w)} W` : '—'}</dd></dl>
             {#each rack.warnings.filter((w) => w.placement_id === p.id) as w}<div class="alert warn"><Icon name="alert" /><span>{w.message}</span></div>{/each}
@@ -351,7 +352,7 @@
               <button class="btn sm ghost danger" style="align-self:flex-start" onclick={() => unplace(selected)}><Icon name="x" size="sm" />Retirer de la baie</button>
             {/if}
           </section>
-        {/if}
+        {:else}
         <section>
           <h2>Énergie par phase</h2>
           {#each rack.electrical.phases as ph}
@@ -375,10 +376,11 @@
         <section>
           <h2>Totaux</h2>
           <dl class="kv"><dt>Hauteur</dt><dd>{nf(t.used_u, t.used_u % 1 ? 1 : 0)} / {t.total_u} U</dd><dt>Poids</dt><dd>{nf(t.weight_kg, 1)} kg</dd><dt>Puissance</dt><dd>{nf(t.power_w)} W</dd><dt>Dissipation</dt><dd>{nf(t.power_w * 3.412)} BTU/h</dd></dl>
-          {#each rack.warnings.filter((w) => !selected || w.placement_id !== selected.placement.id) as w}<div class="alert warn"><Icon name="alert" /><span>{w.message}</span></div>{/each}
+          {#each rack.warnings as w}<div class="alert warn"><Icon name="alert" /><span>{w.message}</span></div>{/each}
           {#if mode === 'schematic'}<div class="legend" style="grid-template-columns:1fr">{#each legend as l}<div><span class="sw" style="--c:{catColor(l === 'Sans catégorie' ? null : l)}"></span>{l}</div>{/each}</div>{/if}
           {#if mine && rack.elements.length}<button class="btn sm ghost danger" style="align-self:flex-start" onclick={() => (confirmClear = true)}>Vider le rack</button>{/if}
         </section>
+        {/if}
       </aside>
     </div>
   </div>
@@ -395,8 +397,17 @@
 {/if}
 
 <style>
+  .rack-screen :global(.rack-body) { width: var(--bw, 370px); }
+  .sel-h { justify-content: space-between; align-items: center; }
+  .sel-h span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pend.mini { flex-direction: row; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; min-height: 34px; }
+  .pm-c { flex: none; width: 4px; align-self: stretch; border-radius: 2px; background: var(--c); }
+  .pm-l { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px !important; font-weight: 600; color: var(--fg) !important; }
+  .pm-t { flex: none; font: 600 11px/1 var(--mono) !important; color: var(--fg-3); }
+  .pm-u { flex: none; font: 600 11px/1 var(--mono) !important; padding: 3px 6px; border-radius: 5px; background: var(--sunken); color: var(--fg-2) !important; }
   .rack-stage.stage3d { padding: 0; display: block; align-self: stretch; }
-  .rack-screen .design-body { min-height: 640px; }
+  /* Hauteur fixe : la baie défile seule, les panneaux latéraux restent visibles. */
+  .rack-screen .design-body { height: calc(100dvh - 236px); min-height: 560px; }
   .shelf-load { flex: 1 1 0; min-width: 0; display: flex; gap: 4px; justify-content: flex-end; overflow: hidden; }
   .sh-it { flex: none; font: 600 10px/1 var(--font); padding: 3px 6px; border-radius: 3px; color: #fff; background: color-mix(in srgb, var(--c) 70%, #1C1F23); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .15); max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .circ { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 8px 10px; border-radius: 10px; background: var(--surface-2); font-size: 14px; }
@@ -407,5 +418,5 @@
   .pdec { flex: 1 1 0; min-width: 0; align-self: stretch; display: block; padding: 2px 0; margin-left: 8px; }
   .pside { display: grid; gap: 8px; justify-items: start; }
   .pface-s { display: block; width: 100%; height: calc(var(--h) * 26px); background: linear-gradient(180deg, #363B42, #1D2025); border-radius: 4px; padding: 2px 4px; }
-  @media (max-width: 1100px) { .rack-screen .design-body { grid-template-columns: minmax(0, 1fr); } }
+  @media (max-width: 1100px) { .rack-screen .design-body { grid-template-columns: minmax(0, 1fr); height: auto; } }
 </style>
