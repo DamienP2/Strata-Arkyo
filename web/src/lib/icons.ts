@@ -1,5 +1,11 @@
 // Icônes de trait (24 × 24, épaisseur 1,7), reprises de la maquette v2.
 export const ICONS: Record<string, string> = {
+cursor:'M5 3l14 7-6.2 1.8L11 18z',
+text:'M5 7V4h14v3M12 4v16M9 20h6',
+square:'M4 4h16v16H4z',
+eraser:'M15 4l5 5-10 10H6l-3-3zM9.5 8.5l6 6M11 20h9',
+lasso:'M12 4c5 0 9 2.2 9 5s-4 5-9 5-9-2.2-9-5 4-5 9-5zM7 13c-1.5 2.5.5 4 2 4s1.5 2.5-.5 3.5',
+keys:'M3 7h18v11H3zM7 11h1M11 11h1M15 11h1M8 15h8',
 cable:'M3 20c5 0 4-8 9-8s4-8 9-8M2 18h3v4H2zM19 2h3v4h-3z',
 plug:'M9 3v5M15 3v5M6 8h12v3a6 6 0 0 1-12 0zM12 17v4',
 printer:'M6 9V3h12v6M6 17H4.5A1.5 1.5 0 0 1 3 15.5v-5A1.5 1.5 0 0 1 4.5 9h15a1.5 1.5 0 0 1 1.5 1.5v5a1.5 1.5 0 0 1-1.5 1.5H18M6 14h12v7H6z',
