@@ -10,6 +10,7 @@ pub mod cabling;
 pub mod catalog;
 pub mod catalog_io;
 pub mod checks;
+pub mod collab;
 pub mod drawings;
 pub mod error;
 pub mod live;
@@ -119,6 +120,7 @@ pub fn router(state: AppState) -> Router {
         .merge(plans::routes())
         .merge(drawings::routes())
         .merge(print::routes())
+        .merge(collab::routes())
         .route("/live", get(live::socket))
         .layer(middleware::from_fn(csrf));
     Router::new()

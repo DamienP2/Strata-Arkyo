@@ -1109,3 +1109,9 @@ async fn export(
         _ => Err(ApiError::Invalid("Format d'export : csv ou xlsx.".into())),
     }
 }
+
+/// Anomalies réseau du projet (messages), pour la vue d'ensemble.
+pub(crate) async fn network_issues(store: &Store, pid: &str) -> ApiResult<Vec<String>> {
+    let v = compute(store, pid).await?;
+    Ok(issues(&v).into_iter().map(|i| i.message).collect())
+}

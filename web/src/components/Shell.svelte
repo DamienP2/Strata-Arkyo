@@ -4,6 +4,7 @@
   import Logo from './Logo.svelte';
   import Avatar from './Avatar.svelte';
   import PasswordDialog from './PasswordDialog.svelte';
+  import CommandPalette from './CommandPalette.svelte';
   import { session, can } from '../lib/session.svelte';
   import { route, navigate } from '../lib/router.svelte';
   import { isDark, toggleTheme, theme } from '../lib/theme.svelte';
@@ -14,6 +15,7 @@
   let menuOpen = $state(false);
   let userOpen = $state(false);
   let pwOpen = $state(false);
+  let paletteOpen = $state(false);
 
   const top = $derived(route.path.split('/')[1] ?? '');
   const links = $derived([
@@ -37,7 +39,8 @@
   }
 </script>
 
-<svelte:window onclick={outside} onkeydown={(e) => { if (e.key === 'Escape') { userOpen = false; menuOpen = false; } }} />
+<svelte:window onclick={outside} onkeydown={(e) => { if (e.key === 'Escape') { userOpen = false; menuOpen = false; } if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); paletteOpen = !paletteOpen; } }} />
+<CommandPalette bind:open={paletteOpen} />
 
 <div class="app">
   <header class="mast">
@@ -47,6 +50,7 @@
       {#each links as l}<a href={l.href} class:on={top === l.key} aria-current={top === l.key ? 'page' : undefined}>{l.label}</a>{/each}
     </nav>
     <div class="top-right">
+      <button class="icon-btn" aria-label="Rechercher (Ctrl+K)" title="Rechercher (Ctrl+K)" onclick={() => (paletteOpen = true)}><Icon name="search" /></button>
       <button class="icon-btn" aria-label={dark ? 'Passer en thème clair' : 'Passer en thème sombre'} onclick={toggleTheme}><Icon name={dark ? 'sun' : 'moon'} /></button>
       <div class="user-zone" style="position:relative">
         <button class="av-btn" aria-label="Mon compte" aria-expanded={userOpen} onclick={() => (userOpen = !userOpen)}><Avatar name={me.account.name} color={me.role.color} /></button>

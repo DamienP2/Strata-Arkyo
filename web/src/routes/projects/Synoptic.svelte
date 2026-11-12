@@ -12,6 +12,8 @@
   import { withLightTheme, standalone, raster, pdf as toPdf, save } from '../../lib/svgexport';
   import { PAPERS, type Paper } from '../../lib/sheet';
   import ConnGlyph from '../../components/ConnGlyph.svelte';
+  import RemoteCursors from '../../components/RemoteCursors.svelte';
+  import { sendCursor, sendSelection, type PresenceMember } from '../../lib/live.svelte';
   import { api, ApiError } from '../../lib/api';
   import { can } from '../../lib/session.svelte';
   import { toast, fail } from '../../lib/toast.svelte';
@@ -50,6 +52,10 @@
   let sel = $state<string | null>(null);
   /** Câbles choisis (Ctrl ou Maj + clic pour en ajouter). */
   let multi = $state<Set<string>>(new Set());
+  // Sélections des autres sur cette vue : câble → couleur de la personne.
+  let remoteSel = $state<Record<string, { member: PresenceMember; ids: string[] }>>({});
+  const rsel = $derived(new Map(Object.values(remoteSel).flatMap((r) => r.ids.map((id) => [id, r.member.color] as const))));
+  $effect(() => { const ids = [...new Set([...(sel ? [sel] : []), ...multi])]; if (syn?.view) sendSelection(`project:${pid}/syn:${syn.view}`, ids); });
   let numbering = $state(false);
   let tab = $state<'cable' | 'issues'>('cable');
   interface Issue { code: number; severity: 'error' | 'warning' | 'info'; title: string; detail: string; cables: string[]; nodes: string[]; view: string | null }
@@ -349,6 +355,7 @@
     if (drag) { (e.currentTarget as Element).setPointerCapture(e.pointerId); }
   }
   function move(e: PointerEvent) {
+    if (syn?.view) { const w = toWorld(e); sendCursor(`project:${pid}/syn:${syn.view}`, w[0], w[1]); }
     if (armed.length) mouse = toWorld(e);
     if (!drag) return;
     drag.moved = true;
@@ -558,7 +565,7 @@
       {#if mine}<button class="btn sm primary" onclick={() => (numbering = true)}><Icon name="hash" size="sm" />Numéroter</button>{/if}
     </div>
     <div class="syn-body">
-      <svg bind:this={svgEl} class="syn-canvas" class:arming={armed.length > 0} role="application" aria-label="Synoptique"
+      <div class="syn-stage"><svg bind:this={svgEl} class="syn-canvas" class:arming={armed.length > 0} role="application" aria-label="Synoptique"
         onwheel={wheel} onpointerdown={down} onpointermove={move} onpointerup={up}>
         <defs><pattern id="syn-grid" width="20" height="20" patternUnits="userSpaceOnUse" patternTransform="translate({tx} {ty}) scale({k})"><circle cx="1" cy="1" r="1" fill="var(--grid-dot, rgba(120,130,140,.25))" /></pattern></defs>
         <rect class="gridbg" width="100%" height="100%" fill="url(#syn-grid)" />
@@ -601,7 +608,7 @@
               {#if c.a_in_view && c.b_in_view}
                 {@const g = cPath(c)}
                 {#if g}
-                  <g class="cable" class:off={hiddenFam.has(famOf(c))} class:attach={c.fields.attach} class:harnessed={!!harnessOf(c)} class:sel={multi.has(c.id) || sel === c.id} class:hl={hl.cables.has(c.id)} class:warn={c.warnings.length > 0} style="--c:{cableColor(c)};--h:{harnessOf(c)?.color ?? 'transparent'}" role="button" tabindex="-1" onclick={(e) => pickCable(c.id, e)} onkeydown={() => {}}>
+                  <g class="cable" class:off={hiddenFam.has(famOf(c))} class:attach={c.fields.attach} class:harnessed={!!harnessOf(c)} class:sel={multi.has(c.id) || sel === c.id} class:rsel={rsel.has(c.id)} class:hl={hl.cables.has(c.id)} class:warn={c.warnings.length > 0} style="--c:{cableColor(c)};--h:{harnessOf(c)?.color ?? 'transparent'};--rs:{rsel.get(c.id) ?? 'transparent'}" role="button" tabindex="-1" onclick={(e) => pickCable(c.id, e)} onkeydown={() => {}}>
                     <title>{c.fields.number ?? 'Sans numéro'} · {endName(c.a, c.a_info)} → {endName(c.b, c.b_info)}</title>
                     <path class="case" d={g.d} /><path class="vis" d={g.d} /><path class="hit" d={g.d} />
                   </g>
@@ -677,6 +684,7 @@
           {#if armedPreview}<path class="preview" d={armedPreview} />{/if}
         </g>
       </svg>
+      {#if syn.view}<RemoteCursors room={`project:${pid}/syn:${syn.view}`} toScreen={(x, y) => [tx + x * k, ty + y * k]} bind:selections={remoteSel} />{/if}</div>
 
       <aside class="syn-side">
         {#if annSel && tab !== 'issues'}
@@ -852,6 +860,9 @@
 <style>
   .dtool { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 10px 16px; border-top: 1px solid var(--line); }
   .dtool select { width: auto; min-width: 220px; height: 38px; }
+  .syn-stage { position: relative; min-width: 0; min-height: 0; }
+  .syn-stage > .syn-canvas { height: 100%; }
+  :global(.cable.rsel) path { filter: drop-shadow(0 0 2.5px var(--rs)) drop-shadow(0 0 2.5px var(--rs)); }
   .syn-body { display: grid; grid-template-columns: minmax(0, 1fr) 320px; border-top: 1px solid var(--line); height: calc(100vh - 220px); min-height: 520px; }
   .syn-canvas { width: 100%; height: 100%; display: block; background: var(--surface-2); touch-action: none; cursor: grab; user-select: none; }
   .syn-canvas:active { cursor: grabbing; }
@@ -945,5 +956,5 @@
   .more-m button.danger { color: var(--err); }
   .seg.wrap { flex-wrap: wrap; }
   .preview { fill: none; stroke: var(--accent, #4F6BFF); stroke-width: 2; stroke-dasharray: 6 4; pointer-events: none; }
-  @media (max-width: 1000px) { .syn-body { grid-template-columns: 1fr; height: auto; } .syn-canvas { height: 70vh; } .syn-side { border-left: 0; border-top: 1px solid var(--line); } }
+  @media (max-width: 1000px) { .syn-body { grid-template-columns: 1fr; height: auto; } .syn-canvas, .syn-stage { height: 70vh; } .syn-side { border-left: 0; border-top: 1px solid var(--line); } }
 </style>

@@ -886,3 +886,8 @@ async fn request(
     );
     Ok(StatusCode::NO_CONTENT)
 }
+
+/// Chevauchements DMX sur l'ensemble des plans de feu.
+pub(crate) async fn dmx_conflicts(store: &Store, pid: &str) -> ApiResult<usize> {
+    Ok(conflicts(&fixtures(&store.drawings(pid).await?)).len())
+}

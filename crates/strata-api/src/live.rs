@@ -41,6 +41,39 @@ pub enum Event {
         room: String,
         members: Vec<PresenceMember>,
     },
+    /// Curseur d'une personne sur une vue graphique (coordonnées de la vue).
+    Cursor {
+        room: String,
+        #[serde(skip)]
+        conn: u64,
+        member: PresenceMember,
+        x: f64,
+        y: f64,
+    },
+    /// Sélection d'une personne sur une vue graphique.
+    Select {
+        room: String,
+        #[serde(skip)]
+        conn: u64,
+        member: PresenceMember,
+        ids: Vec<String>,
+    },
+}
+
+/// Couleurs d'utilisateur : stables, dérivées de l'identifiant.
+pub const USER_COLORS: [&str; 10] = [
+    "#2459E0", "#0E8550", "#B78400", "#7A44C9", "#CF3A2F", "#0A8797", "#BD3489", "#D06006",
+    "#4F6BFF", "#5B8C2A",
+];
+
+pub fn user_color(id: &str) -> &'static str {
+    // FNV-1a : même identifiant, même couleur, sur tous les postes.
+    let mut h: u32 = 0x811c9dc5;
+    for b in id.bytes() {
+        h ^= b as u32;
+        h = h.wrapping_mul(0x0100_0193);
+    }
+    USER_COLORS[(h % 10) as usize]
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -207,7 +240,12 @@ enum ClientMsg {
     Join { room: String },
     Leave { room: String },
     Ping,
+    Cursor { room: String, x: f64, y: f64 },
+    Select { room: String, ids: Vec<String> },
 }
+
+/// Taille maximale d'un message reçu.
+const MAX_MSG: usize = 4096;
 
 pub async fn socket(
     State(st): State<AppState>,
@@ -217,14 +255,7 @@ pub async fn socket(
     let member = PresenceMember {
         id: s.account.id.clone(),
         name: s.account.name.clone(),
-        color: st
-            .store
-            .role(&s.account.role_id)
-            .await
-            .ok()
-            .flatten()
-            .map(|r| r.color)
-            .unwrap_or_default(),
+        color: user_color(&s.account.id).to_string(),
     };
     let can_projects = s.actor.allows(Domain::Projets, Level::Lecture);
     let can_catalog = s.actor.allows(Domain::Catalogue, Level::Lecture);
@@ -242,11 +273,13 @@ async fn run(
     let conn = hub.next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let mut rx = hub.subscribe();
     let mut joined: HashSet<String> = HashSet::new();
+    let mut last_cursor = Instant::now() - Duration::from_secs(1);
     loop {
         tokio::select! {
             msg = socket.recv() => {
                 let Some(Ok(msg)) = msg else { break };
                 let Message::Text(text) = msg else { continue };
+                if text.len() > MAX_MSG { continue; }
                 match serde_json::from_str::<ClientMsg>(&text) {
                     Ok(ClientMsg::Join { room }) => {
                         let allowed = (room.starts_with("project:") && can_projects) || (room == "catalog" && can_catalog) || room == "site";
@@ -257,6 +290,18 @@ async fn run(
                     Ok(ClientMsg::Leave { room }) => {
                         if joined.remove(&room) {
                             hub.leave(&room, conn);
+                        }
+                    }
+                    Ok(ClientMsg::Cursor { room, x, y }) => {
+                        // Environ 30 par seconde au plus ; au-delà, on laisse tomber.
+                        if joined.contains(&room) && x.is_finite() && y.is_finite() && last_cursor.elapsed() >= Duration::from_millis(25) {
+                            last_cursor = Instant::now();
+                            let _ = hub.tx.send(Event::Cursor { room, conn, member: member.clone(), x, y });
+                        }
+                    }
+                    Ok(ClientMsg::Select { room, ids }) => {
+                        if joined.contains(&room) && ids.len() <= 200 {
+                            let _ = hub.tx.send(Event::Select { room, conn, member: member.clone(), ids });
                         }
                     }
                     Ok(ClientMsg::Ping) => {
@@ -276,7 +321,11 @@ async fn run(
                     }
                     Err(_) => break,
                 };
-                let room = match &ev { Event::Change { room, .. } | Event::Presence { room, .. } => room };
+                let room = match &ev {
+                    Event::Change { room, .. } | Event::Presence { room, .. } => room,
+                    // Ses propres curseur et sélection ne reviennent pas à l'onglet qui les envoie.
+                    Event::Cursor { room, conn: c, .. } | Event::Select { room, conn: c, .. } => { if *c == conn { continue; } room }
+                };
                 if !joined.contains(room) { continue; }
                 let Ok(text) = serde_json::to_string(&ev) else { continue };
                 if socket.send(Message::Text(text.into())).await.is_err() { break; }
@@ -322,5 +371,14 @@ mod tests {
             last = Some(e);
         }
         assert!(matches!(last, Some(Event::Presence { members, .. }) if members.is_empty()));
+    }
+
+    #[test]
+    fn user_color_is_stable_and_from_palette() {
+        let a = user_color("01a1cbc2-93ac-761a-bdc2-4d4b69ab4cd2");
+        assert_eq!(a, user_color("01a1cbc2-93ac-761a-bdc2-4d4b69ab4cd2"));
+        assert!(USER_COLORS.contains(&a));
+        let n: std::collections::HashSet<_> = (0..200).map(|i| user_color(&format!("compte-{i}"))).collect();
+        assert_eq!(n.len(), 10, "les dix couleurs servent");
     }
 }

@@ -52,8 +52,31 @@
     !view.containers.length && 'un élément',
     !view.articles.length && 'du matériel',
   ].filter(Boolean) as string[]);
+  interface Todo { domains: { key: string; label: string; done: number; total: number; pct: number; href: string; note: string }[]; items: { kind: string; severity: string; message: string; href: string }[] }
+  let todo = $state<Todo | null>(null);
+  let showAll = $state(false);
+  // Relue à chaque changement du projet (la vue se recharge sur les événements des autres).
+  $effect(() => { view; api.get<Todo>(`/projects/${view.project.id}/todo`).then((t) => (todo = t)).catch(() => {}); });
   const openTasks = $derived(view.tasks.filter((t) => t.status === 'todo' || t.status === 'in_progress').length);
 </script>
+
+{#if todo}
+  <section class="card td">
+    <div class="td-doms">
+      {#each todo.domains as d (d.key)}
+        <a class="dom" href={d.href}><span class="flabel">{d.label}</span><b class="mono">{d.pct} %</b><span class="bar"><i style="width:{d.pct}%" class:ok={d.pct === 100}></i></span><span class="muted small">{d.note}</span></a>
+      {/each}
+    </div>
+    <div class="td-list">
+      <h3>Ce qu’il reste à faire {#if todo.items.length}<span class="muted">· {todo.items.length}</span>{/if}</h3>
+      {#if !todo.items.length}<p class="muted small">Rien en attente : aucune anomalie, tout est posé, la fiche est complète.</p>{/if}
+      {#each todo.items.slice(0, showAll ? 200 : 8) as it}
+        <a class="it {it.severity}" href={it.href}><i></i><span>{it.message}</span><Icon name="chevr" size="sm" /></a>
+      {/each}
+      {#if todo.items.length > 8}<button class="btn sm ghost" onclick={() => (showAll = !showAll)}>{showAll ? 'Réduire' : `Tout afficher (${todo.items.length})`}</button>{/if}
+    </div>
+  </section>
+{/if}
 
 <div class="grid-2" style="grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);align-items:start">
   <section class="card">
@@ -110,3 +133,21 @@
     <p>Les emplacements, éléments, articles, exemplaires et tâches partent avec lui. Seule une sauvegarde du site permet de le retrouver.</p>
   </Confirm>
 {/if}
+
+<style>
+  .td { display: grid; gap: 16px; margin-bottom: 20px; }
+  .td-doms { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+  .dom { display: grid; gap: 4px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); color: inherit; text-decoration: none; }
+  .dom:hover { border-color: var(--fg-3); }
+  .dom b { font-size: 22px; }
+  .dom .bar { height: 5px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
+  .dom .bar i { display: block; height: 100%; background: var(--fg); }
+  .dom .bar i.ok { background: var(--ok, #0E8550); }
+  .td-list h3 { margin: 0 0 8px; font-size: 16px; }
+  .it { display: flex; gap: 10px; align-items: center; padding: 7px 10px; border-radius: 10px; color: inherit; text-decoration: none; font-size: 14px; }
+  .it:hover { background: var(--surface-2); }
+  .it span { flex: 1; }
+  .it > i { width: 8px; height: 8px; border-radius: 50%; background: var(--fg-3); flex: none; }
+  .it.error > i { background: var(--err); }
+  .it.warning > i { background: var(--warn, #B78400); }
+</style>

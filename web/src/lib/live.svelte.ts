@@ -6,6 +6,9 @@ import { CLIENT_ID } from './api';
 export interface PresenceMember { id: string; name: string; color: string }
 export interface Change { type: 'change'; room: string; kind: string; id: string; action: string; rev: number | null; actor: string; client: string | null }
 type Handler = (c: Change) => void;
+export interface Remote { type: 'cursor' | 'select'; room: string; member: PresenceMember; x?: number; y?: number; ids?: string[] }
+type RemoteHandler = (r: Remote) => void;
+const remotes = new Map<string, Set<RemoteHandler>>();
 
 export const live = $state<{ connected: boolean; presence: Record<string, PresenceMember[]> }>({ connected: false, presence: {} });
 
@@ -39,6 +42,8 @@ function connect() {
     else if (m.type === 'change') {
       if (m.client === CLIENT_ID) return;
       wanted.get(m.room)?.forEach((h) => h(m));
+    } else if (m.type === 'cursor' || m.type === 'select') {
+      remotes.get(m.room)?.forEach((h) => h(m));
     } else if (m.type === 'resync') {
       for (const [room, hs] of wanted) hs.forEach((h) => h({ type: 'change', room, kind: 'resync', id: '*', action: 'resync', rev: null, actor: '', client: null }));
     }
@@ -70,3 +75,21 @@ export function join(room: string, handler: Handler): () => void {
     if (!wanted.size && ws) { closedByUs = true; ws.close(); }
   };
 }
+
+/** Curseurs et sélections des autres sur une vue graphique ; la salle doit être rejointe. */
+export function onRemote(room: string, h: RemoteHandler): () => void {
+  if (!remotes.has(room)) remotes.set(room, new Set());
+  remotes.get(room)!.add(h);
+  return () => { const s = remotes.get(room); s?.delete(h); if (s && !s.size) remotes.delete(room); };
+}
+let lastCursor = 0;
+let pendingCursor: ReturnType<typeof setTimeout> | null = null;
+/** Envoie la position du curseur, environ 30 fois par seconde. Une panne ne bloque rien. */
+export function sendCursor(room: string, x: number, y: number) {
+  const now = Date.now();
+  const go = () => { lastCursor = Date.now(); send({ type: 'cursor', room, x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10 }); };
+  if (now - lastCursor >= 33) { go(); return; }
+  if (pendingCursor) clearTimeout(pendingCursor);
+  pendingCursor = setTimeout(go, 33 - (now - lastCursor));
+}
+export function sendSelection(room: string, ids: string[]) { send({ type: 'select', room, ids: ids.slice(0, 200) }); }

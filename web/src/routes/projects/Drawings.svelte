@@ -7,7 +7,8 @@
   import { api, ApiError } from '../../lib/api';
   import { can } from '../../lib/session.svelte';
   import { toast, fail } from '../../lib/toast.svelte';
-  import { join } from '../../lib/live.svelte';
+  import { join, sendCursor, sendSelection, type PresenceMember } from '../../lib/live.svelte';
+  import RemoteCursors from '../../components/RemoteCursors.svelte';
   import { relative } from '../../lib/format';
   import { loadRefs, refList, refName, fnColor } from '../../lib/catalog.svelte';
   import { withLightTheme, standalone, pdf as toPdf, save as saveFile } from '../../lib/svgexport';
@@ -200,6 +201,9 @@
   let hover = $state<[number, number] | null>(null);
   let drag: { ids: string[]; x0: number; y0: number; orig: Map<string, El>; resize?: boolean } | null = null;
   let pan: { x: number; y: number; px: number; py: number } | null = null;
+  let remoteSel = $state<Record<string, { member: PresenceMember; ids: string[] }>>({});
+  const rsel = $derived(new Map(Object.values(remoteSel).flatMap((r) => r.ids.map((id) => [id, r.member.color] as const))));
+  $effect(() => { const ids = [...sel]; if (pageId) sendSelection(`project:${pid}/draw:${pageId}`, ids); });
   const selList = $derived([...sel].map((id) => byId.get(id)).filter(Boolean) as El[]);
   const uid = () => Math.random().toString(36).slice(2, 10);
 
@@ -237,6 +241,7 @@
   }
   function move(e: PointerEvent) {
     const p = toPage(e); hover = p;
+    if (pageId) sendCursor(`project:${pid}/draw:${pageId}`, p[0], p[1]);
     if (pan) { panX = pan.px + e.clientX - pan.x; panY = pan.py + e.clientY - pan.y; return; }
     if (draft) { draft = { ...draft, x1: snapV(p[0]), y1: snapV(p[1]) }; return; }
     if (drag && pg) {
@@ -444,7 +449,7 @@
                   </g>
                 {/each}
                 {#each pg.elements.filter((e) => e.type !== 'zone' && e.type !== 'link') as e (e.id)}
-                  <g data-el={e.id} class="el" class:sel={isSel(e.id)} class:bad={e.type === 'equipment' && conflictKeys.has(`${pg.id}:${e.id}`)}>
+                  <g data-el={e.id} class="el" class:sel={isSel(e.id)} class:rsel={rsel.has(e.id)} style="--rs:{rsel.get(e.id) ?? 'transparent'}" class:bad={e.type === 'equipment' && conflictKeys.has(`${pg.id}:${e.id}`)}>
                     {#if e.type === 'text'}
                       <text x={e.x} y={e.y} font-size={e.size} font-weight={e.bold ? 700 : 400} fill={e.color ?? '#15171A'}>{#each String(e.text).split('\n') as ln, i}<tspan x={e.x} dy={i ? e.size * 1.25 : 0}>{ln}</tspan>{/each}</text>
                     {:else if e.type === 'rect'}
@@ -494,6 +499,7 @@
                 {#if linkFrom && hover}{@const a = anchorPt(linkFrom)}<line x1={a[0]} y1={a[1]} x2={hover[0]} y2={hover[1]} class="draft ui-only" />{/if}
               </g>
             </svg>
+            {#if pageId}<RemoteCursors room={`project:${pid}/draw:${pageId}`} toScreen={(x, y) => [ox + x * k, oy + y * k]} bind:selections={remoteSel} />{/if}
           </div>
 
           <aside class="dw-side">
@@ -617,6 +623,7 @@
   .gl { stroke: #E3E6EA; stroke-width: .15; }
   .el { cursor: pointer; }
   .el.sel > :first-child, .el.sel rect:first-of-type { filter: drop-shadow(0 0 1.2px #4F6BFF) drop-shadow(0 0 1.2px #4F6BFF); }
+  .el.rsel > :first-child { filter: drop-shadow(0 0 1px var(--rs)) drop-shadow(0 0 1.5px var(--rs)); }
   .el.bad rect:first-of-type { stroke: #CF3A2F; stroke-width: .9; }
   .rz { fill: #4F6BFF; cursor: nwse-resize; }
   .draft { stroke: #4F6BFF; stroke-width: .4; stroke-dasharray: 1.5 1; fill: rgba(79, 107, 255, .06); }

@@ -7,7 +7,8 @@
   import { api, ApiError } from '../../lib/api';
   import { can } from '../../lib/session.svelte';
   import { toast, fail } from '../../lib/toast.svelte';
-  import { join } from '../../lib/live.svelte';
+  import { join, sendCursor, sendSelection, type PresenceMember } from '../../lib/live.svelte';
+  import RemoteCursors from '../../components/RemoteCursors.svelte';
   import { relative } from '../../lib/format';
   import { loadRefs, refList, refById, refName } from '../../lib/catalog.svelte';
   import type { ProjectView } from '../../lib/projects';
@@ -230,6 +231,9 @@
   let pan: { x: number; y: number; tx: number; ty: number } | null = null;
   let drag = $state<{ id: string; dx: number; dy: number; x: number; y: number; moved: boolean } | null>(null);
   const selected = $derived(sel ? byId.get(sel) ?? null : null);
+  let remoteSel = $state<Record<string, { member: PresenceMember; ids: string[] }>>({});
+  const rsel = $derived(new Map(Object.values(remoteSel).flatMap((r) => r.ids.map((id) => [id, r.member.color] as const))));
+  $effect(() => { const ids = sel ? [sel] : []; if (mapId && floor) sendSelection(`project:${pid}/map:${mapId}:${floor.id}`, ids); });
 
   function setTool(t: Tool) { tool = t; draft = []; calibPts = []; if (t !== 'route') trace = null; if (t !== 'place') placing = null; }
   /** Aimantation orthogonale : à moins de 8° d'un axe, on s'aligne sur le point précédent. */
@@ -288,6 +292,7 @@
   }
   function move(e: PointerEvent) {
     const w = toWorld(e);
+    if (mapId && floor) sendCursor(`project:${pid}/map:${mapId}:${floor.id}`, w[0], w[1]);
     hover = tool === 'measure' || tool === 'route' ? ortho(w, prevPoint()) : w;
     if (pan) { tx = pan.tx + e.clientX - pan.x; ty = pan.ty + e.clientY - pan.y; return; }
     if (drag) { const nx = Math.round(w[0] - drag.dx), ny = Math.round(w[1] - drag.dy); drag = { ...drag, x: nx, y: ny, moved: drag.moved || Math.abs(nx - drag.x) + Math.abs(ny - drag.y) > 0 }; }
@@ -548,7 +553,7 @@
                 {#if layers.containers}
                   {#each objs.filter((o) => o.kind === 'container' && !hidden.has(o.container_id)) as o (o.id)}
                     {@const p = posOf(o)}{@const [w, h] = dimsOf(o)}
-                    <g class="obj ct" class:sel={sel === o.id} transform="translate({p.x} {p.y})" role="button" tabindex="-1" onpointerdown={(e) => objDown(e, o)}>
+                    <g class="obj ct" class:sel={sel === o.id} class:rsel={rsel.has(o.id)} style="--rs:{rsel.get(o.id) ?? 'transparent'}" transform="translate({p.x} {p.y})" role="button" tabindex="-1" onpointerdown={(e) => objDown(e, o)}>
                       <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={Math.min(w, h) * 0.06} class="ctr" vector-effect="non-scaling-stroke" />
                       <text y={h / 2 + 14 / k} font-size={12 / k} text-anchor="middle" class="ct-t">{o.name}</text>
                     </g>
@@ -578,6 +583,7 @@
               </g>
             </svg>
             <!-- Règles graduées en mètres -->
+            {#if mapId && floor}<RemoteCursors room={`project:${pid}/map:${mapId}:${floor.id}`} toScreen={(x, y) => [tx + x * k, ty + y * k]} bind:selections={remoteSel} />{/if}
             <svg class="ruler top" aria-hidden="true"><rect width="100%" height="18" class="rbg" />{#each ticksX as x}<line x1={tx + x * k} x2={tx + x * k} y1="10" y2="18" class="rt" /><text x={tx + x * k + 3} y="11" class="rl">{fmtM(x)}</text>{/each}</svg>
             <svg class="ruler left" aria-hidden="true"><rect width="18" height="100%" class="rbg" />{#each ticksY as y}<line y1={ty + y * k} y2={ty + y * k} x1="10" x2="18" class="rt" /><text transform="translate(11 {ty + y * k - 3}) rotate(-90)" class="rl">{fmtM(y)}</text>{/each}</svg>
             <div class="scalebar"><i style="width:{scaleBar * k}px"></i><span>{fmtM(scaleBar)}</span></div>
@@ -752,6 +758,7 @@
   .grid.axis { stroke: var(--fg-3); }
   .obj { cursor: pointer; }
   .ctr { fill: color-mix(in srgb, var(--accent, #4F6BFF) 16%, var(--surface)); stroke: var(--fg); stroke-width: 1.5; }
+  .obj.rsel .ctr { stroke: var(--rs); stroke-width: 3; }
   .obj.sel .ctr { stroke: var(--accent, #4F6BFF); stroke-width: 3; }
   .ct-t, .pt-t { font-family: var(--font); font-weight: 600; fill: var(--fg); paint-order: stroke; stroke: var(--surface); stroke-width: 3px; stroke-linejoin: round; }
   .pt-t .muted { fill: var(--fg-2); font-weight: 500; }

@@ -375,11 +375,11 @@ async fn number(
 
 // ----- Validation : 11 contrôles -----
 
-struct Issue {
-    code: u8,
-    severity: &'static str,
-    title: &'static str,
-    detail: String,
+pub(crate) struct Issue {
+    pub(crate) code: u8,
+    pub(crate) severity: &'static str,
+    pub(crate) title: &'static str,
+    pub(crate) detail: String,
     cables: Vec<String>,
     nodes: Vec<String>,
     view: Option<String>,
@@ -392,23 +392,16 @@ fn view_of(n: &Node) -> String {
     }
 }
 
-async fn validate(
-    State(st): State<AppState>,
-    m: Member,
-    Path(pid): Path<String>,
-) -> ApiResult<Json<Value>> {
-    read(&m)?;
-    st.store
-        .project(&pid)
-        .await?
-        .ok_or(ApiError::NotFound("Projet"))?;
-    let nodes = project_nodes(&st.store, &pid).await?;
+/// Anomalies de câblage du projet (onze contrôles), triées par gravité.
+pub(crate) async fn issues_of(store: &Store, pid: &str) -> ApiResult<Vec<Issue>> {
+    let pid = pid.to_string();
+    let nodes = project_nodes(store, &pid).await?;
     let port_of: HashMap<&str, (&Node, &Port)> = nodes
         .iter()
         .flat_map(|n| n.ports.iter().map(move |p| (p.r.as_str(), (n, p))))
         .collect();
-    let cables = st.store.cables(&pid).await?;
-    let inv = st.store.inventory(&pid).await?;
+    let cables = store.cables(&pid).await?;
+    let inv = store.inventory(&pid).await?;
     let mut out: Vec<Issue> = Vec::new();
     let name = |c: &strata_store::cables::Cable| {
         c.fields
@@ -634,8 +627,7 @@ async fn validate(
         }
     }
     // 10. Zone sans nom ; 11. Zone vide (aucun nœud dont la position enregistrée y tombe).
-    for z in st
-        .store
+    for z in store
         .annotations(&pid, None)
         .await?
         .into_iter()
@@ -655,7 +647,7 @@ async fn validate(
                 view: view.clone(),
             });
         }
-        let layout = st.store.layout(&pid, &z.view).await?;
+        let layout = store.layout(&pid, &z.view).await?;
         let inside = layout.values().any(|(x, y)| {
             *x >= f("x") && *x <= f("x") + f("w") && *y >= f("y") && *y <= f("y") + f("h")
         });
@@ -688,6 +680,20 @@ async fn validate(
             i.code,
         )
     });
+    Ok(out)
+}
+
+async fn validate(
+    State(st): State<AppState>,
+    m: Member,
+    Path(pid): Path<String>,
+) -> ApiResult<Json<Value>> {
+    read(&m)?;
+    st.store
+        .project(&pid)
+        .await?
+        .ok_or(ApiError::NotFound("Projet"))?;
+    let out = issues_of(&st.store, &pid).await?;
     let count = |s: &str| out.iter().filter(|i| i.severity == s).count();
     Ok(Json(json!({
         "counts": { "error": count("error"), "warning": count("warning"), "info": count("info") },
