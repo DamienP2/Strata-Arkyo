@@ -13,6 +13,7 @@ pub mod checks;
 pub mod collab;
 pub mod drawings;
 pub mod error;
+pub mod links;
 pub mod live;
 pub mod network;
 pub mod ops;
@@ -121,6 +122,7 @@ pub fn router(state: AppState) -> Router {
         .merge(drawings::routes())
         .merge(print::routes())
         .merge(collab::routes())
+        .merge(links::routes())
         .route("/live", get(live::socket))
         .layer(middleware::from_fn(csrf));
     Router::new()

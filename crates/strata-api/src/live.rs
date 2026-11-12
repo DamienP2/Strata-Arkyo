@@ -378,7 +378,9 @@ mod tests {
         let a = user_color("01a1cbc2-93ac-761a-bdc2-4d4b69ab4cd2");
         assert_eq!(a, user_color("01a1cbc2-93ac-761a-bdc2-4d4b69ab4cd2"));
         assert!(USER_COLORS.contains(&a));
-        let n: std::collections::HashSet<_> = (0..200).map(|i| user_color(&format!("compte-{i}"))).collect();
+        let n: std::collections::HashSet<_> = (0..200)
+            .map(|i| user_color(&format!("compte-{i}")))
+            .collect();
         assert_eq!(n.len(), 10, "les dix couleurs servent");
     }
 }

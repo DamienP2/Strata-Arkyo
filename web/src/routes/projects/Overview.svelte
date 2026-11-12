@@ -1,6 +1,7 @@
 <script lang="ts">
   import Icon from '../../components/Icon.svelte';
   import Vu from '../../components/Vu.svelte';
+  import ProjectLinks from '../../components/ProjectLinks.svelte';
   import Confirm from '../../components/Confirm.svelte';
   import FieldError from '../../components/FieldError.svelte';
   import { api, ApiError } from '../../lib/api';
@@ -124,6 +125,7 @@
       <div class="card-head"><h2>Tâches</h2><a class="btn sm" href="/projets/{p.id}/taches">{openTasks ? `${openTasks} à traiter` : 'Voir'}</a></div>
       <p class="muted small" style="margin-top:10px">{view.tasks.length ? `${view.tasks.length - openTasks} sur ${view.tasks.length} terminée${view.tasks.length > 1 ? 's' : ''}.` : 'Aucune tâche.'}</p>
     </section>
+    <ProjectLinks pid={p.id} />
     {#if writable}<button class="btn ghost danger" style="align-self:flex-start" onclick={() => (deleting = true)}><Icon name="trash" />Supprimer le projet</button>{/if}
   </div>
 </div>

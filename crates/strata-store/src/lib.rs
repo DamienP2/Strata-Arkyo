@@ -19,6 +19,7 @@ pub mod cables;
 pub mod catalog;
 pub mod checks;
 pub mod drawings;
+pub mod links;
 pub mod network;
 pub mod panels;
 pub mod plans;

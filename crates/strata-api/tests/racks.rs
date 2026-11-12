@@ -3892,3 +3892,137 @@ async fn print_library_title_blocks_labels_dossiers() {
     let site = call(&app, "GET", "/api/site", None, Some(&lea)).await.body;
     assert_eq!(site["logo"], Value::Null);
 }
+
+#[tokio::test]
+async fn links_between_projects() {
+    let Setup {
+        app, o, pid, cid, ..
+    } = setup().await;
+    // Deuxième projet : une installation fixe.
+    let r = call(&app, "POST", "/api/projects", Some(json!({
+        "name": "Studio fixe", "intervention": "integration", "regie": "fixed", "planning_start": day(1), "planning_end": day(2), "commissioning": day(5),
+        "location": {"name": "Bâtiment"}, "container": {"name": "Baie studio", "kind": "rack", "rackable": true, "height_u": 12, "depth_mm": 600}
+    })), Some(&o)).await;
+    assert_eq!(r.status, StatusCode::CREATED, "{:?}", r.body);
+    let pid2 = r.body["project"]["id"].as_str().unwrap().to_string();
+    let cid2 = r.body["container"]["id"].as_str().unwrap().to_string();
+    let it = call(&app, "POST", "/api/catalog/items", Some(json!({"kind": "equipment", "data": {"name": "Boîte fibre", "functions": ["V"], "format": {"kind": "rack", "height_u": 1, "depth_mm": 200}, "ports": [{"connector_id": "bnc", "signal_id": "sdi-3g", "direction": "out", "gender": "F", "quantity": 2}]}})), Some(&o)).await.body["item"]["id"].as_str().unwrap().to_string();
+    let mut ports = Vec::new();
+    for (p, c) in [(&pid, &cid), (&pid2, &cid2)] {
+        call(
+            &app,
+            "POST",
+            &format!("/api/projects/{p}/articles"),
+            Some(json!({"container_id": c, "nature": "equipment", "item_id": it})),
+            Some(&o),
+        )
+        .await;
+        let v = call(
+            &app,
+            "GET",
+            &format!("/api/projects/{p}/synoptic?view=container:{c}"),
+            None,
+            Some(&o),
+        )
+        .await
+        .body;
+        let n = v["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|n| n["label"] == "Boîte fibre")
+            .unwrap()
+            .clone();
+        call(
+            &app,
+            "POST",
+            &format!("/api/projects/{p}/synoptic/lock"),
+            None,
+            Some(&o),
+        )
+        .await;
+        let port = n["ports"][0]["ref"].as_str().unwrap().to_string();
+        let r = call(
+            &app,
+            "POST",
+            &format!("/api/projects/{p}/external"),
+            Some(json!({"port": port, "label": "Autre projet", "number": "EXT-1"})),
+            Some(&o),
+        )
+        .await;
+        assert!(r.status.is_success(), "{:?}", r.body);
+        ports.push(n["ports"][1]["ref"].as_str().unwrap().to_string());
+    }
+    let url = format!("/api/projects/{pid}/links");
+    let v = call(
+        &app,
+        "GET",
+        &format!("{url}?candidates=true"),
+        None,
+        Some(&o),
+    )
+    .await
+    .body;
+    assert_eq!(v["free"].as_array().unwrap().len(), 1);
+    let mine = v["free"][0]["cable_id"].as_str().unwrap().to_string();
+    let cand = v["candidates"][0].clone();
+    assert_eq!(cand["project_id"], pid2.as_str());
+    let theirs = cand["ports"][0]["cable_id"].as_str().unwrap().to_string();
+    let r = call(
+        &app,
+        "POST",
+        &url,
+        Some(json!({"cable_id": mine, "remote_project": pid, "remote_cable": mine})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let r = call(
+        &app,
+        "POST",
+        &url,
+        Some(json!({"cable_id": mine, "remote_project": pid2, "remote_cable": theirs})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    let r = call(
+        &app,
+        "POST",
+        &url,
+        Some(json!({"cable_id": mine, "remote_project": pid2, "remote_cable": theirs})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::CONFLICT);
+    // Les deux projets voient le lien.
+    let v2 = call(
+        &app,
+        "GET",
+        &format!("/api/projects/{pid2}/links"),
+        None,
+        Some(&o),
+    )
+    .await
+    .body;
+    assert_eq!(v2["links"][0]["remote"]["project_name"], "Finale");
+    assert!(
+        v2["links"][0]["local"]["label"]
+            .as_str()
+            .unwrap()
+            .contains("Boîte fibre")
+    );
+    // Supprimer le câble défait le lien.
+    let r = call(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid2}/cables/delete"),
+        Some(json!({"ids": [theirs]})),
+        Some(&o),
+    )
+    .await;
+    assert!(r.status.is_success(), "{:?}", r.body);
+    let v = call(&app, "GET", &url, None, Some(&o)).await.body;
+    assert!(v["links"].as_array().unwrap().is_empty(), "{v:?}");
+    let _ = ports;
+}
