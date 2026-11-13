@@ -506,7 +506,7 @@ mod tests {
             .create(&store, Kind::Manual, Some("avant tournée".into()), "0.1.0")
             .await
             .unwrap();
-        assert_eq!(info.manifest.schema, 20);
+        assert_eq!(info.manifest.schema, 21);
         assert_eq!(info.manifest.files, 1);
         assert_eq!(
             verify(&b.path_of(&info.name).unwrap()).unwrap(),
