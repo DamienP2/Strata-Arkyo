@@ -37,6 +37,35 @@
   const arts = $derived(view.articles.filter((a) => !a.host && (selCont === 'free' ? a.location_id === selLoc && !a.container_id : a.container_id === selCont)));
   const modulesOf = (a: Article) => view.articles.filter((m) => m.host?.article_id === a.id).sort((x, y) => x.host!.slot - y.host!.slot);
   let chassisOf = $state<Article | null>(null);
+
+  // Statut de pose : pour une baie, un flight-case ou une casquette, où chaque exemplaire
+  // (ou accessoire) est posé dans l'élévation, d'après l'éditeur de racks.
+  interface Pl { article_id: string; instance_id: string | null; u_start: number; face: string; shelf_id: string | null }
+  let rackEls = $state<{ placement: Pl; height_u: number }[] | null>(null);
+  $effect(() => {
+    const c = cont, v = view.articles.length + view.instances.length; void v;
+    rackEls = null;
+    if (c?.rackable) api.get<{ elements: { placement: Pl; height_u: number }[] }>(`/containers/${c.id}/rack`).then((r) => { if (cont?.id === c.id) rackEls = r.elements; }, () => {});
+  });
+  const FACE: Record<string, string> = { front: 'avant', rear: 'arrière', side: 'côté' };
+  const posText = (e: { placement: Pl; height_u: number }) => {
+    if (e.placement.shelf_id) return 'Posé sur étagère';
+    const h = Math.max(1, Math.ceil(e.height_u)), u = e.placement.u_start;
+    return `U${u}${h > 1 ? `–${u + h - 1}` : ''} · ${nf(e.height_u, e.height_u % 1 ? 1 : 0)} U · ${FACE[e.placement.face] ?? e.placement.face}`;
+  };
+  /** Statut d'un exemplaire, ou d'un article sans exemplaire (accessoire, panel, adaptateur). */
+  function statusOf(a: Article, instId: string | null): { kind: 'ok' | 'todo' | 'info'; text: string } {
+    if (a.host) return { kind: 'info', text: `Dans le châssis · S${a.host.slot}` };
+    if (!cont) return { kind: 'info', text: 'Libre dans l’emplacement' };
+    if (!cont.rackable) return { kind: 'info', text: `Dans ${CONTAINER_KINDS[cont.kind].label.toLowerCase()}` };
+    const rackable = a.accessory || item(a)?.rackable;
+    if (!rackable) return { kind: 'info', text: 'Hors rack' };
+    if (!rackEls) return { kind: 'info', text: '…' };
+    const e = rackEls.find((x) => x.placement.article_id === a.id && (instId ? x.placement.instance_id === instId : !x.placement.instance_id));
+    return e ? { kind: 'ok', text: `Posé · ${posText(e)}` } : { kind: 'todo', text: 'À placer' };
+  }
+  /** Page de conception de l'élément : éditeur de racks ou de mobilier. */
+  const designHref = (c: Container) => (c.kind === 'desk' || c.kind === 'furniture' ? `/projets/${view.project.id}/mobilier/${c.id}` : c.rackable ? `/projets/${view.project.id}/racks/${c.id}` : null);
   const instOf = (a: Article) => view.instances.filter((i) => i.article_id === a.id);
   const item = (a: Article) => (a.item_id ? view.items[a.item_id] : undefined);
   const heightOf = (a: Article) => (a.accessory ? (a.accessory.kind === 'panel' ? a.accessory.panel.height_u : a.accessory.height_u) : item(a)?.rackable ? item(a)!.height_u : null);
@@ -110,7 +139,6 @@
   }
   let moving = $state<{ a: Article; target: string; instance: string | null } | null>(null);
   let confirmDel = $state<{ kind: 'container' | 'article' | 'location'; id: string; name: string } | null>(null);
-  let open = $state<Set<string>>(new Set());
 
   async function saveLoc(e: SubmitEvent) {
     e.preventDefault(); locErr = {};
@@ -175,20 +203,19 @@
   // Les saisies sur un même exemplaire s'enchaînent : chacune part avec la révision
   // renvoyée par la précédente, sans attendre un rechargement complet.
   const queue = new Map<string, Promise<void>>();
-  function saveInstance(i: Instance, field: 'serial' | 'mac' | 'inventory_tag', value: string) {
+  function saveInstance(i: Instance, field: 'label' | 'serial' | 'mac' | 'inventory_tag', value: string) {
     const prev = queue.get(i.id) ?? Promise.resolve();
     const next = prev.then(async () => {
       const cur = view.instances.find((x) => x.id === i.id) ?? i;
       if ((cur[field] ?? '') === value.trim()) return;
       try {
-        const r = await api.patch<Instance>(`/instances/${i.id}`, { rev: cur.rev, serial: cur.serial, mac: cur.mac, inventory_tag: cur.inventory_tag, [field]: value });
+        const r = await api.patch<Instance>(`/instances/${i.id}`, { rev: cur.rev, label: cur.label, serial: cur.serial, mac: cur.mac, inventory_tag: cur.inventory_tag, [field]: value });
         const k = view.instances.findIndex((x) => x.id === i.id);
         if (k >= 0) view.instances[k] = r;
       } catch (e) { fail(e); await reload(); }
     });
     queue.set(i.id, next);
   }
-  const toggle = (id: string) => { const s = new Set(open); s.has(id) ? s.delete(id) : s.add(id); open = s; };
   const pct = (v: number, max: number | null | undefined) => (max ? (v / max) * 100 : 0);
   /** Blocs de la mini-baie : chaque article rackable, de bas en haut, à l'échelle. */
   function blocks(c: Container) {
@@ -210,9 +237,9 @@
         <span class="code mono">{l.code || '—'}</span><span class="ln"><b>{l.name}</b><span class="small muted">{l.totals.containers} élément{l.totals.containers > 1 ? 's' : ''}{l.totals.free_items ? ` · ${l.totals.free_items} libre${l.totals.free_items > 1 ? 's' : ''}` : ''}</span></span>
       </button>
     {/each}
-    {#if writable}<button class="btn sm" onclick={() => (locEdit = { id: null, rev: 0, name: '', code: '' })}><Icon name="plus" size="sm" />Emplacement</button>{/if}
+    {#if writable}<button class="btn ghost" onclick={() => (locEdit = { id: null, rev: 0, name: '', code: '' })}><Icon name="plus" size="sm" />Emplacement</button>{/if}
     <span style="flex:1"></span>
-    <button class="btn sm ghost" onclick={() => download(`/projects/${view.project.id}/inventory/export?format=xlsx&group=container`)}><Icon name="download" size="sm" />Nomenclature</button>
+    <button class="btn ghost" title="Fichier Excel de tout le matériel du projet, élément par élément : liste de colisage, chiffrage, logistique" onclick={() => download(`/projects/${view.project.id}/inventory/export?format=xlsx&group=container`)}><Icon name="download" size="sm" />Exporter la nomenclature (Excel)</button>
   </div>
 
   {#if !view.locations.length}
@@ -222,10 +249,10 @@
       <div class="page-head" style="align-items:center">
         <div><p class="eyebrow">Emplacement · code câble {loc.code}</p><h2 style="font:720 30px/1.1 var(--display);letter-spacing:-.03em">{loc.name}</h2><p class="muted small">{nf(loc.totals.weight_kg, 1)} kg · {nf(loc.totals.power_w)} W</p></div>
         {#if writable}<div class="head-actions">
-          <button class="btn sm" onclick={() => (locEdit = { id: loc.id, rev: loc.rev, name: loc.name, code: loc.code })}><Icon name="pen" size="sm" />Renommer</button>
-          <button class="btn sm ghost danger" onclick={() => (confirmDel = { kind: 'location', id: loc.id, name: loc.name })}><Icon name="trash" size="sm" /></button>
+          <button class="btn ghost" onclick={() => (locEdit = { id: loc.id, rev: loc.rev, name: loc.name, code: loc.code })}><Icon name="pen" size="sm" />Renommer</button>
+          <button class="btn ghost danger" title="Supprimer l’emplacement" aria-label="Supprimer l’emplacement" onclick={() => (confirmDel = { kind: 'location', id: loc.id, name: loc.name })}><Icon name="trash" size="sm" /></button>
           <div class="menu-wrap">
-            <button class="btn sm" aria-expanded={menuOpen} onclick={() => (menuOpen = !menuOpen)}><Icon name="copy" size="sm" />Modèles<Icon name="chevd" size="sm" /></button>
+            <button class="btn" aria-expanded={menuOpen} onclick={() => (menuOpen = !menuOpen)}><Icon name="copy" size="sm" />Modèles<Icon name="chevd" size="sm" /></button>
             {#if menuOpen}
               <div class="pop-menu" role="menu">
                 <button role="menuitem" onclick={() => { menuOpen = false; fromTemplate = true; }}><Icon name="case" size="sm" /><span><b>Ajouter un élément depuis un modèle</b><small>Une baie, un flight-case… avec son contenu</small></span></button>
@@ -234,7 +261,7 @@
               </div>
             {/if}
           </div>
-          <button class="btn sm primary" onclick={() => (contEdit = { c: null })}><Icon name="plus" size="sm" />Ajouter un élément</button>
+          <button class="btn primary" onclick={() => (contEdit = { c: null })}><Icon name="plus" size="sm" />Ajouter un élément</button>
         </div>{/if}
       </div>
 
@@ -265,11 +292,12 @@
       <section class="card">
         <div class="card-head">
           <div><h2>{cont ? cont.name : 'Équipements libres'}</h2><span class="small muted">{arts.reduce((s, a) => s + a.quantity, 0)} article{arts.reduce((s, a) => s + a.quantity, 0) > 1 ? 's' : ''}{cont ? ` · code câble ${cont.cable_code}` : ''}{cont?.totals.volume_m3 ? ` · ${nf(cont.totals.volume_m3, 2)} m³` : ''}</span></div>
-          {#if writable}<div class="head-actions">
-            {#if cont && can('catalogue', 'ecriture')}<button class="btn sm ghost" onclick={() => saveAsTemplate(cont)} title="Copie l’élément et son contenu dans la bibliothèque"><Icon name="copy" size="sm" />Enregistrer comme modèle</button>{/if}
-            {#if cont}<button class="btn sm" onclick={() => (contEdit = { c: cont })}><Icon name="pen" size="sm" />Modifier</button><button class="btn sm ghost danger" onclick={() => (confirmDel = { kind: 'container', id: cont.id, name: cont.name })}><Icon name="trash" size="sm" /></button>{/if}
-            <button class="btn sm primary" onclick={() => (adding = true)}><Icon name="plus" size="sm" />Ajouter du matériel</button>
-          </div>{/if}
+          <div class="head-actions">
+            {#if writable && cont && can('catalogue', 'ecriture')}<button class="btn ghost" onclick={() => saveAsTemplate(cont)} title="Copie l’élément et son contenu dans la bibliothèque"><Icon name="copy" size="sm" />Enregistrer comme modèle</button>{/if}
+            {#if writable && cont}<button class="btn ghost" onclick={() => (contEdit = { c: cont })}><Icon name="pen" size="sm" />Modifier</button><button class="btn ghost danger" title="Supprimer l’élément" aria-label="Supprimer l’élément" onclick={() => (confirmDel = { kind: 'container', id: cont.id, name: cont.name })}><Icon name="trash" size="sm" /></button>{/if}
+            {#if cont && designHref(cont)}<a class="btn" href={designHref(cont)}><Icon name={cont.rackable ? 'server' : 'layers'} size="sm" />Conception</a>{/if}
+            {#if writable}<button class="btn primary" onclick={() => (adding = true)}><Icon name="plus" size="sm" />Ajouter du matériel</button>{/if}
+          </div>
         </div>
         {#if cont?.kind === 'monitor_wall' && cont.details?.wall}
           <WallView wall={cont.details.wall} screens={gearOf(cont)} {writable} onsave={(w) => saveDetails(cont, { ...cont.details, wall: w })} />
@@ -279,53 +307,52 @@
         {#if cont && (cont.totals.over_u || cont.totals.over_weight || cont.totals.over_power)}
           <div class="alert err" style="margin-top:12px"><Icon name="alert" /><span>{[cont.totals.over_u && 'la hauteur disponible', cont.totals.over_weight && 'le poids maximum', cont.totals.over_power && 'la puissance maximum'].filter(Boolean).join(', ')} {cont.totals.over_u || cont.totals.over_weight || cont.totals.over_power ? 'dépassé(e)' : ''}.</span></div>
         {/if}
-        <div class="tbl-wrap"><table class="tbl">
-          <thead><tr><th>Article</th><th>Quantité</th><th class="num hide-m">Hauteur</th><th class="num hide-m">Poids</th><th class="num hide-m">Conso</th><th></th></tr></thead>
+        <div class="tbl-wrap"><table class="tbl inv-tbl">
+          <thead><tr><th class="c-id">ID</th><th>Libellé</th><th>Statut</th><th class="hide-m">N° de série</th><th class="hide-m">Adresse MAC</th><th></th></tr></thead>
           <tbody>
             {#each grouped as g (g.k)}
-            <tr class="sec-row"><td colspan="6"><span class="lbl-t">{g.label}</span> <span class="muted small">{g.rows.reduce((n, r) => n + qtyOf(r), 0)}</span></td></tr>
+            <tr class="sec-row"><td colspan="6"><span class="sec-t">{g.label}</span><span class="sec-n">{g.rows.reduce((n, r) => n + qtyOf(r), 0)}</span></td></tr>
             {#each g.rows as r (r.key)}
               {@const a = r.a}
               {@const it = item(a)}
               {@const inst = instOf(a)}
-              <tr>
-                <td><div class="art-name"><span><b>{a.label}</b><span class="small muted">{it?.modular ? `Châssis · ${modulesOf(a).length} module${modulesOf(a).length > 1 ? 's' : ''}` : a.nature === 'equipment' ? 'Équipement' : a.nature === 'adapter' ? 'Adaptateur' : a.accessory?.kind === 'panel' ? `Panel · ${a.accessory.panel.slots.length} connecteur${a.accessory.panel.slots.length > 1 ? 's' : ''}` : 'Accessoire'}{it?.brand ? ` · ${it.brand}` : ''}{it && !it.active ? ' · fiche inactive' : ''}</span></span></div></td>
-                <td>{#if writable}<span class="stepper"><button onclick={() => step(r, -1)} aria-label="Retirer un">−</button><span>{qtyOf(r)}</span><button onclick={() => step(r, 1)} aria-label="Ajouter un">+</button></span>{:else}{qtyOf(r)}{/if}</td>
-                <td class="num hide-m">{heightOf(a) ? `${nf(heightOf(a)! * qtyOf(r), 1).replace(',0', '')} U` : '—'}</td>
-                <td class="num hide-m">{it?.weight_kg ? `${nf(it.weight_kg * qtyOf(r), 1)} kg` : '—'}</td>
-                <td class="num hide-m">{it?.power_w ? `${nf(it.power_w * qtyOf(r))} W` : '—'}</td>
-                <td><div class="dl-actions">
-                  {#if a.accessory?.kind === 'panel'}<button class="btn sm ghost" onclick={() => (panelOf = a)}><Icon name="grid" size="sm" />{writable ? 'Modifier' : 'Voir'}</button>{/if}
-                  {#if it?.modular}<button class="btn sm" onclick={() => (chassisOf = a)}><Icon name="grid" size="sm" />Modules</button>{/if}
-                  {#if inst.length}<button class="btn sm ghost" onclick={() => toggle(a.id)} aria-expanded={open.has(a.id)}>{inst.length} repère{inst.length > 1 ? 's' : ''}<Icon name="chevd" size="sm" /></button>{/if}
-                  {#if writable}<button class="btn sm ghost" title="Déplacer" onclick={() => (moving = { a, target: '', instance: inst.at(-1)?.id ?? null })}><Icon name="arrowr" size="sm" /></button><button class="btn sm ghost danger" title="Supprimer" onclick={() => (confirmDel = { kind: 'article', id: a.id, name: a.label })}><Icon name="trash" size="sm" /></button>{/if}
+              <tr class="art-row">
+                <td colspan="6"><div class="art-line">
+                  <span class="art-name"><b>{a.label}</b><span class="small muted">{it?.modular ? `Châssis · ${modulesOf(a).length} module${modulesOf(a).length > 1 ? 's' : ''}` : a.nature === 'equipment' ? 'Équipement' : a.nature === 'adapter' ? 'Adaptateur' : a.accessory?.kind === 'panel' ? `Panel · ${a.accessory.panel.slots.length} connecteur${a.accessory.panel.slots.length > 1 ? 's' : ''}` : 'Accessoire'}{it?.brand ? ` · ${it.brand}` : ''}{heightOf(a) ? ` · ${nf(heightOf(a)!, 1).replace(',0', '')} U` : ''}{it?.weight_kg ? ` · ${nf(it.weight_kg * qtyOf(r), 1)} kg` : ''}{it?.power_w ? ` · ${nf(it.power_w * qtyOf(r))} W` : ''}{it && !it.active ? ' · fiche inactive' : ''}</span></span>
+                  {#if !inst.length}{@const st = statusOf(a, null)}<span class="st {st.kind}">{r.list.length > 1 ? `${r.list.filter((x) => statusOf(x, null).kind === 'ok').length} / ${r.list.length} posés` : st.text}</span>{/if}
+                  <span class="art-tools">
+                    {#if writable}<span class="stepper" title="Quantité"><button onclick={() => step(r, -1)} aria-label="Retirer un">−</button><span>{qtyOf(r)}</span><button onclick={() => step(r, 1)} aria-label="Ajouter un">+</button></span>{:else}<span class="mono">× {qtyOf(r)}</span>{/if}
+                    {#if a.accessory?.kind === 'panel'}<button class="btn sm ghost" onclick={() => (panelOf = a)}><Icon name="grid" size="sm" />{writable ? 'Modifier' : 'Voir'}</button>{/if}
+                    {#if it?.modular}<button class="btn sm" onclick={() => (chassisOf = a)}><Icon name="grid" size="sm" />Modules</button>{/if}
+                    {#if writable}<button class="btn sm ghost" title="Déplacer" aria-label="Déplacer" onclick={() => (moving = { a, target: '', instance: inst.at(-1)?.id ?? null })}><Icon name="arrowr" size="sm" /></button><button class="btn sm ghost danger" title="Supprimer" aria-label="Supprimer" onclick={() => (confirmDel = { kind: 'article', id: a.id, name: a.label })}><Icon name="trash" size="sm" /></button>{/if}
+                  </span>
                 </div></td>
               </tr>
-              {#if it?.modular && modulesOf(a).length}
+              {#each inst as i (i.id)}
+                {@const st = statusOf(a, i.id)}
+                <tr class="inst-row">
+                  <td class="c-id"><span class="mono id">{i.tag}</span></td>
+                  <td><input class="input cell" value={i.label ?? ''} disabled={!writable} placeholder="Libellé libre" maxlength="80" onchange={(e) => saveInstance(i, 'label', (e.target as HTMLInputElement).value)} aria-label="Libellé de {i.tag}"></td>
+                  <td><span class="st {st.kind}">{st.text}</span></td>
+                  <td class="hide-m"><input class="input cell mono" value={i.serial ?? ''} disabled={!writable} placeholder="—" onchange={(e) => saveInstance(i, 'serial', (e.target as HTMLInputElement).value)} aria-label="Numéro de série de {i.tag}"></td>
+                  <td class="hide-m"><input class="input cell mono" value={i.mac ?? ''} disabled={!writable} placeholder="—" onchange={(e) => saveInstance(i, 'mac', (e.target as HTMLInputElement).value)} aria-label="Adresse MAC de {i.tag}"></td>
+                  <td></td>
+                </tr>
+              {/each}
+              {#if it?.modular}
                 {#each modulesOf(a) as mo (mo.id)}
                   {@const mi = item(mo)}
-                  <tr class="mod-row">
-                    <td><div class="art-name"><span><b><span class="slotn mono">S{mo.host!.slot}</span>{mo.label}</b><span class="small muted">Module · {view.instances.find((i) => i.article_id === mo.id)?.tag ?? ''}{mi?.brand ? ` · ${mi.brand}` : ''}</span></span></div></td>
-                    <td class="muted">1</td>
-                    <td class="num hide-m">—</td>
-                    <td class="num hide-m">{mi?.weight_kg ? `${nf(mi.weight_kg, 1)} kg` : '—'}</td>
-                    <td class="num hide-m">{mi?.power_w ? `${nf(mi.power_w)} W` : '—'}</td>
-                    <td><div class="dl-actions">{#if writable}<button class="btn sm ghost danger" title="Retirer du châssis" onclick={() => (confirmDel = { kind: 'article', id: mo.id, name: mo.label })}><Icon name="x" size="sm" /></button>{/if}</div></td>
-                  </tr>
+                  {#each view.instances.filter((x) => x.article_id === mo.id) as i (i.id)}
+                    <tr class="inst-row mod">
+                      <td class="c-id"><span class="mono id">{i.tag}</span></td>
+                      <td><span class="mod-name"><span class="slotn mono">S{mo.host!.slot}</span>{mo.label}{mi?.brand ? ` · ${mi.brand}` : ''}</span></td>
+                      <td><span class="st info">Dans le châssis · S{mo.host!.slot}</span></td>
+                      <td class="hide-m"><input class="input cell mono" value={i.serial ?? ''} disabled={!writable} placeholder="—" onchange={(e) => saveInstance(i, 'serial', (e.target as HTMLInputElement).value)} aria-label="Numéro de série de {i.tag}"></td>
+                      <td class="hide-m"><input class="input cell mono" value={i.mac ?? ''} disabled={!writable} placeholder="—" onchange={(e) => saveInstance(i, 'mac', (e.target as HTMLInputElement).value)} aria-label="Adresse MAC de {i.tag}"></td>
+                      <td>{#if writable}<button class="btn sm ghost danger" title="Retirer du châssis" aria-label="Retirer du châssis" onclick={() => (confirmDel = { kind: 'article', id: mo.id, name: mo.label })}><Icon name="x" size="sm" /></button>{/if}</td>
+                    </tr>
+                  {/each}
                 {/each}
-              {/if}
-              {#if open.has(a.id)}
-                <tr><td colspan="6" style="background:var(--surface-2)">
-                  <div class="inst-grid">
-                    <span class="lbl-t">Repère</span><span class="lbl-t">N° de série</span><span class="lbl-t">Adresse MAC</span><span class="lbl-t">Étiquette d’inventaire</span>
-                    {#each inst as i (i.id)}
-                      <b class="mono">{i.tag}</b>
-                      <input class="input mono" value={i.serial ?? ''} disabled={!writable} onchange={(e) => saveInstance(i, 'serial', (e.target as HTMLInputElement).value)} aria-label="Numéro de série de {i.tag}" placeholder="—">
-                      <input class="input mono" value={i.mac ?? ''} disabled={!writable} onchange={(e) => saveInstance(i, 'mac', (e.target as HTMLInputElement).value)} aria-label="Adresse MAC de {i.tag}" placeholder="00:00:00:00:00:00">
-                      <input class="input mono" value={i.inventory_tag ?? ''} disabled={!writable} onchange={(e) => saveInstance(i, 'inventory_tag', (e.target as HTMLInputElement).value)} aria-label="Étiquette d’inventaire de {i.tag}" placeholder="Code-barres ou QR">
-                    {/each}
-                  </div>
-                </td></tr>
               {/if}
             {/each}
             {:else}<tr><td colspan="6" class="empty">Rien ici pour l’instant.{#if writable} <button class="ilink" onclick={() => (adding = true)}>Ajouter du matériel</button>{/if}</td></tr>{/each}
@@ -395,13 +422,31 @@
   .pop-menu b { font-size: 13.5px; font-weight: 600; }
   .pop-menu small { font-size: 12px; color: var(--fg-3); }
   .pop-menu :global(.ic) { margin-top: 2px; color: var(--fg-3); }
-  .mod-row td { background: color-mix(in srgb, var(--surface-2) 55%, transparent); font-size: 13.5px; }
-  .mod-row .art-name { padding-left: 22px; border-left: 2px solid var(--line-2); margin-left: 8px; }
   .slotn { display: inline-block; margin-right: 8px; padding: 1px 6px; border-radius: 5px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line); font-size: 11px; color: var(--fg-2); }
-  .sec-row td { padding: 14px 0 4px; border-bottom: 1px solid var(--line); background: none; }
-  .sec-row .lbl-t { color: var(--fg-2); }
+  /* Catégories : bandeau contrasté. */
+  .sec-row td { padding: 0; border: 0; background: none; }
+  .sec-row td { padding-top: 14px; }
+  .sec-t, .sec-n { display: inline-flex; align-items: center; height: 28px; font: 700 12px var(--font); letter-spacing: .08em; text-transform: uppercase; }
+  .sec-t { padding: 0 12px; border-radius: 7px 0 0 7px; background: var(--fg); color: var(--bg); }
+  .sec-n { padding: 0 10px; border-radius: 0 7px 7px 0; background: color-mix(in srgb, var(--fg) 14%, transparent); color: var(--fg); font-family: var(--mono); letter-spacing: 0; }
+  .inv-tbl { table-layout: auto; }
+  .inv-tbl th { white-space: nowrap; }
+  .c-id { width: 96px; }
+  .art-row td { padding: 14px 8px 6px; border-bottom: 0; border-top: 1px solid var(--line); text-align: left; }
+  .sec-row + .art-row td { border-top: 0; }
+  .inv-tbl td, .inv-tbl th { text-align: left; }
+  .art-line { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .art-name { flex: 1; min-width: 240px; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; }
+  .art-name b { font-size: 15px; }
+  .art-tools { display: inline-flex; align-items: center; gap: 4px; }
+  .inst-row td { padding: 3px 8px; border-bottom: 0; }
+  .inst-row:last-of-type td { padding-bottom: 8px; }
+  .inst-row .id { display: inline-block; padding: 3px 7px; border-radius: 6px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line); font-size: 12px; font-weight: 600; }
+  .input.cell { height: 30px; font-size: 13px; padding: 0 9px; }
+  .st { display: inline-flex; align-items: center; height: 24px; padding: 0 9px; border-radius: 99px; font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+  .st.ok { background: var(--ok-soft); color: var(--ok); }
+  .st.todo { background: var(--warn-soft); color: var(--warn); }
+  .st.info { background: var(--surface-2); color: var(--fg-2); }
+  .mod-name { font-size: 13.5px; }
   .kind-vis { display: grid; place-items: center; width: 84px; height: 148px; --ki: var(--sig-v); }
-  .inst-grid { display: grid; grid-template-columns: 80px repeat(3, minmax(0, 1fr)); gap: 8px 10px; align-items: center; padding: 6px 0; }
-  .inst-grid .input { height: 36px; font-size: 13.5px; }
-  @media (max-width: 860px) { .inst-grid { grid-template-columns: 70px minmax(0, 1fr); } .inst-grid .lbl-t:nth-child(n + 3) { display: none; } }
 </style>

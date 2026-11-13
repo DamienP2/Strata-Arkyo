@@ -271,3 +271,34 @@ kbd{font-size:10.5px;padding:3px 6px}
 /* Champs en sombre : fond léger, contour visible, focus bleu. */
 :root[data-theme="dark"] .input{background-color:#111522;box-shadow:inset 0 0 0 1px #30374D,inset 0 1px 2px rgba(0,0,0,.4)} :root[data-theme="dark"] .input:hover{box-shadow:inset 0 0 0 1px #3E4661} :root[data-theme="dark"] .input:focus,:root[data-theme="dark"] .input:focus-visible{box-shadow:inset 0 0 0 1px #9DB0FF,0 0 0 3px rgba(157,176,255,.22)}
 @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .input{background-color:#111522;box-shadow:inset 0 0 0 1px #30374D,inset 0 1px 2px rgba(0,0,0,.4)} :root:not([data-theme="light"]) .input:hover{box-shadow:inset 0 0 0 1px #3E4661} :root:not([data-theme="light"]) .input:focus,:root:not([data-theme="light"]) .input:focus-visible{box-shadow:inset 0 0 0 1px #9DB0FF,0 0 0 3px rgba(157,176,255,.22)} }
+
+/* ===== Boutons : une seule famille, partout =====
+   Secondaire : surface pleine et contour fin. Principal : plein, couleur d'accent, texte blanc
+   (un seul par barre). Discret : sans fond, s'éclaire au survol. Danger : texte rouge. Tous à
+   la même hauteur et au même rayon ; les pastilles d'emplacement s'alignent dessus. */
+:root{--btn-h:34px;--btn-r:8px;--btn-bg:var(--surface);--btn-bg-h:var(--surface-2);--btn-edge:var(--line-2);--btn-pri:#2943E4;--btn-pri-h:#2138CC;--btn-pri-fg:#fff}
+:root[data-theme="dark"]{--btn-bg:#202538;--btn-bg-h:#283048;--btn-edge:#394159;--btn-pri:#5466F0;--btn-pri-h:#6475F5;--btn-pri-fg:#fff}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--btn-bg:#202538;--btn-bg-h:#283048;--btn-edge:#394159;--btn-pri:#5466F0;--btn-pri-h:#6475F5;--btn-pri-fg:#fff}}
+.btn{height:var(--btn-h);padding:0 13px;border-radius:var(--btn-r);background:var(--btn-bg);box-shadow:inset 0 0 0 1px var(--btn-edge);color:var(--fg);font-weight:600;font-size:13.5px;gap:7px;transition:background .12s,box-shadow .12s,color .12s}
+.btn:hover:not([disabled]){background:var(--btn-bg-h);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--btn-edge) 70%,var(--fg) 30%)}
+.btn:active:not([disabled]){transform:translateY(1px)}
+.btn:focus-visible{outline:none;box-shadow:inset 0 0 0 1px var(--accent),0 0 0 3px color-mix(in srgb,var(--accent) 28%,transparent)}
+.btn.primary,a.btn.primary{background:var(--btn-pri);color:var(--btn-pri-fg);box-shadow:inset 0 1px 0 rgba(255,255,255,.14),0 1px 2px rgba(0,0,0,.25);filter:none}
+.btn.primary:hover:not([disabled]){background:var(--btn-pri-h);box-shadow:inset 0 1px 0 rgba(255,255,255,.16),0 2px 6px -1px rgba(40,60,220,.45)}
+.btn.ghost{background:transparent;box-shadow:none;color:var(--fg-2)}
+.btn.ghost:hover:not([disabled]){background:var(--btn-bg-h);box-shadow:none;color:var(--fg)}
+.btn.danger,.btn.ghost.danger{color:var(--err)}
+.btn.ghost.danger:hover:not([disabled]){background:color-mix(in srgb,var(--err) 12%,transparent);color:var(--err)}
+.btn.sm{height:30px;padding:0 11px;font-size:13px;border-radius:7px;gap:6px}
+.btn[disabled]{opacity:.45}
+.icon-btn{border-radius:var(--btn-r)}
+.icon-btn:hover{background:var(--btn-bg-h);box-shadow:inset 0 0 0 1px var(--btn-edge)}
+/* Pastilles d'emplacement : même hauteur que les boutons, une seule ligne. */
+.loc{height:var(--btn-h);padding:0 12px 0 4px;gap:8px;border-radius:var(--btn-r);background:var(--btn-bg);box-shadow:inset 0 0 0 1px var(--btn-edge)}
+.loc:hover{background:var(--btn-bg-h)}
+.loc.on{background:var(--btn-pri);color:#fff;box-shadow:none}
+.loc .code{padding:3px 7px;border-radius:5px;font-size:11.5px;box-shadow:none;background:var(--surface-3)}
+.loc.on .code{background:rgba(255,255,255,.18)}
+.loc .ln{flex-direction:row;align-items:baseline;gap:8px;line-height:1}
+.loc .small{font-size:12px}
+.card.loc-list{align-items:center;gap:8px}

@@ -75,6 +75,8 @@ pub struct Instance {
     pub project_id: String,
     pub article_id: String,
     pub tag: String,
+    /// Libellé libre (« Caméra 3 », « Retour réal »…).
+    pub label: Option<String>,
     pub serial: Option<String>,
     pub mac: Option<String>,
     pub inventory_tag: Option<String>,
@@ -172,6 +174,7 @@ impl Instance {
             project_id: r.get("project_id"),
             article_id: r.get("article_id"),
             tag: r.get("tag"),
+            label: r.get("label"),
             serial: r.get("serial"),
             mac: r.get("mac"),
             inventory_tag: r.get("inventory_tag"),
@@ -914,13 +917,15 @@ impl Store {
         &self,
         id: &str,
         rev: i64,
+        label: Option<&str>,
         serial: Option<&str>,
         mac: Option<&str>,
         inventory_tag: Option<&str>,
     ) -> Result<Instance> {
         let mut tx = self.pool.begin().await?;
         check_rev(&mut tx, "instances", id, rev).await?;
-        let pid: String = sqlx::query_scalar("UPDATE instances SET serial = ?, mac = ?, inventory_tag = ?, rev = rev + 1, updated_at = ? WHERE id = ? RETURNING project_id")
+        let pid: String = sqlx::query_scalar("UPDATE instances SET label = ?, serial = ?, mac = ?, inventory_tag = ?, rev = rev + 1, updated_at = ? WHERE id = ? RETURNING project_id")
+            .bind(label)
             .bind(serial)
             .bind(mac)
             .bind(inventory_tag)

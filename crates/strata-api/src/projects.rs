@@ -1596,6 +1596,8 @@ async fn add_module(
 #[derive(Deserialize)]
 struct InstancePatch {
     rev: i64,
+    #[serde(default)]
+    label: Option<String>,
     serial: Option<String>,
     mac: Option<String>,
     inventory_tag: Option<String>,
@@ -1632,6 +1634,7 @@ async fn update_instance(
         .update_instance(
             &id,
             b.rev,
+            clean(b.label, 80).as_deref(),
             clean(b.serial, 80).as_deref(),
             mac.as_deref(),
             clean(b.inventory_tag, 80).as_deref(),

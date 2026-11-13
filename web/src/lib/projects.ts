@@ -45,7 +45,7 @@ export interface ContainerData {
 export interface Container extends ContainerData { id: string; project_id: string; location_id: string; name: string; position: number; rev: number; totals: ContainerTotals }
 export type Accessory = { kind: 'plate'; variant: 'blank' | 'brush' | 'vented'; height_u: number } | { kind: 'shelf'; depth_mm: number; height_u: number } | { kind: 'drawer'; depth_mm: number; height_u: number } | { kind: 'lacing_bar'; depth_mm: number; height_u: number } | { kind: 'panel'; panel: import('./panel').PanelData };
 export interface Article { id: string; project_id: string; location_id: string; container_id: string | null; position: number; nature: 'equipment' | 'adapter' | 'accessory'; item_id: string | null; quantity: number; accessory: Accessory | null; host?: { article_id: string; slot: number } | null; rev: number; label: string }
-export interface Instance { id: string; project_id: string; article_id: string; tag: string; serial: string | null; mac: string | null; inventory_tag: string | null; rev: number }
+export interface Instance { id: string; project_id: string; article_id: string; tag: string; label?: string | null; serial: string | null; mac: string | null; inventory_tag: string | null; rev: number }
 export interface ItemView { id: string; kind: string; name: string; reference: string | null; brand: string | null; category: string | null; rackable: boolean; height_u: number | null; depth_mm: number | null; weight_kg: number | null; power_w: number | null; modular: boolean; host_slots?: number | null; module_slots?: number | null; active: boolean }
 export type TaskStatus = 'todo' | 'in_progress' | 'done' | 'validated';
 export type Priority = 'low' | 'normal' | 'high' | 'urgent';
