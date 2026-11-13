@@ -64,18 +64,26 @@ export function routeAll(reqs: Req[], boxes: Box[]): Map<string, Routed> {
       if (!hHitsNode(c.ay, c.ax + PAD, c.bx - PAD) && !hClash(c.ay, c.ax, c.bx, c.r.id)) { addH(c.ay, c.ax, c.bx, c.r.id); out.set(c.r.id, path([[c.ax, c.ay], [c.bx, c.by]])); }
       else ordered.push(c);
     }
-    let slot = 0;
-    for (const c of ordered) {
+    // Le faisceau prend ses couloirs au milieu de l'espace libre entre les deux nœuds (et non
+    // contre le nœud de départ) ; s'ils sont pris, on s'écarte du milieu, d'un côté puis de l'autre.
+    const lMax = Math.max(...ordered.map((c) => c.lo)), hMin = Math.min(...ordered.map((c) => c.hi));
+    const base = hMin >= lMax ? Math.round(((lMax + hMin) / 2 - ((ordered.length - 1) * SP) / 2) / SP) * SP : Math.ceil(lMax / SP) * SP;
+    let prev = -Infinity;
+    ordered.forEach((c, i) => {
+      const want = Math.max(base + i * SP, prev + SP);
+      const tries: number[] = [];
+      for (let k = 0; k < 400; k++) { const d = (k % 2 ? -1 : 1) * Math.ceil(k / 2) * SP; tries.push(want + d); }
       let placed = false;
-      for (let x = Math.ceil(c.lo / SP) * SP + slot * SP; x <= c.hi; x += SP) {
+      for (const x of tries) {
+        if (x < c.lo || x > c.hi) continue;
         if (vHitsNode(x, c.ay, c.by) || vClash(x, c.ay, c.by, c.r.id)) continue;
         if (hHitsNode(c.ay, c.ax + PAD, x) || hHitsNode(c.by, x, c.bx - PAD) || hClash(c.ay, c.ax, x, c.r.id) || hClash(c.by, x, c.bx, c.r.id)) continue;
         addV(x, c.ay, c.by, c.r.id); addH(c.ay, c.ax, x, c.r.id); addH(c.by, x, c.bx, c.r.id);
         out.set(c.r.id, path([[c.ax, c.ay], [x, c.ay], [x, c.by], [c.bx, c.by]]));
-        slot = Math.round((x - Math.ceil(c.lo / SP) * SP) / SP) + 1; placed = true; break;
+        prev = x; placed = true; break;
       }
       if (!placed) rest.push(c.r);
-    }
+    });
   }
 
   // 2. Détours : couloir vertical près de chaque extrémité, couloir horizontal libre entre.

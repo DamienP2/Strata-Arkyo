@@ -16,6 +16,7 @@
   import { fitText, shareRow, textWidth } from '../../lib/fit';
   import { routeAll, rounded, type Routed, type Req as RouteReq } from '../../lib/cableroute';
   import ProjectLinks from '../../components/ProjectLinks.svelte';
+  import ViewPicker from '../../components/ViewPicker.svelte';
   import { sendCursor, sendSelection, type PresenceMember } from '../../lib/live.svelte';
   import { api, ApiError } from '../../lib/api';
   import { can } from '../../lib/session.svelte';
@@ -314,8 +315,13 @@
   }
   function wheel(e: WheelEvent) {
     e.preventDefault();
+    // Pavé tactile : deux doigts font défiler, le pincement (Ctrl) zoome. Souris : la molette
+    // (crans entiers, sans défilement horizontal) zoome vers le curseur.
+    const mouseWheel = e.deltaMode === 1 || (e.deltaX === 0 && Number.isInteger(e.deltaY) && Math.abs(e.deltaY) >= 40);
+    if (!e.ctrlKey && !mouseWheel) { tx -= e.deltaX; ty -= e.deltaY; return; }
     const r = svgEl.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
-    const nk = Math.min(2.5, Math.max(0.2, k * (e.deltaY < 0 ? 1.12 : 1 / 1.12)));
+    const f = e.ctrlKey && !mouseWheel ? Math.exp(-e.deltaY * 0.01) : e.deltaY < 0 ? 1.12 : 1 / 1.12;
+    const nk = Math.min(2.5, Math.max(0.2, k * f));
     tx = mx - ((mx - tx) * nk) / k; ty = my - ((my - ty) * nk) / k; k = nk;
   }
   function fit() {
@@ -495,8 +501,21 @@
       if (hiddenFam.has(famOf(c)) || lockedFam.has(famOf(c))) continue;
       const A = portXY(c.a), B = portXY(c.b); const pts = [A, B].filter(Boolean) as [number, number, string][];
       if (!pts.length) continue;
-      const mx = pts.reduce((s, p) => s + p[0], 0) / pts.length, my = pts.reduce((s, p) => s + p[1], 0) / pts.length;
-      if (pts.every((p) => inPoly(p[0], p[1], poly)) || inPoly(mx, my, poly)) picked.add(c.id);
+      // Tracé réel du câble : il est pris si un de ses points est dans la zone, ou si un de
+      // ses tronçons la traverse (sélection au rectangle ou au lasso, souris ou pavé tactile).
+      const line: [number, number][] = (A && B ? cablePts(c) : null) ?? pts.map((p) => [p[0], p[1]] as [number, number]);
+      const xs = poly.map((q) => q[0]), ys = poly.map((q) => q[1]);
+      const bx0 = Math.min(...xs), bx1 = Math.max(...xs), by0 = Math.min(...ys), by1 = Math.max(...ys);
+      const crosses = line.some((q, i) => {
+        if (inPoly(q[0], q[1], poly)) return true;
+        const n = line[i + 1]; if (!n) return false;
+        // Échantillonne le tronçon (orthogonal le plus souvent) dans la boîte de la zone.
+        if (Math.max(q[0], n[0]) < bx0 || Math.min(q[0], n[0]) > bx1 || Math.max(q[1], n[1]) < by0 || Math.min(q[1], n[1]) > by1) return false;
+        const L = Math.hypot(n[0] - q[0], n[1] - q[1]), steps = Math.min(200, Math.max(2, Math.ceil(L / 6)));
+        for (let t = 1; t < steps; t++) { const x = q[0] + ((n[0] - q[0]) * t) / steps, y = q[1] + ((n[1] - q[1]) * t) / steps; if (inPoly(x, y, poly)) return true; }
+        return false;
+      });
+      if (crosses) picked.add(c.id);
     }
     const am = new Set<string>();
     for (const a of anns) { const cx = a.kind === 'zone' ? a.data.x + a.data.w / 2 : a.data.x, cy = a.kind === 'zone' ? a.data.y + a.data.h / 2 : a.data.y; if (inPoly(cx, cy, poly)) am.add(a.id); }
@@ -1029,11 +1048,7 @@
 {:else}
   <div class="syn">
     <div class="dtool">
-      <select class="input" aria-label="Vue du synoptique" value={syn.view} onchange={(e) => navigate(viewUrl((e.target as HTMLSelectElement).value))}>
-        <option value="overview">Vue générale (liaisons entre lieux)</option>
-        <optgroup label="Éléments">{#each syn.views.containers as c}<option value="container:{c.id}">{c.name}</option>{/each}</optgroup>
-        <optgroup label="Lieux">{#each syn.views.locations as l}<option value="location:{l.id}">{l.name} (tout le lieu)</option>{/each}</optgroup>
-      </select>
+      <ViewPicker views={syn.views} value={syn.view} onpick={(v) => navigate(viewUrl(v))} />
       {#if !syn.overview}<span class="muted small">{nodes.length} nœud{nodes.length > 1 ? 's' : ''} · {syn.cables.length} câble{syn.cables.length > 1 ? 's' : ''}</span>{:else}<span class="muted small">{syn.overview.locations.length} lieu{syn.overview.locations.length > 1 ? 'x' : ''} · {nf(syn.overview.totals.weight_kg, 1)} kg · {nf(syn.overview.totals.power_w)} W · double-clic sur un lieu pour l’ouvrir</span>{/if}
       <span style="flex:1"></span>
       {#if mine}
@@ -1187,10 +1202,9 @@
                 {@const A = portXY(c.a)}{@const B = portXY(c.b)}{@const st = !A || !B ? stub(c) : null}
                 {@const p1 = A ?? (st ? [st.ex, st.ey] : null)}{@const p2 = B ?? (st ? [st.ex, st.ey] : null)}
                 {#if p1 && p2 && (p1[0] !== p2[0] || p1[1] !== p2[1])}
-                  <line class="bird-halo" x1={p1[0]} y1={p1[1]} x2={p2[0]} y2={p2[1]} />
                   <line class="bird-line" x1={p1[0]} y1={p1[1]} x2={p2[0]} y2={p2[1]} style="--c:{cableColor(c)}" />
-                  <circle class="bird-end" cx={p1[0]} cy={p1[1]} r="7" style="--c:{cableColor(c)}" />
-                  <circle class="bird-end" cx={p2[0]} cy={p2[1]} r="7" style="--c:{cableColor(c)}" />
+                  <circle class="bird-end" cx={p1[0]} cy={p1[1]} r="3" />
+                  <circle class="bird-end" cx={p2[0]} cy={p2[1]} r="3" />
                 {/if}
               {/if}
             {/each}
@@ -1534,7 +1548,6 @@
 
 <style>
   .dtool { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-height: 54px; padding: 8px 12px; }
-  .dtool select { width: auto; min-width: 220px; height: 38px; }
   .syn-stage { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
   .ruler { position: absolute; z-index: 4; cursor: copy; }
   .ruler.rt { left: 0; top: 0; width: 100%; height: 20px; cursor: row-resize; }
@@ -1615,10 +1628,10 @@
   .node.panel .box { stroke-dasharray: 5 3; }
   .port { cursor: pointer; }
   .port .ph { fill: transparent; }
-  .bird-halo { stroke: var(--surface); stroke-width: 7; stroke-linecap: round; opacity: .85; }
-  .bird-line { stroke: var(--c); stroke-width: 2.5; stroke-dasharray: 10 6; stroke-linecap: round; animation: bird 0.9s linear infinite; }
-  .bird-end { fill: none; stroke: var(--c); stroke-width: 2.5; }
-  @keyframes bird { to { stroke-dashoffset: -32; } }
+  /* Vol d'oiseau : trait fin orange, sans halo. */
+  .bird-line { stroke: #FF8A1F; stroke-width: 1.4; stroke-dasharray: 6 5; stroke-linecap: round; vector-effect: non-scaling-stroke; animation: bird 0.9s linear infinite; }
+  .bird-end { fill: #FF8A1F; stroke: none; }
+  @keyframes bird { to { stroke-dashoffset: -22; } }
   @media (prefers-reduced-motion: reduce) { .bird-line { animation: none; } }
   .pdot { fill: var(--node-bg, var(--surface)); stroke: var(--c); stroke-width: 2; }
   .port.used .pdot { fill: var(--c); }
@@ -1643,7 +1656,7 @@
   .cable .case { fill: none; stroke: var(--surface-2); stroke-width: 6; }
   .cable .vis { fill: none; stroke: var(--c); stroke-width: 2.2; stroke-linejoin: round; }
   .cable .hit { fill: none; stroke: transparent; stroke-width: 14; }
-  .cable.sel .vis { stroke-width: 1.6.6; filter: drop-shadow(0 0 4px var(--c)); }
+  .cable.sel .vis { stroke-width: 3.2; }
   .cable.stub .vis { stroke-dasharray: 2 4; }
   .far rect { fill: var(--surface); stroke: var(--c); stroke-width: 1.2; }
   .far text { font: 600 11px var(--font); fill: var(--fg-2); }
@@ -1652,7 +1665,7 @@
   .lbl .bandc { fill: var(--c); }
   .lbl text { font: 700 11px var(--mono); fill: #15171A; }
   .lbl.none .tag { fill: color-mix(in srgb, #B78400 18%, #fff); stroke-dasharray: 3 2; }
-  .lbl.sel .tag { stroke-width: 2.2; }
+  .lbl.sel .tag { stroke-width: 1.4; }
   .cable.hl .vis { stroke-width: 4; filter: drop-shadow(0 0 6px var(--err, #D33)); }
   .node.hl .box { stroke: var(--err, #D33); stroke-width: 3; }
   .counts { display: flex; gap: 6px; flex-wrap: wrap; }
