@@ -12,12 +12,14 @@
   import { ALU, decor, accessoryFace, visualOf } from '../../lib/faceplate';
   import type { Accessory, ProjectView } from '../../lib/projects';
 
-  let { view, reload }: { view: ProjectView; reload?: () => Promise<void> } = $props();
+  import RackPicker from '../../components/RackPicker.svelte';
+  let { view, reload, loc = null }: { view: ProjectView; reload?: () => Promise<void>; loc?: string | null } = $props();
   type Face = 'front' | 'rear';
   interface El { placement: { id: string; article_id: string; instance_id: string | null; face: string; u_start: number; width: string; col: number; shelf_id: string | null; rev: number }; label: string; tag: string | null; nature: string; height_u: number; function: string | null; accessory: Accessory | null; article_rev: number; type_id?: string | null; visual?: string | null }
   interface R { container: any; elements: El[]; lock: { mine: boolean; account_name: string } | null }
 
-  const racks = $derived(view.containers.filter((c) => c.rackable));
+  // Un emplacement choisi (ou tous), rangés par emplacement.
+  const racks = $derived(view.locations.flatMap((l) => (loc && l.id !== loc ? [] : view.containers.filter((c) => c.rackable && c.location_id === l.id))));
   let data = $state<Record<string, R>>({});
   let face = $state<Face>('front');
   let scale = $state(24);
@@ -89,10 +91,13 @@
 </script>
 
 <div class="all-tool">
-  <select class="input" value="tout" aria-label="Élément" onchange={(e) => navigate(`/projets/${view.project.id}/racks/${(e.target as HTMLSelectElement).value}`)}>
-    <option value="tout">Toutes les baies côte à côte</option>
-    {#each racks as c}<option value={c.id}>{c.name} · {c.height_u} U</option>{/each}
-  </select>
+  <RackPicker {view} value={loc ? `tout:${loc}` : 'tout'} onpick={(v) => navigate(`/projets/${view.project.id}/racks/${v.replace(':', '/')}`)} />
+  {#if view.locations.filter((l) => view.containers.some((c) => c.rackable && c.location_id === l.id)).length > 1}
+    <div class="seg" role="group" aria-label="Emplacement">
+      <button class:on={!loc} onclick={() => navigate(`/projets/${view.project.id}/racks/tout`)}>Tous</button>
+      {#each view.locations.filter((l) => view.containers.some((c) => c.rackable && c.location_id === l.id)) as l (l.id)}<button class:on={loc === l.id} onclick={() => navigate(`/projets/${view.project.id}/racks/tout/${l.id}`)}>{l.name}</button>{/each}
+    </div>
+  {/if}
   <div class="seg" role="group" aria-label="Face"><button class:on={face === 'front'} onclick={() => (face = 'front')}>Avant</button><button class:on={face === 'rear'} onclick={() => (face = 'rear')}>Arrière</button></div>
   <div class="seg" role="group" aria-label="Taille"><button class:on={scale === 18} onclick={() => (scale = 18)}>S</button><button class:on={scale === 24} onclick={() => (scale = 24)}>M</button><button class:on={scale === 32} onclick={() => (scale = 32)}>L</button></div>
   <span class="muted small">{#if canDesign}Glissez un équipement vers une autre baie : il change d’élément dans l’inventaire.{:else}Lecture seule.{/if}</span>
@@ -132,8 +137,7 @@
 
 <style>
   .all-tool { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-  .all-tool select { width: auto; min-width: 240px; }
-  .all-racks { display: flex; gap: 22px; align-items: flex-end; overflow-x: auto; padding: 18px 6px 24px; border-radius: 12px; background: radial-gradient(120% 90% at 50% 0%, var(--stage-a), var(--stage-b)); box-shadow: inset 0 0 0 1px var(--line); }
+  .all-racks { display: flex; gap: 22px; align-items: flex-start; justify-content: safe center; overflow-x: auto; padding: 18px 6px 24px; border-radius: 12px; background: radial-gradient(120% 90% at 50% 0%, var(--stage-a), var(--stage-b)); box-shadow: inset 0 0 0 1px var(--line); }
   .ar-col { flex: none; display: flex; flex-direction: column; gap: 8px; }
   .ar-col :global(.rack-body) { width: var(--bw) !important; }
   .ar-col :global(.rack) { grid-template-columns: 22px auto 22px; }

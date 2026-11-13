@@ -17,6 +17,7 @@
   import ProjectPanel from './ProjectPanel.svelte';
   import Rack3D from '../../components/Rack3D.svelte';
   import AllRacks from './AllRacks.svelte';
+  import RackPicker from '../../components/RackPicker.svelte';
 
   let { view }: { view: ProjectView } = $props();
   type Face = 'front' | 'rear' | 'rear_inner';
@@ -205,7 +206,7 @@
 <svelte:window onbeforeunload={leave} onkeydown={(e) => { if (e.key === 'Escape') { armed = null; sel = null; } }} />
 
 {#if all && racks.length}
-  <AllRacks {view} />
+  <AllRacks {view} loc={route.path.split('/')[5] ?? null} />
 {:else if !racks.length}
   <div class="empty">Aucun élément rackable dans ce projet. Ajoutez une baie ou un flight-case depuis l’<a class="ilink" href="/projets/{view.project.id}/inventaire">inventaire</a>.</div>
 {:else if rack}
@@ -228,10 +229,7 @@
       {/if}
     </div>
     <div class="dtool">
-      <select class="input" value={cid} onchange={(e) => navigate(`/projets/${view.project.id}/racks/${(e.target as HTMLSelectElement).value}`)} aria-label="Élément">
-        {#if racks.length > 1}<option value="tout">Toutes les baies côte à côte</option>{/if}
-        {#each racks as c}<option value={c.id}>{c.name} · {c.height_u} U</option>{/each}
-      </select>
+      <RackPicker {view} value={cid ?? ''} onpick={(v) => navigate(`/projets/${view.project.id}/racks/${v.replace(':', '/')}`)} />
       <div class="seg" role="group" aria-label="Face">{#each [...rack.faces, 'side'] as f}<button class:on={face === f} onclick={() => { face = f as Face | 'side'; armed = null; }}>{FACES[f as Face]}</button>{/each}</div>
       <div class="seg" role="group" aria-label="Rendu"><button class:on={mode === 'real' && !show3d} onclick={() => { mode = 'real'; show3d = false; }}>Réel</button><button class:on={mode === 'schematic' && !show3d} onclick={() => { mode = 'schematic'; show3d = false; }}>Schématique</button><button class:on={show3d} onclick={() => (show3d = true)}><Icon name="box" size="sm" />3D</button></div>
       <span class="gap"></span>

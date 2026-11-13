@@ -308,16 +308,16 @@
           <div class="alert err" style="margin-top:12px"><Icon name="alert" /><span>{[cont.totals.over_u && 'la hauteur disponible', cont.totals.over_weight && 'le poids maximum', cont.totals.over_power && 'la puissance maximum'].filter(Boolean).join(', ')} {cont.totals.over_u || cont.totals.over_weight || cont.totals.over_power ? 'dépassé(e)' : ''}.</span></div>
         {/if}
         <div class="tbl-wrap"><table class="tbl inv-tbl">
-          <thead><tr><th class="c-id">ID</th><th>Libellé</th><th>Statut</th><th class="hide-m">N° de série</th><th class="hide-m">Adresse MAC</th><th></th></tr></thead>
+          <thead><tr><th class="c-id">ID</th><th>Libellé</th><th>Statut</th><th></th></tr></thead>
           <tbody>
             {#each grouped as g (g.k)}
-            <tr class="sec-row"><td colspan="6"><span class="sec-t">{g.label}</span><span class="sec-n">{g.rows.reduce((n, r) => n + qtyOf(r), 0)}</span></td></tr>
+            <tr class="sec-row"><td colspan="4"><span class="sec-t">{g.label}</span><span class="sec-n">{g.rows.reduce((n, r) => n + qtyOf(r), 0)}</span></td></tr>
             {#each g.rows as r (r.key)}
               {@const a = r.a}
               {@const it = item(a)}
               {@const inst = instOf(a)}
               <tr class="art-row">
-                <td colspan="6"><div class="art-line">
+                <td colspan="4"><div class="art-line">
                   <span class="art-name"><b>{a.label}</b><span class="small muted">{it?.modular ? `Châssis · ${modulesOf(a).length} module${modulesOf(a).length > 1 ? 's' : ''}` : a.nature === 'equipment' ? 'Équipement' : a.nature === 'adapter' ? 'Adaptateur' : a.accessory?.kind === 'panel' ? `Panel · ${a.accessory.panel.slots.length} connecteur${a.accessory.panel.slots.length > 1 ? 's' : ''}` : 'Accessoire'}{it?.brand ? ` · ${it.brand}` : ''}{heightOf(a) ? ` · ${nf(heightOf(a)!, 1).replace(',0', '')} U` : ''}{it?.weight_kg ? ` · ${nf(it.weight_kg * qtyOf(r), 1)} kg` : ''}{it?.power_w ? ` · ${nf(it.power_w * qtyOf(r))} W` : ''}{it && !it.active ? ' · fiche inactive' : ''}</span></span>
                   {#if !inst.length}{@const st = statusOf(a, null)}<span class="st {st.kind}">{r.list.length > 1 ? `${r.list.filter((x) => statusOf(x, null).kind === 'ok').length} / ${r.list.length} posés` : st.text}</span>{/if}
                   <span class="art-tools">
@@ -334,8 +334,6 @@
                   <td class="c-id"><span class="mono id">{i.tag}</span></td>
                   <td><input class="input cell" value={i.label ?? ''} disabled={!writable} placeholder="Libellé libre" maxlength="80" onchange={(e) => saveInstance(i, 'label', (e.target as HTMLInputElement).value)} aria-label="Libellé de {i.tag}"></td>
                   <td><span class="st {st.kind}">{st.text}</span></td>
-                  <td class="hide-m"><input class="input cell mono" value={i.serial ?? ''} disabled={!writable} placeholder="—" onchange={(e) => saveInstance(i, 'serial', (e.target as HTMLInputElement).value)} aria-label="Numéro de série de {i.tag}"></td>
-                  <td class="hide-m"><input class="input cell mono" value={i.mac ?? ''} disabled={!writable} placeholder="—" onchange={(e) => saveInstance(i, 'mac', (e.target as HTMLInputElement).value)} aria-label="Adresse MAC de {i.tag}"></td>
                   <td></td>
                 </tr>
               {/each}
@@ -347,15 +345,13 @@
                       <td class="c-id"><span class="mono id">{i.tag}</span></td>
                       <td><span class="mod-name"><span class="slotn mono">S{mo.host!.slot}</span>{mo.label}{mi?.brand ? ` · ${mi.brand}` : ''}</span></td>
                       <td><span class="st info">Dans le châssis · S{mo.host!.slot}</span></td>
-                      <td class="hide-m"><input class="input cell mono" value={i.serial ?? ''} disabled={!writable} placeholder="—" onchange={(e) => saveInstance(i, 'serial', (e.target as HTMLInputElement).value)} aria-label="Numéro de série de {i.tag}"></td>
-                      <td class="hide-m"><input class="input cell mono" value={i.mac ?? ''} disabled={!writable} placeholder="—" onchange={(e) => saveInstance(i, 'mac', (e.target as HTMLInputElement).value)} aria-label="Adresse MAC de {i.tag}"></td>
                       <td>{#if writable}<button class="btn sm ghost danger" title="Retirer du châssis" aria-label="Retirer du châssis" onclick={() => (confirmDel = { kind: 'article', id: mo.id, name: mo.label })}><Icon name="x" size="sm" /></button>{/if}</td>
                     </tr>
                   {/each}
                 {/each}
               {/if}
             {/each}
-            {:else}<tr><td colspan="6" class="empty">Rien ici pour l’instant.{#if writable} <button class="ilink" onclick={() => (adding = true)}>Ajouter du matériel</button>{/if}</td></tr>{/each}
+            {:else}<tr><td colspan="4" class="empty">Rien ici pour l’instant.{#if writable} <button class="ilink" onclick={() => (adding = true)}>Ajouter du matériel</button>{/if}</td></tr>{/each}
           </tbody>
         </table></div>
       </section>
