@@ -230,14 +230,10 @@
 {:else if rack}
   {@const t = rack.totals}
   <div class="rack-screen card" style="padding:0;overflow:hidden">
-    <div class="lockbar" class:mine class:other={!mine}>
+    {#if !mine || requested}<div class="lockbar" class:mine class:other={!mine}>
       {#if mine}
-        <span class="lk"><span class="key-i"><Icon name="lock" /></span><span><b>Vous avez la main</b> sur cette élévation. Les autres membres la voient en lecture seule.</span></span>
-        <span class="sp">
-          {#if requested}<span class="chip warn">{requested} demande la main</span>{/if}
-          <span class="saved"><i></i>Enregistré</span>
-          <button class="btn sm" onclick={() => { requested = null; release(); }}>Céder la main</button>
-        </span>
+        <span class="lk"><span class="key-i"><Icon name="lock" /></span><span><b>{requested}</b> demande la main.</span></span>
+        <span class="sp"><button class="btn sm" onclick={() => { requested = null; release(); }}>Céder la main</button></span>
       {:else if rack.lock}
         <span class="lk"><span class="key-i"><Icon name="lock" /></span><span><b>{rack.lock.account_name}</b> a la main depuis {relative(rack.lock.taken_at)}. Vous voyez la dernière version enregistrée.</span></span>
         <span class="sp">{#if newer}<button class="btn sm" onclick={load}><Icon name="refresh" size="sm" />Nouvelle version : recharger</button>{/if}{#if canDesign}<button class="btn sm" onclick={requestHand}>Demander la main</button>{/if}</span>
@@ -245,7 +241,7 @@
         <span class="lk"><span class="key-i"><Icon name="unlock" /></span><span>Personne ne modifie cette élévation.</span></span>
         <span class="sp">{#if canDesign}<button class="btn sm primary" onclick={take}>Prendre la main</button>{:else}<span class="muted small">Lecture seule : votre rôle ne permet pas de concevoir.</span>{/if}</span>
       {/if}
-    </div>
+    </div>{/if}
     <div class="dtool">
       <RackPicker {view} value={cid ?? ''} onpick={(v) => navigate(`/projets/${view.project.id}/racks/${v.replace(':', '/')}`)} />
       <div class="seg" role="group" aria-label="Face">{#each [...rack.faces, 'side'] as f}<button class:on={face === f} onclick={() => { face = f as Face | 'side'; armed = null; }}>{FACES[f as Face]}</button>{/each}</div>

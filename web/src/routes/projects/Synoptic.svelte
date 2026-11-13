@@ -1052,8 +1052,7 @@
       {#if !syn.overview}<span class="muted small">{nodes.length} nœud{nodes.length > 1 ? 's' : ''} · {syn.cables.length} câble{syn.cables.length > 1 ? 's' : ''}</span>{:else}<span class="muted small">{syn.overview.locations.length} lieu{syn.overview.locations.length > 1 ? 'x' : ''} · {nf(syn.overview.totals.weight_kg, 1)} kg · {nf(syn.overview.totals.power_w)} W · double-clic sur un lieu pour l’ouvrir</span>{/if}
       <span style="flex:1"></span>
       {#if mine}
-        {#if requested}<span class="chip warn">{requested} demande la main</span>{/if}
-        <span class="lockchip mine" title="Vous seul pouvez modifier le synoptique"><i></i>Vous avez la main · <button onclick={() => { requested = null; release(); }}>Céder</button></span>
+        {#if requested}<span class="lockchip req"><Icon name="lock" size="sm" />{requested} demande la main · <button onclick={() => { requested = null; release(); }}>Céder</button></span>{/if}
       {:else if syn.lock}
         <span class="lockchip other" title="Vous voyez la dernière version enregistrée"><Icon name="lock" size="sm" />{syn.lock.account_name} a la main{#if canDesign} · <button onclick={requestHand}>Demander</button>{/if}</span>
       {:else if canDesign}
@@ -1593,8 +1592,8 @@
   /* Barre unique */
   .lockchip { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 99px; font-size: 13px; font-weight: 600; white-space: nowrap; }
   .lockchip.mine { background: color-mix(in srgb, var(--ok, #1E8E4F) 13%, transparent); color: var(--ok, #1E8E4F); }
-  .lockchip.mine i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
   .lockchip.other { background: var(--surface-2); color: var(--fg-2); }
+  .lockchip.req { background: var(--warn-soft); color: var(--warn); }
   .lockchip button { border: 0; background: none; padding: 0; font: inherit; color: inherit; text-decoration: underline; cursor: pointer; }
   .valid.ok { color: var(--ok, #1E8E4F); }
   .valid.bad { color: var(--warn, #B78400); }

@@ -461,10 +461,10 @@
 
   {#if d}
     <div class="card pl" style="padding:0;overflow:hidden">
-      <div class="lockbar" class:mine class:other={!mine}>
+      {#if !mine || requested}<div class="lockbar" class:mine class:other={!mine}>
         {#if mine}
-          <span class="lk"><span class="key-i"><Icon name="lock" /></span><span><b>Vous avez la main</b> sur cette carte.</span></span>
-          <span class="sp">{#if requested}<span class="chip warn">{requested} demande la main</span>{/if}<button class="btn sm" onclick={async () => { requested = null; await release(); await load(); }}>Céder la main</button></span>
+        <span class="lk"><span class="key-i"><Icon name="lock" /></span><span><b>{requested}</b> demande la main.</span></span>
+        <span class="sp"><button class="btn sm" onclick={async () => { requested = null; await release(); await load(); }}>Céder la main</button></span>
         {:else if d.lock}
           <span class="lk"><span class="key-i"><Icon name="lock" /></span><span><b>{d.lock.account_name}</b> a la main depuis {relative(d.lock.taken_at)}. Vous voyez la dernière version enregistrée.</span></span>
           <span class="sp">{#if canDesign}<button class="btn sm" onclick={requestHand}>Demander la main</button>{/if}</span>
@@ -472,7 +472,7 @@
           <span class="lk"><span class="key-i"><Icon name="unlock" /></span><span>Personne ne modifie cette carte.</span></span>
           <span class="sp">{#if canDesign}<button class="btn sm primary" onclick={take}>Prendre la main</button>{:else}<span class="muted small">Lecture seule : votre rôle ne permet pas de concevoir.</span>{/if}</span>
         {/if}
-      </div>
+      </div>{/if}
       <div class="dtool">
         <div class="seg floors" role="tablist" aria-label="Étages">
           {#each [...d.floors].reverse() as f (f.id)}<button role="tab" aria-selected={floor?.id === f.id} class:on={floor?.id === f.id} onclick={() => (floorId = f.id)}><span class="mono lv">{f.level > 0 ? `+${f.level}` : f.level}</span>{f.name}</button>{/each}

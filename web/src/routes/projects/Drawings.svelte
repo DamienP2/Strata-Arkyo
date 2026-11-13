@@ -430,10 +430,10 @@
       <section class="card empty-card"><h3>Dessins et plan de feu</h3><p class="muted">Schémas de principe, implantations vidéo et audio, plans de feu avec adressage DMX. Créez une page avec le bouton + de sa nature.</p></section>
     {:else}
       <div class="card dw-main" style="padding:0;overflow:hidden">
-        <div class="lockbar" class:mine class:other={!mine}>
+        {#if !mine || requested}<div class="lockbar" class:mine class:other={!mine}>
           {#if mine}
-            <span class="lk"><span class="key-i"><Icon name="lock" /></span><span><b>Vous avez la main</b> sur « {pg.name} ». {#if saving}<span class="muted">Enregistrement…</span>{:else if dirty}<span class="muted">Modifié</span>{:else}<span class="muted">Enregistré</span>{/if}</span></span>
-            <span class="sp">{#if requested}<span class="chip warn">{requested} demande la main</span>{/if}<button class="btn sm" onclick={async () => { requested = null; await flush(); await release(); await loadPage(); }}>Céder la main</button></span>
+        <span class="lk"><span class="key-i"><Icon name="lock" /></span><span><b>{requested}</b> demande la main.</span></span>
+        <span class="sp"><button class="btn sm" onclick={async () => { requested = null; await flush(); await release(); await loadPage(); }}>Céder la main</button></span>
           {:else if pg.lock}
             <span class="lk"><span class="key-i"><Icon name="lock" /></span><span><b>{pg.lock.account_name}</b> a la main depuis {relative(pg.lock.taken_at)}.</span></span>
             <span class="sp">{#if canDesign}<button class="btn sm" onclick={async () => { try { await api.post(`/projects/${pid}/drawings/${pageId}/lock/request`); toast('Demande envoyée.', 'info'); } catch (e) { fail(e); } }}>Demander la main</button>{/if}</span>
@@ -441,9 +441,10 @@
             <span class="lk"><span class="key-i"><Icon name="unlock" /></span><span>Personne ne modifie cette page.</span></span>
             <span class="sp">{#if canDesign}<button class="btn sm primary" onclick={take}>Prendre la main</button>{:else}<span class="muted small">Lecture seule.</span>{/if}</span>
           {/if}
-        </div>
+        </div>{/if}
         <div class="dtool">
           {#if mine}
+            <span class="save-st muted small" aria-live="polite">{saving ? 'Enregistrement…' : dirty ? 'Modifié' : 'Enregistré'}</span>
             <div class="seg" role="toolbar" aria-label="Outils">
               {#each [['select', 'Sélection', 'hand'], ['text', 'Texte', 'pen'], ['rect', 'Rectangle', 'box'], ['ellipse', 'Ellipse', 'radio'], ['line', 'Ligne', 'arrowr'], ['zone', 'Zone', 'grid'], ['link', 'Lien', 'syn'], ['image', 'Image', 'file']] as [t, l, ic]}
                 <button class:on={tool === t && !placing} title={l} aria-label={l} onclick={() => setTool(t as Tool)}><Icon name={ic} size="sm" /></button>
@@ -678,4 +679,5 @@
   .search { display: flex; align-items: center; gap: 6px; }
   .empty-card { padding: 28px; text-align: center; }
   @media (max-width: 1100px) { .dw { grid-template-columns: 1fr; } .dw-pages { position: static; } .dw-body { grid-template-columns: 1fr; height: auto; } .dw-canvas { height: 64vh; } .dw-side { border-left: 0; border-top: 1px solid var(--line); } }
+  .save-st { order: 99; margin-left: auto; }
 </style>
