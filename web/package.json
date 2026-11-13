@@ -1,7 +1,7 @@
 {
   "name": "strata-arkyo-web",
   "private": true,
-  "version": "0.2.5",
+  "version": "0.2.6",
   "type": "module",
   "description": "Interface web de Strata Arkyo (Svelte 5, TypeScript), compilée en fichiers statiques embarqués dans le moteur.",
   "scripts": {
