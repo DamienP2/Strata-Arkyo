@@ -10,7 +10,7 @@
   import { route, navigate } from '../../lib/router.svelte';
   import { join } from '../../lib/live.svelte';
   import { nf, relative } from '../../lib/format';
-  import { refById } from '../../lib/catalog.svelte';
+  import { refById, loadRefs } from '../../lib/catalog.svelte';
   import { faceType, ALU, decor, accessoryFace, visualOf } from '../../lib/faceplate';
   import { CONTAINER_KINDS, type Accessory, type Article, type ProjectView } from '../../lib/projects';
   import PanelFace from '../../components/PanelFace.svelte';
@@ -34,6 +34,7 @@
     lock: { account_id: string; account_name: string; taken_at: string; mine: boolean } | null;
   }
 
+  loadRefs();
   const racks = $derived(view.containers.filter((c) => c.rackable));
   const all = $derived(route.path.split('/')[4] === 'tout');
   const cid = $derived(all ? null : (route.path.split('/')[4] ?? racks[0]?.id ?? null));
@@ -200,6 +201,23 @@
   }));
   const wanted = $derived(rack?.pending.filter((p) => p.rackable) ?? []);
   const notRackable = $derived(rack?.pending.filter((p) => !p.rackable) ?? []);
+  // À placer, rangé par catégorie : équipements par fonction (Vidéo, Audio…), puis panels et
+  // accessoires ; dans chaque catégorie, par nom.
+  const catOf = (p: Pending): { key: string; label: string; color: string; order: number } => {
+    if (p.accessory?.kind === 'panel') return { key: '~panel', label: 'Panels de brassage', color: 'var(--fg-3)', order: 1000 };
+    if (p.nature === 'accessory') return { key: '~acc', label: 'Accessoires', color: 'var(--fg-3)', order: 1001 };
+    // Fonction de la fiche, sinon celle de son type (ou du type parent).
+    const t = p.type_id ? refById('types', p.type_id) : null;
+    const fk = p.function ?? t?.data?.function ?? (t?.parent_id ? refById('types', t.parent_id)?.data?.function : null) ?? null;
+    const f = fk ? refById('functions', fk) : null;
+    return f ? { key: f.id, label: f.name, color: f.data?.color ?? 'var(--fg-3)', order: f.position ?? 500 } : { key: '~none', label: 'Autres équipements', color: 'var(--fg-3)', order: 999 };
+  };
+  const wantedGroups = $derived.by(() => {
+    const m = new Map<string, { key: string; label: string; color: string; order: number; list: Pending[] }>();
+    for (const p of wanted) { const c = catOf(p); if (!m.has(c.key)) m.set(c.key, { ...c, list: [] }); m.get(c.key)!.list.push(p); }
+    for (const g of m.values()) g.list.sort((a, b) => a.label.localeCompare(b.label, 'fr') || (a.tag ?? '').localeCompare(b.tag ?? ''));
+    return [...m.values()].sort((a, b) => a.order - b.order || a.label.localeCompare(b.label, 'fr'));
+  });
   const FACES: Record<Face | 'side', string> = { front: 'Avant', rear: 'Arrière', rear_inner: 'Arrière intérieure', side: 'Côté' };
 </script>
 
@@ -243,10 +261,13 @@
         <section>
           <h2>À placer <span class="muted">· {wanted.length}</span></h2>
           {#if mine}<p class="small muted">Choisissez un élément, puis une position dans la baie. Échap pour annuler.</p>{/if}
-          {#each wanted as p (p.instance_id ?? p.article_id)}
+          {#each wantedGroups as g (g.key)}
+            <div class="pcat"><i style="--c:{g.color}"></i><span>{g.label}</span><b>{g.list.length}</b></div>
+          {#each g.list as p (p.instance_id ?? p.article_id)}
             <button class="pend mini" class:on={armed === p} disabled={!mine || face === 'side'} onclick={() => (armed = armed === p ? null : p)} title="{p.label}{p.tag ? ` · ${p.tag}` : ''}">
               <i class="pm-c" style="--c:{fnColor(p.function)}"></i><span class="pm-l">{p.label}</span>{#if p.tag}<span class="pm-t">{p.tag}</span>{/if}<span class="pm-u">{p.height_u} U{p.width && p.width !== 'full' ? ` · ${p.width === 'half' ? '½' : p.width === 'third' ? '⅓' : '¼'}` : ''}</span>
             </button>
+          {/each}
           {:else}<p class="small muted">Tout est posé.</p>{/each}
           {#if notRackable.length}
             <h2 style="margin-top:8px">Sur étagère <span class="muted">· {notRackable.length}</span></h2>
@@ -398,6 +419,9 @@
   .rack-screen :global(.rack-body) { width: var(--bw, 370px); }
   .sel-h { justify-content: space-between; align-items: center; }
   .sel-h span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pcat { display: flex; align-items: center; gap: 8px; margin: 10px 0 2px; padding: 0 2px; font: 700 11.5px var(--font); letter-spacing: .07em; text-transform: uppercase; color: var(--fg); }
+  .pcat i { width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
+  .pcat b { margin-left: auto; font: 600 11px var(--mono); padding: 1px 7px; border-radius: 99px; background: var(--surface-3); color: var(--fg-2); }
   .pend.mini { flex-direction: row; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; min-height: 34px; }
   .pm-c { flex: none; width: 4px; align-self: stretch; border-radius: 2px; background: var(--c); }
   .pm-l { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px !important; font-weight: 600; color: var(--fg) !important; }

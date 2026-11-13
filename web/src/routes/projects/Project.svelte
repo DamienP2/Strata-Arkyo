@@ -25,6 +25,7 @@
   import Dossier from './Dossier.svelte';
   import Tasks from './Tasks.svelte';
   import History from './History.svelte';
+  import { loadRefs } from '../../lib/catalog.svelte';
   import Racks from './Racks.svelte';
   import Furniture from './Furniture.svelte';
 
@@ -81,6 +82,8 @@
   const p = $derived(view?.project);
   const kd = $derived(p ? keyDate(p) : null);
   const days = $derived(view && kd ? daysBetween(view.today, kd) : null);
+  // Référentiels (fonctions, types, connecteurs) : couleurs et catégories de toutes les pages du projet.
+  loadRefs();
 </script>
 
 {#if gone}
