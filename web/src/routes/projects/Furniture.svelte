@@ -5,6 +5,7 @@
   import Icon from '../../components/Icon.svelte';
   import Confirm from '../../components/Confirm.svelte';
   import Desk3D from '../../components/Desk3D.svelte';
+  import Racks from './Racks.svelte';
   import { api } from '../../lib/api';
   import { can } from '../../lib/session.svelte';
   import { toast, fail } from '../../lib/toast.svelte';
@@ -19,6 +20,8 @@
   const writable = $derived(can('projets', 'ecriture'));
   const desks = $derived(view.containers.filter((c) => c.kind === 'desk' || c.kind === 'furniture'));
   const cid = $derived(route.path.split('/')[4] ?? null);
+  /** Casquette en cours d'équipement : /mobilier/{mobilier}/{casquette}. */
+  const equip = $derived(route.path.split('/')[5] ?? null);
   $effect(() => { if (!cid && desks[0]) navigate(`/projets/${pid}/mobilier/${desks[0].id}`, true); });
   const desk = $derived(desks.find((d) => d.id === cid) ?? null);
   const L = $derived(desk?.length_mm ?? 2400), Dp = $derived(desk?.width_mm ?? 900), Hd = $derived(desk?.outer_height_mm ?? 750);
@@ -114,9 +117,18 @@
       </select>
       <span class="muted small">{nf(L)} × {nf(Dp)} mm · {casq.length} casquette{casq.length > 1 ? 's' : ''} · {casq.reduce((n, c) => n + (c.height_u ?? 0), 0)} U</span>
       <span style="flex:1"></span>
-      <div class="seg" role="group" aria-label="Vue"><button class:on={mode === 'plan'} onclick={() => (mode = 'plan')}>Plan</button><button class:on={mode === '3d'} onclick={() => (mode = '3d')}><Icon name="case" size="sm" />3D</button></div>
-      {#if writable}<button class="btn sm primary" onclick={addCasquette}><Icon name="plus" size="sm" />Casquette</button>{/if}
+      {#if equip}
+        <div class="seg" role="group" aria-label="Casquette">{#each casq as c (c.id)}<button class:on={equip === c.id} onclick={() => navigate(`/projets/${pid}/mobilier/${desk.id}/${c.id}`)}>{c.name.replace(`${desk.name} · `, '')}</button>{/each}</div>
+        <button class="btn sm" onclick={() => navigate(`/projets/${pid}/mobilier/${desk.id}`)}><Icon name="layers" size="sm" />Retour au mobilier</button>
+      {:else}
+        <div class="seg" role="group" aria-label="Vue"><button class:on={mode === 'plan'} onclick={() => (mode = 'plan')}>Plan</button><button class:on={mode === '3d'} onclick={() => (mode = '3d')}><Icon name="case" size="sm" />3D</button></div>
+        {#if writable}<button class="btn sm primary" onclick={addCasquette}><Icon name="plus" size="sm" />Casquette</button>{/if}
+      {/if}
     </div>
+    {#if equip && casq.some((c) => c.id === equip)}
+      <!-- Même éditeur que les racks, limité à cette casquette. -->
+      {#key equip}<div class="mob-equip"><Racks {view} fixed={equip} /></div>{/key}
+    {:else}
     <div class="mob-body">
       <div class="mob-stage">
         {#if mode === '3d'}
@@ -134,7 +146,7 @@
                 {@const u = (c.height_u ?? 6)}
                 {@const up = 44.45 * s}
                 <div class="cq" class:sel={sel === c.id} class:dragging={drag?.id === c.id} style="left:{offOf(c) * s}px;width:{WC * s}px;height:{u * up + 50 * s}px;--u:{up}px"
-                  role="button" tabindex="0" onpointerdown={(e) => startDrag(e, c)} onkeydown={(e) => { if (e.key === 'Enter') sel = c.id; }}>
+                  role="button" tabindex="0" title="Glisser pour déplacer · double-clic pour équiper" ondblclick={() => navigate(`/projets/${pid}/mobilier/${desk.id}/${c.id}`)} onpointerdown={(e) => startDrag(e, c)} onkeydown={(e) => { if (e.key === 'Enter') sel = c.id; }}>
                   <span class="cq-name">{c.name.replace(`${desk.name} · `, '')}{c.tilt_deg ? ` · ${nf(c.tilt_deg)}°` : ''}</span>
                   <div class="cq-in">
                     {#each (racks[c.id]?.elements ?? []).filter((e) => e.placement.face === 'front' && !e.placement.shelf_id) as e (e.placement.id)}
@@ -164,7 +176,7 @@
               <div class="field"><label for="cq-t">Inclinaison (°)</label><input class="input mono" id="cq-t" type="number" min="0" max="60" value={c.tilt_deg ?? 0} disabled={!writable} onchange={(e) => patch(c, { tilt_deg: num((e.target as HTMLInputElement).value) })}><span class="help">Vers l’arrière, face vers l’opérateur.</span></div>
             </div>
             <dl class="kv"><dt>Matériel posé</dt><dd>{racks[c.id]?.elements.length ?? 0}</dd><dt>À placer</dt><dd>{racks[c.id]?.pending.length ?? 0}</dd><dt>Code câble</dt><dd class="mono">{c.cable_code}</dd></dl>
-            <a class="btn sm primary" href="/projets/{pid}/racks/{c.id}"><Icon name="server" size="sm" />Équiper dans l’éditeur de racks</a>
+            <a class="btn sm primary" href="/projets/{pid}/mobilier/{desk.id}/{c.id}"><Icon name="server" size="sm" />Équiper la casquette</a>
             {#if writable}<button class="btn sm ghost danger" style="justify-self:start" onclick={() => (confirmDel = c)}><Icon name="trash" size="sm" />Supprimer la casquette</button>{/if}
             <button class="btn sm ghost" style="justify-self:start" onclick={() => (sel = null)}>← {desk.name}</button>
           </section>
@@ -187,6 +199,7 @@
         {/if}
       </aside>
     </div>
+    {/if}
   </div>
 {/if}
 
@@ -200,6 +213,8 @@
   .empty-mob { display: grid; justify-items: center; gap: 10px; padding: 48px 24px; text-align: center; }
   .empty-mob .kind { width: 54px; height: 54px; display: grid; place-items: center; border-radius: 14px; background: var(--surface-2); }
   .empty-mob p { max-width: 560px; }
+  .mob-equip { padding: 0; }
+  .mob-equip :global(.rack-screen) { border-radius: 0; box-shadow: none; }
   .mob-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 10px 14px; border-bottom: 1px solid var(--line); }
   .mob-bar select { width: auto; min-width: 260px; height: 38px; }
   .mob-body { display: grid; grid-template-columns: minmax(0, 1fr) 320px; min-height: calc(100vh - 240px); }

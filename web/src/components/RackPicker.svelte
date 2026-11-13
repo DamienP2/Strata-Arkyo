@@ -9,7 +9,7 @@
   let { view, value, onpick }: { view: ProjectView; value: string; onpick: (v: string) => void } = $props();
   let open = $state(false);
   let root = $state<HTMLDivElement>(null!);
-  const racks = $derived(view.containers.filter((c) => c.rackable));
+  const racks = $derived(view.containers.filter((c) => c.rackable && c.kind !== 'casquette'));
   const groups = $derived(view.locations.map((l) => ({ l, list: racks.filter((c) => c.location_id === l.id) })).filter((g) => g.list.length));
   const cur = $derived(racks.find((c) => c.id === value) ?? null);
   const locOf = (v: string) => view.locations.find((l) => l.id === v.split(':')[1]);

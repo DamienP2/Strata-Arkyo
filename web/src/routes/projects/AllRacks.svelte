@@ -19,7 +19,7 @@
   interface R { container: any; elements: El[]; lock: { mine: boolean; account_name: string } | null }
 
   // Un emplacement choisi (ou tous), rangés par emplacement.
-  const racks = $derived(view.locations.flatMap((l) => (loc && l.id !== loc ? [] : view.containers.filter((c) => c.rackable && c.location_id === l.id))));
+  const racks = $derived(view.locations.flatMap((l) => (loc && l.id !== loc ? [] : view.containers.filter((c) => c.rackable && c.kind !== 'casquette' && c.location_id === l.id))));
   let data = $state<Record<string, R>>({});
   let face = $state<Face>('front');
   let scale = $state(24);
@@ -92,10 +92,10 @@
 
 <div class="all-tool">
   <RackPicker {view} value={loc ? `tout:${loc}` : 'tout'} onpick={(v) => navigate(`/projets/${view.project.id}/racks/${v.replace(':', '/')}`)} />
-  {#if view.locations.filter((l) => view.containers.some((c) => c.rackable && c.location_id === l.id)).length > 1}
+  {#if view.locations.filter((l) => view.containers.some((c) => c.rackable && c.kind !== 'casquette' && c.location_id === l.id)).length > 1}
     <div class="seg" role="group" aria-label="Emplacement">
       <button class:on={!loc} onclick={() => navigate(`/projets/${view.project.id}/racks/tout`)}>Tous</button>
-      {#each view.locations.filter((l) => view.containers.some((c) => c.rackable && c.location_id === l.id)) as l (l.id)}<button class:on={loc === l.id} onclick={() => navigate(`/projets/${view.project.id}/racks/tout/${l.id}`)}>{l.name}</button>{/each}
+      {#each view.locations.filter((l) => view.containers.some((c) => c.rackable && c.kind !== 'casquette' && c.location_id === l.id)) as l (l.id)}<button class:on={loc === l.id} onclick={() => navigate(`/projets/${view.project.id}/racks/tout/${l.id}`)}>{l.name}</button>{/each}
     </div>
   {/if}
   <div class="seg" role="group" aria-label="Face"><button class:on={face === 'front'} onclick={() => (face = 'front')}>Avant</button><button class:on={face === 'rear'} onclick={() => (face = 'rear')}>Arrière</button></div>

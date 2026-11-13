@@ -19,7 +19,8 @@
   import AllRacks from './AllRacks.svelte';
   import RackPicker from '../../components/RackPicker.svelte';
 
-  let { view }: { view: ProjectView } = $props();
+  // `fixed` : éditeur d'un seul élément, intégré à une autre page (casquette d'un mobilier).
+  let { view, fixed = null }: { view: ProjectView; fixed?: string | null } = $props();
   type Face = 'front' | 'rear' | 'rear_inner';
   type W = 'full' | 'half' | 'third' | 'quarter';
   interface Placement { id: string; article_id: string; instance_id: string | null; face: Face; u_start: number; width: W; col: number; circuit_id: string | null; shelf_id: string | null; rev: number }
@@ -35,10 +36,11 @@
   }
 
   loadRefs();
-  const racks = $derived(view.containers.filter((c) => c.rackable));
-  const all = $derived(route.path.split('/')[4] === 'tout');
-  const cid = $derived(all ? null : (route.path.split('/')[4] ?? racks[0]?.id ?? null));
-  $effect(() => { if (!route.path.split('/')[4] && racks[0]) navigate(`/projets/${view.project.id}/racks/${racks[0].id}`, true); });
+  // Les casquettes s'équipent depuis le mobilier : elles ne figurent pas dans les racks.
+  const racks = $derived(view.containers.filter((c) => c.rackable && c.kind !== 'casquette'));
+  const all = $derived(!fixed && route.path.split('/')[4] === 'tout');
+  const cid = $derived(fixed ?? (all ? null : (route.path.split('/')[4] ?? racks[0]?.id ?? null)));
+  $effect(() => { if (!fixed && !route.path.split('/')[4] && racks[0]) navigate(`/projets/${view.project.id}/racks/${racks[0].id}`, true); });
 
   let rack = $state<Rack | null>(null);
   let face = $state<Face | 'side'>('front');
@@ -225,7 +227,7 @@
 
 {#if all && racks.length}
   <AllRacks {view} loc={route.path.split('/')[5] ?? null} />
-{:else if !racks.length}
+{:else if !racks.length && !fixed}
   <div class="empty">Aucun élément rackable dans ce projet. Ajoutez une baie ou un flight-case depuis l’<a class="ilink" href="/projets/{view.project.id}/inventaire">inventaire</a>.</div>
 {:else if rack}
   {@const t = rack.totals}
@@ -243,7 +245,7 @@
       {/if}
     </div>{/if}
     <div class="dtool">
-      <RackPicker {view} value={cid ?? ''} onpick={(v) => navigate(`/projets/${view.project.id}/racks/${v.replace(':', '/')}`)} />
+      {#if !fixed}<RackPicker {view} value={cid ?? ''} onpick={(v) => navigate(`/projets/${view.project.id}/racks/${v.replace(':', '/')}`)} />{/if}
       <div class="seg" role="group" aria-label="Face">{#each [...rack.faces, 'side'] as f}<button class:on={face === f} onclick={() => { face = f as Face | 'side'; armed = null; }}>{FACES[f as Face]}</button>{/each}</div>
       <div class="seg" role="group" aria-label="Rendu"><button class:on={mode === 'real' && !show3d} onclick={() => { mode = 'real'; show3d = false; }}>Réel</button><button class:on={mode === 'schematic' && !show3d} onclick={() => { mode = 'schematic'; show3d = false; }}>Schématique</button><button class:on={show3d} onclick={() => (show3d = true)}><Icon name="box" size="sm" />3D</button></div>
       <span class="gap"></span>

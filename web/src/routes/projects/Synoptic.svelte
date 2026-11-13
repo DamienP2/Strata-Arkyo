@@ -236,7 +236,7 @@
     for (const c of syn.cables) {
       if (!c.a_in_view || !c.b_in_view || hiddenFam.has(famOf(c))) continue;
       const A = portXY(c.a), B = portXY(c.b); if (!A || !B) continue;
-      if (c.fields.waypoints?.length) continue; // tracé multipoint : posé à la main
+      if (liveWps(c).length) continue; // tracé multipoint : posé à la main
       reqs.push({ id: c.id, a: { x: A[0], y: A[1], side: A[2] }, b: { x: B[0], y: B[1], side: B[2] }, out: tagW(c) + TAG_GAP * 2 + 12 });
     }
     return routeAll(reqs, boxes as [number, number, number, number][]);
@@ -244,11 +244,21 @@
   /** Tracé en cours de modification (tronçon déplacé à la main). */
   let ovr = $state<{ id: string; pts: [number, number][] } | null>(null);
   const dedupe = (pts: [number, number][]) => pts.filter((q, i) => i === 0 || q[0] !== pts[i - 1]![0] || q[1] !== pts[i - 1]![1]);
+  /** Nœuds en cours de déplacement : les tracés manuels suivent (deux bouts déplacés) ou
+      repassent en automatique (un seul bout déplacé), sans coude ni croisement parasite. */
+  let moving = $state<{ keys: Set<string>; dx: number; dy: number } | null>(null);
+  function liveWps(c: CableV): [number, number][] {
+    const wp = c.fields.waypoints ?? [];
+    if (!wp.length || !moving) return wp;
+    const a = moving.keys.has(nodeOf(c.a)?.key ?? ''), b = moving.keys.has(nodeOf(c.b)?.key ?? '');
+    if (a && b) return wp.map(([x, y]) => [x + moving!.dx, y + moving!.dy] as [number, number]);
+    return a || b ? [] : wp;
+  }
   function cablePts(c: CableV): [number, number][] | null {
     const A = portXY(c.a), B = portXY(c.b);
     if (!A || !B) return null;
     if (ovr?.id === c.id) return ovr.pts;
-    const wp = c.fields.waypoints ?? [];
+    const wp = liveWps(c);
     if (wp.length) {
       // Multipoint : sortie horizontale du port, points de passage, entrée horizontale.
       const out = TAG_GAP * 2 + tagW(c);
@@ -636,9 +646,11 @@
     if (n && rulers) for (const gy of guides.h) for (const off of [0, nodeH(n) / 2, nodeH(n)]) if (Math.abs(ny + off - gy) < tol) ny = gy - off;
     const ddx = nx - f.x, ddy = ny - f.y;
     for (const [k2, p0] of Object.entries(drag.group ?? {})) pos[k2] = { x: p0.x + ddx, y: p0.y + ddy };
+    moving = { keys: new Set(Object.keys(drag.group ?? {})), dx: ddx, dy: ddy };
   }
   async function up(e?: PointerEvent) {
     const d = drag; drag = null;
+    if (d?.kind !== 'node' || !d.moved) moving = null;
     if (d?.kind === 'rewire') { const r = rewire, sp = snap; rewire = null; snap = null; mouse = null; if (r && sp && d.moved) rewireCable(r.id, r.end, sp.p.ref); return; }
     if (d?.kind === 'seg') { const o = ovr; if (o && d.moved) { const c = syn?.cables.find((x) => x.id === o.id); if (c) await patchCable(c, { waypoints: dedupe(o.pts).slice(1, -1) }, 'tracé du câble'); } ovr = null; return; }
     if (d?.kind === 'port') { if (d.moved && snap && armed.length) { const sp = snap; clickPort(sp.p, sp.n, e as unknown as MouseEvent); } return; }
@@ -660,12 +672,16 @@
       // Points de passage : ils suivent quand les deux extrémités du câble se déplacent.
       const moved = new Set(keys);
       const follow = syn.cables.filter((c) => c.fields.waypoints?.length && moved.has(nodeOf(c.a)?.key ?? '') && moved.has(nodeOf(c.b)?.key ?? ''));
+      // Un seul bout déplacé : l'ancien tracé manuel n'a plus de sens, le câble repasse en automatique.
+      const reset = syn.cables.filter((c) => c.fields.waypoints?.length && moved.has(nodeOf(c.a)?.key ?? '') !== moved.has(nodeOf(c.b)?.key ?? ''));
       try {
         await put(to);
         for (const c of follow) await api.patch(`/cables/${c.id}`, { rev: c.rev, ...c.fields, waypoints: c.fields.waypoints.map(([x, y]) => [x + ddx, y + ddy]) });
+        for (const c of reset) await api.patch(`/cables/${c.id}`, { rev: c.rev, ...c.fields, waypoints: [] });
         push({ label: keys.length > 1 ? `déplacement de ${keys.length} nœuds` : 'déplacement', undo: () => put(from), redo: () => put(to) });
-        if (follow.length) await load();
+        if (follow.length || reset.length) await load();
       } catch (x) { fail(x); await load(); }
+      moving = null;
     }
   }
   function portDown(p: Port, n: SNode, e: PointerEvent) {

@@ -65,7 +65,7 @@
     return e ? { kind: 'ok', text: `Posé · ${posText(e)}` } : { kind: 'todo', text: 'À placer' };
   }
   /** Page de conception de l'élément : éditeur de racks ou de mobilier. */
-  const designHref = (c: Container) => (c.kind === 'desk' || c.kind === 'furniture' ? `/projets/${view.project.id}/mobilier/${c.id}` : c.rackable ? `/projets/${view.project.id}/racks/${c.id}` : null);
+  const designHref = (c: Container) => (c.kind === 'desk' || c.kind === 'furniture' ? `/projets/${view.project.id}/mobilier/${c.id}` : c.kind === 'casquette' && c.parent_id ? `/projets/${view.project.id}/mobilier/${c.parent_id}/${c.id}` : c.rackable ? `/projets/${view.project.id}/racks/${c.id}` : null);
   const instOf = (a: Article) => view.instances.filter((i) => i.article_id === a.id);
   const item = (a: Article) => (a.item_id ? view.items[a.item_id] : undefined);
   const heightOf = (a: Article) => (a.accessory ? (a.accessory.kind === 'panel' ? a.accessory.panel.height_u : a.accessory.height_u) : item(a)?.rackable ? item(a)!.height_u : null);
