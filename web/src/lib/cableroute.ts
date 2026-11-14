@@ -18,7 +18,8 @@ const PAD = 8;
 interface V { x: number; y0: number; y1: number; id: string }
 interface H { y: number; x0: number; x1: number; id: string }
 
-export function routeAll(reqs: Req[], boxes: Box[]): Map<string, Routed> {
+/** `fixed` : tracés posés à la main, que les câbles automatiques ne doivent pas chevaucher. */
+export function routeAll(reqs: Req[], boxes: Box[], fixed: [number, number][][] = []): Map<string, Routed> {
   const out = new Map<string, Routed>();
   const vs: V[] = [], hs: H[] = [];
   const lo = (a: number, b: number) => Math.min(a, b), hi = (a: number, b: number) => Math.max(a, b);
@@ -32,6 +33,12 @@ export function routeAll(reqs: Req[], boxes: Box[]): Map<string, Routed> {
   const hClash = (y: number, xa: number, xb: number, id: string) => near(hIdx, y).some((h) => h.id !== id && Math.abs(h.y - y) < SP - 0.5 && hi(xa, xb) > h.x0 - SP / 2 && lo(xa, xb) < h.x1 + SP / 2);
   const addV = (x: number, ya: number, yb: number, id: string) => { const v = { x, y0: lo(ya, yb), y1: hi(ya, yb), id }; vs.push(v); const k = Math.floor(x / SP); vIdx.set(k, [...(vIdx.get(k) ?? []), v]); };
   const addH = (y: number, xa: number, xb: number, id: string) => { const h = { y, x0: lo(xa, xb), x1: hi(xa, xb), id }; hs.push(h); const k = Math.floor(y / SP); hIdx.set(k, [...(hIdx.get(k) ?? []), h]); };
+  fixed.forEach((pl, i) => {
+    for (let j = 0; j + 1 < pl.length; j++) {
+      const [p, q] = [pl[j]!, pl[j + 1]!];
+      if (p[0] === q[0]) addV(p[0], p[1], q[1], `fixed:${i}`); else if (p[1] === q[1]) addH(p[1], p[0], q[0], `fixed:${i}`);
+    }
+  });
   const path = (pts: [number, number][]) => {
     // Supprime les points alignés, puis écrit le chemin en segments droits.
     const p = pts.filter((q, i) => i === 0 || q[0] !== pts[i - 1]![0] || q[1] !== pts[i - 1]![1]);
@@ -138,4 +145,32 @@ export function rounded(pts: [number, number][], r = 6): string {
     d += `L${ax} ${ay}Q${x} ${y} ${bx} ${by}`;
   }
   const l = pts[pts.length - 1]!; return d + `L${l[0]} ${l[1]}`;
+}
+
+/** Supprime les points en double et les points alignés d'un chemin orthogonal. */
+export function simplify(pts: [number, number][]): [number, number][] {
+  const p = pts.filter((q, i) => i === 0 || q[0] !== pts[i - 1]![0] || q[1] !== pts[i - 1]![1]);
+  return p.filter((q, i) => i === 0 || i === p.length - 1 || !((p[i - 1]![0] === q[0] && q[0] === p[i + 1]![0]) || (p[i - 1]![1] === q[1] && q[1] === p[i + 1]![1])));
+}
+
+/** Chemin orthogonal d'un point vers un autre : direct, ou horizontal, vertical, horizontal. */
+export function orthoTo(pts: [number, number][], to: [number, number]): [number, number][] {
+  const out = [...pts];
+  const [x, y] = out[out.length - 1]!;
+  if (y === to[1] || x === to[0]) { out.push(to); return out; }
+  const mid = Math.round((x + to[0]) / 2);
+  out.push([mid, y], [mid, to[1]], to);
+  return out;
+}
+
+/** Décalage parallèle d'un chemin orthogonal de `d` (vers la normale gauche de chaque tronçon,
+ *  soit vers le bas pour un tronçon qui part à droite) : un faisceau de chemins décalés reste
+ *  parallèle, à écart constant, sans croisement. */
+export function offsetPath(pts: [number, number][], d: number): [number, number][] {
+  const p = simplify(pts);
+  const n = p.slice(0, -1).map((a, i) => { const b = p[i + 1]!; return [-Math.sign(b[1] - a[1]), Math.sign(b[0] - a[0])] as [number, number]; });
+  return p.map((q, i) => {
+    const a = n[i - 1], b = n[i];
+    return [q[0] + ((a?.[0] ?? 0) + (b?.[0] ?? 0)) * d, q[1] + ((a?.[1] ?? 0) + (b?.[1] ?? 0)) * d] as [number, number];
+  });
 }

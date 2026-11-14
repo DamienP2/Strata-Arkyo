@@ -14,7 +14,7 @@
   import { PAPERS, type Paper } from '../../lib/sheet';
   import RemoteCursors from '../../components/RemoteCursors.svelte';
   import { fitText, shareRow, textWidth } from '../../lib/fit';
-  import { routeAll, rounded, type Routed, type Req as RouteReq } from '../../lib/cableroute';
+  import { routeAll, rounded, simplify, orthoTo, offsetPath, type Routed, type Req as RouteReq } from '../../lib/cableroute';
   import ProjectLinks from '../../components/ProjectLinks.svelte';
   import ViewPicker from '../../components/ViewPicker.svelte';
   import { sendCursor, sendSelection, type PresenceMember } from '../../lib/live.svelte';
@@ -232,17 +232,17 @@
   // chevauchement, écart constant, faisceaux parallèles, nœuds contournés).
   const routed = $derived.by(() => {
     if (!syn || syn.overview) return new Map<string, Routed>();
-    const reqs: RouteReq[] = [];
+    const reqs: RouteReq[] = [], fixed: [number, number][][] = [];
     for (const c of syn.cables) {
       if (!c.a_in_view || !c.b_in_view || hiddenFam.has(famOf(c))) continue;
       const A = portXY(c.a), B = portXY(c.b); if (!A || !B) continue;
-      if (liveWps(c).length) continue; // tracé multipoint : posé à la main
+      if (liveWps(c).length) { const P = cablePts(c); if (P) fixed.push(P); continue; } // tracé posé à la main : obstacle
       reqs.push({ id: c.id, a: { x: A[0], y: A[1], side: A[2] }, b: { x: B[0], y: B[1], side: B[2] }, out: tagW(c) + TAG_GAP * 2 + 12 });
     }
-    return routeAll(reqs, boxes as [number, number, number, number][]);
+    return routeAll(reqs, boxes as [number, number, number, number][], fixed);
   });
   /** Tracé en cours de modification (tronçon déplacé à la main). */
-  let ovr = $state<{ id: string; pts: [number, number][] } | null>(null);
+  let ovr = $state<Record<string, [number, number][]> | null>(null);
   const dedupe = (pts: [number, number][]) => pts.filter((q, i) => i === 0 || q[0] !== pts[i - 1]![0] || q[1] !== pts[i - 1]![1]);
   /** Nœuds en cours de déplacement : les tracés manuels suivent (deux bouts déplacés) ou
       repassent en automatique (un seul bout déplacé), sans coude ni croisement parasite. */
@@ -252,12 +252,26 @@
     if (!wp.length || !moving) return wp;
     const a = moving.keys.has(nodeOf(c.a)?.key ?? ''), b = moving.keys.has(nodeOf(c.b)?.key ?? '');
     if (a && b) return wp.map(([x, y]) => [x + moving!.dx, y + moving!.dy] as [number, number]);
-    return a || b ? [] : wp;
+    if (!a && !b) return wp;
+    return shiftEnd(c, wp, a ? 'a' : 'b', moving.dx, moving.dy);
+  }
+  /** Un seul bout déplacé : seul le coude voisin suit (sortie du port, puis le tronçon qui la
+      prolonge) ; le reste du tracé ne bouge pas. Si la sortie se retrouve derrière le port,
+      le câble repasse en automatique. */
+  function shiftEnd(c: CableV, wp: [number, number][], end: 'a' | 'b', dx: number, dy: number): [number, number][] {
+    const P = portXY(end === 'a' ? c.a : c.b); if (!P) return [];
+    const w = (end === 'a' ? wp : [...wp].reverse()).map((q) => [...q] as [number, number]);
+    const [ox, oy] = w[0]!;
+    if (oy !== P[1] - dy) return []; // ancien tracé sans sortie horizontale
+    w[0] = [ox + dx, oy + dy];
+    if (w[1]) { if (w[1][0] === ox) w[1][0] += dx; else if (w[1][1] === oy) w[1][1] += dy; }
+    if (P[2] === 'r' ? w[0][0] < P[0] + 20 : w[0][0] > P[0] - 20) return [];
+    return end === 'a' ? w : w.reverse();
   }
   function cablePts(c: CableV): [number, number][] | null {
     const A = portXY(c.a), B = portXY(c.b);
     if (!A || !B) return null;
-    if (ovr?.id === c.id) return ovr.pts;
+    if (ovr?.[c.id]) return ovr[c.id]!;
     const wp = liveWps(c);
     if (wp.length) {
       // Multipoint : sortie horizontale du port, points de passage, entrée horizontale.
@@ -493,7 +507,7 @@
   const families = $derived([...new Set((syn?.cables ?? []).map(famOf))]);
 
   let drag: { kind: 'pan' | 'node' | 'ann' | 'resize' | 'draft' | 'lasso' | 'rewire' | 'seg' | 'port'; key?: string; ox: number; oy: number; moved: boolean; rect?: boolean; from?: { x: number; y: number; w?: number; h?: number };
-    group?: Record<string, { x: number; y: number }>; sx?: number; sy?: number; end?: 'a' | 'b'; seg?: number; base?: [number, number][] } | null = null;
+    group?: Record<string, { x: number; y: number }>; sx?: number; sy?: number; end?: 'a' | 'b'; seg?: number; base?: [number, number][]; segs?: { id: string; k: number; base: [number, number][] }[] } | null = null;
   /** Extrémité en cours de rebranchement : position du curseur (aimantée). */
   let rewire = $state<{ id: string; end: 'a' | 'b'; at: [number, number] } | null>(null);
   // Sélection au rectangle (Maj + glisser) ou au lasso (outil Lasso).
@@ -550,9 +564,9 @@
     // Poignées d'un câble sélectionné : extrémité à rebrancher, tronçon à déplacer.
     const hd = t.closest<SVGElement>('[data-handle]');
     if (hd && mine && selected) {
-      const [kind, v] = hd.dataset.handle!.split(':');
+      const [kind, v, j] = hd.dataset.handle!.split(':');
       if (kind === 'end') { drag = { kind: 'rewire', ox: wx0, oy: wy0, moved: false, end: v as 'a' | 'b', key: selected.id }; rewire = { id: selected.id, end: v as 'a' | 'b', at: [wx0, wy0] }; }
-      else { const pts = cablePts(selected); if (pts) { drag = { kind: 'seg', ox: wx0, oy: wy0, moved: false, seg: Number(v), base: pts.map((q) => [...q] as [number, number]), key: selected.id }; } }
+      else { const segs = segGroup(v!, Number(j)); if (segs.length) drag = { kind: 'seg', ox: wx0, oy: wy0, moved: false, key: v, segs }; }
       (e.currentTarget as Element).setPointerCapture(e.pointerId); e.stopPropagation(); return;
     }
     if (t.closest('.port') || ((tool === 'select' || tool === 'cable' || tool === 'eraser') && (t.closest('.cable') || t.closest('.lbl')))) return;
@@ -595,7 +609,7 @@
   function addWaypoint(wx: number, wy: number) {
     // Points orthogonaux, comme Arkyo : un tronçon horizontal, puis vertical, et ainsi de suite.
     const P = portXY(armed[0]!.ref); if (!P) return;
-    const base: [number, number] = wps.length ? wps[wps.length - 1]! : [P[0] + (P[2] === 'r' ? 40 : -40), P[1]];
+    const base: [number, number] = wps.length ? wps[wps.length - 1]! : stubOf(P, armed[0]!.ref);
     const pt: [number, number] = wps.length % 2 === 0 ? [snap8(wx), base[1]] : [base[0], snap8(wy)];
     wps = [...wps, pt];
   }
@@ -616,12 +630,18 @@
     if (drag.kind === 'pan') { tx = e.clientX - drag.ox; ty = e.clientY - drag.oy; return; }
     if (drag.kind === 'rewire' || drag.kind === 'port') return;
     if (drag.kind === 'seg') {
-      // Tronçon : un horizontal monte ou descend, un vertical va à gauche ou à droite.
-      const b = drag.base!, i = drag.seg!, p1 = b[i]!, p2 = b[i + 1]!;
-      const pts = b.map((q) => [...q] as [number, number]);
-      if (p1[1] === p2[1]) { const y = snap8(p1[1] + wy - drag.oy); pts[i]![1] = y; pts[i + 1]![1] = y; }
-      else { const x = snap8(p1[0] + wx - drag.ox); pts[i]![0] = x; pts[i + 1]![0] = x; }
-      ovr = { id: drag.key!, pts };
+      // Tronçon : un horizontal monte ou descend, un vertical va à gauche ou à droite ; en
+      // sélection multiple, le tronçon correspondant de chaque câble suit du même pas.
+      const lead = drag.segs![0]!, p1 = lead.base[lead.k]!, p2 = lead.base[lead.k + 1]!;
+      const horiz = p1[1] === p2[1];
+      const delta = horiz ? snap8(p1[1] + wy - drag.oy) - p1[1] : snap8(p1[0] + wx - drag.ox) - p1[0];
+      const next: Record<string, [number, number][]> = {};
+      for (const sg of drag.segs!) {
+        const pts = sg.base.map((q) => [...q] as [number, number]);
+        if (horiz) { pts[sg.k]![1] += delta; pts[sg.k + 1]![1] += delta; } else { pts[sg.k]![0] += delta; pts[sg.k + 1]![0] += delta; }
+        next[sg.id] = pts;
+      }
+      ovr = next;
       return;
     }
     if (drag.kind === 'lasso') {
@@ -652,7 +672,7 @@
     const d = drag; drag = null;
     if (d?.kind !== 'node' || !d.moved) moving = null;
     if (d?.kind === 'rewire') { const r = rewire, sp = snap; rewire = null; snap = null; mouse = null; if (r && sp && d.moved) rewireCable(r.id, r.end, sp.p.ref); return; }
-    if (d?.kind === 'seg') { const o = ovr; if (o && d.moved) { const c = syn?.cables.find((x) => x.id === o.id); if (c) await patchCable(c, { waypoints: dedupe(o.pts).slice(1, -1) }, 'tracé du câble'); } ovr = null; return; }
+    if (d?.kind === 'seg') { const o = ovr; if (o && d.moved) await setWaypoints(Object.entries(o).map(([id, pts]) => ({ id, way: simplify(pts).slice(1, -1) })), Object.keys(o).length > 1 ? `tracé de ${Object.keys(o).length} câbles` : 'tracé du câble'); ovr = null; return; }
     if (d?.kind === 'port') { if (d.moved && snap && armed.length) { const sp = snap; clickPort(sp.p, sp.n, e as unknown as MouseEvent); } return; }
     if (d?.kind === 'lasso') { const poly = lasso; lasso = null; if (poly && d.moved) finishLasso(poly, !!e?.ctrlKey || !!e?.metaKey || !!e?.shiftKey); else if (!d.moved) { sel = null; multi = new Set(); selNodes = new Set(); selAnn = null; annMulti = new Set(); } return; }
     if (d?.kind === 'draft') { const z = draft; draft = null; if (z && z.w >= 20 && z.h >= 20) createAnn('zone', { x: Math.round(z.x), y: Math.round(z.y), w: Math.round(z.w), h: Math.round(z.h) }); return; }
@@ -669,17 +689,17 @@
       const to = Object.fromEntries(keys.map((k2) => [k2, { ...pos[k2]! }]));
       const ddx = to[d.key!]!.x - from[d.key!]!.x, ddy = to[d.key!]!.y - from[d.key!]!.y;
       const put = (p: Record<string, { x: number; y: number }>) => api.put(`/projects/${pid}/synoptic/layout`, { view, positions: keys.map((k2) => ({ node: k2, ...p[k2]! })) });
-      // Points de passage : ils suivent quand les deux extrémités du câble se déplacent.
+      // Tracés posés à la main : ils suivent en entier quand les deux bouts bougent, seul le
+      // coude voisin suit quand un seul bout bouge (exactement ce qui était affiché).
       const moved = new Set(keys);
-      const follow = syn.cables.filter((c) => c.fields.waypoints?.length && moved.has(nodeOf(c.a)?.key ?? '') && moved.has(nodeOf(c.b)?.key ?? ''));
-      // Un seul bout déplacé : l'ancien tracé manuel n'a plus de sens, le câble repasse en automatique.
-      const reset = syn.cables.filter((c) => c.fields.waypoints?.length && moved.has(nodeOf(c.a)?.key ?? '') !== moved.has(nodeOf(c.b)?.key ?? ''));
+      const touched = syn.cables.filter((c) => c.fields.waypoints?.length && (moved.has(nodeOf(c.a)?.key ?? '') || moved.has(nodeOf(c.b)?.key ?? '')))
+        .map((c) => ({ a: c.a, b: c.b, before: c.fields.waypoints, after: liveWps(c) }));
+      const setWp = async (pick: 'before' | 'after') => { for (const t of touched) { const cur = findCable(t.a, t.b); if (cur) await api.patch(`/cables/${cur.id}`, { rev: cur.rev, ...cur.fields, waypoints: t[pick] }); } };
       try {
         await put(to);
-        for (const c of follow) await api.patch(`/cables/${c.id}`, { rev: c.rev, ...c.fields, waypoints: c.fields.waypoints.map(([x, y]) => [x + ddx, y + ddy]) });
-        for (const c of reset) await api.patch(`/cables/${c.id}`, { rev: c.rev, ...c.fields, waypoints: [] });
-        push({ label: keys.length > 1 ? `déplacement de ${keys.length} nœuds` : 'déplacement', undo: () => put(from), redo: () => put(to) });
-        if (follow.length || reset.length) await load();
+        await setWp('after');
+        push({ label: keys.length > 1 ? `déplacement de ${keys.length} nœuds` : 'déplacement', undo: async () => { await put(from); await setWp('before'); }, redo: async () => { await put(to); await setWp('after'); } });
+        if (touched.length) await load();
       } catch (x) { fail(x); await load(); }
       moving = null;
     }
@@ -737,14 +757,16 @@
     const targets = targetsFrom(p, n, srcs.length);
     if (targets.length < srcs.length) toast(`${targets.length} / ${srcs.length} câbles posés : plus de port libre après « ${p.label} ».`, 'warn');
     if (!targets.length) return;
-    // Multipoint : le dernier point s'aligne sur le port d'arrivée ; en Écarté, chaque câble
-    // suit le même chemin, décalé de l'écart entre ses ports sources.
-    let pts = cab.mode === 'multipoint' ? [...wps] : [];
-    const T = portXY(p.ref);
-    if (pts.length && T && pts.length % 2 === 0) pts[pts.length - 1] = [pts[pts.length - 1]![0], T[1]];
-    const y0 = portXY(srcs[0]!.ref)?.[1] ?? 0;
-    const body = { cables: srcs.slice(0, targets.length).map((s2, i) => { const dy = cab.parallel === 'spread' ? (portXY(s2.ref)?.[1] ?? y0) - y0 : 0;
-      return { a: s2.ref, b: targets[i]!.ref, style: cab.style, waypoints: pts.map(([x, y]) => [x + dy, y + dy] as [number, number]) }; }) };
+    // Multipoint : exactement le tracé de l'aperçu (faisceau parallèle en Écarté), prolongé
+    // jusqu'à la sortie de chaque port d'arrivée ; les points intermédiaires sont enregistrés.
+    const used2 = srcs.slice(0, targets.length);
+    const T0 = portXY(targets[0]!.ref);
+    const lines = cab.mode === 'multipoint' && wps.length && T0 ? bundle(used2, wps, stubOf(T0, targets[0]!.ref), cab.parallel === 'spread') : [];
+    const body = { cables: used2.map((s2, i) => {
+      const L = lines.find((l) => l.ref === s2.ref), Ti = portXY(targets[i]!.ref);
+      const way = L && Ti ? simplify([...orthoTo(L.pts, stubOf(Ti, targets[i]!.ref)), [Ti[0], Ti[1]]]).slice(1, -1) : [];
+      return { a: s2.ref, b: targets[i]!.ref, style: cab.style, waypoints: way };
+    }) };
     // Les avertissements (signal, connecteur, sens) reviennent du serveur après la pose.
     armed = []; mouse = null; wps = []; snap = null; hoverPort = null;
     place(body, false);
@@ -783,6 +805,38 @@
   }
 
   /** Modifie un câble avec annulation. */
+  /** Tronçons à déplacer ensemble : celui saisi, et dans chaque autre câble sélectionné le
+      tronçon intérieur de même orientation le plus proche (un faisceau garde ses écarts). */
+  function segGroup(id: string, j: number): { id: string; k: number; base: [number, number][] }[] {
+    const lead = syn?.cables.find((c) => c.id === id); const lp = lead && cablePts(lead);
+    if (!lp || !lp[j + 1]) return [];
+    const [a, b] = [lp[j]!, lp[j + 1]!], horiz = a[1] === b[1], mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    const out = [{ id, k: j, base: lp.map((q) => [...q] as [number, number]) }];
+    if (!multi.has(id) || multi.size < 2) return out;
+    for (const c of syn!.cables) {
+      if (c.id === id || !multi.has(c.id) || c.fields.attach || c.fields.style === 'arrow' || !c.a_in_view || !c.b_in_view) continue;
+      const pts = cablePts(c); if (!pts) continue;
+      let best = -1, bd = Infinity;
+      for (let i = 1; i + 2 < pts.length; i++) {
+        const p = pts[i]!, q = pts[i + 1]!;
+        if ((p[1] === q[1]) !== horiz) continue;
+        const d = Math.hypot((p[0] + q[0]) / 2 - mid[0]!, (p[1] + q[1]) / 2 - mid[1]!);
+        if (d < bd) { bd = d; best = i; }
+      }
+      // Seulement les tronçons voisins (même faisceau) : pas un tronçon à l'autre bout du schéma.
+      if (best >= 0 && bd < 600) out.push({ id: c.id, k: best, base: pts.map((q) => [...q] as [number, number]) });
+    }
+    return out;
+  }
+  /** Enregistre les points de passage de plusieurs câbles en une seule étape d'annulation. */
+  async function setWaypoints(list: { id: string; way: [number, number][] }[], label: string) {
+    if (!syn || !list.length) return;
+    lastAction = Date.now();
+    const items = list.map(({ id, way }) => { const c = syn!.cables.find((x) => x.id === id)!; return { a: c.a, b: c.b, before: { ...c.fields }, after: { ...c.fields, waypoints: way } }; }).filter((x) => x.a);
+    const apply = async (pick: 'before' | 'after') => { for (const it of items) { const cur = findCable(it.a, it.b); if (cur) await api.patch(`/cables/${cur.id}`, { rev: cur.rev, ...it[pick] }); } };
+    try { await apply('after'); push({ label, undo: () => apply('before'), redo: () => apply('after') }); } catch (e) { fail(e); }
+    await load();
+  }
   async function patchCable(c: CableV, f: Partial<Fields>, label = 'modification du câble') {
     lastAction = Date.now();
     const before = { ...c.fields }, after = { ...c.fields, ...f }, a = c.a, b = c.b;
@@ -841,7 +895,7 @@
           ...(c.fields.harness_id ? [{ label: 'Retirer du faisceau', act: () => assign(null) }] : []),
           { label: n > 1 ? 'Numéroter la sélection…' : 'Numéroter…', act: () => (numbering = true) },
           ...(c.fields.number && n === 1 ? [{ label: 'Effacer le numéro', act: () => patchCable(c, { number: null }, 'effacement du numéro') }] : []),
-          ...(n === 1 && c.fields.waypoints?.length ? [{ label: 'Réinitialiser le tracé', act: () => patchCable(c, { waypoints: [] }, 'tracé réinitialisé') }] : []),
+          ...(ids.some((id) => syn!.cables.find((x) => x.id === id)?.fields.waypoints?.length) ? [{ label: n > 1 ? 'Repasser les tracés en automatique' : 'Repasser le tracé en automatique', act: () => setWaypoints(ids.filter((id) => syn!.cables.find((x) => x.id === id)?.fields.waypoints?.length).map((id) => ({ id, way: [] })), 'tracé automatique') }] : []),
           { label: 'Style : orthogonal', act: () => setStyle('orthogonal') }, { label: 'Style : arrondi', act: () => setStyle('rounded') }, { label: 'Style : flèche (renvoi)', act: () => setStyle('arrow') },
           { label: 'Modèle de câble…', act: () => askModel(ids) },
           { label: n > 1 ? `Supprimer les ${n} câbles` : 'Supprimer le câble', danger: true, sep: true, act: () => (confirmDelete = true) },
@@ -1049,31 +1103,39 @@
     } catch (e) { fail(e); if (exp) exp.busy = false; }
     finally { ({ sel, multi, hl, armed, selAnn } = keep); }
   }
-  // Aperçu du câblage : toujours orthogonal (horizontal, vertical, horizontal), quelle que
-  // soit la position de la souris. En câblage multiple, chaque câble garde l'écart de ses
-  // ports jusqu'à l'arrivée et tourne sur sa propre colonne : faisceau parallèle, sans
-  // croisement ni convergence sur le pointeur.
-  const LANE = 10;
-  const elbow = (fx: number, fy: number, tx: number, ty: number, rank: number, n: number) => {
-    if (Math.abs(ty - fy) < 0.5) return `H${tx}`;
-    const right = tx >= fx, down = ty > fy;
-    // En descendant, les câbles du bas tournent les premiers ; en montant, ceux du haut.
-    const k = down ? n - 1 - rank : rank;
-    const cx = (fx + tx) / 2 + (k - (n - 1) / 2) * LANE * (right ? 1 : -1);
-    return `H${Math.round(cx)}V${ty}H${tx}`;
-  };
+  // Aperçu du câblage : un chemin de référence orthogonal (sortie du port, points de passage,
+  // puis horizontal-vertical-horizontal jusqu'au pointeur), et pour les autres câbles du même
+  // tracé décalé en parallèle de l'écart de leurs ports : un faisceau qui ne converge pas sur
+  // le pointeur et ne se croise pas. La pose suit exactement la même géométrie.
+  /** Sortie horizontale d'un port, au-delà de l'étiquette du câble (connecteur et numéro). */
+  const outOf = (ref?: string) => Math.ceil((textWidth(short(portByRef(ref ?? '')?.connector ?? ''), MONO_S) + 28 + TAG_GAP * 2 + 12) / 10) * 10;
+  const stubOf = (P: [number, number, 'l' | 'r'], ref?: string): [number, number] => [P[0] + (P[2] === 'r' ? outOf(ref) : -outOf(ref)), P[1]];
+  /** Chemin de référence depuis un port, par les points de passage, jusqu'à `end`. */
+  function refPath(P: [number, number, 'l' | 'r'], way: [number, number][], end: [number, number], ref?: string): [number, number][] {
+    let pts: [number, number][] = [[P[0], P[1]], stubOf(P, ref)];
+    for (const w of way) pts = orthoTo(pts, w);
+    return simplify(orthoTo(pts, end));
+  }
+  /** Faisceau : chemins parallèles de chaque port armé (triés de haut en bas) vers `end`. */
+  function bundle(srcs: Port[], way: [number, number][], end: [number, number], spread = true): { ref: string; pts: [number, number][] }[] {
+    const ps = srcs.map((a) => ({ a, P: portXY(a.ref) })).filter((x): x is { a: Port; P: [number, number, 'l' | 'r'] } => !!x.P).sort((u, v) => u.P[1] - v.P[1]);
+    if (!ps.length) return [];
+    const P0 = ps[0]!.P, ref = refPath(P0, way, end, ps[0]!.a.ref);
+    // Écart signé : le premier tronçon part à droite (décalage vers le bas) ou à gauche.
+    const sgn = P0[2] === 'r' ? 1 : -1;
+    return ps.map(({ a, P }) => {
+      const dy = P[1] - P0[1];
+      if (!dy) return { ref: a.ref, pts: ref };
+      if (!spread && way.length) { let pts: [number, number][] = [[P[0], P[1]], stubOf(P, a.ref)]; for (const w of way) pts = orthoTo(pts, w); return { ref: a.ref, pts: simplify(orthoTo(pts, [end[0], end[1] + dy])) }; }
+      const off = offsetPath(ref, dy * sgn);
+      off[0] = [P[0], P[1]];
+      return { ref: a.ref, pts: simplify(off) };
+    });
+  }
+  const linePath = (pts: [number, number][]) => pts.map((q, i) => `${i ? 'L' : 'M'}${q[0]} ${q[1]}`).join('');
   const armedPreview = $derived.by(() => {
     if (!armed.length || !mouse) return '';
-    const pts = armed.map((a) => portXY(a.ref)).filter((P): P is NonNullable<typeof P> => !!P);
-    if (!pts.length) return '';
-    const n = pts.length, y0 = Math.min(...pts.map((P) => P[1]));
-    const order = [...pts.keys()].sort((i, j) => pts[i]![1] - pts[j]![1]);
-    return pts.map((P, i) => {
-      const rank = order.indexOf(i), [x, y, s] = P, mx = x + (s === 'r' ? 30 : -30), dy = y - y0;
-      let d = `M${x} ${y}H${mx}`, cx = mx, cy = y;
-      for (const [wx, wy] of wps) { const tx = wx, ty = wy + dy; d += elbow(cx, cy, tx, ty, rank, n); cx = tx; cy = ty; }
-      return d + elbow(cx, cy, mouse![0], mouse![1] + dy, rank, n);
-    }).join(' ');
+    return bundle(armed, cab.mode === 'multipoint' ? wps : [], mouse, cab.parallel === 'spread' || cab.mode !== 'multipoint').map((b) => linePath(b.pts)).join(' ');
   });
   const endName = (ref: string, info: Far | null) => { const n = nodeOf(ref); const p = n?.ports.find((x) => x.ref === ref); return n && p ? `${n.label} › ${p.label}` : info ? `${info.label} › ${info.port}` : 'Extrémité manquante'; };
 </script>
@@ -1117,6 +1179,28 @@
           {#each TOOLS.filter((x) => !x.edit || mine) as t, i (t.id)}
             {#if i > 0 && t.edit && !TOOLS.filter((x) => !x.edit || mine)[i - 1]!.edit}<span class="rail-sep"></span>{/if}
             <button class:on={tool === t.id} title="{t.label} ({t.key})" aria-label={t.label} onclick={() => setTool(t.id)}><Icon name={t.icon} size="sm" /></button>
+            {#if t.id === 'cable' && tool === 'cable' && mine && !syn.overview}
+            <!-- Options du câble : sous-outils dans la barre d'outils, juste sous
+                 l'outil Câble (rien ne recouvre le schéma) ; le détail de chaque option est dans l'infobulle. -->
+            <div class="cabfly" role="toolbar" aria-orientation="vertical" aria-label="Options du câble">
+              {#each [
+                [[['count', 'simple', 'Un câble à la fois (1)', 'M5 12h14', [[5, 12], [19, 12]]], ['count', 'multiple', 'Multiple : premier port, dernier port de la plage, puis premier port d’arrivée (2)', 'M5 7h14M5 12h14M5 17h14', []]]],
+                [[['mode', 'auto', 'Tracé automatique (Maj+A)', 'M4 7h7v10h9M17.5 3.5l.8 1.7 1.7.8-1.7.8-.8 1.7-.8-1.7-1.7-.8 1.7-.8z', []], ['mode', 'multipoint', 'Multipoint : points de passage posés sur le fond (M)', 'M4 18h5V7h7v10h4', [[9, 18], [9, 7], [16, 7], [16, 17]]]]],
+                [[['style', 'orthogonal', 'Orthogonal (Q)', 'M4 6h8v12h8', []], ['style', 'rounded', 'Arrondi (W)', 'M4 6h4.5a3.5 3.5 0 0 1 3.5 3.5v5a3.5 3.5 0 0 0 3.5 3.5H20', []], ['style', 'arrow', 'Flèche : renvoi à chaque extrémité', 'M3 12h7M7 8.5l3.5 3.5L7 15.5M21 12h-7M17 8.5 13.5 12l3.5 3.5', []]]],
+                [[['parallel', 'stacked', 'Multiple : même chemin (superposé)', 'M4 8h8v8h8', []], ['parallel', 'spread', 'Multiple : faisceau parallèle (écarté)', 'M4 5h10v10h6M4 10h5v10h11', []]]],
+              ] as [opts]}
+                <div class="cf-g">
+                  {#each opts as [key, val, title, d, dots]}
+                    <button class:on={cab[key as 'count'] === val} title={title as string} aria-label={title as string} aria-pressed={cab[key as 'count'] === val}
+                      onclick={() => { if (key === 'style') setStyle(val as CabPrefs['style']); else { (cab as any)[key as string] = val; if (key === 'mode' && val === 'auto') wps = []; } }}>
+                      <svg viewBox="0 0 24 24" aria-hidden="true"><path d={d as string} class:thick={val === 'stacked'} />{#each dots as [cx, cy]}<circle {cx} {cy} r="1.8" />{/each}</svg>
+                    </button>
+                  {/each}
+                </div>
+              {/each}
+              <div class="cf-g"><button class:on={cab.askModel} title="Proposer un modèle de câble après chaque pose" aria-label="Proposer un modèle de câble" aria-pressed={cab.askModel} onclick={() => (cab.askModel = !cab.askModel)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h8l8 7-8 7H4zM8 12h.01" /></svg></button></div>
+            </div>
+            {/if}
           {/each}
           {#if mine}<span class="rail-sep"></span>
             <button title="Annuler (Ctrl+Z)" aria-label="Annuler" disabled={!past.length} onclick={undo}><Icon name="undo" size="sm" /></button>
@@ -1271,18 +1355,24 @@
             </g>
           {/each}
           {#if armedPreview}<path class="preview" d={armedPreview} />{/if}
-          {#if mine && selected && !selected.fields.attach && multi.size <= 1 && (tool === 'select' || tool === 'cable') && !armed.length}
-            {@const gp = selected.a_in_view && selected.b_in_view ? cPath(selected) : null}
-            {#if gp?.pts}
-              {#each gp.pts as q1, j}{@const q2 = gp.pts[j + 1]}
-                {#if q2 && j >= 1 && j <= gp.pts.length - 3 && (q1[0] === q2[0] || q1[1] === q2[1]) && Math.hypot(q2[0] - q1[0], q2[1] - q1[1]) > 24}
-                  <rect class="seg-h" class:v={q1[0] === q2[0]} data-handle="seg:{j}" x={(q1[0] + q2[0]) / 2 - (q1[0] === q2[0] ? 4 : 11)} y={(q1[1] + q2[1]) / 2 - (q1[0] === q2[0] ? 11 : 4)} width={q1[0] === q2[0] ? 8 : 22} height={q1[0] === q2[0] ? 22 : 8} rx="4"><title>Glisser pour déplacer ce tronçon</title></rect>
-                {/if}
-              {/each}
+          {#if mine && selected && (tool === 'select' || tool === 'cable') && !armed.length}
+            <!-- Poignées de tronçon : sur chaque câble sélectionné (auto ou multipoint) ; en
+                 sélection multiple, saisir un tronçon déplace celui de tous les câbles. -->
+            {#each (multi.size > 1 ? syn.cables.filter((c) => multi.has(c.id)).slice(0, 80) : [selected]) as hc (hc.id)}
+              {@const gp = hc.a_in_view && hc.b_in_view && !hc.fields.attach && hc.fields.style !== 'arrow' && !hiddenFam.has(famOf(hc)) ? cablePts(hc) : null}
+              {#if gp}
+                {#each gp as q1, j}{@const q2 = gp[j + 1]}
+                  {#if q2 && j >= 1 && j <= gp.length - 3 && (q1[0] === q2[0] || q1[1] === q2[1]) && Math.hypot(q2[0] - q1[0], q2[1] - q1[1]) > 24}
+                    <rect class="seg-h" class:v={q1[0] === q2[0]} data-handle="seg:{hc.id}:{j}" x={(q1[0] + q2[0]) / 2 - (q1[0] === q2[0] ? 4 : 11)} y={(q1[1] + q2[1]) / 2 - (q1[0] === q2[0] ? 11 : 4)} width={q1[0] === q2[0] ? 8 : 22} height={q1[0] === q2[0] ? 22 : 8} rx="4"><title>{multi.size > 1 ? 'Glisser pour déplacer ce tronçon sur tous les câbles sélectionnés' : 'Glisser pour déplacer ce tronçon'}</title></rect>
+                  {/if}
+                {/each}
+              {/if}
+            {/each}
+            {#if multi.size <= 1 && !selected.fields.attach}
+              {#each [['a', selected.a], ['b', selected.b]] as [end, ref]}{@const P = portXY(ref)}{#if P && !selected.fields.external}<circle class="end-h" data-handle="end:{end}" cx={P[0]} cy={P[1]} r="7"><title>Glisser vers un autre port pour rebrancher</title></circle>{/if}{/each}
             {/if}
-            {#each [['a', selected.a], ['b', selected.b]] as [end, ref]}{@const P = portXY(ref)}{#if P && !selected.fields.external}<circle class="end-h" data-handle="end:{end}" cx={P[0]} cy={P[1]} r="7"><title>Glisser vers un autre port pour rebrancher</title></circle>{/if}{/each}
           {/if}
-          {#if rewire && selected}{@const O = portXY(rewire.end === 'a' ? selected.b : selected.a)}{#if O}<path class="preview" d="M{O[0]} {O[1]}H{O[0] + (O[2] === 'r' ? 30 : -30)}{elbow(O[0] + (O[2] === 'r' ? 30 : -30), O[1], rewire.at[0], rewire.at[1], 0, 1)}" />{/if}{/if}
+          {#if rewire && selected}{@const O = portXY(rewire.end === 'a' ? selected.b : selected.a)}{#if O}<path class="preview" d={linePath(refPath(O, [], rewire.at, rewire.end === 'a' ? selected.b : selected.a))} />{/if}{/if}
           {#each wps as w}<circle class="wp" cx={w[0]} cy={w[1]} r="4" />{/each}
         </g>
       </svg>
@@ -1301,14 +1391,6 @@
       {/if}
       {#if syn.view}<RemoteCursors room={`project:${pid}/syn:${syn.view}`} toScreen={(x, y) => [tx + x * k, ty + y * k]} bind:selections={remoteSel} />{/if}
       {#if mine && !syn.overview && tool === 'cable'}
-        <div class="capsule" role="toolbar" aria-label="Options du câble">
-          <span class="cb-l">Câble</span>
-          <div class="seg"><button class:on={cab.count === 'simple'} onclick={() => (cab.count = 'simple')} title="Un câble à la fois (1)">Simple</button><button class:on={cab.count === 'multiple'} onclick={() => (cab.count = 'multiple')} title="Premier port, puis dernier port de la plage, puis premier port d’arrivée (2)">Multiple</button></div>
-          <div class="seg"><button class:on={cab.mode === 'auto'} onclick={() => { cab.mode = 'auto'; wps = []; }} title="Tracé calculé (Maj+A)">Auto</button><button class:on={cab.mode === 'multipoint'} onclick={() => (cab.mode = 'multipoint')} title="Points de passage posés sur le fond (M)">Multipoint</button></div>
-          <div class="seg">{#each [['orthogonal', 'Ortho', 'Orthogonal (Q)'], ['rounded', 'Arrondi', 'Arrondi (W)'], ['arrow', 'Flèche', 'Renvoi à chaque extrémité']] as [k2, l, t2]}<button class:on={cab.style === k2} title={t2} onclick={() => setStyle(k2 as CabPrefs['style'])}>{l}</button>{/each}</div>
-          <div class="seg"><button class:on={cab.parallel === 'stacked'} onclick={() => (cab.parallel = 'stacked')} title="Câbles multiples : même chemin">Superposé</button><button class:on={cab.parallel === 'spread'} onclick={() => (cab.parallel = 'spread')} title="Câbles multiples : décalés de l’écart entre les ports">Écarté</button></div>
-          <label class="cap-chk" title="Proposer un modèle de câble après chaque pose"><input type="checkbox" bind:checked={cab.askModel}>Modèle</label>
-        </div>
         <div class="cap-hint">{#if !armed.length}{cab.count === 'multiple' ? 'Cliquez le premier port de la plage, puis le dernier' : 'Cliquez ou glissez d’un port vers un autre'}{:else if cab.mode === 'multipoint'}Cliquez le fond pour poser un point ({wps.length}) · port d’arrivée pour finir · Échap pour annuler{:else}{armed.length} port{armed.length > 1 ? 's' : ''} : cliquez le {armed.length > 1 ? 'premier ' : ''}port d’arrivée · Échap pour annuler{/if}</div>
       {/if}
       <div class="zoomer" role="group" aria-label="Zoom">
@@ -1615,11 +1697,16 @@
   .rail button:disabled { opacity: .3; cursor: default; }
   .rail-sep { width: 24px; height: 1px; margin: 5px 0; background: var(--line); }
   /* Options de l'outil Câble : capsule flottante, sans décaler le dessin */
-  .capsule { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); z-index: 6; display: flex; align-items: center; gap: 6px; padding: 5px 6px; border-radius: 12px; background: var(--surface); box-shadow: 0 10px 28px -12px rgba(0, 0, 0, .35), 0 0 0 1px var(--line); white-space: nowrap; max-width: calc(100% - 24px); overflow-x: auto; }
-  .capsule .seg button { padding: 5px 10px; font-size: 12.5px; }
-  .capsule .cb-l { margin: 0 2px 0 6px; }
-  .cap-chk { display: inline-flex; align-items: center; gap: 5px; padding: 0 6px; font-size: 12.5px; color: var(--fg-2); cursor: pointer; }
-  .cap-hint { position: absolute; left: 50%; top: 62px; transform: translateX(-50%); z-index: 5; padding: 3px 10px; border-radius: 99px; font-size: 12px; color: var(--accent); background: color-mix(in srgb, var(--surface) 88%, transparent); white-space: nowrap; pointer-events: none; }
+  .cabfly { display: flex; flex-direction: column; align-items: center; gap: 4px; margin: 2px 0 4px; padding: 4px 0; width: 40px; border-radius: 10px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line); }
+  .cf-g { display: flex; flex-direction: column; gap: 2px; }
+  .cf-g + .cf-g { padding-top: 4px; border-top: 1px solid var(--line); width: 28px; align-items: center; }
+  .rail .cabfly button { width: 32px; height: 28px; display: grid; place-items: center; border: 0; border-radius: 8px; background: none; color: var(--fg-2); cursor: pointer; }
+  .rail .cabfly button:hover { background: var(--surface-2); color: var(--fg); }
+  .rail .cabfly button.on { background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--fg); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 60%, transparent); }
+  .cabfly svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .cabfly svg circle { fill: currentColor; stroke: none; }
+  .cabfly svg .thick { stroke-width: 3.2; }
+  .cap-hint { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 5; padding: 3px 10px; border-radius: 99px; font-size: 12px; color: var(--accent); background: color-mix(in srgb, var(--surface) 88%, transparent); white-space: nowrap; pointer-events: none; }
   /* Zoom et mini-carte en bas à droite */
   .zoomer { position: absolute; right: 12px; bottom: 12px; z-index: 5; display: flex; align-items: center; gap: 2px; padding: 2px; border-radius: 9px; background: color-mix(in srgb, var(--surface) 80%, transparent); }
   .zoomer button { width: 30px; height: 30px; display: grid; place-items: center; border: 0; border-radius: 8px; background: none; color: var(--fg-2); cursor: pointer; }
