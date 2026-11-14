@@ -4449,3 +4449,64 @@ async fn desk_carries_casquettes() {
             .any(|c| c["kind"] == "casquette")
     );
 }
+
+#[tokio::test]
+async fn vertical_pdu_sits_in_rear_channel() {
+    let Setup {
+        app, o, pid, cid, ..
+    } = setup().await;
+    let r = call(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid}/articles"),
+        Some(json!({"container_id": cid, "nature": "accessory", "accessory": {"kind": "vertical_pdu", "length_mm": 1200, "outlets": 24, "side": "left"}})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::CREATED, "{:?}", r.body);
+    let aid = r.body["article"]["id"].as_str().unwrap().to_string();
+    // Hors limites : refusé.
+    let bad = call(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid}/articles"),
+        Some(json!({"container_id": cid, "nature": "accessory", "accessory": {"kind": "vertical_pdu", "length_mm": 100, "outlets": 0, "side": "right"}})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(bad.status, StatusCode::UNPROCESSABLE_ENTITY);
+    // Monté d'office dans son couloir : listé à part, rien à placer, pas de pose en U.
+    let rack = call(
+        &app,
+        "GET",
+        &format!("/api/containers/{cid}/rack"),
+        None,
+        Some(&o),
+    )
+    .await;
+    assert_eq!(rack.body["vpdus"].as_array().unwrap().len(), 1);
+    assert!(
+        rack.body["pending"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|p| p["article_id"] != aid.as_str())
+    );
+    call(
+        &app,
+        "POST",
+        &format!("/api/containers/{cid}/rack/lock"),
+        None,
+        Some(&o),
+    )
+    .await;
+    let p = call(
+        &app,
+        "POST",
+        &format!("/api/containers/{cid}/placements"),
+        Some(json!({"article_id": aid, "face": "rear", "u_start": 1})),
+        Some(&o),
+    )
+    .await;
+    assert!(p.status.is_client_error(), "{:?}", p.body);
+}

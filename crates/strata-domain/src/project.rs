@@ -499,6 +499,14 @@ pub enum PlateVariant {
     Vented,
 }
 
+/// Couloir arrière d'un PDU vertical.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PduSide {
+    Left,
+    Right,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Accessory {
@@ -522,6 +530,13 @@ pub enum Accessory {
         #[serde(default)]
         depth_mm: u32,
     },
+    /// PDU vertical (0U) : fixé dans le couloir arrière gauche ou droit de la baie, hors
+    /// des U ; il ne se pose pas dans l'élévation.
+    VerticalPdu {
+        length_mm: u32,
+        outlets: u32,
+        side: PduSide,
+    },
     /// Panel de brassage : instance propre au projet, copiée depuis la bibliothèque.
     Panel {
         panel: crate::panel::PanelData,
@@ -536,7 +551,13 @@ impl Accessory {
             | Accessory::Drawer { height_u, .. }
             | Accessory::LacingBar { height_u, .. } => *height_u,
             Accessory::Panel { panel } => panel.height_u,
+            Accessory::VerticalPdu { .. } => 0,
         }
+    }
+
+    /// Un PDU vertical ne se pose pas dans les U.
+    pub fn is_vertical(&self) -> bool {
+        matches!(self, Accessory::VerticalPdu { .. })
     }
 
     /// Profondeur occupée dans la baie (panel : profondeur de câblage arrière).
@@ -547,7 +568,7 @@ impl Accessory {
             }
             Accessory::Panel { panel } => Some(panel.rear_depth_mm as f64),
             Accessory::LacingBar { depth_mm, .. } => Some(*depth_mm as f64),
-            Accessory::Plate { .. } => None,
+            Accessory::Plate { .. } | Accessory::VerticalPdu { .. } => None,
         }
     }
 
@@ -576,6 +597,18 @@ impl Accessory {
                 }
             }
             Accessory::Panel { panel } => panel.name.clone(),
+            Accessory::VerticalPdu {
+                length_mm,
+                outlets,
+                side,
+            } => format!(
+                "PDU vertical {length_mm}mm · {outlets} prises · {}",
+                if *side == PduSide::Left {
+                    "gauche"
+                } else {
+                    "droite"
+                }
+            ),
         }
     }
 
@@ -584,6 +617,21 @@ impl Accessory {
         if let Accessory::Panel { panel } = self {
             if !(1..=4).contains(&panel.height_u) {
                 e.push(err("accessory.panel.height_u", "De 1 à 4 U."));
+            }
+            return e;
+        }
+        if let Accessory::VerticalPdu {
+            length_mm, outlets, ..
+        } = self
+        {
+            if !(300..=2200).contains(length_mm) {
+                e.push(err(
+                    "accessory.length_mm",
+                    "PDU vertical : de 300 à 2 200 mm.",
+                ));
+            }
+            if !(1..=60).contains(outlets) {
+                e.push(err("accessory.outlets", "PDU vertical : de 1 à 60 prises."));
             }
             return e;
         }

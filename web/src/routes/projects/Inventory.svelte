@@ -68,7 +68,7 @@
   const designHref = (c: Container) => (c.kind === 'desk' || c.kind === 'furniture' ? `/projets/${view.project.id}/mobilier/${c.id}` : c.kind === 'casquette' && c.parent_id ? `/projets/${view.project.id}/mobilier/${c.parent_id}/${c.id}` : c.rackable ? `/projets/${view.project.id}/racks/${c.id}` : null);
   const instOf = (a: Article) => view.instances.filter((i) => i.article_id === a.id);
   const item = (a: Article) => (a.item_id ? view.items[a.item_id] : undefined);
-  const heightOf = (a: Article) => (a.accessory ? (a.accessory.kind === 'panel' ? a.accessory.panel.height_u : a.accessory.height_u) : item(a)?.rackable ? item(a)!.height_u : null);
+  const heightOf = (a: Article) => (a.accessory ? (a.accessory.kind === 'panel' ? a.accessory.panel.height_u : a.accessory.kind === 'vertical_pdu' ? null : a.accessory.height_u) : item(a)?.rackable ? item(a)!.height_u : null);
 
   // Dialogues
   let locEdit = $state<{ id: string | null; rev: number; name: string; code: string } | null>(null);

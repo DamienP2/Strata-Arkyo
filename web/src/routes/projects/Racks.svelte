@@ -27,9 +27,10 @@
   interface Placement { id: string; article_id: string; instance_id: string | null; face: Face; u_start: number; width: W; col: number; circuit_id: string | null; shelf_id: string | null; rev: number }
   interface RackEl { placement: Placement; label: string; tag: string | null; custom?: string | null; nature: string; height_u: number; depth_mm: number | null; rear_reserve_mm: number | null; weight_kg: number | null; power_w: number | null; function: string | null; category: string | null; brand: string | null; accessory: Accessory | null; article_rev: number; type_id?: string | null; visual?: string | null }
   interface Pending { article_id: string; instance_id?: string; tag?: string; label: string; nature: string; height_u: number | null; width: W | null; rackable: boolean; function: string | null; accessory: Accessory | null; type_id?: string | null; visual?: string | null }
+  interface VPdu { article_id: string; label: string; accessory: { kind: 'vertical_pdu'; length_mm: number; outlets: number; side: 'left' | 'right' } }
   interface Circuit { id: string; name: string; phase: 'L1' | 'L2' | 'L3'; rating_a: number; rev: number }
   interface Rack {
-    container: any; elements: RackEl[]; pending: Pending[]; circuits: Circuit[]; faces: Face[];
+    container: any; elements: RackEl[]; pending: Pending[]; circuits: Circuit[]; faces: Face[]; vpdus?: VPdu[];
     electrical: { circuits: { id: string; name: string; phase: string; rating_a: number; watts: number; amps: number; over: boolean }[]; phases: { phase: string; watts: number; amps: number }[]; imbalance_pct: number; unbalanced: boolean; unassigned_watts: number };
     totals: { used_u: number; total_u: number | null; weight_kg: number; power_w: number; over_weight: boolean; over_power: boolean; over_u: boolean };
     warnings: { placement_id: string; message: string }[];
@@ -192,6 +193,8 @@
   }
   /** Textes : en schématique, les accessoires gardent leur nom (pas de façade dessinée). */
   const rl = (e: RackEl): [string, string] => (mode === 'schematic' && e.nature === 'accessory' ? [e.label, ''] : rackLines(e));
+  /** PDU verticaux visibles : seulement en vue arrière. */
+  const vpOf = (): VPdu[] => (face !== 'front' && face !== 'side' ? (rack?.vpdus ?? []) : []);
   const typeOf = (e: RackEl) => (e.nature === 'accessory' ? accFace(e as any) : visualOf(e));
   const dw = (e: RackEl) => !!rack?.warnings.some((w) => w.placement_id === e.placement.id);
   // Vue de côté : corps (profondeur) et réserve de câbles, avant depuis la gauche, arrière depuis la droite.
@@ -281,7 +284,7 @@
 
       <div class="rack-stage" class:stage3d={show3d}>
         {#if show3d}
-          <Rack3D container={rack.container} elements={rack.elements} title={rack.container.name} />
+          <Rack3D container={rack.container} elements={rack.elements} vpdus={rack.vpdus ?? []} title={rack.container.name} />
         {:else if face === 'side'}
           <div class="rack-wrap">
             <span class="rack-title"><Icon name="server" />{rack.container.name} · côté</span>
@@ -301,7 +304,14 @@
         {:else}
           <div class="rack-wrap">
             <span class="rack-title"><Icon name="server" />{rack.container.name} · {FACES[face].toLowerCase()}</span>
-            <div class="rack" class:placing={!!armed} style="--units:{units};--u:{U}px;--bw:{BW}px">
+            <div class="rack" class:placing={!!armed} class:vpl={vpOf().some((v) => v.accessory.side === 'left')} class:vpr={vpOf().some((v) => v.accessory.side === 'right')} style="--units:{units};--u:{U}px;--bw:{BW}px">
+              <!-- PDU verticaux : couloirs arrière, gauche et droite vus de l'arrière. -->
+              {#each vpOf() as v, i (v.article_id)}
+                {@const h = Math.min(units * U, (v.accessory.length_mm / 44.45) * U)}
+                {@const left = v.accessory.side === 'left'}
+                {@const k = vpOf().filter((x, j) => j < i && x.accessory.side === v.accessory.side).length}
+                <div class="vpdu" style="{left ? 'left' : 'right'}:{6 + k * 20}px;bottom:calc(24px + {(units * U - h) / 2}px);height:{h}px;--n:{v.accessory.outlets}" title={v.label}><i></i></div>
+              {/each}
               <div class="rack-scale">{#each Array(units) as _, i}<span>{units - i}</span>{/each}</div>
               <div class="rack-body" role="grid" tabindex="-1" aria-label="Élévation"
                 onmousemove={(e) => { if (armed) hoverU = slotFromEvent(e, e.currentTarget as HTMLElement); }}
@@ -445,4 +455,10 @@
   @media (max-width: 1100px) { .rack-screen .design-body { grid-template-columns: minmax(0, 1fr); height: auto; } }
   .rtx { display: inline-flex; align-items: center; gap: 6px; font: 600 10.5px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--fg-3); }
   .rtx .input { height: 30px; width: auto; padding: 0 26px 0 9px; font: 500 13px var(--font); letter-spacing: 0; text-transform: none; }
+  /* PDU vertical : bandeau étroit, disjoncteur en tête, prises réparties sur la longueur. */
+  .rack.vpl { padding-left: 26px; }
+  .rack.vpr { padding-right: 26px; }
+  .vpdu { position: absolute; z-index: 2; width: 16px; border-radius: 3px; background: #444A52; box-shadow: inset 0 0 0 1px #000, 0 0 0 1px rgba(255, 255, 255, .08); }
+  .vpdu::before { content: ""; position: absolute; left: 4px; right: 4px; top: 5px; height: 9px; border-radius: 1px; background: linear-gradient(180deg, #A9B0B8 0 45%, #2A2E33 45%); }
+  .vpdu i { position: absolute; left: 3px; right: 3px; top: 20px; bottom: 6px; border-radius: 1px; background: repeating-linear-gradient(180deg, #08090A 0 8px, transparent 8px 12px); }
 </style>

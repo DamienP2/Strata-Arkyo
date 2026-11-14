@@ -23,7 +23,7 @@ export interface SheetItem {
   cam?: number[] | null; r3d?: number; doors?: 'closed' | 'removed'; sides?: boolean;
 }
 /** Ce que la planche dessine d'une baie (vue /containers/{id}/rack). */
-export interface RackData { name: string; units: number; elements: any[]; depth_mm: number; c: any }
+export interface RackData { name: string; units: number; elements: any[]; depth_mm: number; c: any; vpdus?: any[] }
 export interface CasqData { id: string; name: string; offset_mm: number; units: number; depth_mm: number; tilt_deg: number }
 /** Mobilier : dimensions et casquettes. */
 export interface DeskData { name: string; length_mm: number; depth_mm: number; height_mm: number; casq: CasqData[]; c: any }

@@ -23,6 +23,8 @@ export interface El3D {
   alu: boolean; accessory: any | null; ports: Port3D[]; fnColor: string;
   shelf_id: string | null;
 }
+/** PDU vertical (0U) dans un couloir arrière, gauche ou droit vu de l'arrière. */
+export interface VPdu3D { length_mm: number; outlets: number; side: 'left' | 'right' }
 export interface Box3DSpec { kind: string; name: string; units: number; width_mm: number | null; depth_mm: number | null; height_mm: number | null; rear_rails_mm: number | null; wheels: boolean }
 export interface Hit { label: string; tag: string | null; u: number; height: number; face: string; where?: string }
 /** Mobilier (pupitre, console) et ses casquettes rackables. */
@@ -373,7 +375,7 @@ export class RackScene {
   }
 
   /** Construit (ou reconstruit) l'élément et ses équipements. */
-  build(spec: Box3DSpec, els: El3D[]) {
+  build(spec: Box3DSpec, els: El3D[], vpdus: VPdu3D[] = []) {
     this.root.clear(); this.doors = []; this.sides = []; this.pick = [];
     const m = this.mats;
     const units = Math.max(1, spec.units);
@@ -470,6 +472,21 @@ export class RackScene {
 
     // Équipements : au rack, ou posés sur une étagère.
     for (const e of els.filter((x) => !x.shelf_id)) this.equipment(e, frontRail, rearRail, y0);
+    // PDU verticaux : profilé noir dans le couloir arrière, disjoncteur en tête, prises
+    // tournées vers l'arrière, réparties sur la longueur.
+    const pduMat = new THREE.MeshStandardMaterial({ color: '#4a4f57', roughness: 0.5, metalness: 0.5 });
+    for (const [i, v] of vpdus.entries()) {
+      const L = Math.min(units * U + 0.1, v.length_mm / 1000), n = Math.max(1, v.outlets);
+      const k = vpdus.slice(0, i).filter((x) => x.side === v.side).length;
+      const sx = v.side === 'left' ? 1 : -1; // vu de l'arrière, la gauche est du côté +x
+      const g = new THREE.Group(); g.position.set(sx * (OPEN / 2 + 0.035 + k * 0.06), y0 + (units * U) / 2, rearRail - 0.045); this.root.add(g);
+      add(new THREE.BoxGeometry(0.05, L, 0.045), pduMat, 0, 0, 0, g);
+      add(new THREE.BoxGeometry(0.03, 0.035, 0.004), m.nickel, 0, L / 2 - 0.04, -0.0245, g, false);
+      const step = (L - 0.12) / n;
+      for (let j = 0; j < n; j++) add(new THREE.BoxGeometry(0.03, Math.min(0.03, step * 0.8), 0.006), m.cavity, 0, L / 2 - 0.09 - step * (j + 0.5), -0.024, g, false);
+      const hit = new THREE.Mesh(new THREE.BoxGeometry(0.05, L, 0.045), new THREE.MeshBasicMaterial({ visible: false }));
+      hit.userData.hit = { label: `PDU vertical · ${v.outlets} prises`, tag: null, u: 1, height: 0, face: 'rear' } as Hit; this.pick.push(hit); g.add(hit);
+    }
     const byShelf = new Map<string, El3D[]>();
     for (const e of els.filter((x) => x.shelf_id)) byShelf.set(e.shelf_id!, [...(byShelf.get(e.shelf_id!) ?? []), e]);
     for (const [sid, items] of byShelf) {

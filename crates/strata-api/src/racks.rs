@@ -123,6 +123,7 @@ impl Ctx {
     /// Hauteur et largeur d'un exemplaire de cet article ; `None` s'il ne se pose pas en rack.
     fn geometry(&self, a: &Article) -> Option<(f64, Width)> {
         match (&a.accessory, self.item(a)) {
+            (Some(acc), _) if acc.is_vertical() => None,
             (Some(acc), _) => Some((acc.height_u() as f64, Width::Full)),
             (None, Some(it)) if it.rackable => Some((it.height_u.unwrap_or(1.0), it.width)),
             _ => None,
@@ -202,6 +203,8 @@ async fn rack_view(st: &AppState, c: &Container, token: &str) -> ApiResult<Value
                     pending.push(v);
                 }
             }
+            // PDU vertical : monté d'office dans son couloir arrière, rien à placer.
+            ArticleNature::Accessory if a.accessory.as_ref().is_some_and(|x| x.is_vertical()) => {}
             ArticleNature::Accessory if !placed_acc.contains(a.id.as_str()) => pending.push(base),
             _ => {}
         }
@@ -252,6 +255,8 @@ async fn rack_view(st: &AppState, c: &Container, token: &str) -> ApiResult<Value
         "container": c,
         "elements": elements,
         "pending": pending,
+        // PDU verticaux de la baie (couloirs arrière gauche et droit).
+        "vpdus": ctx.articles.iter().filter(|a| a.accessory.as_ref().is_some_and(|x| x.is_vertical())).map(|a| json!({ "article_id": a.id, "label": article_label(a, &ctx.items), "accessory": a.accessory })).collect::<Vec<_>>(),
         "circuits": circuits,
         "electrical": electrical(&specs, &loads),
         "totals": container_totals(&c.data, &all_loads),

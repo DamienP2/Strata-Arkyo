@@ -16,7 +16,7 @@
   let items = $state<CatalogItem[]>([]);
   let qty = $state<Record<string, number>>({});
   let busy = $state('');
-  let acc = $state<{ kind: 'plate' | 'shelf' | 'drawer' | 'lacing_bar' | 'panel'; variant: 'blank' | 'brush' | 'vented'; depth_mm: number; height_u: number }>({ kind: 'plate', variant: 'blank', depth_mm: 450, height_u: 1 });
+  let acc = $state<{ kind: 'plate' | 'shelf' | 'drawer' | 'lacing_bar' | 'vertical_pdu' | 'panel'; variant: 'blank' | 'brush' | 'vented'; depth_mm: number; height_u: number; length_mm: number; outlets: number; side: 'left' | 'right' }>({ kind: 'plate', variant: 'blank', depth_mm: 450, height_u: 1, length_mm: 1600, outlets: 24, side: 'left' });
   let timer: ReturnType<typeof setTimeout>;
   let lib = $state<{ id: string; panel: PanelData }[] | null>(null);
   let blankP = $state<PanelData>(blankPanel('Panel'));
@@ -43,7 +43,7 @@
     } catch (e) { fail(e instanceof ApiError ? e : e); } finally { busy = ''; }
   }
   const addItem = (i: CatalogItem) => add({ nature: tab === 'adapters' ? 'adapter' : 'equipment', item_id: i.id, quantity: qty[i.id] ?? 1 }, i.id);
-  const addAcc = () => add({ nature: 'accessory', accessory: acc.kind === 'plate' ? { kind: 'plate', variant: acc.variant, height_u: acc.height_u } : { kind: acc.kind, depth_mm: acc.depth_mm, height_u: acc.height_u } }, 'acc');
+  const addAcc = () => add({ nature: 'accessory', accessory: acc.kind === 'plate' ? { kind: 'plate', variant: acc.variant, height_u: acc.height_u } : acc.kind === 'vertical_pdu' ? { kind: 'vertical_pdu', length_mm: acc.length_mm, outlets: acc.outlets, side: acc.side } : { kind: acc.kind, depth_mm: acc.depth_mm, height_u: acc.height_u } }, 'acc');
 </script>
 
 <Dialog title="Ajouter du matériel" eyebrow={where} {onclose} wide>
@@ -63,7 +63,7 @@
     </div>
   {:else}
     <div class="stack">
-      <div class="seg">{#each [['plate', 'Plaque'], ['shelf', 'Étagère'], ['drawer', 'Tiroir'], ['lacing_bar', 'Barre de laçage'], ['panel', 'Panel de brassage']] as [k, l]}<button class:on={acc.kind === k} onclick={() => { acc.kind = k as typeof acc.kind; if (k === 'lacing_bar') acc.depth_mm = 100; }}>{l}</button>{/each}</div>
+      <div class="seg">{#each [['plate', 'Plaque'], ['shelf', 'Étagère'], ['drawer', 'Tiroir'], ['lacing_bar', 'Barre de laçage'], ['vertical_pdu', 'PDU vertical'], ['panel', 'Panel de brassage']] as [k, l]}<button class:on={acc.kind === k} onclick={() => { acc.kind = k as typeof acc.kind; if (k === 'lacing_bar') acc.depth_mm = 100; }}>{l}</button>{/each}</div>
       {#if acc.kind === 'panel'}
         <p class="muted small">Le panel est recopié dans le projet : vous pourrez le modifier ensuite sans toucher la bibliothèque.</p>
         <div class="plib">
@@ -84,12 +84,21 @@
         </div>
         <div class="row-actions"><button class="btn" onclick={() => addPanel(blankP, 'blank')} disabled={!!busy || !blankP.name.trim()}><Icon name="plus" />Ajouter un panel vierge</button></div>
       {:else}
+      {#if acc.kind === 'vertical_pdu'}
+      <div class="fg3">
+        <div class="field"><label for="ac-s">Couloir (vu de l’arrière)</label><select class="input" id="ac-s" bind:value={acc.side}><option value="left">Gauche</option><option value="right">Droit</option></select></div>
+        <div class="field"><label for="ac-l">Longueur</label><select class="input" id="ac-l" bind:value={acc.length_mm}>{#each [600, 900, 1200, 1500, 1600, 1800, 2000] as d}<option value={d}>{d} mm</option>{/each}</select></div>
+        <div class="field"><label for="ac-o">Prises</label><select class="input" id="ac-o" bind:value={acc.outlets}>{#each [8, 12, 16, 20, 24, 30, 36, 42, 48] as d}<option value={d}>{d}</option>{/each}</select></div>
+      </div>
+      <p class="muted small">Monté à l’arrière, dans le couloir entre le montant et le flanc : il n’occupe aucun U et s’affiche en vue arrière et en 3D.</p>
+      {:else}
       <div class="fg3">
         <div class="field"><label for="ac-u">Hauteur</label><select class="input" id="ac-u" bind:value={acc.height_u}>{#each [1, 2, 3, 4, 5, 6, 7, 8] as u}<option value={u}>{u} U</option>{/each}</select></div>
         {#if acc.kind === 'plate'}<div class="field"><label for="ac-v">Variante</label><select class="input" id="ac-v" bind:value={acc.variant}><option value="blank">Pleine</option><option value="brush">Passe-câble</option><option value="vented">Aérée</option></select></div>
         {:else if acc.kind === 'lacing_bar'}<div class="field"><label for="ac-d">Déport depuis le rail</label><select class="input" id="ac-d" bind:value={acc.depth_mm}>{#each [0, 50, 75, 100, 150, 200] as d}<option value={d}>{d} mm</option>{/each}</select><span class="help">Se pose en face arrière, derrière les équipements à attacher.</span></div>
         {:else}<div class="field"><label for="ac-d">Profondeur</label><select class="input" id="ac-d" bind:value={acc.depth_mm}>{#each acc.kind === 'drawer' ? [200, 250, 300, 350, 400, 450, 500] : [200, 300, 350, 400, 450, 500, 600, 700, 800, 1000, 1200] as d}<option value={d}>{d} mm</option>{/each}</select></div>{/if}
       </div>
+      {/if}
       <div class="row-actions"><button class="btn primary" onclick={addAcc} disabled={!!busy}><Icon name="plus" />Ajouter l’accessoire</button></div>
       {/if}
     </div>

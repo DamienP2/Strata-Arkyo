@@ -11,9 +11,9 @@ export const isDesk = (c: { kind: string }) => c.kind === 'desk' || c.kind === '
 export async function loadCtx(view: ProjectView): Promise<Ctx> {
   const racks: Record<string, RackData> = {};
   await Promise.all(view.containers.filter((c) => c.rackable).map(async (c) => {
-    let elements: any[] = [];
-    try { elements = (await api.get<{ elements: any[] }>(`/containers/${c.id}/rack`)).elements; } catch { /* élévation illisible */ }
-    racks[c.id] = { name: c.name, units: c.height_u ?? 42, elements, depth_mm: c.depth_mm ?? c.length_mm ?? 800, c };
+    let elements: any[] = [], vpdus: any[] = [];
+    try { const r = await api.get<{ elements: any[]; vpdus?: any[] }>(`/containers/${c.id}/rack`); elements = r.elements; vpdus = r.vpdus ?? []; } catch { /* élévation illisible */ }
+    racks[c.id] = { name: c.name, units: c.height_u ?? 42, elements, depth_mm: c.depth_mm ?? c.length_mm ?? 800, c, vpdus };
   }));
   const desks: Record<string, DeskData> = {};
   for (const d of view.containers.filter(isDesk)) {
@@ -39,7 +39,7 @@ const PX_MM = 10, MAX_PX = 1800;
 export async function build3D(sc: RackScene, it: SheetItem, ctx: Ctx) {
   if (it.kind === 'rack') {
     const r = ctx.racks[it.container_id ?? '']; if (!r) return;
-    sc.build(boxSpec(r.c), await Promise.all(r.elements.map(toEl3D)));
+    sc.build(boxSpec(r.c), await Promise.all(r.elements.map(toEl3D)), (r.vpdus ?? []).map((v) => v.accessory));
     sc.setDoors(it.doors ?? 'removed'); sc.setSides(it.sides ?? true);
   } else {
     const d = ctx.desks[it.container_id ?? '']; if (!d) return;

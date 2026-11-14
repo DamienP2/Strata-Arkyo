@@ -6,7 +6,7 @@
   import { boxSpec, toEl3D } from '../lib/el3d';
   import type { RackScene, Hit } from '../lib/rack3d';
 
-  let { container, elements, title }: { container: any; elements: any[]; title: string } = $props();
+  let { container, elements, title, vpdus = [] }: { container: any; elements: any[]; title: string; vpdus?: any[] } = $props();
   let host = $state<HTMLDivElement>(null!);
   let scene: RackScene | null = null;
   let loading = $state(true);
@@ -17,11 +17,11 @@
   const spec = $derived(boxSpec(container));
 
   $effect(() => {
-    const s = spec, els = elements; void els;
+    const s = spec, els = elements, vp = vpdus; void els; void vp;
     (async () => {
       try {
         if (!scene) { const { RackScene } = await import('../lib/rack3d'); scene = new RackScene(host); scene.onHover = (h, x, y) => (hover = h ? { h, x, y } : null); }
-        scene.build(s, await toEls()); scene.setDoors(doors); scene.setSides(sides); error = null;
+        scene.build(s, await toEls(), vpdus.map((v) => v.accessory)); scene.setDoors(doors); scene.setSides(sides); error = null;
       } catch (e) { error = (e as Error).message; } finally { loading = false; }
     })();
   });
