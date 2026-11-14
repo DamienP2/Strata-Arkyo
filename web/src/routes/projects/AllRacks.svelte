@@ -9,7 +9,7 @@
   import { toast, fail } from '../../lib/toast.svelte';
   import { navigate } from '../../lib/router.svelte';
   import { refById } from '../../lib/catalog.svelte';
-  import { ALU, decor, accessoryFace, visualOf } from '../../lib/faceplate';
+  import { ALU, decor, accFace, visualOf } from '../../lib/faceplate';
   import { rackLines } from '../../lib/racktext.svelte';
   import type { Accessory, ProjectView } from '../../lib/projects';
 
@@ -36,7 +36,7 @@
 
   const cols = (w: string) => ({ full: 1, half: 2, third: 3, quarter: 4 } as Record<string, number>)[w] ?? 1;
   const fnColor = (f: string | null) => (f ? (refById('functions', f)?.data?.color ?? 'var(--fg-3)') : 'var(--fg-3)');
-  const typeOf = (e: El) => (e.nature === 'accessory' ? accessoryFace(e.label) : visualOf(e));
+  const typeOf = (e: El) => (e.nature === 'accessory' ? accFace(e as any) : visualOf(e));
   const panelOf = (e: El) => (e.accessory?.kind === 'panel' ? e.accessory.panel : null);
   function style(e: El) {
     const n = cols(e.placement.width), l = (100 * e.placement.col) / n, w = 100 / n;

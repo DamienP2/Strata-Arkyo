@@ -5,25 +5,61 @@ export const FACE: [RegExp, string][] = [[/Onduleur/,'ups'],[/Passe-câble/,'bru
 export const ALU = new Set(['router','mixer','scope','sync','rec','intercom']);
 export const faceType = (n: string): string => (FACE.find(([re]) => re.test(n)) ?? [0, 'gen'])[1] as string;
 const SCOPE = '<svg viewBox="0 0 70 20" preserveAspectRatio="none" aria-hidden="true"><path d="M2 15l4-9 3 9 3-10 3 10 3-8 3 8 3-11 3 11 4-6 4 6 3-9 3 9 3-7 3 7 3-10 3 10 3-6 3 6" fill="none" stroke="#5CF29A" stroke-width="1.1"/></svg>';
-export const DECOR: Record<string, string> = {ups:'<i class="lcd amb">230V</i><i class="perf"></i><i class="pwr"></i>',brush:'<i class="brush"></i>',bnc:'<i class="bnc r2"></i>',xlr:'<i class="xlr"></i>',rjp:'<i class="rj"></i>',
- router:'<i class="lcd">12G</i><i class="keys"></i><i class="pwr"></i>',mixer:'<i class="vent"></i><i class="lcd">M/E</i><i class="pwr"></i>',replay:'<i class="bays"></i><i class="lcd">REC</i><i class="pwr"></i>',
- cards:'<i class="slots"></i>',switch:'<i class="rj r2"></i><i class="sfp"></i>',scope:`<i class="scr">${SCOPE}</i><i class="knob"></i><i class="knob"></i>`,sync:'<i class="lcd">PTP</i><i class="pwr"></i>',
- mv:'<i class="lcd">MV</i><i class="vent"></i>',vent:'<i class="vent w"></i>',pdu:'<i class="sock"></i>',rec:'<i class="ssd"></i><i class="lcd">REC</i>',drawer:'<i class="handle"></i>',
- intercom:'<i class="lcd">IC</i><i class="keys"></i>',ccu:'<i class="lcd">CAM</i><i class="knob"></i><i class="knob"></i><i class="keys"></i>',stage:'<i class="xlr r2"></i>',dist:'<i class="bnc"></i>',
- server:'<i class="bays"></i><i class="pwr"></i>',rx:'<i class="lcd">606.1</i><i class="knob"></i>',gen:'<i class="vent"></i>'};
+// Décors : une silhouette simple et typique de chaque famille d'appareils (ce qu'on voit en
+// façade sur la majorité des modèles), sans détail superflu. Les tailles suivent la hauteur
+// de la façade (unités de conteneur), donc un 1U et un 3U restent proportionnés.
+const rep = (n: number, h: string) => Array.from({ length: n }, () => h).join('');
+const MOSAIC = '<i class="d-mosaic"><i></i><i></i><i></i><i></i></i>';
+const TRANSPORT = '<i class="d-trans"><i></i><i></i><i></i><i class="rec"></i></i>';
+export const DECOR: Record<string, string> = {
+  switch: `<i class="d-ports">${rep(3, '<i class="d-rjg"></i>')}</i><i class="d-sfp"></i><i class="d-leds s"></i>`,
+  server: '<i class="d-pwr"></i><i class="d-usb"></i><i class="d-bays"></i>',
+  router: '<i class="lcd">12G</i><i class="d-xkeys"></i><i class="d-pwr"></i>',
+  mixer: '<i class="d-grille"></i><i class="lcd">M/E</i><i class="d-pwr"></i>',
+  rec: `<i class="d-thumb">${'<svg viewBox="0 0 7 4" preserveAspectRatio="none"><rect width="1" height="3" fill="#bfbfbf"/><rect x="1" width="1" height="3" fill="#bfbf00"/><rect x="2" width="1" height="3" fill="#00bfbf"/><rect x="3" width="1" height="3" fill="#00bf00"/><rect x="4" width="1" height="3" fill="#bf00bf"/><rect x="5" width="1" height="3" fill="#bf0000"/><rect x="6" width="1" height="3" fill="#0000bf"/><rect y="3" width="7" height="1" fill="#131313"/></svg>'}</i><i class="d-sd"></i><i class="d-sd"></i>${TRANSPORT}`,
+  replay: '<i class="lcd">REC</i><i class="d-caddies"></i><i class="d-recbtn"></i>',
+  mv: `${MOSAIC}<i class="d-leds"></i>`,
+  cards: '<i class="d-cards"></i>',
+  sync: '<i class="d-tc">10:00:00:00</i><i class="d-btns"></i>',
+  dist: '<i class="d-leds w"></i><i class="d-pwr"></i>',
+  ccu: '<i class="lcd">CAM</i><i class="d-knob"></i><i class="d-knob"></i><i class="d-joy"></i>',
+  intercom: '<i class="d-ic"></i><i class="d-knob"></i>',
+  rx: '<i class="d-blcd">CH1</i><i class="d-blcd">CH2</i><i class="d-knob"></i><i class="d-jack"></i>',
+  stage: '<i class="d-xlr2"></i>',
+  scope: `<i class="scr">${SCOPE}</i><i class="d-knob"></i><i class="d-knob"></i>`,
+  ups: '<i class="lcd amb">230V</i><i class="d-btns s"></i><i class="perf"></i>',
+  pdu: '<i class="d-brk"></i><i class="d-sock"></i>',
+  rjp: '<i class="d-keystone"></i>',
+  bnc: '<i class="d-bnc"></i>',
+  xlr: '<i class="d-xlr"></i>',
+  gen: '<i class="d-grille s"></i><i class="d-pwr"></i>',
+  vent: '<i class="d-hex"></i>',
+  brush: '<i class="d-brush"></i>',
+  drawer: '<i class="d-drawer"><i></i></i>',
+  shelf: '<i class="d-shelf"></i>',
+};
 /** Décor HTML (statique, sans donnée saisie) d'un type de face. */
 export const decor = (t: string): string => DECOR[t] ?? DECOR.gen!;
 
-/** Face d'un accessoire du rack. */
+/** Face d'un accessoire : d'après sa nature (plaque, étagère, tiroir, laçage), sinon son libellé. */
+export function accFace(e: { label: string; accessory?: { kind: string; variant?: string } | null }): string {
+  const a = e.accessory;
+  if (a?.kind === 'plate') return a.variant === 'brush' ? 'brush' : a.variant === 'vented' ? 'vent' : 'blank';
+  if (a?.kind === 'shelf') return 'shelf';
+  if (a?.kind === 'drawer') return 'drawer';
+  if (a?.kind === 'lacing_bar') return 'lacing';
+  return accessoryFace(e.label);
+}
+/** Face d'un accessoire du rack d'après son libellé. */
 export function accessoryFace(label: string): string {
   if (/passe-câble/i.test(label)) return 'brush';
   if (/aérée/i.test(label)) return 'vent';
   if (/tiroir/i.test(label)) return 'drawer';
-  if (/étagère/i.test(label)) return 'drawer';
+  if (/étagère/i.test(label)) return 'shelf';
   if (/laçage/i.test(label)) return 'lacing';
   return 'blank';
 }
-DECOR.blank = '';
+DECOR.blank = '<i class="d-blank"></i>';
 DECOR.lacing = '<i class="lace"></i>';
 
 // ----- Visuel en baie -----

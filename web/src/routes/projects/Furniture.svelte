@@ -12,7 +12,7 @@
   import { route, navigate } from '../../lib/router.svelte';
   import { refById } from '../../lib/catalog.svelte';
   import { nf } from '../../lib/format';
-  import { ALU, decor, accessoryFace, visualOf } from '../../lib/faceplate';
+  import { ALU, decor, accFace, visualOf } from '../../lib/faceplate';
   import { CONTAINER_KINDS, type Container, type ProjectView } from '../../lib/projects';
 
   let { view, reload }: { view: ProjectView; reload: () => Promise<void> } = $props();
@@ -47,7 +47,7 @@
   let planW = $state(900);
   const s = $derived(Math.min(0.55, Math.max(0.15, (planW - 60) / L)));
   const fnColor = (f: string | null) => (f ? (refById('functions', f)?.data?.color ?? 'var(--fg-3)') : 'var(--fg-3)');
-  const typeOf = (e: El) => (e.nature === 'accessory' ? accessoryFace(e.label) : visualOf(e));
+  const typeOf = (e: El) => (e.nature === 'accessory' ? accFace(e as any) : visualOf(e));
   const cols = (w: string) => ({ full: 1, half: 2, third: 3, quarter: 4 } as Record<string, number>)[w] ?? 1;
   const topU = $derived(Math.max(6, ...casq.map((c) => c.height_u ?? 6)));
   const planH = $derived((Hd + topU * 44.45 + 120) * s);

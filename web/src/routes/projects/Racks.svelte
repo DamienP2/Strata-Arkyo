@@ -12,7 +12,7 @@
   import { nf, relative } from '../../lib/format';
   import { refById, loadRefs } from '../../lib/catalog.svelte';
   import { rackLines, rackText, setRackText, RACK_TEXT, type RackText } from '../../lib/racktext.svelte';
-  import { faceType, ALU, decor, accessoryFace, visualOf } from '../../lib/faceplate';
+  import { faceType, ALU, decor, accFace, visualOf } from '../../lib/faceplate';
   import { CONTAINER_KINDS, type Accessory, type Article, type ProjectView } from '../../lib/projects';
   import PanelFace from '../../components/PanelFace.svelte';
   import ProjectPanel from './ProjectPanel.svelte';
@@ -190,7 +190,7 @@
     const n = cols(e.placement.width), l = (100 * e.placement.col) / n, w = 100 / n;
     return `--c:${mode === 'schematic' ? catColor(e.category) : fnColor(e.function)};bottom:calc(${e.placement.u_start - 1} * var(--u) + 1px);height:calc(${e.height_u} * var(--u) - 2px);left:calc(${l}% + 2px);width:calc(${w}% - 4px)` + (mode === 'schematic' ? `;--fp-bg:linear-gradient(180deg,color-mix(in srgb,${catColor(e.category)} 72%,#fff),${catColor(e.category)});--fp-ink:#fff` : '');
   }
-  const typeOf = (e: RackEl) => (e.nature === 'accessory' ? accessoryFace(e.label) : visualOf(e));
+  const typeOf = (e: RackEl) => (e.nature === 'accessory' ? accFace(e as any) : visualOf(e));
   const dw = (e: RackEl) => !!rack?.warnings.some((w) => w.placement_id === e.placement.id);
   // Vue de côté : corps (profondeur) et réserve de câbles, avant depuis la gauche, arrière depuis la droite.
   const depth = $derived(rack?.container.depth_mm ?? 600);

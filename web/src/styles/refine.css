@@ -185,7 +185,7 @@ kbd{font-size:10.5px;padding:3px 6px}
 .dec .mkeys{display:none}
 /* Textes des équipements : taille fixe et régulière quelle que soit la hauteur, nom puis
    libellé personnalisé, sur une pastille discrète qui reste lisible sur tous les décors. */
-.ritem .rl{display:flex;flex-wrap:wrap;align-items:baseline;column-gap:6px;row-gap:0;min-width:0;flex:0 1 auto;max-width:82%;max-height:calc(100% - 4px);overflow:hidden;white-space:normal;padding:2px 6px;border-radius:3px;background:rgba(0,0,0,.32);line-height:1.2}
+.ritem .rl{display:flex;flex-wrap:wrap;align-items:baseline;column-gap:6px;row-gap:0;min-width:0;flex:0 1 auto;max-width:62%;max-height:calc(100% - 4px);overflow:hidden;white-space:normal;padding:2px 6px;border-radius:3px;background:rgba(0,0,0,.32);line-height:1.2}
 .ritem.alu .rl{background:rgba(0,0,0,.32)}
 .ritem:not(.u1) .rl.two{flex-direction:column;align-items:flex-start;gap:1px}
 .ritem .rl:empty{display:none}
@@ -320,3 +320,75 @@ kbd{font-size:10.5px;padding:3px 6px}
 .loc .ln{flex-direction:row;align-items:baseline;gap:8px;line-height:1}
 .loc .small{font-size:12px}
 .card.loc-list{align-items:center;gap:8px}
+/* ===== Visuels de façade (décors) : silhouettes simples et typiques ===== */
+.ritem .dec{container-type:size;gap:max(5px,6cqh)}
+.dec .d-pwr{width:max(8px,22cqh);max-width:13px;height:auto;aspect-ratio:1;border-radius:50%;box-shadow:inset 0 0 0 1.6px #A9B0B8,0 0 5px rgba(124,240,199,.35)}
+.dec .d-usb{width:12px;height:max(5px,14cqh);max-height:7px;border-radius:1px;background:#07080A;box-shadow:inset 0 0 0 1px #6B727A}
+.dec .d-leds{width:56px;height:6px;background:radial-gradient(circle,#45F58A 0 1.6px,transparent 2.2px) 0 50%/7px 100% repeat-x}
+.dec .d-leds.s{width:28px}
+.dec .d-leds.w{flex:0 1 auto;width:150px;height:max(6px,30cqh);background:radial-gradient(circle,#45F58A 0 1.6px,transparent 2.2px) 0 0/10px 50% repeat,radial-gradient(circle,#2F3439 0 1.6px,transparent 2.2px) 5px 0/10px 50% repeat}
+/* Switch : quatre blocs de 2×6 RJ45, cages SFP, voyants. */
+.dec .d-ports{display:flex;gap:6px;flex:none;width:168px;height:100%;align-items:center;overflow:hidden}
+.dec .d-rjg{flex:none;width:52px;height:min(80%,24px);background:linear-gradient(90deg,#060708 0 7px,transparent 7px) 0 0/9px 44% repeat-x,linear-gradient(90deg,#060708 0 7px,transparent 7px) 0 100%/9px 44% repeat-x}
+.dec .d-sfp{width:38px;height:min(46%,13px);background:linear-gradient(90deg,#B9C0C7 0 80%,transparent 80%) 0 0/9.5px 100% repeat-x}
+/* Serveur : bouton, USB, rangée de tiroirs disques avec voyant. */
+.dec .d-bays{flex:0 1 auto;width:62%;height:84%;background:radial-gradient(circle,#45F58A 0 1.3px,transparent 1.8px) 4px 4px/24px 100% repeat-x,linear-gradient(180deg,#6A727B 0 14%,#111317 14%) 0 0/24px 100% repeat-x;-webkit-mask:linear-gradient(90deg,#000 0 21px,transparent 21px) 0 0/24px 100% repeat-x;mask:linear-gradient(90deg,#000 0 21px,transparent 21px) 0 0/24px 100% repeat-x}
+/* Grille vidéo : afficheur et boutons rétroéclairés par groupes. */
+.dec .d-xkeys{flex:0 1 auto;width:58%;height:min(80%,40px);background:linear-gradient(#D8DCE0 0 0) 0 0/10px 40%,linear-gradient(#D8DCE0 0 0) 0 100%/10px 40%;background-repeat:space no-repeat;filter:drop-shadow(0 0 2px rgba(255,255,255,.18))}
+.dec .d-xkeys{-webkit-mask:linear-gradient(90deg,#000 0 92%,transparent 92%) 0 0/13px 100% repeat-x;mask:linear-gradient(90deg,#000 0 92%,transparent 92%) 0 0/13px 100% repeat-x}
+/* Mélangeur (châssis) : grande grille d'aération à fentes horizontales. */
+.dec .d-grille{flex:0 1 auto;width:55%;height:72%;border-radius:2px;background:repeating-linear-gradient(180deg,#07080A 0 2px,transparent 2px 5px);box-shadow:inset 0 0 0 1px rgba(0,0,0,.4)}
+.dec .d-grille.s{width:22%;height:56%}
+/* Enregistreur : vignette d'image, deux fentes de carte, touches de transport. */
+.dec .d-thumb{flex:none;height:min(84cqh,46px);width:calc(min(84cqh,46px) * 16 / 9);border-radius:1.5px;background:#000;box-shadow:0 0 0 1.5px #000,0 0 0 2.5px #4A5058;overflow:hidden}
+.dec .d-thumb svg{display:block;width:100%;height:100%}
+.dec .d-sd{width:30px;height:5px;border-radius:1px;background:#050607;box-shadow:0 0 0 1px #59606A}
+.dec .d-trans{display:flex;gap:4px;height:auto}
+.dec .d-trans i{display:block;width:max(9px,24cqh);max-width:16px;aspect-ratio:1;height:auto;border-radius:2px;background:linear-gradient(180deg,#5E656E,#3A4047);box-shadow:0 1px 1px rgba(0,0,0,.6)}
+.dec .d-trans i.rec{border-radius:50%;background:radial-gradient(circle at 40% 35%,#FF7A70,#C21E14)}
+/* Serveur de ralenti : tiroirs amovibles à poignée, bouton REC. */
+.dec .d-caddies{flex:0 1 auto;width:50%;height:84%;background:linear-gradient(180deg,transparent 42%,#AEB5BD 42% 54%,transparent 54%) 0 0/40px 100% repeat-x,linear-gradient(#16191D 0 0) 0 0/40px 100% repeat-x;-webkit-mask:linear-gradient(90deg,#000 0 36px,transparent 36px) 0 0/40px 100% repeat-x;mask:linear-gradient(90deg,#000 0 36px,transparent 36px) 0 0/40px 100% repeat-x}
+.dec .d-recbtn{width:max(10px,28cqh);max-width:18px;height:auto;aspect-ratio:1;border-radius:50%;background:radial-gradient(circle at 40% 35%,#FF7A70,#C21E14);box-shadow:0 0 6px rgba(255,80,60,.5)}
+/* Multiviewer : mosaïque 2×2 et voyants. */
+.dec .d-mosaic{flex:none;display:grid;grid-template-columns:1fr 1fr;gap:1px;height:min(84cqh,46px);width:calc(min(84cqh,46px) * 16 / 9);box-sizing:border-box;padding:1px;background:#000;box-shadow:0 0 0 1.5px #4A5058;border-radius:1.5px}
+.dec .d-mosaic i{display:block;height:auto;background:#2459E0}
+.dec .d-mosaic i:nth-child(2){background:#16A34A}.dec .d-mosaic i:nth-child(3){background:#D97706}.dec .d-mosaic i:nth-child(4){background:#5B636D}
+/* Châssis de cartes : fines cartes verticales avec voyant. */
+.dec .d-cards{flex:0 1 auto;width:78%;height:90%;background:radial-gradient(circle,#45F58A 0 1.2px,transparent 1.7px) 3px 3px/9px 100% repeat-x,repeating-linear-gradient(90deg,#0D0F12 0 7px,#3A4048 7px 9px)}
+/* Synchro : grand afficheur de timecode. */
+.dec .d-tc{display:grid;place-items:center;height:min(70%,24px);padding:0 8px;border-radius:2px;background:#120404;box-shadow:inset 0 0 0 1px #000;font:700 min(13px,max(8px,42cqh))/1 var(--mono);font-style:normal;color:#FF5A4F;letter-spacing:.08em;text-shadow:0 0 5px rgba(255,90,79,.7)}
+.dec .d-btns{width:46px;height:min(46%,12px);background:linear-gradient(#5E656E 0 0) 0 0/9px 100%;background-repeat:space no-repeat}
+.dec .d-btns.s{width:24px}
+/* CCU : boutons, joystick d'iris. */
+.dec .d-knob{width:max(10px,30cqh);max-width:18px;aspect-ratio:1;height:auto;border-radius:50%;background:radial-gradient(circle at 35% 30%,#B5BCC3,#3A3F45 70%);box-shadow:0 1px 1px rgba(0,0,0,.5)}
+.dec .d-joy{width:max(14px,44cqh);max-width:26px;aspect-ratio:1;height:auto;border-radius:50%;background:radial-gradient(circle,#C8CDD2 0 22%,#15171A 26% 60%,#2C3036 64%)}
+/* Intercom : postes à afficheur et levier. */
+.dec .d-ic{flex:0 1 auto;width:60%;height:min(86%,40px);background:linear-gradient(180deg,#123A33 0 44%,transparent 44% 60%,#8E959D 60%) 0 0/28px 100% repeat-x;-webkit-mask:linear-gradient(90deg,#000 0 24px,transparent 24px) 0 0/28px 100% repeat-x;mask:linear-gradient(90deg,#000 0 24px,transparent 24px) 0 0/28px 100% repeat-x}
+/* Récepteur HF : deux afficheurs bleus, molette, prise casque. */
+.dec .d-blcd{display:grid;place-items:center;width:44px;height:min(60%,20px);border-radius:2px;background:linear-gradient(180deg,#0A1C3A,#12305E);font:700 7.5px/1 var(--mono);font-style:normal;color:#8CC2FF;text-shadow:0 0 4px rgba(140,194,255,.7)}
+.dec .d-jack{width:max(8px,20cqh);max-width:12px;aspect-ratio:1;height:auto;border-radius:50%;background:radial-gradient(circle,#050607 0 34%,#B9C0C7 40% 62%,#3F454C 66%)}
+/* Panels et stagebox : connecteurs dimensionnés sur la hauteur de la façade. */
+.dec .d-keystone{flex:1 1 auto;max-width:340px;height:min(52%,16px);background:linear-gradient(180deg,#E4E7EA 0 18%,#07080A 18%) 0 0/12px 100% space no-repeat;-webkit-mask:linear-gradient(90deg,#000 0 10px,transparent 10px) 0 0/12px 100% repeat-x;mask:linear-gradient(90deg,#000 0 10px,transparent 10px) 0 0/12px 100% repeat-x}
+.dec .d-bnc{flex:1 1 auto;max-width:330px;height:min(70%,22px);background:radial-gradient(circle closest-side,#07080A 0 30%,#C6CBD0 36% 58%,#5C636B 62% 78%,transparent 84%) 0 50%/min(70cqh,22px) 100% repeat-x}
+.dec .d-xlr{flex:1 1 auto;max-width:330px;height:min(86%,28px);background:radial-gradient(circle closest-side,#0A0B0D 0 18%,#2E3238 20% 52%,#B7BDC3 56% 70%,#4E555D 74% 84%,transparent 88%) 0 50%/min(86cqh,28px) 100% repeat-x}
+.dec .d-xlr2{flex:1 1 auto;max-width:330px;height:92%;background:radial-gradient(circle closest-side,#0A0B0D 0 18%,#2E3238 20% 52%,#B7BDC3 56% 70%,#4E555D 74% 84%,transparent 88%) 0 0/46cqh 50% repeat}
+/* Onduleur, PDU, générique. */
+.dec .d-brk{width:14px;height:min(70%,20px);border-radius:2px;background:linear-gradient(180deg,#E6E8EA 0 45%,#2A2E33 45%);box-shadow:0 0 0 1px #000}
+.dec .d-sock{flex:1 1 auto;max-width:330px;height:min(76%,24px);background:radial-gradient(ellipse 1.6px 3.5px at 7px 50%,#7A828B 0 1.2px,transparent 1.8px) 0 0/27px 100% repeat-x,radial-gradient(ellipse 1.6px 3.5px at 15px 50%,#7A828B 0 1.2px,transparent 1.8px) 0 0/27px 100% repeat-x,linear-gradient(90deg,#060708 0 22px,transparent 22px) 0 0/27px 100% repeat-x}
+/* Accessoires : plaque, plaque aérée, passe-câble, tiroir, étagère. */
+.dec .d-blank{flex:1 1 auto;height:44%;border-radius:1px;box-shadow:inset 0 1px 0 rgba(255,255,255,.07),inset 0 -1px 0 rgba(0,0,0,.45)}
+.dec .d-hex{flex:1 1 auto;height:80%;background:radial-gradient(circle,#050607 0 1.5px,transparent 2px) 0 0/6px 5px,radial-gradient(circle,#050607 0 1.5px,transparent 2px) 3px 2.5px/6px 5px}
+.dec .d-brush{flex:1 1 auto;height:62%;border-radius:2px;background:repeating-linear-gradient(90deg,#000 0 1px,transparent 1px 2.5px),linear-gradient(180deg,#22262B,#08090A 48% 52%,#22262B);box-shadow:inset 0 0 0 1px #000}
+.dec .d-drawer{display:grid;place-items:center;flex:1 1 auto;height:84%;border-radius:2px;box-shadow:inset 0 0 0 1px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.08)}
+.dec .d-drawer i{display:block;width:min(40%,90px);height:max(4px,16cqh);max-height:8px;border-radius:3px;background:linear-gradient(180deg,#D5D9DD,#7E858E);box-shadow:0 1px 1px rgba(0,0,0,.55)}
+.ritem.acc:has(.d-shelf){--fp-bg:transparent;background:transparent!important;box-shadow:none!important}
+.dec .d-shelf{flex:1 1 auto;align-self:flex-end;height:30%;max-height:9px;margin-bottom:-3px;border-radius:0 0 2px 2px;background:linear-gradient(180deg,#5A6169,#2A2E33);box-shadow:0 1px 2px rgba(0,0,0,.6)}
+.ritem.acc .dec{justify-content:flex-start}
+/* En 1U, le texte laisse la place au décor : il passe sur deux lignes plutôt que de le masquer. */
+.ritem.u1 .rl{max-width:46%}
+/* Façade étroite (1U avec texte, demi-largeur) : on garde l'essentiel du décor, sans le couper. */
+@container (max-width:240px){
+  .dec .d-sd+.d-sd,.dec .d-usb,.dec .d-leds.s,.dec .d-btns,.dec .d-jack,.dec .d-sfp,.dec .d-trans i:nth-child(-n+2){display:none}
+  .dec .d-ports{width:110px}
+}
+@container (max-width:150px){ .dec .d-knob,.dec .d-pwr,.dec .lcd{display:none} .dec .d-ports{width:52px} }
