@@ -410,7 +410,7 @@ async fn placement_rules() {
         r.body["message"]
             .as_str()
             .unwrap()
-            .starts_with("1 élément(s) dépasseraient"),
+            .starts_with("1 élément dépasserait"),
         "{}",
         r.body
     );

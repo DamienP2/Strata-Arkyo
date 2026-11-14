@@ -237,7 +237,7 @@
       {#if it.kind === 'rack' || it.kind === 'desk'}{@render group(it)}
       {:else if it.kind === 'location'}
         {@const l = info.locations[it.location_id ?? '']}
-        <text x={it.x} y={it.y + 6} font-family={F} font-size="5.2" font-weight="bold" fill={INK} textLength={sq(l?.name ?? it.label ?? 'Lieu', w - 20, 5.2)} lengthAdjust="spacingAndGlyphs">{fit(l?.name ?? it.label ?? 'Lieu', w - 20, 5.2)}</text>
+        <text x={it.x} y={it.y + 6} font-family={F} font-size="5.2" font-weight="bold" fill={INK} textLength={sq(l?.name ?? it.label ?? 'Emplacement', w - 20, 5.2)} lengthAdjust="spacingAndGlyphs">{fit(l?.name ?? it.label ?? 'Emplacement', w - 20, 5.2)}</text>
         {#if l?.code}<text x={it.x + w} y={it.y + 6} font-family={MONO} font-size="3" fill={MUTE} text-anchor="end">{l.code}</text>{/if}
         <line x1={it.x} x2={it.x + w} y1={it.y + 8.6} y2={it.y + 8.6} stroke={INK} stroke-width="0.5" />
       {:else}

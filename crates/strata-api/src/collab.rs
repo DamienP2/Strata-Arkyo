@@ -69,7 +69,7 @@ async fn todo(
                 } else {
                     let subject = format!("{} {}", article_label(a, &views), i.tag);
                     items.push(json!({
-                        "kind": "rack", "group": "Non posé en baie", "severity": "warning",
+                        "kind": "rack", "group": "Non posé en rack", "severity": "warning",
                         "subject": subject, "detail": format!("À poser dans {}.", c.name),
                         "message": format!("{subject} n'est pas posé dans {}.", c.name),
                         "href": format!("{base}/racks"),
@@ -110,7 +110,7 @@ async fn todo(
     }
     let dmx = crate::drawings::dmx_conflicts(&st.store, &pid).await?;
     if dmx > 0 {
-        items.push(json!({ "kind": "dmx", "severity": "error", "message": format!("{dmx} chevauchement(s) d'adresses DMX."), "href": format!("{base}/dessins") }));
+        items.push(json!({ "kind": "dmx", "severity": "error", "message": format!("{dmx} chevauchement{} d'adresses DMX.", if dmx > 1 { "s" } else { "" }), "href": format!("{base}/dessins") }));
     }
     // Validation : recette.
     let r = crate::recette::recette_view(&st.store, &pid).await?;
@@ -173,7 +173,7 @@ async fn todo(
                 if housed > 1 { "s" } else { "" },
                 equip.len()
             ),
-            "Lignes d'équipement de l'inventaire (un modèle et sa quantité) rangées dans un élément : baie, pupitre, valise…".into(),
+            "Lignes d'équipement de l'inventaire (un modèle et sa quantité) rangées dans un élément : rack, mobilier, valise…".into(),
         ),
         line(
             "racks",
@@ -182,10 +182,10 @@ async fn todo(
             rack_total,
             format!("{base}/racks"),
             format!(
-                "{} en baie sur {rack_total}",
+                "{} en rack sur {rack_total}",
                 pl(rack_done, "exemplaire posé", "exemplaires posés")
             ),
-            "Exemplaires d'équipements rackables rangés dans une baie : posés à leur hauteur, ou encore à poser.".into(),
+            "Exemplaires d'équipements rackables rangés dans un rack : posés à leur hauteur, ou encore à poser.".into(),
         ),
         line(
             "cabling",

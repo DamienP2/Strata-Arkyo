@@ -97,7 +97,7 @@ async fn map_of(store: &Store, pid: &str, map: &str) -> ApiResult<PlanMap> {
         .await?
         .into_iter()
         .find(|m| m.id == map)
-        .ok_or(ApiError::NotFound("Carte"))
+        .ok_or(ApiError::NotFound("Plan"))
 }
 
 /// Écriture : droit « Conception : écriture » et main tenue sur la carte.
@@ -111,8 +111,8 @@ async fn editing(st: &AppState, m: &Member, pid: &str, map: &str) -> ApiResult<P
     {
         let who = st.store.lock(&lock_key(map)).await?.map(|l| l.account_name);
         return Err(ApiError::Conflict(match who {
-            Some(n) => format!("{n} a la main sur cette carte : vous la voyez en lecture seule."),
-            None => "Prenez la main sur la carte pour la modifier.".into(),
+            Some(n) => format!("{n} a la main sur ce plan : vous le voyez en lecture seule."),
+            None => "Prenez la main sur le plan pour le modifier.".into(),
         }));
     }
     Ok(pm)
@@ -476,7 +476,7 @@ async fn create(
     if b.map.kind != MapKind::MultiFloor && levels.len() > 1 {
         return Err(one(
             "levels",
-            "Une carte plate ou extérieure n'a qu'un niveau.",
+            "Un plan à plat ou extérieur n'a qu'un niveau.",
         ));
     }
     let mut floors = Vec::new();
@@ -523,7 +523,7 @@ async fn rename(
     if b.kind != MapKind::MultiFloor && floors.len() > 1 {
         return Err(one(
             "kind",
-            "Cette carte a plusieurs étages : elle reste multi-étages.",
+            "Ce plan a plusieurs étages : il reste multi-étages.",
         ));
     }
     st.store.update_plan_map(&pid, &map, &b).await?;
@@ -581,7 +581,7 @@ async fn floor_add(
     if pm.data.kind != MapKind::MultiFloor {
         return Err(one(
             "level",
-            "Seule une carte multi-étages reçoit d'autres étages.",
+            "Seul un plan multi-étages reçoit d'autres étages.",
         ));
     }
     f.background = None;
@@ -594,7 +594,7 @@ async fn floor_add(
         .iter()
         .any(|x| x.data.level == f.level)
     {
-        return Err(one("level", "Ce niveau existe déjà sur la carte."));
+        return Err(one("level", "Ce niveau existe déjà sur le plan."));
     }
     let id = st.store.insert_floor(&map, &f).await?;
     record(
@@ -679,7 +679,7 @@ async fn floor_delete(
         .ok_or(ApiError::NotFound("Étage"))?;
     if floors.len() == 1 {
         return Err(ApiError::Invalid(
-            "Une carte garde au moins un étage.".into(),
+            "Un plan garde au moins un étage.".into(),
         ));
     }
     st.store.delete_floor(&map, &b.id).await?;
@@ -865,7 +865,7 @@ async fn check_object(store: &Store, pid: &str, map: &str, b: &mut ObjBody) -> A
         .iter()
         .any(|f| f.id == b.floor_id)
     {
-        return Err(one("floor_id", "Cet étage n'est pas sur la carte."));
+        return Err(one("floor_id", "Cet étage n'est pas sur le plan."));
     }
     if let ObjectData::Container { container_id, .. } = &b.data {
         if !store
@@ -877,7 +877,7 @@ async fn check_object(store: &Store, pid: &str, map: &str, b: &mut ObjBody) -> A
         {
             return Err(one(
                 "container_id",
-                "Ce contenant n'est pas dans le projet.",
+                "Cet élément n'est pas dans le projet.",
             ));
         }
     }
@@ -912,7 +912,7 @@ async fn obj_create(
         .await
         .map_err(|e| match e {
             strata_store::StoreError::Conflict(_) => {
-                ApiError::Conflict("Ce contenant est déjà posé sur une carte du projet.".into())
+                ApiError::Conflict("Cet élément est déjà posé sur un plan du projet.".into())
             }
             e => e.into(),
         })?;
@@ -1056,7 +1056,7 @@ async fn link_create(
     let p = objs.iter().find(|o| o.id == b.point_id).ok_or_else(|| {
         one(
             "point_id",
-            "Point de connexion introuvable sur cette carte.",
+            "Point de connexion introuvable sur ce plan.",
         )
     })?;
     let ObjectData::Point { ports, .. } = &p.data else {
@@ -1065,7 +1065,7 @@ async fn link_create(
     let t = objs
         .iter()
         .find(|o| o.id == b.target_id)
-        .ok_or_else(|| one("target_id", "Cible introuvable sur cette carte."))?;
+        .ok_or_else(|| one("target_id", "Cible introuvable sur ce plan."))?;
     if !matches!(
         t.data,
         ObjectData::Container { .. } | ObjectData::Point { .. }
@@ -1073,7 +1073,7 @@ async fn link_create(
     {
         return Err(one(
             "target_id",
-            "Un lien va vers un contenant ou un autre point.",
+            "Un lien va vers un élément ou un autre point.",
         ));
     }
     let used = st
@@ -1156,7 +1156,7 @@ async fn route_set(
         .iter()
         .any(|l| l.key == b.key)
     {
-        return Err(one("key", "Aucune liaison entre ces deux contenants."));
+        return Err(one("key", "Aucune liaison entre ces deux éléments."));
     }
     let floors = st.store.plan_floors(&map).await?;
     let fd: Vec<FloorData> = floors.iter().map(|f| f.data.clone()).collect();
@@ -1169,7 +1169,7 @@ async fn route_set(
     if !on_map(a) || !on_map(c) {
         return Err(one(
             "key",
-            "Posez d'abord les deux contenants sur cette carte.",
+            "Posez d'abord les deux éléments sur ce plan.",
         ));
     }
     st.store

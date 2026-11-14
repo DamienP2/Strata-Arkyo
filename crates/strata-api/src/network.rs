@@ -1051,7 +1051,7 @@ async fn export(
         "Type",
         "Élément",
         "Équipement",
-        "Repère",
+        "ID",
         "Port ou flux",
         "Mode",
         "VLAN",

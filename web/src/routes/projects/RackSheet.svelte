@@ -19,6 +19,7 @@
     type Ctx, type Paper, type Sheet, type SheetItem,
   } from '../../lib/sheet';
   import { isDesk, loadCtx, shot3D, shotsFor } from '../../lib/sheetctx';
+  import { pl } from '../../lib/format';
 
   let { view }: { view: ProjectView } = $props();
   loadRefs();
@@ -84,7 +85,7 @@
 
   const page = $derived(sheet?.pages[cur] ?? null);
   const sel = $derived(page?.items.find((i) => i.id === selected) ?? null);
-  const selName = $derived(sel ? (sel.kind === 'rack' ? ctx.racks[sel.container_id ?? '']?.name : sel.kind === 'desk' ? ctx.desks[sel.container_id ?? '']?.name : sel.kind === 'location' ? (info.locations[sel.location_id ?? '']?.name ?? 'Titre de lieu') : 'Emplacement réservé') ?? 'Élément retiré' : '');
+  const selName = $derived(sel ? (sel.kind === 'rack' ? ctx.racks[sel.container_id ?? '']?.name : sel.kind === 'desk' ? ctx.desks[sel.container_id ?? '']?.name : sel.kind === 'location' ? (info.locations[sel.location_id ?? '']?.name ?? 'Titre d’emplacement') : 'Emplacement réservé') ?? 'Élément retiré' : '');
   const box3d = $derived(sel && sheet && (sel.kind === 'rack' || sel.kind === 'desk') ? groupLayout(sel, sheet.scale, ctx).views.find((v) => v.v === '3d') ?? null : null);
 
   // Vues 3D de la feuille affichée : rendues sans fond, au format du cadre, à chaque changement.
@@ -211,14 +212,14 @@
 
 {#if !sheet}<span class="spin"></span>
 {:else if !bays.length && !desks.length}
-  <section class="card" style="padding:28px;display:grid;gap:12px;justify-items:start"><p class="lead" style="margin:0">Aucune baie ni mobilier : ajoutez-en pour composer la planche.</p><a class="btn primary" href="/projets/{pid}/inventaire"><Icon name="plus" size="sm" />Ajouter un élément</a></section>
+  <section class="card" style="padding:28px;display:grid;gap:12px;justify-items:start"><p class="lead" style="margin:0">Aucun rack ni mobilier : ajoutez-en pour composer la planche.</p><a class="btn primary" href="/projets/{pid}/inventaire"><Icon name="plus" size="sm" />Ajouter un élément</a></section>
 {:else}
   <div class="pl">
     <div class="pl-bar">
       <select class="input pl-sel" aria-label="Format" value={sheet.paper} disabled={!writable} onchange={(e) => { sheet!.paper = (e.target as HTMLSelectElement).value as Paper; changed(); }}>{#each Object.keys(PAPERS) as p}<option value={p}>{p}</option>{/each}</select>
       <div class="seg">{#each [['portrait', 'Portrait'], ['landscape', 'Paysage']] as [k, l]}<button class:on={sheet.orientation === k} disabled={!writable} onclick={() => { sheet!.orientation = k as Sheet['orientation']; changed(); }}>{l}</button>{/each}</div>
       <select class="input pl-sel" aria-label="Échelle" value={sheet.scale} disabled={!writable} onchange={(e) => { sheet!.scale = Number((e.target as HTMLSelectElement).value); changed(); }}>{#each SCALES as s}<option value={s}>1:{s}</option>{/each}</select>
-      {#if writable}<button class="btn sm ghost" aria-label="Disposer automatiquement" title="Placer toutes les baies et le mobilier sur les feuilles, d’un coup" onclick={() => (relayout = true)}><Icon name="grid" size="sm" /><span class="pl-lbl">Disposer automatiquement</span></button>{/if}
+      {#if writable}<button class="btn sm ghost" aria-label="Disposer automatiquement" title="Placer tous les racks et le mobilier sur les feuilles, d’un coup" onclick={() => (relayout = true)}><Icon name="grid" size="sm" /><span class="pl-lbl">Disposer automatiquement</span></button>{/if}
       <span class="pl-sep"></span>
       <div class="seg" role="tablist" aria-label="Feuilles">{#each sheet.pages as p, i (p.id)}<button class:on={cur === i} role="tab" aria-selected={cur === i} title="Feuille {i + 1}" onclick={() => { cur = i; selected = null; }}>Feuille {i + 1}</button>{/each}</div>
       {#if writable}<button class="btn sm ghost" aria-label="Ajouter une feuille" title="Ajouter une feuille à la planche" onclick={addPage}><Icon name="plus" size="sm" /><span class="pl-lbl">Ajouter une feuille</span></button>{#if sheet.pages.length > 1}<button class="icon-btn sm" title="Supprimer cette feuille" aria-label="Supprimer cette feuille" onclick={dropPage}><Icon name="trash" size="sm" /></button>{/if}{/if}
@@ -231,7 +232,7 @@
     <div class="pl-body">
       <div class="pl-desk" role="presentation" onpointerdown={(e) => { if (!(e.target as Element).closest('.it')) selected = null; }}>
         <div class="pl-paper" bind:this={svgHost} style="aspect-ratio:{pageSize(sheet)[0]} / {pageSize(sheet)[1]}">
-          {#if page && !page.items.length}<div class="pl-empty"><b>Feuille vide</b><span>{writable ? 'Ajoutez des baies ou du mobilier depuis le panneau de droite, ou « Disposer automatiquement » pour tout placer d’un coup.' : 'Aucun élément sur cette feuille.'}</span></div>{/if}
+          {#if page && !page.items.length}<div class="pl-empty"><b>Feuille vide</b><span>{writable ? 'Ajoutez des racks ou du mobilier depuis le panneau de droite, ou « Disposer automatiquement » pour tout placer d’un coup.' : 'Aucun élément sur cette feuille.'}</span></div>{/if}
           {#if page}<SheetPage {sheet} {page} {ctx} {info} {shots} index={cur} total={sheet.pages.length} editable={writable} {selected} onpick={pick} />{/if}
         </div>
         <p class="muted small pl-foot">{sheet.paper} {sheet.orientation === 'portrait' ? 'portrait' : 'paysage'} · 1:{sheet.scale} · feuille {cur + 1} / {sheet.pages.length}{writable ? ' · cliquez un élément pour le régler, glissez-le pour le placer' : ''}</p>
@@ -241,7 +242,7 @@
         {#if sel}
           <header class="pl-ph">
             <span class="pl-ic"><Icon name={sel.kind === 'rack' ? 'server' : sel.kind === 'desk' ? 'grid' : sel.kind === 'location' ? 'pin' : 'plus'} size="sm" /></span>
-            <span class="pl-pt"><b>{selName}</b><small>{sel.kind === 'rack' ? 'Baie' : sel.kind === 'desk' ? 'Mobilier' : sel.kind === 'location' ? 'Titre de lieu' : 'Emplacement réservé'}</small></span>
+            <span class="pl-pt"><b>{selName}</b><small>{sel.kind === 'rack' ? 'Rack' : sel.kind === 'desk' ? 'Mobilier' : sel.kind === 'location' ? 'Titre d’emplacement' : 'Emplacement réservé'}</small></span>
             <button class="icon-btn sm" aria-label="Fermer" title="Fermer" onclick={() => (selected = null)}><Icon name="x" size="sm" /></button>
           </header>
 
@@ -285,24 +286,24 @@
         {:else}
           {#if writable}
             <section class="pl-sec">
-              <span class="lbl-t">Baies</span>
+              <span class="lbl-t">Racks</span>
               {#each bays as c (c.id)}
                 {@const w = where(c.id)}
                 <div class="pl-lib"><span class="pl-n"><b>{c.name}</b><small>{locName(c.location_id)?.code || locName(c.location_id)?.name || ''} · {c.height_u} U</small></span>{#if w.length}<span class="pl-ok" title="Déjà sur la feuille {w.join(', ')}">Feuille {w.join(', ')}</span>{/if}<button class="btn sm" onclick={() => add({ kind: 'rack', container_id: c.id, views: [...rackViews] })}><Icon name="plus" size="sm" />Ajouter</button></div>
-              {:else}<span class="muted small">Aucune baie.</span>{/each}
+              {:else}<span class="muted small">Aucun rack.</span>{/each}
             </section>
             {#if desks.length}
               <section class="pl-sec">
                 <span class="lbl-t">Mobilier</span>
                 {#each desks as c (c.id)}
                   {@const w = where(c.id)}
-                  <div class="pl-lib"><span class="pl-n"><b>{c.name}</b><small>{locName(c.location_id)?.code || locName(c.location_id)?.name || ''} · {ctx.desks[c.id]?.casq.length ?? 0} casquette(s)</small></span>{#if w.length}<span class="pl-ok" title="Déjà sur la feuille {w.join(', ')}">Feuille {w.join(', ')}</span>{/if}<button class="btn sm" onclick={() => add({ kind: 'desk', container_id: c.id, views: [...deskViews] })}><Icon name="plus" size="sm" />Ajouter</button></div>
+                  <div class="pl-lib"><span class="pl-n"><b>{c.name}</b><small>{locName(c.location_id)?.code || locName(c.location_id)?.name || ''} · {ctx.desks[c.id]?.casq.length ?? 0} casquette{pl(ctx.desks[c.id]?.casq.length ?? 0)}</small></span>{#if w.length}<span class="pl-ok" title="Déjà sur la feuille {w.join(', ')}">Feuille {w.join(', ')}</span>{/if}<button class="btn sm" onclick={() => add({ kind: 'desk', container_id: c.id, views: [...deskViews] })}><Icon name="plus" size="sm" />Ajouter</button></div>
                 {/each}
               </section>
             {/if}
             <section class="pl-sec pl-2">
-              <select class="input" aria-label="Ajouter un titre de lieu" title="Ajoute sur la feuille le nom d’un emplacement, en titre au-dessus de ses baies" onchange={(e) => { const s = e.target as HTMLSelectElement; if (s.value) add({ kind: 'location', location_id: s.value, w: 160 }); s.value = ''; }}><option value="">+ Titre de lieu…</option>{#each view.locations as l}<option value={l.id}>{l.name}</option>{/each}</select>
-              <button class="btn sm" title="Ajoute un cadre « Emplacement réservé » : la place d’une baie ou d’un meuble à venir" onclick={() => add({ kind: 'reserved', label: 'Emplacement réservé', w: 60, h: 80 })}><Icon name="plus" size="sm" />Réservé</button>
+              <select class="input" aria-label="Ajouter un titre d’emplacement" title="Ajoute sur la feuille le nom d’un emplacement, en titre au-dessus de ses racks" onchange={(e) => { const s = e.target as HTMLSelectElement; if (s.value) add({ kind: 'location', location_id: s.value, w: 160 }); s.value = ''; }}><option value="">+ Titre d’emplacement…</option>{#each view.locations as l}<option value={l.id}>{l.name}</option>{/each}</select>
+              <button class="btn sm" title="Ajoute un cadre « Emplacement réservé » : la place d’un rack ou d’un meuble à venir" onclick={() => add({ kind: 'reserved', label: 'Emplacement réservé', w: 60, h: 80 })}><Icon name="plus" size="sm" />Réservé</button>
             </section>
           {/if}
           <section class="pl-sec">
@@ -332,8 +333,8 @@
 
 {#if relayout}
   <Confirm title="Disposer automatiquement ?" confirmLabel="Disposer" onconfirm={doLayout} onclose={() => (relayout = false)}>
-    <p>Baies puis mobilier, lieu par lieu, de gauche à droite, sur autant de feuilles que nécessaire. La composition actuelle est remplacée.</p>
-    <p class="lbl-t" style="margin:10px 0 4px">Vues des baies</p>
+    <p>Racks puis mobilier, emplacement par emplacement, de gauche à droite, sur autant de feuilles que nécessaire. La composition actuelle est remplacée.</p>
+    <p class="lbl-t" style="margin:10px 0 4px">Vues des racks</p>
     <div class="seg wrap">{#each Object.entries(RACK_VIEWS) as [v, l]}<button class:on={rackViews.includes(v)} onclick={() => (rackViews = rackViews.includes(v) ? rackViews.filter((x) => x !== v) : Object.keys(RACK_VIEWS).filter((x) => x === v || rackViews.includes(x)))}>{l}</button>{/each}</div>
     {#if desks.length}
       <p class="lbl-t" style="margin:10px 0 4px">Vues du mobilier</p>

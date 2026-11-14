@@ -9,7 +9,7 @@
   import { api, ApiError } from '../../lib/api';
   import { can } from '../../lib/session.svelte';
   import { toast, fail } from '../../lib/toast.svelte';
-  import { nf, relative } from '../../lib/format';
+  import { nf, relative, pl } from '../../lib/format';
   import { CONTAINER_KINDS } from '../../lib/projects';
 
   const STATUS: Record<string, { label: string; chip: string }> = { draft: { label: 'Brouillon', chip: 'info' }, inactive: { label: 'Inactif', chip: '' }, active: { label: 'Actif', chip: 'ok' } };
@@ -41,7 +41,7 @@
   async function open(t: any) { try { detail = await api.get(`/templates/${t.id}`); } catch (e) { fail(e); } }
 </script>
 
-<p class="muted" style="max-width:70ch">Un modèle garde un élément et tout son contenu : matériel, accessoires, circuits et disposition dans la baie. Créez-en un depuis l’inventaire d’un projet (« Enregistrer comme modèle »), activez-le ici, puis ajoutez-le à n’importe quel projet. Seuls les modèles actifs sont proposés.</p>
+<p class="muted" style="max-width:70ch">Un modèle garde un élément et tout son contenu : matériel, accessoires, circuits et disposition dans le rack. Créez-en un depuis l’inventaire d’un projet (« Enregistrer comme modèle »), activez-le ici, puis ajoutez-le à n’importe quel projet. Seuls les modèles actifs sont proposés.</p>
 {#if !loaded}<span class="spin"></span>
 {:else if !list.length}
   <EmptyState icon="case" message="Aucun modèle d’élément pour l’instant." hint="Enregistrez un élément comme modèle depuis l’inventaire d’un projet." />
@@ -75,7 +75,7 @@
 {#if detail}
   <Dialog title={detail.name} eyebrow="Modèle d’élément" onclose={() => (detail = null)}>
     <dl class="kv"><dt>Type</dt><dd>{CONTAINER_KINDS[detail.container.kind as keyof typeof CONTAINER_KINDS]?.label}</dd><dt>Format</dt><dd>{detail.container.rackable ? `${detail.container.height_u} U · ${detail.container.depth_mm} mm` : 'Non rackable'}</dd><dt>Poids</dt><dd>{nf(detail.summary.weight_kg, 1)} kg</dd><dt>Consommation</dt><dd>{nf(detail.summary.power_w)} W</dd></dl>
-    {#if detail.summary.missing_items}<div class="alert warn"><Icon name="alert" /><span>{detail.summary.missing_items} fiche(s) n’existent plus au catalogue : elles seront ignorées à la copie.</span></div>{/if}
+    {#if detail.summary.missing_items}<div class="alert warn"><Icon name="alert" /><span>{detail.summary.missing_items} fiche{pl(detail.summary.missing_items)} {pl(detail.summary.missing_items, 'n’existent', 'n’existe')} plus au catalogue : {pl(detail.summary.missing_items, 'elles seront ignorées', 'elle sera ignorée')} à la copie.</span></div>{/if}
     <ul class="notes">{#each detail.articles as a}<li>{a.quantity} × {a.label}</li>{:else}<li>Élément vide.</li>{/each}</ul>
   </Dialog>
 {/if}

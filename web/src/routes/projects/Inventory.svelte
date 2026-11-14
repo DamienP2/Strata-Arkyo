@@ -16,7 +16,7 @@
   import { api, ApiError, download } from '../../lib/api';
   import { can } from '../../lib/session.svelte';
   import { toast, fail } from '../../lib/toast.svelte';
-  import { nf } from '../../lib/format';
+  import { nf, pl } from '../../lib/format';
   import { menuKeys } from '../../lib/menukeys';
   import { CONTAINER_KINDS, type Article, type ElementDetails, type Container, type Instance, type Location, type ProjectView } from '../../lib/projects';
 
@@ -95,8 +95,8 @@
     const d = c.details ?? {};
     if (c.rackable) return `${c.height_u} U · ${c.depth_mm ?? '—'} mm`;
     switch (c.kind) {
-      case 'monitor_wall': return `${d.wall?.rows ?? 0} × ${d.wall?.cols ?? 0} · ${d.wall?.tiles.length ?? 0} tuile(s)`;
-      case 'desk': case 'operator_position': return `${d.positions?.length ?? 0} poste(s)${d.positions?.[0]?.role && c.kind === 'operator_position' ? ` · ${d.positions[0].role}` : ''}`;
+      case 'monitor_wall': return `${d.wall?.rows ?? 0} × ${d.wall?.cols ?? 0} · ${d.wall?.tiles.length ?? 0} tuile${pl(d.wall?.tiles.length ?? 0)}`;
+      case 'desk': case 'operator_position': return `${d.positions?.length ?? 0} poste${pl(d.positions?.length ?? 0)}${d.positions?.[0]?.role && c.kind === 'operator_position' ? ` · ${d.positions[0].role}` : ''}`;
       case 'zone': return [d.surface, d.area_m2 ? `${nf(d.area_m2, 1)} m²` : ''].filter(Boolean).join(' · ') || 'Emplacement libre';
       case 'camera_position': return [d.camera_number ? `CAM ${d.camera_number}` : '', d.mount, d.link].filter(Boolean).join(' · ') || 'Caméra';
       case 'rf_mast': return d.mast_height_m ? `${nf(d.mast_height_m, 1)} m` : 'Mât';
@@ -134,7 +134,7 @@
   let regiePick = $state<{ lib: { id: string; name: string; members: { name: string }[] }[]; id: string; busy: boolean } | null>(null);
   async function saveLocAsRegie() {
     menuOpen = false;
-    if (!loc || !conts.length) { toast('Ce lieu ne contient aucun élément.', 'warn'); return; }
+    if (!loc || !conts.length) { toast('Cet emplacement ne contient aucun élément.', 'warn'); return; }
     try {
       const r = await api.post<{ id: string }>(`/projects/${view.project.id}/regies`, { name: loc.name, kind: view.project.regie, service_type: view.project.service_type, notes: null, members: conts.map((c) => c.id) });
       const m = await api.post<{ name: string; members: unknown[] }>(`/regies/${r.id}/save-as-template`, {});
@@ -151,7 +151,7 @@
     regiePick.busy = true;
     try {
       const r = await api.post<{ regie: { members: unknown[] }; skipped_items: number }>(`/projects/${view.project.id}/regies/from-template`, { regie_id: regiePick.id, location_id: selLoc });
-      toast(`${r.regie.members.length} élément${r.regie.members.length > 1 ? 's' : ''} ajouté${r.regie.members.length > 1 ? 's' : ''}${r.skipped_items ? ` · ${r.skipped_items} article(s) introuvable(s) dans le catalogue` : ''}.`);
+      toast(`${r.regie.members.length} élément${r.regie.members.length > 1 ? 's' : ''} ajouté${r.regie.members.length > 1 ? 's' : ''}${r.skipped_items ? ` · ${r.skipped_items} fiche${pl(r.skipped_items)} introuvable${pl(r.skipped_items)} dans le catalogue` : ''}.`);
       regiePick = null; await reload();
     } catch (e) { fail(e); if (regiePick) regiePick.busy = false; }
   }
@@ -216,7 +216,7 @@
     const [kind, target] = m.target.split(':');
     try {
       await api.post(`/articles/${m.a.id}/move`, { rev: m.a.rev, container_id: kind === 'c' ? target : null, location_id: kind === 'l' ? target : null, instance_id: m.instance });
-      toast(m.a.quantity > 1 && m.a.nature === 'equipment' ? 'Un exemplaire a été déplacé.' : 'Article déplacé.'); moving = null; await reload();
+      toast(m.a.quantity > 1 && m.a.nature === 'equipment' ? 'Un exemplaire a été déplacé.' : 'Matériel déplacé.'); moving = null; await reload();
     } catch (e) { fail(e); }
   }
   // Les saisies sur un même exemplaire s'enchaînent : chacune part avec la révision
@@ -286,9 +286,9 @@
                 <button role="menuitem" class="m-only" onclick={() => { menuOpen = false; locEdit = { id: loc.id, rev: loc.rev, name: loc.name, code: loc.code }; }}><Icon name="pen" size="sm" /><span><b>Renommer l’emplacement</b></span></button>
                 <button role="menuitem" class="m-only danger" onclick={() => { menuOpen = false; confirmDel = { kind: 'location', id: loc.id, name: loc.name }; }}><Icon name="trash" size="sm" /><span><b>Supprimer l’emplacement</b></span></button>
                 <hr class="m-only" aria-hidden="true">
-                <button role="menuitem" onclick={() => { menuOpen = false; fromTemplate = true; }}><Icon name="case" size="sm" /><span><b>Ajouter un élément depuis un modèle</b><small>Une baie, un flight-case… avec son contenu</small></span></button>
-                <button role="menuitem" onclick={openRegiePick}><Icon name="layers" size="sm" /><span><b>Ajouter une régie depuis un modèle</b><small>Plusieurs éléments d’un coup, dans ce lieu</small></span></button>
-                {#if can('catalogue', 'ecriture')}<button role="menuitem" onclick={saveLocAsRegie}><Icon name="download" size="sm" /><span><b>Enregistrer ce lieu comme modèle de régie</b><small>Tous ses éléments et leur matériel</small></span></button>{/if}
+                <button role="menuitem" onclick={() => { menuOpen = false; fromTemplate = true; }}><Icon name="case" size="sm" /><span><b>Ajouter un élément depuis un modèle</b><small>Un rack, un flight-case… avec son contenu</small></span></button>
+                <button role="menuitem" onclick={openRegiePick}><Icon name="layers" size="sm" /><span><b>Ajouter une régie depuis un modèle</b><small>Plusieurs éléments d’un coup, dans cet emplacement</small></span></button>
+                {#if can('catalogue', 'ecriture')}<button role="menuitem" onclick={saveLocAsRegie}><Icon name="download" size="sm" /><span><b>Enregistrer cet emplacement comme modèle de régie</b><small>Tous ses éléments et leur matériel</small></span></button>{/if}
               </div>
             {/if}
           </div>
@@ -317,13 +317,13 @@
           </button>
         {/each}
         <button class="cont" class:on={selCont === 'free'} onclick={() => (selCont = 'free')} style="grid-template-columns:1fr">
-          <span class="cont-info"><span class="cont-top"><span class="chip">Sans élément</span></span><b class="cont-name">Équipements libres</b><span class="small muted">{loc.totals.free_items} article{loc.totals.free_items > 1 ? 's' : ''}, comptés dans la nomenclature et les totaux.</span></span>
+          <span class="cont-info"><span class="cont-top"><span class="chip">Sans élément</span></span><b class="cont-name">Équipements libres</b><span class="small muted">{loc.totals.free_items} pièce{loc.totals.free_items > 1 ? 's' : ''}, comptées dans la nomenclature et les totaux.</span></span>
         </button>
       </div>
 
       <section class="card">
         <div class="card-head">
-          <div><h2>{cont ? cont.name : 'Équipements libres'}</h2><span class="small muted">{arts.reduce((s, a) => s + a.quantity, 0)} article{arts.reduce((s, a) => s + a.quantity, 0) > 1 ? 's' : ''}{cont ? ` · code câble ${cont.cable_code}` : ''}{cont?.totals.volume_m3 ? ` · ${nf(cont.totals.volume_m3, 2)} m³` : ''}</span></div>
+          <div><h2>{cont ? cont.name : 'Équipements libres'}</h2><span class="small muted">{arts.reduce((s, a) => s + a.quantity, 0)} pièce{arts.reduce((s, a) => s + a.quantity, 0) > 1 ? 's' : ''}{cont ? ` · code câble ${cont.cable_code}` : ''}{cont?.totals.volume_m3 ? ` · ${nf(cont.totals.volume_m3, 2)} m³` : ''}</span></div>
           <div class="head-actions">
             {#if writable && cont && can('catalogue', 'ecriture')}<button class="btn ghost" onclick={() => saveAsTemplate(cont)} title="Copie l’élément et son contenu dans la bibliothèque"><Icon name="copy" size="sm" />Enregistrer comme modèle</button>{/if}
             {#if writable && cont}<button class="btn ghost" onclick={() => (contEdit = { c: cont })}><Icon name="pen" size="sm" />Modifier</button><button class="btn ghost danger" title="Supprimer l’élément" aria-label="Supprimer l’élément" onclick={() => (confirmDel = { kind: 'container', id: cont.id, name: cont.name })}><Icon name="trash" size="sm" /></button>{/if}
@@ -405,7 +405,7 @@
 {#if adding && selLoc}<AddArticle {view} container={cont} locationId={selLoc} onclose={() => (adding = false)} ondone={async () => { await reload(); }} />{/if}
 {#if regiePick}
   <Dialog title="Ajouter une régie depuis un modèle" eyebrow={loc?.name ?? ''} onclose={() => (regiePick = null)}>
-    {#if !regiePick.lib.length}<p class="muted">Aucun modèle de régie : enregistrez un lieu comme modèle, ou créez-en un dans <a class="ilink" href="/catalogue/regies">Catalogue › Modèles › Régies</a>.</p>
+    {#if !regiePick.lib.length}<p class="muted">Aucun modèle de régie : enregistrez un emplacement comme modèle, ou créez-en un dans <a class="ilink" href="/catalogue/regies">Catalogue › Modèles › Régies</a>.</p>
     {:else}
       <div class="field"><label for="rp-m">Modèle</label><select class="input" id="rp-m" bind:value={regiePick.id}>{#each regiePick.lib as r}<option value={r.id}>{r.name} · {r.members.length} élément{r.members.length > 1 ? 's' : ''}</option>{/each}</select>
         <span class="help">{regiePick.lib.find((r) => r.id === regiePick!.id)?.members.map((m) => m.name).join(', ') || 'vide'}</span></div>
@@ -416,7 +416,7 @@
 {#if moving}
   <Dialog title="Déplacer « {moving.a.label} »" eyebrow={view.project.name} onclose={() => (moving = null)}>
     {#if moving.a.nature === 'equipment' && moving.a.quantity > 1}
-      <div class="field"><label for="mv-i">Exemplaire à déplacer</label><select class="input" id="mv-i" bind:value={moving.instance}>{#each instOf(moving.a) as i}<option value={i.id}>{i.tag}{i.serial ? ` · ${i.serial}` : ''}</option>{/each}</select><span class="help">L’article compte {moving.a.quantity} exemplaires : un seul part, avec son repère.</span></div>
+      <div class="field"><label for="mv-i">Exemplaire à déplacer</label><select class="input" id="mv-i" bind:value={moving.instance}>{#each instOf(moving.a) as i}<option value={i.id}>{i.tag}{i.serial ? ` · ${i.serial}` : ''}</option>{/each}</select><span class="help">Ce matériel compte {moving.a.quantity} exemplaires : un seul part, avec son ID.</span></div>
     {/if}
     <div class="field"><label for="mv-t">Vers</label>
       <select class="input" id="mv-t" bind:value={moving.target}>
@@ -433,8 +433,8 @@
   </Dialog>
 {/if}
 {#if confirmDel}
-  <Confirm title="Supprimer « {confirmDel.name} » ?" eyebrow={confirmDel.kind === 'container' ? 'Élément' : confirmDel.kind === 'location' ? 'Emplacement' : 'Article'} confirmLabel="Supprimer" danger onconfirm={del} onclose={() => (confirmDel = null)}>
-    <p>{confirmDel.kind === 'container' ? 'Ses articles et leurs exemplaires partent avec lui.' : confirmDel.kind === 'location' ? 'L’emplacement doit être vide : sans élément ni équipement libre.' : 'Ses exemplaires et leurs repères partent avec lui.'}</p>
+  <Confirm title="Supprimer « {confirmDel.name} » ?" eyebrow={confirmDel.kind === 'container' ? 'Élément' : confirmDel.kind === 'location' ? 'Emplacement' : 'Matériel'} confirmLabel="Supprimer" danger onconfirm={del} onclose={() => (confirmDel = null)}>
+    <p>{confirmDel.kind === 'container' ? 'Son matériel et ses exemplaires partent avec lui.' : confirmDel.kind === 'location' ? 'L’emplacement doit être vide : sans élément ni équipement libre.' : 'Ses exemplaires et leurs ID partent avec lui.'}</p>
   </Confirm>
 {/if}
 
@@ -471,7 +471,7 @@
   .sec-row td { padding: 0; border: 0; background: none; }
   .sec-row td { padding-top: 14px; }
   .sec-t, .sec-n { display: inline-flex; align-items: center; height: 28px; font: 700 12px var(--font); letter-spacing: .08em; text-transform: uppercase; }
-  .sec-t { padding: 0 12px; border-radius: 7px 0 0 7px; background: var(--fg); color: var(--bg); }
+  .sec-t { padding: 0 12px; border-radius: 7px 0 0 7px; background: color-mix(in srgb, var(--fg) 8%, transparent); color: var(--fg); box-shadow: inset 0 0 0 1px var(--line-soft); }
   .sec-n { padding: 0 10px; border-radius: 0 7px 7px 0; background: color-mix(in srgb, var(--fg) 14%, transparent); color: var(--fg); font-family: var(--mono); letter-spacing: 0; }
   .inv-tbl { table-layout: auto; }
   .inv-tbl th { white-space: nowrap; }

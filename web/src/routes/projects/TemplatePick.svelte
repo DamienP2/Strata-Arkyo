@@ -4,7 +4,7 @@
   import Vu from '../../components/Vu.svelte';
   import { api } from '../../lib/api';
   import { toast, fail } from '../../lib/toast.svelte';
-  import { nf } from '../../lib/format';
+  import { nf, pl } from '../../lib/format';
   import { CONTAINER_KINDS, type ProjectView } from '../../lib/projects';
 
   let { view, locationId, onclose, ondone }: { view: ProjectView; locationId: string; onclose: () => void; ondone: (id: string) => void } = $props();
@@ -17,7 +17,7 @@
     try {
       const r = await api.post<{ container: { id: string; name: string }; skipped_items: number }>(`/projects/${view.project.id}/containers/from-template`, { template_id: t.id, location_id: locationId });
       toast(`« ${r.container.name} » ajouté depuis le modèle.`);
-      if (r.skipped_items) toast(`${r.skipped_items} fiche(s) du modèle n’existent plus au catalogue : ignorée(s).`, 'warn');
+      if (r.skipped_items) toast(`${r.skipped_items} fiche${pl(r.skipped_items)} du modèle ${pl(r.skipped_items, 'n’existent', 'n’existe')} plus au catalogue : ${pl(r.skipped_items, 'ignorées', 'ignorée')}.`, 'warn');
       ondone(r.container.id);
     } catch (e) { fail(e); } finally { busy = ''; }
   }

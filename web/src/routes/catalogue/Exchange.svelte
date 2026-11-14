@@ -5,7 +5,7 @@
   import { can } from '../../lib/session.svelte';
   import { toast, fail } from '../../lib/toast.svelte';
   import { loadRefs } from '../../lib/catalog.svelte';
-  import { dateTime } from '../../lib/format';
+  import { dateTime, pl } from '../../lib/format';
 
   const SECTIONS: [string, string][] = [['refs', 'Référentiels'], ['equipment', 'Équipements'], ['cables', 'Câbles'], ['cable-models', 'Types de câble'], ['adapters', 'Adaptateurs']];
   let exportSel = $state<string[]>(SECTIONS.map((s) => s[0]));
@@ -46,7 +46,7 @@
   async function restore() {
     try {
       const r = await api.post<{ restored: { refs: number; items: number } }>(`/catalog/snapshots/${restoring!.id}/restore`);
-      toast(`Retour arrière effectué : ${r.restored.items} fiche(s), ${r.restored.refs} élément(s) de référentiel.`); restoring = null; loadRefs(true); loadSnaps();
+      toast(`Retour arrière effectué : ${r.restored.items} fiche${pl(r.restored.items)}, ${r.restored.refs} élément${pl(r.restored.refs)} de référentiel.`); restoring = null; loadRefs(true); loadSnaps();
     } catch (e) { fail(e); }
   }
   const REFS: Record<string, string> = { functions: 'fonctions', types: 'types', brands: 'marques', connectors: 'connecteurs', signals: 'signaux', categories: 'catégories', dimensions: 'dimensions' };
@@ -57,7 +57,7 @@
     const rest = ss.filter((x) => !x.startsWith('refs/')).map(SEC);
     return [...(refs.length ? [`Référentiels (${refs.join(', ')})`] : []), ...rest].join(' · ');
   };
-  const counts = (c: any) => `${c.added} ajouté(s), ${c.updated} mis à jour, ${c.unchanged} inchangé(s)${c.rejected ? `, ${c.rejected} refusé(s)` : ''}`;
+  const counts = (c: any) => `${c.added} ajouté${pl(c.added)}, ${c.updated} mis à jour, ${c.unchanged} inchangé${pl(c.unchanged)}${c.rejected ? `, ${c.rejected} refusé${pl(c.rejected)}` : ''}`;
 </script>
 
 <div class="grid-2">

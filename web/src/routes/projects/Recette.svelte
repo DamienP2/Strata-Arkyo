@@ -7,7 +7,7 @@
   import { api } from '../../lib/api';
   import { can } from '../../lib/session.svelte';
   import { toast, fail } from '../../lib/toast.svelte';
-  import { relative } from '../../lib/format';
+  import { relative, pl } from '../../lib/format';
   import type { ProjectView } from '../../lib/projects';
 
   type St = 'to_test' | 'ok' | 'reserve' | 'ko';
@@ -134,7 +134,7 @@
     {#if writable}<div class="lg-add"><input class="input" bind:value={newFree} maxlength="200" placeholder="Nouveau point : essai de bascule secours, lecture timecode…" onkeydown={(e) => { if (e.key === 'Enter') addFree(); }}><button class="btn sm" onclick={addFree}><Icon name="plus" size="sm" />Ajouter</button></div>{/if}
   </section>
   {#if r.deleted.length}
-    <button class="btn sm ghost" style="margin-top:12px" onclick={() => (showDeleted = !showDeleted)}>{r.deleted.length} verdict(s) d’éléments supprimés</button>
+    <button class="btn sm ghost" style="margin-top:12px" onclick={() => (showDeleted = !showDeleted)}>{r.deleted.length} verdict{pl(r.deleted.length)} d’éléments supprimés</button>
     {#if showDeleted}<section class="card rc-g">{#each r.deleted as p (p.key)}{@render row(p)}{/each}</section>{/if}
   {/if}
 {/if}

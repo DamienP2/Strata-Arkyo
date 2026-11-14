@@ -80,9 +80,9 @@
             {@const r = rank(fam, l.status)}
             <tr>
               <td class="des">
-                <b>{l.label}</b>{#if l.missing_model}<span class="chip warn">Modèle manquant</span>{/if}
+                <b>{l.label}</b>{#if l.missing_model}<span class="chip warn">Type manquant</span>{/if}
                 <span class="muted small">{l.detail}</span>
-                {#if tab === 'cables'}<select class="input mdl" disabled={!writable} value={l.model_id ?? ''} onchange={(e) => model(l, (e.target as HTMLSelectElement).value)} aria-label="Modèle de câble"><option value="">Modèle à choisir…</option>{#each models as m}<option value={m.id}>{m.name}</option>{/each}</select>{/if}
+                {#if tab === 'cables'}<select class="input mdl" disabled={!writable} value={l.model_id ?? ''} onchange={(e) => model(l, (e.target as HTMLSelectElement).value)} aria-label="Type de câble"><option value="">Type à choisir…</option>{#each models as m}<option value={m.id}>{m.name}</option>{/each}</select>{/if}
               </td>
               <td class="num">
                 <span class="qty"><span class="mono" title="Besoin calculé depuis l’inventaire et le câblage">{l.min}</span> + <input class="input mono rsv" type="number" min="0" max="9999" value={l.reserve} disabled={!writable} onchange={(e) => set(l, { reserve: Math.max(0, Number((e.target as HTMLInputElement).value) || 0) })} aria-label="Réserve" title="Réserve : quantité en plus du besoin"> = <b class="mono" title="Total à préparer">{l.total}</b></span>

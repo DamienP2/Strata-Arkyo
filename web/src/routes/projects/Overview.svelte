@@ -57,7 +57,7 @@
   interface Item { kind: string; group?: string; severity: string; subject?: string; place?: string | null; detail?: string; message: string; href: string }
   interface Todo { domains: { key: string; label: string; done: number; total: number; pct: number; href: string; note: string; hint?: string }[]; items: Item[] }
   let todo = $state<Todo | null>(null);
-  const KIND_GROUP: Record<string, string> = { network: 'Réseau', dmx: 'DMX', sheet: 'Fiche', rack: 'Non posé en baie' };
+  const KIND_GROUP: Record<string, string> = { network: 'Réseau', dmx: 'DMX', sheet: 'Fiche', rack: 'Non posé en rack' };
   // Une ligne par objet, regroupée par type d'anomalie ; les points sans sujet gardent leur phrase.
   const anomalies = $derived<Anomaly<Item>[]>((todo?.items ?? []).map((it) => ({
     group: it.group ?? KIND_GROUP[it.kind] ?? it.kind, severity: it.severity,
@@ -117,8 +117,8 @@
       <dl class="kv" style="margin-top:12px">
         <dt>Emplacements</dt><dd>{view.locations.length}</dd>
         <dt>Éléments</dt><dd>{view.containers.length}</dd>
-        <dt>Articles</dt><dd>{nf(view.articles.reduce((s, a) => s + a.quantity, 0))}</dd>
-        <dt>Exemplaires repérés</dt><dd>{units}</dd>
+        <dt>Matériel (pièces)</dt><dd>{nf(view.articles.reduce((s, a) => s + a.quantity, 0))}</dd>
+        <dt>Exemplaires avec ID</dt><dd>{units}</dd>
         <dt>Poids total</dt><dd>{nf(view.locations.reduce((s, l) => s + l.totals.weight_kg, 0), 1)} kg</dd>
         <dt>Consommation</dt><dd>{nf(view.locations.reduce((s, l) => s + l.totals.power_w, 0))} W</dd>
       </dl>
@@ -147,10 +147,9 @@
   .dom .flabel { display: flex; align-items: center; justify-content: flex-start; min-width: 0; margin: 0; font-size: 13px; line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .dom b { font-size: 22px; line-height: 26px; }
   .dom .bar { display: block; height: 5px; border-radius: 99px; background: color-mix(in srgb, var(--fg) 12%, transparent); overflow: hidden; }
-  .dom .bar i { display: block; height: 100%; border-radius: inherit; }
-  .dom .bar i.ok { background: var(--ok, #0E8550); }
-  .dom .bar i.mid { background: var(--accent, #4F6BFF); }
-  .dom .bar i.low { background: var(--warn, #B78400); }
+  /* Barre d'avancement : couleur d'accent, verte à 100 % (jamais la couleur du texte). */
+  .dom .bar i { display: block; height: 100%; border-radius: inherit; --bar-c: var(--accent, #2943E4); background: var(--bar-c); }
+  .dom .bar i.ok { --bar-c: var(--ok, #0B7A49); }
   .d-note, .d-short { display: block; min-width: 0; margin: 0; line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .d-short { display: none; }
   .fiche-miss { margin: 10px 0 0; }

@@ -539,9 +539,10 @@ async fn delete_ref(
     let users = snap.users();
     if let Some(u) = users.get(&Target::Ref(kind, id.clone())) {
         return Err(ApiError::Conflict(format!(
-            "{} est utilisé par {} élément(s) du catalogue : désactivez-le plutôt.",
+            "{} est utilisé par {} élément{} du catalogue : désactivez-le plutôt.",
             before.name,
-            u.len()
+            u.len(),
+            if u.len() > 1 { "s" } else { "" }
         )));
     }
     st.store.delete_ref(kind, &id).await?;
@@ -920,7 +921,7 @@ async fn compat(
         .item(&q.model_id)
         .await?
         .filter(|i| i.kind == ItemKind::CableModel)
-        .ok_or(ApiError::NotFound("Modèle de câble"))?;
+        .ok_or(ApiError::NotFound("Type de câble"))?;
     let signal = st
         .store
         .ref_item(RefKind::Signal, &q.signal_id)

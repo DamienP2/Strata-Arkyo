@@ -72,7 +72,7 @@ export const REGIE: Record<Regie, { label: string; ill: 'truck' | 'case' | 'fixe
 };
 export type ElementFamily = 'contenants' | 'regie' | 'terrain' | 'site' | 'diffusion';
 export const ELEMENT_FAMILIES: { key: ElementFamily; label: string; help: string }[] = [
-  { key: 'contenants', label: 'Contenants', help: 'Baies, flight-cases et valises : élévation, panels, circuits.' },
+  { key: 'contenants', label: 'Racks et valises', help: 'Racks, flight-cases, valises et meubles : élévation, panels, circuits.' },
   { key: 'regie', label: 'Postes de régie', help: 'Monitoring et postes de travail.' },
   { key: 'terrain', label: 'Terrain et plateau', help: 'Ce qui se pose au plus près de l’action.' },
   { key: 'site', label: 'Infrastructure du site', help: 'Raccordements, énergie et liaisons extérieures.' },

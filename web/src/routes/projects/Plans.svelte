@@ -599,12 +599,12 @@
         {:else}
           <div class="pl-canvas">
             {#if scene}
-              <svg viewBox="0 0 {scene.W} {scene.H}" class="pl-3d" role="img" aria-label="Vue 3D des étages, contenants et tracés" onpointerdown={down3} onpointermove={move3} onpointerup={() => (rot3 = null)}>
+              <svg viewBox="0 0 {scene.W} {scene.H}" class="pl-3d" role="img" aria-label="Vue 3D des étages, éléments et tracés" onpointerdown={down3} onpointermove={move3} onpointerup={() => (rot3 = null)}>
                 {#each scene.polys as p}<polygon points={p.pts} fill={p.fill} fill-opacity={p.op} stroke={p.stroke} stroke-opacity=".8" stroke-width={p.start ? 1.5 : 1} />{#if p.label}<text x={p.lx} y={p.ly} text-anchor={p.start ? 'start' : 'middle'} class="l3" class:fl={p.start}>{p.label}</text>{/if}{/each}
                 {#each scene.tubes as t (t.key)}<polyline points={t.pts} fill="none" stroke={t.color} stroke-width="5" stroke-linecap="round" stroke-linejoin="round" opacity=".9"><title>{t.name} · {nf1(t.len)}</title></polyline>{/each}
               </svg>
               <div class="hint3 small muted">Glissez pour tourner · lecture seule</div>
-            {:else}<p class="muted" style="padding:24px">Rien à montrer : posez des contenants et vérifiez que les étages se suivent.</p>{/if}
+            {:else}<p class="muted" style="padding:24px">Rien à montrer : posez des éléments et vérifiez que les étages se suivent.</p>{/if}
           </div>
         {/if}
 
@@ -624,7 +624,7 @@
               {/each}
             {/if}
           {:else if side === 'trace'}
-            {#if !d.liaisons.length}<p class="muted small">Aucune liaison entre contenants posés sur ce plan. Les liaisons viennent des câbles du synoptique.</p>{/if}
+            {#if !d.liaisons.length}<p class="muted small">Aucune liaison entre éléments posés sur ce plan. Les liaisons viennent des câbles du synoptique.</p>{/if}
             {#each d.liaisons as l (l.key)}
               <div class="li tr">
                 <span class="nm"><i class="dot" style="--c:{lcolor(l)}"></i><b>{l.a.name ?? '?'} ↔ {l.b.name ?? '?'}</b></span>
@@ -633,16 +633,16 @@
                   <span class="small">{l.waypoints ? `Tracé · ${nf1(l.length_m)}` : 'À tracer'}</span>
                   {#if mine && mode === '2d'}<span class="ra"><button class="btn sm" onclick={() => startTrace(l)}>{l.waypoints ? 'Retracer' : 'Tracer'}</button>{#if l.waypoints}<button class="btn sm ghost" onclick={() => clearRoute(l)}>Effacer</button>{/if}</span>{/if}
                 {:else}
-                  <span class="small warn-t">{l.state === 'other_map' ? 'Contenants sur deux plans' : 'Un contenant n’est pas posé'}</span>
+                  <span class="small warn-t">{l.state === 'other_map' ? 'Éléments sur deux plans' : 'Un élément n’est pas posé'}</span>
                 {/if}
               </div>
             {/each}
           {:else if side === 'layers'}
-            {#each [['bg', 'Fond de plan'], ['grid', 'Grille'], ['containers', 'Contenants'], ['points', 'Points de connexion et liens'], ['routes', 'Tracés'], ['texts', 'Textes'], ['measures', 'Mesures']] as [kk, l]}
+            {#each [['bg', 'Fond de plan'], ['grid', 'Grille'], ['containers', 'Éléments'], ['points', 'Points de connexion et liens'], ['routes', 'Tracés'], ['texts', 'Textes'], ['measures', 'Mesures']] as [kk, l]}
               <label class="toggle-row small"><input type="checkbox" bind:checked={(layers as any)[kk]}>{l}</label>
             {/each}
             {#if floor?.background}<label class="field small">Plan estompé<input type="range" min="0.05" max="1" step="0.05" value={floor.bg_opacity} disabled={!mine} onchange={(e) => write(() => api.patch(`/projects/${pid}/plans/${mapId}/floors`, { ...floor, bg_opacity: Number((e.target as HTMLInputElement).value) }))}></label>{/if}
-            <h4>Par contenant</h4>
+            <h4>Par élément</h4>
             {#each d.objects.filter((o) => o.kind === 'container') as o (o.id)}<label class="toggle-row small"><input type="checkbox" checked={!hidden.has(o.container_id)} onchange={() => toggleHidden(o.container_id)}>{o.name}</label>{/each}
             <h4>Par liaison</h4>
             {#each d.liaisons.filter((l) => l.waypoints) as l (l.key)}<label class="toggle-row small"><input type="checkbox" checked={!hidden.has(l.key)} onchange={() => toggleHidden(l.key)}><i class="dot" style="--c:{lcolor(l)}"></i>{l.a.name} ↔ {l.b.name}</label>{/each}

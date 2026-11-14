@@ -186,7 +186,7 @@
       <rect width={cur.width} height={cur.height} fill="none" stroke="currentColor" stroke-width=".4" />
       {#each cur.zones as z}<rect x={z.x} y={z.y} width={z.w} height={z.h} fill="none" stroke="currentColor" stroke-width=".2" />{#if z.label}<text x={z.x + 1} y={z.y + 2.4} font-size="1.8" fill="currentColor" opacity=".6">{z.label.toUpperCase()}</text>{/if}<text x={z.x + 1} y={z.y + z.h - 1.4} font-size={Math.min(z.size * 0.35, z.h * 0.6)} font-weight={z.bold ? 700 : 400} fill="currentColor">{z.kind === 'logo' || z.value === 'logo' ? '[logo]' : z.kind === 'text' ? z.value : (SAMPLE[z.value] ?? z.value)}</text>{/each}
     </svg>
-    <table class="tbl zt"><thead><tr><th>Nature</th><th>Valeur</th><th>Étiquette</th><th>X</th><th>Y</th><th>L</th><th>H</th><th>Taille</th><th>Gras</th><th></th></tr></thead><tbody>
+    <table class="tbl zt"><thead><tr><th>Nature</th><th>Valeur</th><th>Libellé</th><th>X</th><th>Y</th><th>L</th><th>H</th><th>Taille</th><th>Gras</th><th></th></tr></thead><tbody>
       {#each cur.zones as z, i}
         <tr>
           <td><select class="input sm" value={z.kind} onchange={(e) => setZone(i, { kind: (e.target as HTMLSelectElement).value as Zone['kind'], value: (e.target as HTMLSelectElement).value === 'variable' ? 'title' : (e.target as HTMLSelectElement).value === 'logo' ? 'logo' : '' })}><option value="variable">Variable</option><option value="text">Texte</option><option value="logo">Logo</option></select></td>

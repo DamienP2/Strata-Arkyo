@@ -8,6 +8,7 @@
   import { can } from '../../lib/session.svelte';
   import { toast, fail } from '../../lib/toast.svelte';
   import type { Container, ProjectView } from '../../lib/projects';
+  import { pl } from '../../lib/format';
 
   interface Rules { with_rack: boolean; sep1: string; sep2: string; digits: number; template: string | null; top_down: boolean; left_right: boolean }
   let { project, view, selection, onclose, ondone }: { project: ProjectView; view: string; selection: string[]; onclose: () => void; ondone: () => void } = $props();
@@ -61,7 +62,7 @@
       if (mode === 'manual') body.first = first;
       if (mode !== 'manual' && mode !== 'clear') body.rules = clean(rules);
       const r = await api.post<{ changed: number }>(`/projects/${project.project.id}/numbering`, body);
-      toast(mode === 'clear' ? `${r.changed} numéro(s) effacé(s).` : r.changed ? `${r.changed} câble(s) numéroté(s).` : 'Aucun câble à numéroter.', r.changed ? 'ok' : 'info');
+      toast(mode === 'clear' ? `${r.changed} numéro${pl(r.changed)} effacé${pl(r.changed)}.` : r.changed ? `${r.changed} câble${pl(r.changed)} numéroté${pl(r.changed)}.` : 'Aucun câble à numéroter.', r.changed ? 'ok' : 'info');
       ondone();
     } catch (e) { if (e instanceof ApiError && e.fields.length) errors = Object.fromEntries(e.fields.map((f) => [f.field, f.message])); else fail(e); }
     finally { busy = false; }
@@ -81,9 +82,9 @@
         </div></div>
       </div>
       {#if mode === 'manual'}
-        <div class="field" style="max-width:320px"><label for="nb-first">Premier numéro</label><input class="input mono" id="nb-first" bind:value={first} placeholder="V-0100">{#if errors.first}<span class="ferr">{errors.first}</span>{/if}<span class="help">Les {selection.length} câble(s) choisis reçoivent ce numéro, puis les suivants.</span></div>
+        <div class="field" style="max-width:320px"><label for="nb-first">Premier numéro</label><input class="input mono" id="nb-first" bind:value={first} placeholder="V-0100">{#if errors.first}<span class="ferr">{errors.first}</span>{/if}<span class="help">{selection.length > 1 ? `Les ${selection.length} câbles choisis reçoivent ce numéro, puis les suivants.` : 'Le câble choisi reçoit ce numéro.'}</span></div>
       {:else if mode === 'clear'}
-        <div class="alert warn"><Icon name="alert" /><span>{selection.length ? `Les numéros des ${selection.length} câble(s) choisis` : `Tous les numéros ${scope === 'view' ? 'de la vue' : 'du projet'}`} seront effacés. Les compteurs ne reculent pas : un numéro n’est jamais réutilisé.</span></div>
+        <div class="alert warn"><Icon name="alert" /><span>{selection.length ? (selection.length > 1 ? `Les numéros des ${selection.length} câbles choisis` : 'Le numéro du câble choisi') : `Tous les numéros ${scope === 'view' ? 'de la vue' : 'du projet'}`} seront effacés. Les compteurs ne reculent pas : un numéro n’est jamais réutilisé.</span></div>
       {:else}
         <section class="nb-rules">
           <div class="nb-h"><span class="lbl-t">Règles</span><span class="muted small">{origin === 'element' ? `propres à ${container?.name}` : 'du site'} · modifiables ici pour cette fois</span></div>

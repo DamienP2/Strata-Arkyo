@@ -32,7 +32,7 @@ const PHRASES: Record<string, [string, string]> = {
   'Adaptateur orphelin': ['adaptateur n’est rattaché à rien', 'adaptateurs ne sont rattachés à rien'],
   'Zone sans nom': ['zone n’a pas de nom', 'zones n’ont pas de nom'],
   'Zone vide': ['zone est vide', 'zones sont vides'],
-  'Non posé en baie': ['exemplaire n’est pas encore posé en baie', 'exemplaires ne sont pas encore posés en baie'],
+  'Non posé en rack': ['exemplaire n’est pas encore posé en rack', 'exemplaires ne sont pas encore posés en rack'],
   'À vérifier': ['câble à vérifier', 'câbles à vérifier'],
   'Réseau': ['point réseau à corriger', 'points réseau à corriger'],
   'DMX': ['conflit d’adresses DMX', 'conflits d’adresses DMX'],

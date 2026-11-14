@@ -25,8 +25,8 @@ pub(crate) fn action_label(a: &str) -> &str {
         "reset_password" | "password_reset" => "Réinitialisation du mot de passe",
         "password_change" => "Changement de mot de passe",
         "move" => "Déplacement",
-        "place" => "Pose en baie",
-        "unplace" => "Retrait de la baie",
+        "place" => "Pose en rack",
+        "unplace" => "Retrait du rack",
         "clear" => "Effacement",
         "number" => "Numérotation",
         "restore_stage" => "Restauration préparée",
@@ -72,8 +72,8 @@ pub(crate) fn object_label(t: &str) -> String {
         "container" => "Élément",
         "article" => "Matériel",
         "instance" => "Exemplaire",
-        "placement" => "Pose en baie",
-        "rack" => "Baie",
+        "placement" => "Pose en rack",
+        "rack" => "Rack",
         "circuit" => "Circuit électrique",
         "cable" => "Câble",
         "harness" => "Faisceau",
@@ -104,7 +104,7 @@ fn field_label(k: &str) -> Option<&'static str> {
         "face" => "face",
         "container_id" => "élément",
         "location_id" => "emplacement",
-        "tag" => "repère",
+        "tag" => "ID",
         "serial" => "n° de série",
         "mac" => "adresse MAC",
         "color" => "couleur",
@@ -121,7 +121,7 @@ fn field_label(k: &str) -> Option<&'static str> {
         "width" => "largeur",
         "waypoints" => "tracé",
         "style" => "style du tracé",
-        "cable_model_id" => "modèle de câble",
+        "cable_model_id" => "type de câble",
         "external" => "port externe",
         "accessory" => "réglages de l'accessoire",
         "item_id" => "fiche du catalogue",
@@ -264,7 +264,14 @@ fn subject(e: &AuditEntry, c: &Ctx) -> String {
         }
         "catalog" if e.action == "exchange" => {
             let n = |k: &str| v["items"][k].as_u64().unwrap_or(0);
-            format!("{} ajoutée(s), {} mise(s) à jour", n("added"), n("updated"))
+            let s = |k: &str| if n(k) > 1 { "s" } else { "" };
+            format!(
+                "{} ajoutée{}, {} mise{} à jour",
+                n("added"),
+                s("added"),
+                n("updated"),
+                s("updated")
+            )
         }
         "project" => s(v, "name")
             .map(str::to_string)

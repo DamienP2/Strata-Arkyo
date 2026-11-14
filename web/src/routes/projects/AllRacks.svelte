@@ -101,7 +101,7 @@
   {/if}
   <div class="seg" role="group" aria-label="Face"><button class:on={face === 'front'} onclick={() => (face = 'front')}>Avant</button><button class:on={face === 'rear'} onclick={() => (face = 'rear')}>Arrière</button></div>
   <div class="seg" role="group" aria-label="Taille"><button class:on={scale === 18} onclick={() => (scale = 18)}>S</button><button class:on={scale === 24} onclick={() => (scale = 24)}>M</button><button class:on={scale === 32} onclick={() => (scale = 32)}>L</button></div>
-  <span class="muted small">{#if canDesign}Glissez un équipement vers une autre baie : il change d’élément dans l’inventaire.{:else}Lecture seule.{/if}</span>
+  <span class="muted small">{#if canDesign}Glissez un équipement vers un autre rack : il change d’élément dans l’inventaire.{:else}Lecture seule.{/if}</span>
   {#if busy}<span class="spin"></span>{/if}
 </div>
 
@@ -112,7 +112,7 @@
     <div class="ar-col">
       <div class="ar-head"><b>{c.name}</b><span class="muted small">{view.locations.find((l) => l.id === c.location_id)?.name} · {units} U</span>
         {#if r?.lock && !r.lock.mine}<span class="chip warn"><Icon name="lock" />{r.lock.account_name}</span>{/if}
-        <a class="btn sm ghost" href="/projets/{view.project.id}/racks/{c.id}" title="Ouvrir cette baie"><Icon name="arrowr" size="sm" /></a></div>
+        <a class="btn sm ghost" href="/projets/{view.project.id}/racks/{c.id}" title="Ouvrir ce rack"><Icon name="arrowr" size="sm" /></a></div>
       <div class="rack" style="--units:{units};--u:{scale}px;--bw:{Math.round(scale * 10.86) - 22}px">
         <div class="rack-scale">{#each Array(units) as _, i}<span>{units - i}</span>{/each}</div>
         <div class="rack-body" role="grid" tabindex="-1" aria-label="Élévation de {c.name}" class:target={over?.cid === c.id}

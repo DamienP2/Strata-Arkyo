@@ -153,7 +153,7 @@
       <table class="tbl rec"><thead><tr><th>Document</th><th>Format</th><th>Contenu</th><th></th></tr></thead><tbody>
         {#each included as o (o.key)}
           {@const pr = probes[o.key]}{@const f = fmt(o)}
-          <tr class:muted={pr?.state !== 'ok'}><td><b>{o.title ?? def(o.key).title}</b><span class="muted small"> · {GROUPS[def(o.key).group]}</span></td><td>{o.key === 'cover' ? 'A4 portrait' : `${f[0]} ${f[1] ? 'paysage' : 'portrait'}`}</td>
+          <tr class:muted={pr?.state !== 'ok'}><td><b>{o.title ?? def(o.key).title}</b><span class="muted small">{' · '}{GROUPS[def(o.key).group]}</span></td><td>{o.key === 'cover' ? 'A4 portrait' : `${f[0]} ${f[1] ? 'paysage' : 'portrait'}`}</td>
             <td class="small">{pr?.state === 'ok' ? (o.pages ? `${o.pages.length} page${o.pages.length > 1 ? 's' : ''}` : pr.message) : pr?.state === 'empty' ? 'Vide : ignoré' : `En échec : ${pr?.message ?? ''}`}</td>
             <td>{#if o.key !== 'cover' && pr?.state === 'ok'}<button class="btn sm ghost" disabled={!!busy} onclick={() => download(o.key)}><Icon name="download" size="sm" />Seul</button>{/if}</td></tr>
         {/each}

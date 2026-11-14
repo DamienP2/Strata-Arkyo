@@ -5,7 +5,7 @@
   import { can } from '../../lib/session.svelte';
   import { toast, fail } from '../../lib/toast.svelte';
   import { loadRefs, refList, type RefPath } from '../../lib/catalog.svelte';
-  import { nf } from '../../lib/format';
+  import { nf, pl } from '../../lib/format';
 
   type Field = string | null;
   interface Analysis { session_id: string; filename: string; headers: string[]; row_count: number; preview: string[][]; matches: { column: number; header: string; field: Field; score: number }[]; fields: { field: string; label: string }[]; unknown: Unknown }
@@ -62,7 +62,7 @@
     try {
       report = await api.post<Report>(`/catalog/import/${a!.session_id}/run`, { ...body(), dry_run: dry });
       step = dry ? 4 : 5;
-      if (!dry) { toast(`Import terminé : ${report.created} créée(s), ${report.updated} mise(s) à jour.`); loadRefs(true); }
+      if (!dry) { toast(`Import terminé : ${report.created} fiche${pl(report.created)} créée${pl(report.created)}, ${report.updated} mise${pl(report.updated)} à jour.`); loadRefs(true); }
     } catch (e) { error = e instanceof ApiError ? e.message : 'Import impossible.'; } finally { busy = false; }
   }
   async function restart() {

@@ -8,10 +8,11 @@
   import { visibleColor } from '../../lib/color';
   import HeadActions from '../../components/HeadActions.svelte';
   import { pageHead, plural } from '../../lib/pagehead.svelte';
+  import { pl } from '../../lib/format';
 
   const DOMAINS: [Domain, string][] = [['projets', 'Projets'], ['conception', 'Conception'], ['catalogue', 'Catalogue'], ['membres', 'Membres et rôles'], ['parametres', 'Paramètres et site']];
   const LEVELS: [Level, string][] = [['aucun', 'Aucun'], ['lecture', 'Lecture'], ['ecriture', 'Écriture'], ['admin', 'Admin']];
-  const DOMAIN_HELP: Partial<Record<Domain, string>> = { conception: 'Conception : baies, synoptique, réseau, plans et dessins des projets.', parametres: 'Paramètres et site : référentiels, impression, mises à jour, sauvegardes.' };
+  const DOMAIN_HELP: Partial<Record<Domain, string>> = { conception: 'Conception : racks, synoptique, réseau, plans et dessins des projets.', parametres: 'Paramètres et site : référentiels, impression, mises à jour, sauvegardes.' };
   const LV: Record<Level, string> = { aucun: '—', lecture: 'Lecture', ecriture: 'Écriture', admin: 'Admin' };
 
   let roles = $state<Role[]>([]);
@@ -38,7 +39,7 @@
   }
   async function duplicate(r: Role) { try { await api.post(`/roles/${r.id}/duplicate`); toast('Rôle dupliqué.'); load(); } catch (e) { fail(e); } }
   async function remove() {
-    try { const r = await api.del<{ moved_members: number }>(`/roles/${deleting!.id}`); toast(r?.moved_members ? `Rôle supprimé : ${r.moved_members} membre(s) passent Technicien.` : 'Rôle supprimé.'); deleting = null; load(); }
+    try { const r = await api.del<{ moved_members: number }>(`/roles/${deleting!.id}`); toast(r?.moved_members ? `Rôle supprimé : ${r.moved_members} membre${pl(r.moved_members)} ${pl(r.moved_members, 'passent', 'passe')} Technicien.` : 'Rôle supprimé.'); deleting = null; load(); }
     catch (e) { fail(e); }
   }
 </script>
@@ -89,7 +90,7 @@
 {/if}
 {#if deleting}
   <Confirm title="Supprimer le rôle {deleting.name} ?" eyebrow="Équipe" confirmLabel="Supprimer" danger onconfirm={remove} onclose={() => (deleting = null)}>
-    <p>{deleting.active_members ? `Ses ${deleting.active_members} membre(s) passeront au rôle Technicien.` : 'Aucun membre n’a ce rôle.'}</p>
+    <p>{deleting.active_members ? `${deleting.active_members > 1 ? `Ses ${deleting.active_members} membres passeront` : 'Son membre passera'} au rôle Technicien.` : 'Aucun membre n’a ce rôle.'}</p>
   </Confirm>
 {/if}
 

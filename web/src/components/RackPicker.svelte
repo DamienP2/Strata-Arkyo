@@ -4,7 +4,7 @@
   // emplacement). Valeur : un id d'élément, « tout » ou « tout:{emplacement} ».
   import Icon from './Icon.svelte';
   import { CONTAINER_KINDS, type ProjectView } from '../lib/projects';
-  import { nf } from '../lib/format';
+  import { nf, pl } from '../lib/format';
 
   let { view, value, onpick }: { view: ProjectView; value: string; onpick: (v: string) => void } = $props();
   let open = $state(false);
@@ -13,8 +13,9 @@
   const groups = $derived(view.locations.map((l) => ({ l, list: racks.filter((c) => c.location_id === l.id) })).filter((g) => g.list.length));
   const cur = $derived(racks.find((c) => c.id === value) ?? null);
   const locOf = (v: string) => view.locations.find((l) => l.id === v.split(':')[1]);
-  const label = $derived(cur ? cur.name : value.startsWith('tout:') ? `Toutes les baies · ${locOf(value)?.name ?? ''}` : 'Toutes les baies');
-  const sub = $derived(cur ? `${view.locations.find((l) => l.id === cur.location_id)?.name ?? ''} · ${CONTAINER_KINDS[cur.kind].label} · ${cur.height_u} U` : `${value.startsWith('tout:') ? groups.find((g) => g.l.id === value.split(':')[1])?.list.length ?? 0 : racks.length} élément(s) côte à côte`);
+  const label = $derived(cur ? cur.name : value.startsWith('tout:') ? `Tous les racks · ${locOf(value)?.name ?? ''}` : 'Tous les racks');
+  const allN = $derived(value.startsWith('tout:') ? groups.find((g) => g.l.id === value.split(':')[1])?.list.length ?? 0 : racks.length);
+  const sub = $derived(cur ? `${view.locations.find((l) => l.id === cur.location_id)?.name ?? ''} · ${CONTAINER_KINDS[cur.kind].label} · ${cur.height_u} U` : `${allN} élément${pl(allN)} côte à côte`);
   const pct = (c: (typeof racks)[number]) => (c.height_u ? Math.min(100, (c.totals.used_u / c.height_u) * 100) : 0);
   function pick(v: string) { open = false; onpick(v); }
 </script>
@@ -30,7 +31,7 @@
   {#if open}
     <div class="rp-pop" role="listbox" aria-label="Éléments rackables">
       {#if racks.length > 1}
-        <button role="option" aria-selected={value === 'tout'} class="rp-all" class:on={value === 'tout'} onclick={() => pick('tout')}><Icon name="grid" size="sm" /><span><b>Toutes les baies côte à côte</b><small>{racks.length} éléments, tous emplacements</small></span></button>
+        <button role="option" aria-selected={value === 'tout'} class="rp-all" class:on={value === 'tout'} onclick={() => pick('tout')}><Icon name="grid" size="sm" /><span><b>Tous les racks côte à côte</b><small>{racks.length} élément{racks.length > 1 ? "s" : ""}, tous emplacements</small></span></button>
       {/if}
       {#each groups as g (g.l.id)}
         <div class="rp-g">

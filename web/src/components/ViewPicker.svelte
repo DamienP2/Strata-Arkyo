@@ -3,6 +3,7 @@
   // emplacement « Tout le lieu » et ses éléments. Valeur : overview, location:{id}, container:{id}.
   import Icon from './Icon.svelte';
   import { CONTAINER_KINDS, type ContainerKind } from '../lib/projects';
+  import { pl } from '../lib/format';
 
   interface Views { containers: { id: string; name: string; location_id: string; kind: string }[]; locations: { id: string; name: string; code: string }[] }
   let { views, value, onpick }: { views: Views; value: string; onpick: (v: string) => void } = $props();
@@ -12,8 +13,8 @@
   const [kind, id] = $derived(value.split(':') as [string, string | undefined]);
   const cur = $derived(kind === 'container' ? views.containers.find((c) => c.id === id) : null);
   const curLoc = $derived(kind === 'location' ? views.locations.find((l) => l.id === id) : cur ? views.locations.find((l) => l.id === cur.location_id) : null);
-  const label = $derived(kind === 'overview' ? 'Vue générale' : cur ? cur.name : `${curLoc?.name ?? ''} · tout le lieu`);
-  const sub = $derived(kind === 'overview' ? 'Liaisons entre les emplacements' : cur ? `${curLoc?.name ?? ''} · ${CONTAINER_KINDS[cur.kind as ContainerKind]?.label ?? ''}` : `${groups.find((g) => g.l.id === id)?.list.length ?? 0} élément(s) de l’emplacement`);
+  const label = $derived(kind === 'overview' ? 'Vue générale' : cur ? cur.name : `${curLoc?.name ?? ''} · tout l’emplacement`);
+  const sub = $derived(kind === 'overview' ? 'Liaisons entre les emplacements' : cur ? `${curLoc?.name ?? ''} · ${CONTAINER_KINDS[cur.kind as ContainerKind]?.label ?? ''}` : `${groups.find((g) => g.l.id === id)?.list.length ?? 0} élément${pl(groups.find((g) => g.l.id === id)?.list.length ?? 0)} de l’emplacement`);
   function pick(v: string) { open = false; onpick(v); }
 </script>
 
@@ -31,7 +32,7 @@
       {#each groups as g (g.l.id)}
         <div class="vp-g">
           <div class="vp-gh"><span class="code mono">{g.l.code || '—'}</span><b>{g.l.name}</b></div>
-          <button role="option" aria-selected={value === `location:${g.l.id}`} class="vp-it" class:on={value === `location:${g.l.id}`} onclick={() => pick(`location:${g.l.id}`)}><Icon name="layers" size="sm" /><span><b>Tout le lieu</b><small>{g.list.length} élément{g.list.length > 1 ? 's' : ''}</small></span></button>
+          <button role="option" aria-selected={value === `location:${g.l.id}`} class="vp-it" class:on={value === `location:${g.l.id}`} onclick={() => pick(`location:${g.l.id}`)}><Icon name="layers" size="sm" /><span><b>Tout l’emplacement</b><small>{g.list.length} élément{g.list.length > 1 ? 's' : ''}</small></span></button>
           {#each g.list as c (c.id)}
             <button role="option" aria-selected={value === `container:${c.id}`} class="vp-it sub" class:on={value === `container:${c.id}`} onclick={() => pick(`container:${c.id}`)}><span><b>{c.name}</b><small>{CONTAINER_KINDS[c.kind as ContainerKind]?.label ?? ''}</small></span></button>
           {/each}

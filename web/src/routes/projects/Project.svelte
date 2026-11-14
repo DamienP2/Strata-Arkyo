@@ -74,7 +74,7 @@
   ] }]);
   // Une ligne sous le titre des pages dont le rôle n'est pas évident d'après leur nom.
   const DESC: Record<string, string> = {
-    planche: 'Les élévations des baies et du mobilier mises en page sur des feuilles, pour l’impression ou l’export.',
+    planche: 'Les élévations des racks et du mobilier mises en page sur des feuilles, pour l’impression ou l’export.',
     plans: 'Les éléments du projet placés sur le site, avec les liaisons tracées et leurs longueurs réelles.',
     dessins: 'Schémas de principe, implantations vidéo et audio, plans de feu avec adressage DMX.',
   };

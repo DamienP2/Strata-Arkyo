@@ -166,7 +166,7 @@ async fn rows(store: &Store, pid: &str) -> ApiResult<Vec<Row>> {
                             locations
                                 .get(l.as_str())
                                 .copied()
-                                .unwrap_or("Lieu supprimé")
+                                .unwrap_or("Emplacement supprimé")
                         ),
                         (None, Some(t)) => format!("→ {t}"),
                         _ => "→ Hors projet".into(),
@@ -344,12 +344,12 @@ async fn export(
         "Signal",
         "De : élément",
         "De : équipement",
-        "De : repère",
+        "De : ID",
         "De : port",
         "De : connecteur",
         "Vers : élément",
         "Vers : équipement",
-        "Vers : repère",
+        "Vers : ID",
         "Vers : port",
         "Vers : connecteur",
         "Longueur (m)",

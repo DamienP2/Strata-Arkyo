@@ -13,6 +13,7 @@
   import { toast, fail } from '../../lib/toast.svelte';
   import { route, navigate } from '../../lib/router.svelte';
   import { REF_KINDS, refs, refList, refName, loadRefs, type RefItem, type RefPath } from '../../lib/catalog.svelte';
+  import { pl } from '../../lib/format';
 
   const kind = $derived((REF_KINDS.find((k) => k.path === route.path.split('/')[3])?.path ?? 'functions') as RefPath);
   const meta = $derived(REF_KINDS.find((k) => k.path === kind)!);
@@ -54,7 +55,7 @@
     try {
       if (b.id) await api.patch(`/catalog/refs/${kind}/${encodeURIComponent(b.id)}`, { rev: b.rev, name: b.name, parent_id: b.parent_id, data: b.data });
       else await api.post(`/catalog/refs/${kind}`, { name: b.name, parent_id: b.parent_id, data: b.data });
-      toast(b.id ? 'Modification enregistrée.' : `${meta.one} ajouté(e).`);
+      toast(b.id ? 'Modification enregistrée.' : `${meta.one} ${/^(Fonction|Marque|Catégorie|Phase)/.test(meta.one) ? 'ajoutée' : 'ajouté'}.`);
       editing = null; await loadRefs(true);
     } catch (x) {
       if (x instanceof ApiError) { errors = Object.fromEntries(x.fields.map((f) => [f.field, f.message])); general = x.message; } else fail(x);
@@ -67,7 +68,7 @@
     try { await api.del(`/catalog/refs/${kind}/${encodeURIComponent(deleting!.id)}`); toast('Supprimé.'); deleting = null; await loadRefs(true); } catch (e) { fail(e); deleting = null; }
   }
   async function restoreDims() {
-    try { const r = await api.post<{ restored: number }>('/catalog/refs/dimensions/restore'); toast(r.restored ? `${r.restored} préréglage(s) remis.` : 'Tous les préréglages d’origine sont déjà là.'); await loadRefs(true); } catch (e) { fail(e); }
+    try { const r = await api.post<{ restored: number }>('/catalog/refs/dimensions/restore'); toast(r.restored ? `${r.restored} préréglage${pl(r.restored)} remis.` : 'Tous les préréglages d’origine sont déjà là.'); await loadRefs(true); } catch (e) { fail(e); }
   }
   // Types : classés par fonction, sous-types sous leur type ; groupes repliables (mémorisé).
   const byName = (a: RefItem, b: RefItem) => a.name.localeCompare(b.name, 'fr', { numeric: true });
@@ -132,7 +133,7 @@
         <button class="btn sm ghost danger" title={r.uses ? 'Utilisé : désactivez-le plutôt' : 'Supprimer'} disabled={r.uses > 0} onclick={() => (deleting = r)}><Icon name="trash" size="sm" /></button>
       </span>
     {/if}
-    <span class="tt-uses" title="{r.uses || 0} équipement(s) de ce type">{r.uses || ''}</span>
+    <span class="tt-uses" title="{r.uses || 0} équipement{pl(r.uses || 0)} de ce type">{r.uses || ''}</span>
   </div>
 {/snippet}
 

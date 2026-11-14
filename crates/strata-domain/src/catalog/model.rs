@@ -214,7 +214,7 @@ impl ItemKind {
         match self {
             ItemKind::Equipment => "Équipement",
             ItemKind::Cable => "Câble",
-            ItemKind::CableModel => "Modèle de câble",
+            ItemKind::CableModel => "Type de câble",
             ItemKind::Adapter => "Adaptateur",
         }
     }

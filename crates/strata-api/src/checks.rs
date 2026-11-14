@@ -188,7 +188,7 @@ async fn lines(store: &Store, c: &Container) -> ApiResult<Vec<Line>> {
                 "port externe {}",
                 x.label
                     .clone()
-                    .unwrap_or_else(|| "vers un autre lieu".into())
+                    .unwrap_or_else(|| "vers un autre emplacement".into())
             ),
             None => end(&cb.b),
         };
@@ -245,8 +245,9 @@ async fn lines(store: &Store, c: &Container) -> ApiResult<Vec<Line>> {
             kind: "cable_group",
             label,
             detail: format!(
-                "{} câble(s) à préparer : {}",
+                "{} câble{} à préparer : {}",
                 nums.len(),
+                if nums.len() > 1 { "s" } else { "" },
                 nums.iter().take(8).cloned().collect::<Vec<_>>().join(", ")
                     + if nums.len() > 8 { "…" } else { "" }
             ),
@@ -269,15 +270,17 @@ fn element_detail(d: &strata_domain::project::ContainerData) -> String {
         K::MonitorWall => {
             let w = d.details.wall.clone().unwrap_or_default();
             format!(
-                "{kind} {} × {} · {} tuile(s) · structure, fixations et alimentation",
+                "{kind} {} × {} · {} tuile{} · structure, fixations et alimentation",
                 w.rows,
                 w.cols,
-                w.tiles.len()
+                w.tiles.len(),
+                if w.tiles.len() > 1 { "s" } else { "" }
             )
         }
         K::Desk => format!(
-            "{kind} · {} poste(s) · mobilier, éclairage et câblage des postes",
-            d.details.positions.len()
+            "{kind} · {} poste{} · mobilier, éclairage et câblage des postes",
+            d.details.positions.len(),
+            if d.details.positions.len() > 1 { "s" } else { "" }
         ),
         K::Zone => format!("{kind} · surface prête, protégée et balisée"),
         K::CameraPosition => format!("{kind} · support, sécurité et passage des câbles"),

@@ -69,7 +69,7 @@ impl ImportField {
             ImportField::Type => "Type",
             ImportField::Functions => "Fonctions",
             ImportField::Phases => "Phases",
-            ImportField::Tags => "Étiquettes",
+            ImportField::Tags => "Mots-clés",
             ImportField::Notes => "Notes",
             ImportField::HeightU => "Hauteur (U)",
             ImportField::Width => "Largeur",

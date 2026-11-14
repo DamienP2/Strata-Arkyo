@@ -14,8 +14,8 @@ async function sections(view: ProjectView, cid: string, kind: CView): Promise<{ 
   const c = view.containers.find((x) => x.id === cid)!;
   const loc = view.locations.find((l) => l.id === c.location_id);
   const out: Section[] = [];
-  const baie: string[][] = [['Élément', c.name], ['Lieu', loc?.name ?? ''], ['Nature', c.kind], ...(c.rackable ? [['Hauteur', `${c.height_u ?? '?'} U`], ['Profondeur', c.depth_mm ? `${c.depth_mm} mm` : '']] : [])];
-  out.push({ title: 'Baie', cols: [{ label: 'Rubrique', w: 40 }, { label: 'Valeur', w: 140 }], rows: baie });
+  const baie: string[][] = [['Élément', c.name], ['Emplacement', loc?.name ?? ''], ['Nature', c.kind], ...(c.rackable ? [['Hauteur', `${c.height_u ?? '?'} U`], ['Profondeur', c.depth_mm ? `${c.depth_mm} mm` : '']] : [])];
+  out.push({ title: 'Rack', cols: [{ label: 'Rubrique', w: 40 }, { label: 'Valeur', w: 140 }], rows: baie });
   const t = await api.get<{ rows: any[] }>(`/projects/${view.project.id}/cables/table`);
   const mine = t.rows.filter((r) => r.a.container_id === cid || r.b.container_id === cid);
   const end = (e: any) => `${e.container_id === cid ? '' : `${e.element} › `}${e.equipment} ${e.tag} › ${e.port}`;
@@ -23,7 +23,7 @@ async function sections(view: ProjectView, cid: string, kind: CView): Promise<{ 
     let placed: Record<string, string> = {};
     if (c.rackable) { try { const r = await api.get<{ elements: any[] }>(`/containers/${cid}/rack`); for (const e of r.elements) if (e.placement?.u_start) placed[`${e.label} ${e.tag ?? ''}`.trim()] = `U${e.placement.u_start}${e.placement.face === 'rear' ? ' arr.' : ''}`; } catch { placed = {}; } }
     const arts = view.articles.filter((a) => a.container_id === cid);
-    out.push({ title: 'Matériel', cols: [{ label: 'Désignation', w: 70 }, { label: 'Qté', w: 12, align: 'right' }, { label: 'Repères', w: 60 }, { label: 'Position', w: 30 }], rows: arts.map((a) => { const tags = view.instances.filter((i) => i.article_id === a.id).map((i) => i.tag); return [a.label, String(a.quantity), tags.join(' '), tags.map((tg) => placed[`${a.label} ${tg}`]).filter(Boolean).join(', ') || placed[a.label] || '']; }) });
+    out.push({ title: 'Matériel', cols: [{ label: 'Désignation', w: 70 }, { label: 'Qté', w: 12, align: 'right' }, { label: 'ID', w: 60 }, { label: 'Position', w: 30 }], rows: arts.map((a) => { const tags = view.instances.filter((i) => i.article_id === a.id).map((i) => i.tag); return [a.label, String(a.quantity), tags.join(' '), tags.map((tg) => placed[`${a.label} ${tg}`]).filter(Boolean).join(', ') || placed[a.label] || '']; }) });
     const groups = new Map<string, { n: number; len: number }>();
     for (const r of mine) { const g = groups.get(r.signal || 'Non défini') ?? { n: 0, len: 0 }; g.n++; g.len += r.length_m ?? r.estimate_m ?? 0; groups.set(r.signal || 'Non défini', g); }
     out.push({ title: 'Câbles (par signal)', cols: [{ label: 'Signal', w: 60 }, { label: 'Nombre', w: 20, align: 'right' }, { label: 'Longueur totale (m)', w: 40, align: 'right' }], rows: [...groups].map(([s, g]) => [s, String(g.n), g.len ? g.len.toFixed(1).replace('.', ',') : '']) });

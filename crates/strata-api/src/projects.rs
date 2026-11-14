@@ -954,9 +954,11 @@ async fn update_container(
         if !b.confirm_remove {
             let names: Vec<&str> = over.iter().map(|o| o.1.as_str()).collect();
             return Err(ApiError::Conflict(format!(
-                "{} élément(s) dépasseraient : {}. Confirmez pour les retirer de l'élévation.",
+                "{} {} : {}. Confirmez pour {} retirer de l'élévation.",
                 over.len(),
-                names.join(", ")
+                if over.len() > 1 { "éléments dépasseraient" } else { "élément dépasserait" },
+                names.join(", "),
+                if over.len() > 1 { "les" } else { "le" }
             )));
         }
         let ids: Vec<String> = over.into_iter().map(|o| o.0).collect();
@@ -1327,7 +1329,7 @@ async fn update_article(
         .store
         .article(&id)
         .await?
-        .ok_or(ApiError::NotFound("Article"))?;
+        .ok_or(ApiError::NotFound("Matériel"))?;
     if let Some(acc) = b.accessory {
         let (Some(Accessory::VerticalPdu { .. }), Accessory::VerticalPdu { circuit_id, .. }) =
             (&before.accessory, &acc)
@@ -1343,7 +1345,7 @@ async fn update_article(
             if !ok {
                 return Err(one(
                     "accessory.circuit_id",
-                    "Circuit inconnu dans cette baie.",
+                    "Circuit inconnu dans ce rack.",
                 ));
             }
         }
@@ -1366,7 +1368,7 @@ async fn update_article(
     if !(1..=999).contains(&b.quantity) {
         return Err(one(
             "quantity",
-            "De 1 à 999. Pour retirer l'article, supprimez-le.",
+            "De 1 à 999. Pour retirer ce matériel, supprimez-le.",
         ));
     }
     if before.nature == ArticleNature::Accessory && b.quantity != before.quantity {
@@ -1436,7 +1438,7 @@ async fn move_article(
         .store
         .article(&id)
         .await?
-        .ok_or(ApiError::NotFound("Article"))?;
+        .ok_or(ApiError::NotFound("Matériel"))?;
     let pid = a.project_id.clone();
     if a.host.is_some() {
         return Err(one(
@@ -1515,7 +1517,7 @@ async fn delete_article(
         .store
         .article(&id)
         .await?
-        .ok_or(ApiError::NotFound("Article"))?;
+        .ok_or(ApiError::NotFound("Matériel"))?;
     st.store.delete_article(&id).await?;
     record(
         &st,
@@ -1552,7 +1554,7 @@ async fn add_module(
         .store
         .article(&id)
         .await?
-        .ok_or(ApiError::NotFound("Article"))?;
+        .ok_or(ApiError::NotFound("Matériel"))?;
     let mut ids = HashSet::from([b.item_id.clone()]);
     if let Some(i) = &host.item_id {
         ids.insert(i.clone());

@@ -232,9 +232,9 @@ async fn update_article_panel(
         .store
         .article(&id)
         .await?
-        .ok_or(ApiError::NotFound("Article"))?;
+        .ok_or(ApiError::NotFound("Matériel"))?;
     let Some(Accessory::Panel { panel: old }) = &before.accessory else {
-        return Err(ApiError::Invalid("Cet article n'est pas un panel.".into()));
+        return Err(ApiError::Invalid("Ce matériel n'est pas un panel.".into()));
     };
     check_panel(&st.store, &mut b.panel).await?;
     if b.panel.height_u != old.height_u {
@@ -248,7 +248,7 @@ async fn update_article_panel(
             {
                 return Err(one(
                     "height_u",
-                    "Retirez d'abord le panel de la baie pour changer sa hauteur.",
+                    "Retirez d'abord le panel du rack pour changer sa hauteur.",
                 ));
             }
         }

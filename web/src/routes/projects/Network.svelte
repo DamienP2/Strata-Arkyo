@@ -9,6 +9,7 @@
   import { can } from '../../lib/session.svelte';
   import { toast, fail } from '../../lib/toast.svelte';
   import type { ProjectView } from '../../lib/projects';
+  import { pl } from '../../lib/format';
 
   interface Vlan { id: string; vid: number; name: string; color: string; cidr: string | null; gateway: string | null; role: string | null; ports: number; hosts: number | null; used: number | null }
   interface NetPort { ref: string; node: string; equipment: string; tag: string; element: string; port: string; connector: string; switching: boolean; mode: 'access' | 'trunk'; vlan: number | null; vlans: number[]; ip: string | null; hostname: string | null; redundancy: string | null; protocol: string | null; peer: string | null; peer_ref: string | null }
@@ -243,7 +244,7 @@
               <dt>Ports</dt><dd>{v.ports}</dd>
             </dl>
             {#if v.hosts != null}
-              <div class="bar" title="{v.used} adresse(s) utilisée(s) sur {v.hosts}"><i style="width:{Math.min(100, ((v.used ?? 0) / Math.max(v.hosts, 1)) * 100)}%"></i></div>
+              <div class="bar" title="{v.used ?? 0} adresse{pl(v.used ?? 0)} utilisée{pl(v.used ?? 0)} sur {v.hosts}"><i style="width:{Math.min(100, ((v.used ?? 0) / Math.max(v.hosts, 1)) * 100)}%"></i></div>
               <span class="muted small">{v.used} / {v.hosts} adresses</span>
             {/if}
           </article>

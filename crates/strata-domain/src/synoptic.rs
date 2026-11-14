@@ -247,7 +247,7 @@ pub fn validate_cable(c: &mut CableFields) -> Vec<FieldError> {
         .filter(|t| !t.is_empty())
         .collect();
     if c.tags.len() > 10 {
-        e.push(err("tags", "10 étiquettes au plus."));
+        e.push(err("tags", "10 mots-clés au plus."));
     }
     if c.waypoints.len() > 50
         || c.waypoints
@@ -268,7 +268,7 @@ pub fn validate_cable(c: &mut CableFields) -> Vec<FieldError> {
         if x.location_id.is_none() && x.label.is_none() {
             e.push(err(
                 "external",
-                "Choisissez un lieu du projet ou décrivez la destination.",
+                "Choisissez un emplacement du projet ou décrivez la destination.",
             ));
         }
     }
@@ -535,7 +535,7 @@ pub fn validate_annotation(
         }
         "label" => {
             let mut l: Label = serde_json::from_value(data.clone())
-                .map_err(|_| vec![err("data", "Étiquette illisible.")])?;
+                .map_err(|_| vec![err("data", "Texte illisible.")])?;
             l.text = l.text.trim().to_string();
             if l.text.is_empty() || l.text.chars().count() > 500 {
                 e.push(err("text", "De 1 à 500 caractères."));
@@ -549,7 +549,7 @@ pub fn validate_annotation(
             l.size = l.size.clamp(8.0, 96.0);
             serde_json::to_value(l).unwrap_or_default()
         }
-        _ => return Err(vec![err("kind", "Zone ou étiquette.")]),
+        _ => return Err(vec![err("kind", "Zone ou texte.")]),
     };
     if e.is_empty() { Ok(out) } else { Err(e) }
 }

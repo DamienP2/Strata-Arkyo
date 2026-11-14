@@ -27,7 +27,7 @@
   import { toast, fail } from '../../lib/toast.svelte';
   import { route, navigate } from '../../lib/router.svelte';
   import { join } from '../../lib/live.svelte';
-  import { relative, nf } from '../../lib/format';
+  import { relative, nf, pl } from '../../lib/format';
   import { modalOpen } from '../../lib/modal';
   import { loadRefs, refById, fnColor } from '../../lib/catalog.svelte';
   import type { ProjectView } from '../../lib/projects';
@@ -519,7 +519,7 @@
     try {
       const a = await api.post<Ann>(`/projects/${pid}/annotations`, { view: syn.view, kind, data });
       const keep = { ...a.data };
-      push({ label: kind === 'zone' ? 'zone' : 'étiquette', undo: () => api.post(`/projects/${pid}/annotations/delete`, { ids: [findAnnLike(kind, keep)?.id ?? a.id] }), redo: () => api.post(`/projects/${pid}/annotations`, { view: syn!.view, kind, data: keep }) });
+      push({ label: kind === 'zone' ? 'zone' : 'texte', undo: () => api.post(`/projects/${pid}/annotations/delete`, { ids: [findAnnLike(kind, keep)?.id ?? a.id] }), redo: () => api.post(`/projects/${pid}/annotations`, { view: syn!.view, kind, data: keep }) });
       await load(); selAnn = (syn?.annotations.find((x) => JSON.stringify(x.data) === JSON.stringify(keep)) ?? a).id; tool = 'select';
     } catch (e) { fail(e); }
   }
@@ -885,9 +885,9 @@
   async function place(body: { cables: { a: string; b: string; style?: string; waypoints?: [number, number][] }[] }, replace: boolean) {
     try {
       const r = await api.post<{ created: { id: string }[]; warnings: string[][] }>(`/projects/${pid}/cables`, { ...body, replace });
-      push({ label: `${body.cables.length} câble(s)`, undo: async () => { const ids = body.cables.map((c) => findCable(c.a, c.b)?.id).filter(Boolean); if (ids.length) await api.post(`/projects/${pid}/cables/delete`, { ids }); }, redo: () => api.post(`/projects/${pid}/cables`, { ...body, replace: true }) });
+      push({ label: `${body.cables.length} câble${pl(body.cables.length)}`, undo: async () => { const ids = body.cables.map((c) => findCable(c.a, c.b)?.id).filter(Boolean); if (ids.length) await api.post(`/projects/${pid}/cables/delete`, { ids }); }, redo: () => api.post(`/projects/${pid}/cables`, { ...body, replace: true }) });
       const w = r.warnings.flat();
-      if (w.length) toast(`${r.created.length} câble(s) posé(s) · ${[...new Set(w)].join(' ')}`, 'warn');
+      if (w.length) toast(`${r.created.length} câble${pl(r.created.length)} posé${pl(r.created.length)} · ${[...new Set(w)].join(' ')}`, 'warn');
       await load();
       if (r.created.length === 1) { sel = r.created[0]!.id; multi = new Set([sel]); }
       if (cab.askModel && r.created.length) askModel(r.created.map((x) => x.id));
@@ -1008,7 +1008,7 @@
           ...(c.fields.number && n === 1 ? [{ label: 'Effacer le numéro', act: () => patchCable(c, { number: null }, 'effacement du numéro') }] : []),
           ...(ids.some((id) => syn!.cables.find((x) => x.id === id)?.fields.waypoints?.length) ? [{ label: n > 1 ? 'Repasser les tracés en automatique' : 'Repasser le tracé en automatique', act: () => setWaypoints(ids.filter((id) => syn!.cables.find((x) => x.id === id)?.fields.waypoints?.length).map((id) => ({ id, way: [] })), 'tracé automatique') }] : []),
           { label: 'Style : orthogonal', act: () => setStyle('orthogonal') }, { label: 'Style : arrondi', act: () => setStyle('rounded') }, { label: 'Style : flèche (renvoi)', act: () => setStyle('arrow') },
-          { label: 'Modèle de câble…', act: () => askModel(ids) },
+          { label: 'Type de câble…', act: () => askModel(ids) },
           { label: n > 1 ? `Supprimer les ${n} câbles` : 'Supprimer le câble', danger: true, sep: true, act: () => (confirmDelete = true) },
         ] : [{ label: 'Propriétés', act: () => {} }]),
       ] };
@@ -1064,7 +1064,7 @@
     const gone = (syn?.cables ?? []).filter((c) => ids.includes(c.id)).map((c) => ({ ...c, fields: { ...c.fields } }));
     try {
       await api.post(`/projects/${pid}/cables/delete`, { ids }); sel = null; multi = new Set(); confirmDelete = false;
-      push({ label: `suppression de ${gone.length} câble(s)`, undo: () => restore(gone), redo: async () => { const again = gone.map((g) => findCable(g.a, g.b)?.id).filter(Boolean); if (again.length) await api.post(`/projects/${pid}/cables/delete`, { ids: again }); } });
+      push({ label: `suppression de ${gone.length} câble${pl(gone.length)}`, undo: () => restore(gone), redo: async () => { const again = gone.map((g) => findCable(g.a, g.b)?.id).filter(Boolean); if (again.length) await api.post(`/projects/${pid}/cables/delete`, { ids: again }); } });
       await load();
     } catch (e) { fail(e); }
   }
@@ -1072,11 +1072,11 @@
   let unplug = $state(false);
   async function unplugView() {
     const ids = (syn?.cables ?? []).map((c) => c.id);
-    try { for (let i = 0; i < ids.length; i += 500) await api.post(`/projects/${pid}/cables/delete`, { ids: ids.slice(i, i + 500) }); toast(`${ids.length} câble(s) retiré(s).`); past = []; future = []; unplug = false; await load(); } catch (e) { fail(e); await load(); }
+    try { for (let i = 0; i < ids.length; i += 500) await api.post(`/projects/${pid}/cables/delete`, { ids: ids.slice(i, i + 500) }); toast(`${ids.length} câble${pl(ids.length)} retiré${pl(ids.length)}.`); past = []; future = []; unplug = false; await load(); } catch (e) { fail(e); await load(); }
   }
   let unnumber = $state(false);
   async function unnumberView() {
-    try { const r = await api.post<{ changed: number }>(`/projects/${pid}/numbering`, { mode: 'clear', view: syn?.view }); toast(`${r.changed} numéro(s) effacé(s).`); unnumber = false; await load(); } catch (e) { fail(e); }
+    try { const r = await api.post<{ changed: number }>(`/projects/${pid}/numbering`, { mode: 'clear', view: syn?.view }); toast(`${r.changed} numéro${pl(r.changed)} effacé${pl(r.changed)}.`); unnumber = false; await load(); } catch (e) { fail(e); }
   }
   function key(e: KeyboardEvent) {
     // Une boîte de dialogue ouverte garde le clavier : pas de raccourci ni de suppression derrière.
@@ -1273,13 +1273,13 @@
     <div class="dtool">
       <ViewPicker views={syn.views} value={syn.view} onpick={(v) => navigate(viewUrl(v))} />
       {#if narrow}<span class="lockchip other ro-m"><Icon name="eye" size="sm" />Lecture seule</span>{/if}
-      {#if !syn.overview}<span class="muted small counts">{nodes.length} nœud{nodes.length > 1 ? 's' : ''} · {syn.cables.length} câble{syn.cables.length > 1 ? 's' : ''}</span>{:else}<span class="muted small counts">{syn.overview.locations.length} lieu{syn.overview.locations.length > 1 ? 'x' : ''} · {nf(syn.overview.totals.weight_kg, 1)} kg · {nf(syn.overview.totals.power_w)} W · double-clic sur un lieu pour l’ouvrir</span>{/if}
+      {#if !syn.overview}<span class="muted small counts">{nodes.length} nœud{nodes.length > 1 ? 's' : ''} · {syn.cables.length} câble{syn.cables.length > 1 ? 's' : ''}</span>{:else}<span class="muted small counts">{syn.overview.locations.length} emplacement{syn.overview.locations.length > 1 ? 's' : ''} · {nf(syn.overview.totals.weight_kg, 1)} kg · {nf(syn.overview.totals.power_w)} W · double-clic sur un emplacement pour l’ouvrir</span>{/if}
       <span class="dt-gap" style="flex:1"></span>
       {#if !narrow && mine}
         {#if requested}<span class="lockchip req"><Icon name="lock" size="sm" />{requested} demande la main · <button onclick={() => { requested = null; release(); }}>Céder</button></span>{/if}
       {:else if narrow}<!-- téléphone : lecture seule -->
       {:else if syn.lock}
-        <span class="lockchip other" title="Vous voyez la dernière version enregistrée"><Icon name="lock" size="sm" />{syn.lock.account_name} a la main{#if canDesign} · <button onclick={requestHand}>Demander</button>{/if}</span>
+        <span class="lockchip other" title="Vous voyez la dernière version enregistrée"><Icon name="lock" size="sm" />{syn.lock.account_name} a la main{#if canDesign}{' · '}<button onclick={requestHand}>Demander</button>{/if}</span>
       {:else if canDesign}
         <button class="btn sm primary" onclick={take}><Icon name="unlock" size="sm" />Prendre la main</button>
       {:else}<span class="lockchip other"><Icon name="lock" size="sm" />Lecture seule</span>{/if}
@@ -1325,7 +1325,7 @@
                   {/each}
                 </div>
               {/each}
-              <div class="cf-g"><button class:on={cab.askModel} title="Proposer un modèle de câble après chaque pose" aria-label="Proposer un modèle de câble" aria-pressed={cab.askModel} onclick={() => (cab.askModel = !cab.askModel)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h8l8 7-8 7H4zM8 12h.01" /></svg></button></div>
+              <div class="cf-g"><button class:on={cab.askModel} title="Proposer un type de câble après chaque pose" aria-label="Proposer un type de câble" aria-pressed={cab.askModel} onclick={() => (cab.askModel = !cab.askModel)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h8l8 7-8 7H4zM8 12h.01" /></svg></button></div>
             </div>
             {/if}
           {/each}
@@ -1579,7 +1579,7 @@
           {@const a = annSel}
           {@const d = a.data}
           <section>
-            <span class="lbl-t">{a.kind === 'zone' ? 'Zone' : 'Étiquette'}</span>
+            <span class="lbl-t">{a.kind === 'zone' ? 'Zone' : 'Texte'}</span>
             {#if a.kind === 'zone'}
               <div class="field"><label for="an">Nom</label><input class="input" id="an" value={d.name} maxlength="120" disabled={!mine} onchange={(e) => patchAnn(a, { name: (e.target as HTMLInputElement).value })}></div>
               <div class="sh2">
@@ -1643,7 +1643,7 @@
             {#if mine}
               <div class="field"><label for="mh">Faisceau</label><select class="input" id="mh" onchange={(e) => { const v = (e.target as HTMLSelectElement).value; if (v === '+') newHarness = { name: '', color: '#2459E0' }; else assign(v || null); (e.target as HTMLSelectElement).value = '~'; }}><option value="~">Ranger dans…</option><option value="">Aucun faisceau</option>{#each syn.harnesses as h}<option value={h.id}>{h.name}</option>{/each}<option value="+">+ Nouveau faisceau…</option></select></div>
               <div class="field"><span class="flabel">Style du tracé</span><div class="seg">{#each [['orthogonal', 'Orthogonal'], ['rounded', 'Arrondi'], ['arrow', 'Flèche']] as [k2, l]}<button onclick={() => setStyle(k2 as CabPrefs['style'])}>{l}</button>{/each}</div></div>
-              <button class="btn sm" onclick={() => askModel([...multi])}>Modèle de câble…</button>
+              <button class="btn sm" onclick={() => askModel([...multi])}>Type de câble…</button>
               <button class="btn sm primary" onclick={() => (numbering = true)}><Icon name="hash" size="sm" />Numéroter la sélection</button>
               <button class="btn sm ghost danger" onclick={() => (confirmDelete = true)}><Icon name="trash" size="sm" />Supprimer les {multi.size} câbles</button>{/if}
           </section>
@@ -1674,9 +1674,9 @@
             <div class="field"><label for="ch">Faisceau</label><select class="input" id="ch" disabled={!mine} value={c.fields.harness_id ?? ''} onchange={(e) => { const v = (e.target as HTMLSelectElement).value; if (v === '+') { newHarness = { name: '', color: '#2459E0' }; } else assign(v || null); }}><option value="">Aucun</option>{#each syn.harnesses as h}<option value={h.id}>{h.name}</option>{/each}{#if mine}<option value="+">+ Nouveau faisceau…</option>{/if}</select></div>
             {#if !c.fields.external}
               <div class="field"><span class="flabel">Style du tracé</span><div class="seg">{#each [['orthogonal', 'Orthogonal'], ['rounded', 'Arrondi'], ['arrow', 'Flèche']] as [k2, l]}<button class:on={c.fields.style === k2} disabled={!mine} onclick={() => patchSel({ style: k2 })}>{l}</button>{/each}</div></div>
-              <div class="field"><label for="cm">Modèle de câble</label>
+              <div class="field"><label for="cm">Type de câble</label>
                 <select class="input" id="cm" disabled={!mine} value={c.fields.cable_model_id ?? ''} onfocus={loadModels} onchange={(e) => patchSel({ cable_model_id: (e.target as HTMLSelectElement).value || null })}>
-                  <option value="">Non défini</option>{#if c.fields.cable_model_id && !models?.some((m) => m.id === c.fields.cable_model_id)}<option value={c.fields.cable_model_id}>Modèle choisi</option>{/if}
+                  <option value="">Non défini</option>{#if c.fields.cable_model_id && !models?.some((m) => m.id === c.fields.cable_model_id)}<option value={c.fields.cable_model_id}>Type choisi</option>{/if}
                   {#each models ?? [] as m (m.id)}<option value={m.id}>{m.name}{m.reference ? ` · ${m.reference}` : ''}</option>{/each}
                 </select></div>
               {#if mine && (c.fields.waypoints?.length || c.fields.number)}<div style="display:flex;gap:6px;flex-wrap:wrap">
@@ -1696,7 +1696,7 @@
             <b>{nodeOf(a.ref)?.label} › {a.label}</b>
             <p class="muted small" style="margin:0">{isAdIn(a) ? 'Cliquez un port d’équipement ou de panel du même connecteur : l’adaptateur s’y attache sans câble. Sinon, cliquez un autre port pour poser un câble.' : 'Cliquez le port d’arrivée pour poser un câble, ou marquez ce port comme sortant de l’élément.'}</p>
             {#if extForm}
-              <div class="field"><label for="xl">Vers un autre lieu</label><select class="input" id="xl" bind:value={extForm.location_id}><option value="">Hors projet</option>{#each syn.views.locations.filter((l) => l.id !== nodeOf(a.ref)?.location_id) as l}<option value={l.id}>{l.name}</option>{/each}</select></div>
+              <div class="field"><label for="xl">Vers un autre emplacement</label><select class="input" id="xl" bind:value={extForm.location_id}><option value="">Hors projet</option>{#each syn.views.locations.filter((l) => l.id !== nodeOf(a.ref)?.location_id) as l}<option value={l.id}>{l.name}</option>{/each}</select></div>
               {#if !extForm.location_id}<div class="field"><label for="xt">Destination</label><input class="input" id="xt" bind:value={extForm.label} maxlength="120" placeholder="Car OB2, diffuseur, fibre opérateur…"></div>{/if}
               <div class="row-actions" style="justify-content:flex-start"><button class="btn sm primary" disabled={!extForm.location_id && !extForm.label.trim()} onclick={markExternal}>Marquer</button><button class="btn sm ghost" onclick={() => (extForm = null)}>Annuler</button></div>
             {:else}<button class="btn sm" onclick={() => (extForm = { port: a, location_id: '', label: '' })}><Icon name="arrowr" size="sm" />Port externe…</button>{/if}
@@ -1755,12 +1755,12 @@
 {/if}
 {#if modelPick}
   {@const mp = modelPick}
-  <Dialog title="Modèle de câble" eyebrow="{mp.ids.length} câble{mp.ids.length > 1 ? 's' : ''} posé{mp.ids.length > 1 ? 's' : ''}" onclose={() => (modelPick = null)}>
+  <Dialog title="Type de câble" eyebrow="{mp.ids.length} câble{mp.ids.length > 1 ? 's' : ''} posé{mp.ids.length > 1 ? 's' : ''}" onclose={() => (modelPick = null)}>
     <div class="mlist">
       {#each [...(models ?? [])].sort((a, b) => ['ok', 'unknown', 'bad'].indexOf(modelFit(a, mp.family)) - ['ok', 'unknown', 'bad'].indexOf(modelFit(b, mp.family)) || a.name.localeCompare(b.name, 'fr')) as m (m.id)}
         {@const f = modelFit(m, mp.family)}
         <button class="mrow {f}" onclick={() => setModel(mp.ids, m.id)}><b>{m.name}</b><span class="muted small">{m.reference ?? ''}</span><span class="mfit">{f === 'ok' ? 'Correspond' : f === 'bad' ? 'Autre fonction' : 'À vérifier'}</span></button>
-      {:else}<p class="muted">Aucun modèle de câble au catalogue.</p>{/each}
+      {:else}<p class="muted">Aucun type de câble au catalogue.</p>{/each}
     </div>
     {#snippet footer()}<label class="toggle-row small" style="margin-right:auto"><input type="checkbox" checked={!cab.askModel} onchange={(e) => (cab.askModel = !(e.target as HTMLInputElement).checked)}>Ne plus proposer</label><button class="btn ghost" onclick={() => (modelPick = null)}>Passer</button>{/snippet}
   </Dialog>

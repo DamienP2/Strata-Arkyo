@@ -601,7 +601,7 @@ async fn show(
                 Some(json!({
                     "external": true, "node": null, "sub": "", "port": "", "connector": "",
                     "label": match (&x.location_id, &x.label) {
-                        (Some(l), _) => format!("{}{}", loc_name.get(l.as_str()).copied().unwrap_or("Lieu supprimé"), if resolved == Some(true) { "" } else { " · non rattaché" }),
+                        (Some(l), _) => format!("{}{}", loc_name.get(l.as_str()).copied().unwrap_or("Emplacement supprimé"), if resolved == Some(true) { "" } else { " · non rattaché" }),
                         (None, Some(t)) => format!("Hors projet · {t}"),
                         _ => "Hors projet".into(),
                     },
@@ -837,7 +837,7 @@ async fn create(
     match st.store.insert_cables(&pid, &list, b.replace, Some(&m.0.account.id)).await? {
         PlaceCables::Occupied(busy) => Ok((
             StatusCode::CONFLICT,
-            Json(json!({ "code": "occupied", "message": format!("{} port(s) déjà câblé(s) : le câble existant sera remplacé.", busy.len()), "ports": busy })),
+            Json(json!({ "code": "occupied", "message": if busy.len() > 1 { format!("{} ports déjà câblés : les câbles existants seront remplacés.", busy.len()) } else { "1 port déjà câblé : le câble existant sera remplacé.".to_string() }, "ports": busy })),
         )
             .into_response()),
         PlaceCables::Done { created, replaced } => {
@@ -1009,12 +1009,12 @@ async fn external(
     if let Some(l) = &b.to.location_id {
         let inv = st.store.inventory(&pid).await?;
         if !inv.locations.iter().any(|x| &x.id == l) {
-            return Err(one("location_id", "Lieu inconnu dans ce projet."));
+            return Err(one("location_id", "Emplacement inconnu dans ce projet."));
         }
         if *l == node.location_id {
             return Err(one(
                 "location_id",
-                "Un port externe sort vers un autre lieu que le sien.",
+                "Un port externe sort vers un autre emplacement que le sien.",
             ));
         }
     }

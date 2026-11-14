@@ -483,7 +483,7 @@ pub const DOCS: [(&str, &str, &str, &[&str]); 19] = [
     (
         "prep_containers",
         "prep",
-        "Contenants",
+        "Éléments",
         &["label", "quantity", "supply", "status"],
     ),
     (
@@ -527,7 +527,7 @@ pub const DOCS: [(&str, &str, &str, &[&str]); 19] = [
     ),
     ("plan_racks", "plans", "Élévations", &[]),
     ("plan_synoptic", "plans", "Synoptique", &[]),
-    ("plan_maps", "plans", "Cartographie", &[]),
+    ("plan_maps", "plans", "Plans du site", &[]),
     ("plan_schematic", "plans", "Schémas de principe", &[]),
     ("plan_av", "plans", "Implantations vidéo et audio", &[]),
     ("plan_lighting", "plans", "Plan de feu", &[]),

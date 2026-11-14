@@ -9,7 +9,7 @@
   import { toast, fail } from '../../lib/toast.svelte';
   import { route, navigate } from '../../lib/router.svelte';
   import { join } from '../../lib/live.svelte';
-  import { nf, relative } from '../../lib/format';
+  import { nf, relative, pl } from '../../lib/format';
   import { refById, loadRefs } from '../../lib/catalog.svelte';
   import { rackLines, rackText, setRackText, RACK_TEXT, type RackText } from '../../lib/racktext.svelte';
   import { faceType, ALU, decor, accFace, visualOf } from '../../lib/faceplate';
@@ -173,7 +173,7 @@
     try { await api.del(`/placements/${e.placement.id}`); sel = null; await load(); } catch (x) { fail(x); }
   }
   async function clearRack() {
-    try { const r = await api.post<{ removed: number }>(`/containers/${cid}/placements/clear`); toast(`${r.removed} élément(s) remis à placer.`); confirmClear = false; await load(); } catch (e) { fail(e); }
+    try { const r = await api.post<{ removed: number }>(`/containers/${cid}/placements/clear`); toast(`${r.removed} élément${pl(r.removed)} remis à placer.`); confirmClear = false; await load(); } catch (e) { fail(e); }
   }
   function slotFromEvent(ev: MouseEvent, el: HTMLElement): { u: number; col: number } {
     const r = el.getBoundingClientRect();
@@ -259,7 +259,7 @@
 {#if all && racks.length}
   <AllRacks {view} loc={route.path.split('/')[5] ?? null} />
 {:else if !racks.length && !fixed}
-  <div class="empty">Aucun élément rackable dans ce projet. Ajoutez une baie ou un flight-case depuis l’<a class="ilink" href="/projets/{view.project.id}/inventaire">inventaire</a>.</div>
+  <div class="empty">Aucun élément rackable dans ce projet. Ajoutez un rack ou un flight-case depuis l’<a class="ilink" href="/projets/{view.project.id}/inventaire">inventaire</a>.</div>
 {:else if rack}
   {@const t = rack.totals}
   <div class="rack-screen card" style="padding:0;overflow:hidden">
@@ -295,7 +295,7 @@
         </button>
         <section>
           <h2 class="sheet-t">À placer <span class="muted">· {wanted.length}</span></h2>
-          {#if mine}<p class="small muted">Choisissez un élément, puis une position dans la baie. Échap pour annuler.</p>{/if}
+          {#if mine}<p class="small muted">Choisissez un élément, puis une position dans le rack. Échap pour annuler.</p>{/if}
           {#each wantedGroups as g (g.key)}
             <div class="pcat"><i style="--c:{g.color}"></i><span>{g.label}</span><b>{g.list.length}</b></div>
           {#each g.list as p (p.instance_id ?? p.article_id)}
@@ -306,7 +306,7 @@
           {:else}<p class="small muted">Tout est posé.</p>{/each}
           {#if notRackable.length}
             <h2 style="margin-top:8px">Sur étagère <span class="muted">· {notRackable.length}</span></h2>
-            <p class="small muted">Hors format rack : choisissez une étagère posée dans la baie, puis « Poser ».</p>
+            <p class="small muted">Hors format rack : choisissez une étagère posée dans le rack, puis « Poser ».</p>
             {#each notRackable as p (p.instance_id ?? p.article_id)}<div class="pend mini" style="cursor:default" title="{p.label}{p.tag ? ` · ${p.tag}` : ''}"><i class="pm-c" style="--c:{fnColor(p.function)}"></i><span class="pm-l">{p.label}</span>{#if p.tag}<span class="pm-t">{p.tag}</span>{/if}</div>{/each}
           {/if}
         </section>
@@ -374,7 +374,7 @@
           {@const p = selected.placement}
           <section>
             <h2 class="sel-h"><span>{selected.label}</span><button class="icon-btn sm" title="Désélectionner (Échap)" onclick={() => (sel = null)}><Icon name="x" /></button></h2>
-            <dl class="kv"><dt>Repère</dt><dd class="mono">{selected.tag ?? '—'}</dd><dt>Position</dt><dd>U{p.u_start}{selected.height_u > 1 ? `–${p.u_start + Math.ceil(selected.height_u) - 1}` : ''} · {FACES[p.face]}</dd>
+            <dl class="kv"><dt>ID</dt><dd class="mono">{selected.tag ?? '—'}</dd><dt>Position</dt><dd>U{p.u_start}{selected.height_u > 1 ? `–${p.u_start + Math.ceil(selected.height_u) - 1}` : ''} · {FACES[p.face]}</dd>
               <dt>Profondeur</dt><dd>{selected.depth_mm ? `${nf(selected.depth_mm)} mm` : '—'}</dd><dt>Puissance</dt><dd>{selected.power_w ? `${nf(selected.power_w)} W` : '—'}</dd></dl>
             {#each rack.warnings.filter((w) => w.placement_id === p.id) as w}<div class="alert warn"><Icon name="alert" /><span>{w.message}</span></div>{/each}
             {#if panelOf(selected)}
@@ -410,7 +410,7 @@
                 </select></div>
                 <div class="field"><label for="rk-c">Circuit</label><select class="input" id="rk-c" value={p.circuit_id ?? ''} onchange={(e) => patch(selected, { circuit_id: (e.target as HTMLSelectElement).value || null })}><option value="">Non branché</option>{#each rack.circuits as c}<option value={c.id}>{c.name} · {c.phase} · {c.rating_a} A</option>{/each}</select></div>
               {/if}
-              <button class="btn sm ghost danger" style="align-self:flex-start" onclick={() => unplace(selected)}><Icon name="x" size="sm" />Retirer de la baie</button>
+              <button class="btn sm ghost danger" style="align-self:flex-start" onclick={() => unplace(selected)}><Icon name="x" size="sm" />Retirer du rack</button>
             {/if}
           </section>
         {:else}
@@ -423,7 +423,7 @@
           {#if rack.electrical.unbalanced}<div class="alert warn"><Icon name="alert" /><span>Phases déséquilibrées : écart de {rack.electrical.imbalance_pct} %.</span></div>{/if}
           {#if rack.electrical.unassigned_watts}<p class="small muted">{nf(rack.electrical.unassigned_watts)} W posés sans circuit.</p>{/if}
           {#each rack.electrical.circuits as c}
-            <div class="circ" class:over={c.over}><span><b>{c.name}</b><span class="small muted"> · {c.phase} · {c.rating_a} A</span></span><span class="mono">{nf(c.amps, 1)} A</span>{#if mine}<button class="icon-btn sm" title="Supprimer le circuit" onclick={() => delCircuit(rack!.circuits.find((x) => x.id === c.id)!)}><Icon name="x" /></button>{/if}</div>
+            <div class="circ" class:over={c.over}><span><b>{c.name}</b><span class="small muted">{' · '}{c.phase} · {c.rating_a} A</span></span><span class="mono">{nf(c.amps, 1)} A</span>{#if mine}<button class="icon-btn sm" title="Supprimer le circuit" onclick={() => delCircuit(rack!.circuits.find((x) => x.id === c.id)!)}><Icon name="x" /></button>{/if}</div>
           {/each}
           {#if mine}
             <form class="circ-form" onsubmit={addCircuit}>

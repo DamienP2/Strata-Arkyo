@@ -22,7 +22,7 @@
   <div class="dv-desk">
     {#each positions as p, i (p.id)}
       <section class="dv-post">
-        <div class="dv-h"><span class="dv-n mono">{i + 1}</span><span><b>{p.role || 'Poste'}</b>{#if p.name}<span class="muted small"> · {p.name}</span>{/if}</span></div>
+        <div class="dv-h"><span class="dv-n mono">{i + 1}</span><span><b>{p.role || 'Poste'}</b>{#if p.name}<span class="muted small">{' · '}{p.name}</span>{/if}</span></div>
         <ul>
           {#each p.instance_ids as id (id)}
             {@const g = gearOf(id)}

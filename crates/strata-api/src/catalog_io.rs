@@ -680,7 +680,7 @@ async fn import_run(
                 issues.push(CellIssue {
                     field: l.field(),
                     value: text.to_string(),
-                    message: format!("{} inconnu(e) : valeur ignorée.", l.kind().label()),
+                    message: format!("{} : valeur inconnue, ignorée.", l.kind().label()),
                 });
                 None
             }

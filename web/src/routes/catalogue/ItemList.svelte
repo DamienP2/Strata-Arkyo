@@ -10,6 +10,7 @@
   import { toast, fail } from '../../lib/toast.svelte';
   import { navigate } from '../../lib/router.svelte';
   import { ITEM_KINDS, refList, refName, fnColor, summary, type CatalogItem, type ItemPath } from '../../lib/catalog.svelte';
+  import { pl } from '../../lib/format';
 
   let { kind }: { kind: ItemPath } = $props();
   const meta = $derived(ITEM_KINDS.find((k) => k.path === kind)!);
@@ -64,7 +65,7 @@
     try {
       const r = await api.post<{ deleted: number; kept: { name: string; used_by: { name: string }[] }[] }>('/catalog/items/delete', { ids: [...selected] });
       toast(`${r.deleted} fiche${r.deleted > 1 ? 's' : ''} supprimée${r.deleted > 1 ? 's' : ''}.`);
-      if (r.kept.length) toast(`${r.kept.length} fiche(s) gardée(s) car utilisée(s) : ${r.kept.map((k) => k.name).join(', ')}.`, 'warn');
+      if (r.kept.length) toast(`${r.kept.length} fiche${pl(r.kept.length)} gardée${pl(r.kept.length)} car utilisée${pl(r.kept.length)} : ${r.kept.map((k) => k.name).join(', ')}.`, 'warn');
       selected = new Set(); confirmDelete = false; load();
     } catch (e) { fail(e); }
   }

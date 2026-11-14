@@ -23,8 +23,8 @@ export const DEFAULT_FMT: Record<string, [PaperKey, boolean]> = {
   plan_schematic: ['A3', true], plan_av: ['A3', true], plan_lighting: ['A3', true], recette: ['A4', false],
 };
 export const COL_LABEL: Record<string, string> = {
-  element: 'Élément', nature: 'Nature', label: 'Désignation', quantity: 'Qté', tags: 'Repères', reserve: 'Réserve', supply: 'Appro.', status: 'Statut',
-  equipment: 'Équipement', tag: 'Repère', port: 'Port', mode: 'Mode', vlan: 'VLAN', ip: 'Adresse IP', hostname: 'Nom d’hôte', redundancy: 'Réseau', peer: 'Relié à',
+  element: 'Élément', nature: 'Nature', label: 'Désignation', quantity: 'Qté', tags: 'ID', reserve: 'Réserve', supply: 'Appro.', status: 'Statut',
+  equipment: 'Équipement', tag: 'ID', port: 'Port', mode: 'Mode', vlan: 'VLAN', ip: 'Adresse IP', hostname: 'Nom d’hôte', redundancy: 'Réseau', peer: 'Relié à',
   flow: 'Flux', essence: 'Essence', address: 'Adresse', udp: 'UDP', fixture: 'Appareil', page: 'Page', console: 'N°', universe: 'Univers', channels: 'Canaux',
 };
 const COL_W: Record<string, number> = { element: 26, nature: 16, label: 50, quantity: 10, tags: 40, reserve: 12, supply: 16, status: 20, equipment: 32, tag: 14, port: 18, mode: 12, vlan: 18, ip: 22, hostname: 22, redundancy: 10, peer: 44, flow: 26, essence: 14, address: 22, udp: 12, fixture: 34, page: 24, console: 8, universe: 12, channels: 12 };
@@ -243,7 +243,7 @@ export async function build(view: ProjectView, defs: DocDef[], opts: DocOpt[], d
     const [paper, landscape] = firstFmt(o);
     if (o.key === 'sheet') {
       const p = view.project as any, h = projectHeader(p, title);
-      const rows: [string, string][] = [['Projet', p.name], ['Client', h.client], ['Lieu', h.venue], ['Type de projet', p.service_type ?? ''], ['Dates', h.dates], ['Statut', STATUS[p.status as keyof typeof STATUS]?.label ?? p.status], ['Description', p.description ?? ''], ['Lieux', view.locations.map((l) => l.name).join(', ')], ['Éléments', view.containers.map((x) => x.name).join(', ')]];
+      const rows: [string, string][] = [['Projet', p.name], ['Client', h.client], ['Lieu', h.venue], ['Type de projet', p.service_type ?? ''], ['Dates', h.dates], ['Statut', STATUS[p.status as keyof typeof STATUS]?.label ?? p.status], ['Description', p.description ?? ''], ['Emplacements', view.locations.map((l) => l.name).join(', ')], ['Éléments', view.containers.map((x) => x.name).join(', ')]];
       await table(title, paper, landscape, [{ label: 'Rubrique', w: 30 }, { label: 'Valeur', w: 140 }], rows.map(([a, b]) => [a, b || 'Non renseigné']));
       continue;
     }

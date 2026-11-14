@@ -9,6 +9,7 @@
   import { api } from '../../lib/api';
   import { can } from '../../lib/session.svelte';
   import { fail } from '../../lib/toast.svelte';
+  import { pl } from '../../lib/format';
   import { route, navigate } from '../../lib/router.svelte';
   import { STATUS, STATUS_ORDER, REGIE, keyDate, daysBetween, fdate, period, urgency, type ProjectSummary, type Status, type Regie } from '../../lib/projects';
 
@@ -121,7 +122,7 @@
               {@const d = kd ? daysBetween(today, kd) : null}
               {@const act = !['done', 'cancelled'].includes(p.status)}
               <a class="pcard pj-card" class:off={!act} href="/projets/{p.id}" style="--c:{STATUS[p.status].color};text-decoration:none">
-                <span class="pj-top"><span class="pj-ico" title={REGIE[p.regie].label}><Icon name={REGIE_ICON[p.regie]} size="sm" /></span><span class="pj-kind">{REGIE[p.regie].label}{#if p.service_type} · {p.service_type}{/if}</span>
+                <span class="pj-top"><span class="pj-ico" title={REGIE[p.regie].label}><Icon name={REGIE_ICON[p.regie]} size="sm" /></span><span class="pj-kind">{REGIE[p.regie].label}{#if p.service_type}{' · '}{p.service_type}{/if}</span>
                   <span class="pc-j">{#if act && d != null && d >= 0}<span class="tally" style="--c:{urgency(d)}">J-{d}</span>{:else if !act}<span class="tally off">{p.status === 'done' ? 'Livré' : 'Annulé'}</span>{/if}</span></span>
                 <span class="pc-body"><b class="pc-name" title={p.name}>{p.name}</b>{#if subOf(p)}<span class="pc-sub" title={subOf(p)}>{subOf(p)}</span>{/if}
                   <span class="pc-foot"><span><span class="lbl-t">Exploitation</span><b>{kd ? fdate(kd, { day: 'numeric', month: 'short', year: 'numeric' }) : 'à fixer'}</b></span><span><span class="lbl-t">Fiche · {p.completion} %</span><Vu value={p.completion} n={20} cls={p.completion >= 80 ? 'ok' : ''} /></span></span></span>
@@ -136,8 +137,8 @@
 
 {#if imp}
   <Dialog title="Importer « {imp.name} »" eyebrow="Projet" onclose={() => (imp = null)}>
-    <p class="small">{Object.entries(imp.counts).filter(([k]) => ['containers', 'articles', 'instances', 'cables', 'drawings', 'plan_maps', 'net_vlans'].includes(k)).map(([k, v]) => `${v} ${({ containers: 'élément(s)', articles: 'article(s)', instances: 'exemplaire(s)', cables: 'câble(s)', drawings: 'page(s) de dessin', plan_maps: 'carte(s)', net_vlans: 'VLAN' } as Record<string, string>)[k]}`).join(' · ')}</p>
-    <p class="small">{imp.catalog} fiche(s) du catalogue jointe(s) : seules les manquantes sont ajoutées, aucune fiche existante n’est modifiée.</p>
+    <p class="small">{Object.entries(imp.counts).filter(([k]) => ['containers', 'articles', 'instances', 'cables', 'drawings', 'plan_maps', 'net_vlans'].includes(k)).map(([k, v]) => `${v} ${({ containers: `élément${pl(v)}`, articles: `ligne${pl(v)} de matériel`, instances: `exemplaire${pl(v)}`, cables: `câble${pl(v)}`, drawings: `page${pl(v)} de dessin`, plan_maps: `plan${pl(v)}`, net_vlans: 'VLAN' } as Record<string, string>)[k]}`).join(' · ')}</p>
+    <p class="small">{imp.catalog} fiche{pl(imp.catalog)} du catalogue jointe{pl(imp.catalog)} : seules les manquantes sont ajoutées, aucune fiche existante n’est modifiée.</p>
     {#each imp.warnings as w}<p class="small" style="color:var(--warn,#B78400)">{w}</p>{/each}
     {#if imp.exists}<p class="small"><b>Ce projet existe déjà ici.</b> Remplacer le remet dans l’état du fichier (l’état actuel est gardé dans un point de restauration) ; Copie crée un nouveau projet « (copie) ».</p>{/if}
     {#snippet footer()}<button class="btn" onclick={() => (imp = null)}>Annuler</button>{#if imp?.exists}<button class="btn" disabled={importing} onclick={() => runImport('replace')}>Remplacer</button>{/if}<button class="btn primary" disabled={importing} onclick={() => runImport(imp?.exists ? 'copy' : 'replace')}>{imp?.exists ? 'Copie' : 'Importer'}</button>{/snippet}

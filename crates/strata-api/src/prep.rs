@@ -218,7 +218,7 @@ async fn lines(store: &Store, pid: &str) -> ApiResult<(Vec<Line>, Value)> {
                 .as_deref()
                 .and_then(|m| models.get(m))
                 .cloned()
-                .unwrap_or_else(|| "Modèle de câble à choisir".into()),
+                .unwrap_or_else(|| "Type de câble à choisir".into()),
             key,
             family: Family::Cables,
             detail,
@@ -384,7 +384,7 @@ async fn cable_model(
             .item(id)
             .await?
             .filter(|i| i.kind == strata_domain::catalog::ItemKind::CableModel)
-            .ok_or_else(|| one("model_id", "Modèle de câble introuvable."))?;
+            .ok_or_else(|| one("model_id", "Type de câble introuvable."))?;
     }
     let (ls, _) = lines(&st.store, &pid).await?;
     let l = ls

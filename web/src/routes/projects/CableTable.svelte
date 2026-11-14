@@ -8,7 +8,7 @@
   import { api, download } from '../../lib/api';
   import { can } from '../../lib/session.svelte';
   import { toast, fail } from '../../lib/toast.svelte';
-  import { nf } from '../../lib/format';
+  import { nf, pl } from '../../lib/format';
   import { loadRefs, fnColor, refList } from '../../lib/catalog.svelte';
   import Dialog from '../../components/Dialog.svelte';
   import AnomalyGroups from '../../components/AnomalyGroups.svelte';
@@ -97,7 +97,7 @@
       if (f === 'number') { const n = typeof v === 'string' ? bump(v, k++) : null; if (!n) { toast('Le numéro de départ doit finir par des chiffres.', 'warn'); return; } set(r, f, n); }
       else set(r, f, v ?? null);
     }
-    toast(`${targets.length} ligne(s) remplie(s) : pensez à enregistrer.`, 'info');
+    toast(`${targets.length} ligne${pl(targets.length)} remplie${pl(targets.length)} : pensez à enregistrer.`, 'info');
   }
   async function save() {
     if (!rows || !dirty) return;
@@ -107,8 +107,8 @@
       for (let i = 0; i < changes.length; i += 500) {
         const r = await api.post<{ updated: { id: string }[]; conflicts: { id: string; reason: string }[] }>(`/projects/${pid}/cables/bulk`, { changes: changes.slice(i, i + 500) });
         for (const u of r.updated) delete edits[u.id];
-        if (r.conflicts.length) toast(`${r.conflicts.length} ligne(s) modifiée(s) entre-temps par quelqu’un d’autre : vos saisies sont gardées, vérifiez-les puis enregistrez à nouveau.`, 'warn');
-        else toast(`${r.updated.length} câble(s) enregistré(s).`);
+        if (r.conflicts.length) toast(`${r.conflicts.length} ligne${pl(r.conflicts.length)} modifiée${pl(r.conflicts.length)} entre-temps par quelqu’un d’autre : vos saisies sont gardées, vérifiez-les puis enregistrez à nouveau.`, 'warn');
+        else toast(`${r.updated.length} câble${pl(r.updated.length)} enregistré${pl(r.updated.length)}.`);
       }
     } catch (e) { fail(e); }
     finally { saving = false; await load(); }

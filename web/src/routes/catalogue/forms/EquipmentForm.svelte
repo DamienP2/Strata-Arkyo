@@ -155,7 +155,7 @@
     <div class="field"><label for="e-type">Type</label><select class="input" id="e-type" value={data.type_id ?? ''} onchange={(e) => (data.type_id = (e.target as HTMLSelectElement).value || null)}><option value="">—</option>{#each topTypes as t}<option value={t.id}>{t.name}</option>{#each types.filter((s) => s.parent_id === t.id) as s}<option value={s.id}>— {s.name}</option>{/each}{/each}</select><FieldError message={err('type_id')} /></div>
     <div class="field span"><span class="flabel">Fonctions</span><ChipPicker options={fnOptions} bind:value={data.functions} label="Fonctions" /><FieldError message={err('functions')} /></div>
     <div class="field span"><span class="flabel">Phases</span><ChipPicker options={phaseOptions} bind:value={data.phases} label="Phases" /></div>
-    <div class="field"><label for="e-tags">Étiquettes</label><input class="input" id="e-tags" bind:value={tags} placeholder="séparées par des virgules"></div>
+    <div class="field"><label for="e-tags">Mots-clés</label><input class="input" id="e-tags" bind:value={tags} placeholder="séparés par des virgules"></div>
     <div class="field" style="justify-content:flex-end"><label class="toggle-row"><input type="checkbox" checked={data.active !== false} onchange={(e) => (data.active = (e.target as HTMLInputElement).checked)}>Fiche active (proposée dans les projets)</label></div>
     <div class="field span"><label for="e-notes">Notes</label><textarea class="input" id="e-notes" rows="3" style="height:auto;padding:12px 14px" value={data.notes ?? ''} oninput={(e) => (data.notes = (e.target as HTMLTextAreaElement).value || null)}></textarea></div>
   </div>
@@ -172,7 +172,7 @@
       <NumField id="e-rear" label="Réserve arrière" unit="mm" bind:value={data.format.rear_reserve_mm} suggestions={dims('rear_reserve_mm')} error={err('format.rear_reserve_mm')} help="Place pour les câbles derrière l’appareil." />
     </div>
     <div class="vis-row">
-      <div class="field"><label for="e-vis">Visuel en baie</label>
+      <div class="field"><label for="e-vis">Visuel en rack</label>
         <select class="input" id="e-vis" value={data.visual ?? ''} onchange={(e) => (data.visual = (e.target as HTMLSelectElement).value || null)}>
           <option value="">Automatique · {VISUALS.find(([k]) => k === visualOf({ type_id: data.type_id, label: data.name ?? '' }))?.[1] ?? 'Générique'}</option>
           {#each VISUALS as [k, l]}<option value={k}>{l}</option>{/each}

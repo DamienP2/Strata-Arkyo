@@ -102,7 +102,7 @@
       const c = await api.post<Container>(`/projects/${pid}/containers`, { location_id: d.location_id, name: d.name.trim(), kind: 'desk', rackable: false, length_mm: 2400, width_mm: 900, outer_height_mm: 750, cable_code: '', details: { positions: [] } });
       const loc = view.locations.find((l) => l.id === d.location_id);
       newDesk = null;
-      toast(`Pupitre « ${c.name} » ajouté${loc ? ` dans ${loc.name}` : ''}.`);
+      toast(`Mobilier « ${c.name} » ajouté${loc ? ` dans ${loc.name}` : ''}.`);
       await reload(); navigate(`/projets/${pid}/mobilier/${c.id}`);
     } catch (x) { fail(x); if (newDesk) newDesk.busy = false; }
   }
@@ -118,10 +118,10 @@
   <div class="card empty-mob">
     <span class="kind"><Icon name="layers" /></span>
     <h2>Aucun mobilier dans ce projet</h2>
-    <p class="muted">Un mobilier (pupitre, console, meuble) se découpe en postes et reçoit des casquettes rackables pour les écrans, les panneaux de commande et le matériel à portée de main.</p>
+    <p class="muted">Un mobilier (pupitre, console, meuble) se découpe en postes et reçoit des casquettes rackables pour les écrans, les surfaces de commande et le matériel à portée de main.</p>
     {#if writable}
-      {#if view.locations.length}<button class="btn primary" onclick={askDesk}><Icon name="plus" size="sm" />Ajouter un pupitre</button>
-      {:else}<p class="muted small">Un pupitre se range dans un emplacement : le projet n’en a pas encore.</p><a class="btn primary" href="/projets/{pid}/inventaire"><Icon name="plus" size="sm" />Créer un emplacement</a>{/if}
+      {#if view.locations.length}<button class="btn primary" onclick={askDesk}><Icon name="plus" size="sm" />Ajouter un mobilier</button>
+      {:else}<p class="muted small">Un mobilier se range dans un emplacement : le projet n’en a pas encore.</p><a class="btn primary" href="/projets/{pid}/inventaire"><Icon name="plus" size="sm" />Créer un emplacement</a>{/if}
     {/if}
   </div>
 {:else if desk}
@@ -273,12 +273,12 @@
 </style>
 
 {#if newDesk}
-  <Dialog title="Ajouter un pupitre" eyebrow="Mobilier" onclose={() => (newDesk = null)}>
+  <Dialog title="Ajouter un mobilier" eyebrow="Mobilier" onclose={() => (newDesk = null)}>
     <form id="deskf" class="stack" onsubmit={addDesk}>
       <div class="field"><label for="nd-loc">Emplacement</label><select class="input" id="nd-loc" bind:value={newDesk.location_id}>{#each view.locations as l}<option value={l.id}>{l.name}{l.code && l.code !== l.name ? ` · ${l.code}` : ''}</option>{/each}</select></div>
       <div class="field"><label for="nd-name">Nom</label><input class="input" id="nd-name" bind:value={newDesk.name} required maxlength="120" placeholder="Pupitre réalisateur, console son…"></div>
-      <p class="muted small">Pupitre de 2 400 × 900 mm, 750 mm de haut : les cotes se règlent ensuite dans le panneau de droite.</p>
+      <p class="muted small">Mobilier de 2 400 × 900 mm, 750 mm de haut : les cotes se règlent ensuite dans le panneau de droite.</p>
     </form>
-    {#snippet footer()}<button class="btn ghost" onclick={() => (newDesk = null)}>Annuler</button><button class="btn primary" type="submit" form="deskf" disabled={!newDesk?.name.trim() || newDesk?.busy}>{#if newDesk?.busy}<span class="spin"></span>{/if}Ajouter le pupitre</button>{/snippet}
+    {#snippet footer()}<button class="btn ghost" onclick={() => (newDesk = null)}>Annuler</button><button class="btn primary" type="submit" form="deskf" disabled={!newDesk?.name.trim() || newDesk?.busy}>{#if newDesk?.busy}<span class="spin"></span>{/if}Ajouter le mobilier</button>{/snippet}
   </Dialog>
 {/if}

@@ -6,6 +6,11 @@ export function nf(n: number, d = 0): string {
   return nfCache.get(d)!.format(n);
 }
 
+/** Marque du pluriel français : « s » (ou `many`) au-delà de 1, rien (ou `one`) sinon (0 et 1 au singulier). */
+export function pl(n: number, many = 's', one = ''): string {
+  return n > 1 ? many : one;
+}
+
 export function bytes(n: number): string {
   if (n < 1024) return `${n} o`;
   const u = ['Ko', 'Mo', 'Go', 'To'];

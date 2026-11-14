@@ -451,7 +451,7 @@ async fn place(
         .store
         .article(&b.article_id)
         .await?
-        .ok_or(ApiError::NotFound("Article"))?;
+        .ok_or(ApiError::NotFound("Matériel"))?;
     if a.container_id.as_deref() != Some(&cid) {
         let name = match &a.container_id {
             Some(o) => st
@@ -491,7 +491,7 @@ async fn place(
                 .find(|x| !placed.contains(x.id.as_str()))
                 .ok_or_else(|| {
                     ApiError::Conflict(
-                        "Tous les exemplaires de cet article sont déjà posés.".into(),
+                        "Tous les exemplaires de ce matériel sont déjà posés.".into(),
                     )
                 })?,
         };
@@ -523,7 +523,7 @@ async fn place(
             }
             if geo.is_some() {
                 return Err(ApiError::Invalid(
-                    "Un équipement au format rack se pose dans la baie, pas sur une étagère."
+                    "Un équipement au format rack se pose dans le rack, pas sur une étagère."
                         .into(),
                 ));
             }

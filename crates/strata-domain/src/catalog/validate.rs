@@ -561,7 +561,7 @@ pub fn validate_cable(x: &Cable, ix: &RefIndex) -> Vec<FieldError> {
         "model_id",
         &x.model_id,
         &ix.cable_models,
-        "Modèle de câble",
+        "Type de câble",
     );
     if x.lengths_m.iter().any(|l| !l.is_finite() || *l <= 0.0) {
         e.push(err(

@@ -92,7 +92,7 @@
         </div>
       {:else if c.kind === 'desk' || c.kind === 'operator_position'}
         <div class="spec">
-          <span class="lbl-t">{c.kind === 'desk' ? 'Postes du pupitre' : 'Poste'}</span>
+          <span class="lbl-t">{c.kind === 'desk' ? 'Postes du mobilier' : 'Poste'}</span>
           {#each d.positions ?? [] as p, i (p.id)}
             <div class="post">
               <span class="post-n mono">{i + 1}</span>

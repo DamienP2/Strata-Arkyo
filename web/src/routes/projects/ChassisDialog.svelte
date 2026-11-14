@@ -57,7 +57,7 @@
       {/if}
     {/each}
   </div>
-  <p class="muted small" style="margin:10px 0 0">Les ports des modules s’ajoutent au châssis dans le synoptique (« S3 · SDI IN »). Chaque module garde son repère, son numéro de série et son poids.</p>
+  <p class="muted small" style="margin:10px 0 0">Les ports des modules s’ajoutent au châssis dans le synoptique (« S3 · SDI IN »). Chaque module garde son ID, son numéro de série et son poids.</p>
   {#if pick != null}
     <div class="pickr">
       <div class="ph"><b>Emplacement {pick}</b><input class="input" placeholder="Rechercher un module…" bind:value={q} aria-label="Rechercher un module"></div>

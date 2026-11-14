@@ -234,7 +234,7 @@ pub fn validate_object(o: &mut ObjectData) -> Vec<FieldError> {
     match o {
         ObjectData::Container { x, y, z, rot, .. } => {
             if !coord_ok(*x) || !coord_ok(*y) {
-                e.push(("x", "Position hors de la carte.".into()));
+                e.push(("x", "Position hors du plan.".into()));
             }
             if !(0.0..=100_000.0).contains(z) {
                 e.push(("z", "Hauteur au sol de 0 à 100 m.".into()));
@@ -259,7 +259,7 @@ pub fn validate_object(o: &mut ObjectData) -> Vec<FieldError> {
                 }
             }
             if !coord_ok(*x) || !coord_ok(*y) {
-                e.push(("x", "Position hors de la carte.".into()));
+                e.push(("x", "Position hors du plan.".into()));
             }
             if !(0.0..=100_000.0).contains(z) {
                 e.push(("z", "Hauteur au sol de 0 à 100 m.".into()));
@@ -274,7 +274,7 @@ pub fn validate_object(o: &mut ObjectData) -> Vec<FieldError> {
         ObjectData::Text { x, y, text, size } => {
             *text = text.trim().to_string();
             if !coord_ok(*x) || !coord_ok(*y) {
-                e.push(("x", "Position hors de la carte.".into()));
+                e.push(("x", "Position hors du plan.".into()));
             }
             if text.is_empty() || text.chars().count() > 500 {
                 e.push(("text", "Texte de 1 à 500 caractères.".into()));
@@ -288,7 +288,7 @@ pub fn validate_object(o: &mut ObjectData) -> Vec<FieldError> {
                 e.push(("points", "Une mesure a de 2 à 200 points.".into()));
             }
             if points.iter().any(|p| !coord_ok(p[0]) || !coord_ok(p[1])) {
-                e.push(("points", "Point hors de la carte.".into()));
+                e.push(("points", "Point hors du plan.".into()));
             }
         }
     }
