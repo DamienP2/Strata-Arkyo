@@ -310,10 +310,10 @@
                 ondrop={(e) => drop(e, e.currentTarget as HTMLElement)}>
                 {#each faceEls as e (e.placement.id)}
                   <div class="ritem {e.nature === 'accessory' ? 'acc' : ''} {ALU.has(typeOf(e)) && mode === 'real' ? 'alu' : ''} {e.height_u <= 1 ? 'u1' : ''} {e.placement.width !== 'full' ? `half c${e.placement.col}` : ''}" class:sel={sel === e.placement.id} class:dw={dw(e)}
-                    style={style(e)} role="button" tabindex="0" draggable={mine} title="{e.label}{e.custom ? ` · ${e.custom}` : ''} · U{e.placement.u_start}"
+                    style={style(e)} role="button" tabindex="0" draggable={mine} title="{e.custom ? `${e.custom} · ` : ''}{e.tag ? `${e.tag} · ` : ''}{e.label} · U{e.placement.u_start}"
                     onclick={() => (sel = e.placement.id)} onkeydown={(k) => { if (k.key === 'Enter') sel = e.placement.id; }}
                     ondragstart={() => (dragging = e)} ondragend={() => (dragging = null)}>
-                    {#if e.nature !== 'accessory'}<i class="led"></i>{/if}<span class="rl" class:two={!!rackLines(e)[1]}>{#if rackLines(e)[0]}<b class="rn">{rackLines(e)[0]}</b>{/if}{#if rackLines(e)[1]}<small>{rackLines(e)[1]}</small>{/if}</span>{#if isShelf(e) && onShelf(e.placement.id).length}<span class="shelf-load">{#each onShelf(e.placement.id) as x (x.placement.id)}<span class="sh-it" style="--c:{fnColor(x.function)}">{x.label}</span>{/each}</span>{:else if mode === 'real' && panelOf(e)}<span class="pdec"><PanelFace panel={panelOf(e)!} /></span>{:else if mode === 'real'}<span class="dec">{@html decor(typeOf(e))}</span>{:else}<span class="dec"></span>{/if}
+                    {#if e.nature !== 'accessory'}<i class="led"></i>{/if}<span class="rl" class:two={!!rackLines(e)[1]}>{#if rackLines(e)[0]}<b class="rn" class:id={!!e.tag && rackLines(e)[0] === e.tag}>{rackLines(e)[0]}</b>{/if}{#if rackLines(e)[1]}<small>{rackLines(e)[1]}</small>{/if}</span>{#if isShelf(e) && onShelf(e.placement.id).length}<span class="shelf-load">{#each onShelf(e.placement.id) as x (x.placement.id)}<span class="sh-it" style="--c:{fnColor(x.function)}">{x.label}</span>{/each}</span>{:else if mode === 'real' && panelOf(e)}<span class="pdec"><PanelFace panel={panelOf(e)!} /></span>{:else if mode === 'real'}<span class="dec">{@html decor(typeOf(e))}</span>{:else}<span class="dec"></span>{/if}
                   </div>
                 {/each}
                 {#if armed && hoverU}

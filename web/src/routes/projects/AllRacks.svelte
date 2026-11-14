@@ -16,7 +16,7 @@
   import RackPicker from '../../components/RackPicker.svelte';
   let { view, reload, loc = null }: { view: ProjectView; reload?: () => Promise<void>; loc?: string | null } = $props();
   type Face = 'front' | 'rear';
-  interface El { placement: { id: string; article_id: string; instance_id: string | null; face: string; u_start: number; width: string; col: number; shelf_id: string | null; rev: number }; label: string; tag: string | null; custom?: string | null; nature: string; height_u: number; function: string | null; accessory: Accessory | null; article_rev: number; type_id?: string | null; visual?: string | null }
+  interface El { placement: { id: string; article_id: string; instance_id: string | null; face: string; u_start: number; width: string; col: number; shelf_id: string | null; rev: number }; label: string; tag: string | null; custom?: string | null; brand?: string | null; nature: string; height_u: number; function: string | null; accessory: Accessory | null; article_rev: number; type_id?: string | null; visual?: string | null }
   interface R { container: any; elements: El[]; lock: { mine: boolean; account_name: string } | null }
 
   // Un emplacement choisi (ou tous), rangés par emplacement.
@@ -121,9 +121,9 @@
           ondrop={(ev) => { ev.preventDefault(); if (drag) dropOn(c.id, uAt(ev, ev.currentTarget as HTMLElement, units)); }}>
           {#each (r?.elements ?? []).filter((e) => e.placement.face === face && !e.placement.shelf_id) as e (e.placement.id)}
             <div class="ritem {e.nature === 'accessory' ? 'acc' : ''} {ALU.has(typeOf(e)) ? 'alu' : ''} {e.height_u <= 1 ? 'u1' : ''} {e.placement.width !== 'full' ? `half c${e.placement.col}` : ''}" class:dragged={drag?.e === e}
-              style={style(e)} role="button" tabindex="0" draggable={canDesign && !busy} title="{e.label}{e.custom ? ` · ${e.custom}` : ''} · U{e.placement.u_start}"
+              style={style(e)} role="button" tabindex="0" draggable={canDesign && !busy} title="{e.custom ? `${e.custom} · ` : ''}{e.tag ? `${e.tag} · ` : ''}{e.label} · U{e.placement.u_start}"
               ondragstart={(ev) => { drag = { from: c.id, e }; ev.dataTransfer?.setData('text/plain', e.placement.id); }} ondragend={() => { drag = null; over = null; }}>
-              {#if e.nature !== 'accessory'}<i class="led"></i>{/if}<span class="rl" class:two={!!rackLines(e)[1]}>{#if rackLines(e)[0]}<b class="rn">{rackLines(e)[0]}</b>{/if}{#if rackLines(e)[1]}<small>{rackLines(e)[1]}</small>{/if}</span>{#if panelOf(e)}<span class="pdec"><PanelFace panel={panelOf(e)!} /></span>{:else}<span class="dec">{@html decor(typeOf(e))}</span>{/if}
+              {#if e.nature !== 'accessory'}<i class="led"></i>{/if}<span class="rl" class:two={!!rackLines(e)[1]}>{#if rackLines(e)[0]}<b class="rn" class:id={!!e.tag && rackLines(e)[0] === e.tag}>{rackLines(e)[0]}</b>{/if}{#if rackLines(e)[1]}<small>{rackLines(e)[1]}</small>{/if}</span>{#if panelOf(e)}<span class="pdec"><PanelFace panel={panelOf(e)!} /></span>{:else}<span class="dec">{@html decor(typeOf(e))}</span>{/if}
             </div>
           {/each}
           {#if drag && over?.cid === c.id}
