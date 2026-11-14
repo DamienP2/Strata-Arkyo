@@ -168,15 +168,31 @@ kbd{font-size:10.5px;padding:3px 6px}
 .ws-main>.editor .page-head{padding-bottom:4px}
 /* Oreilles 1U : deux trous de fixation par côté, comme sur un vrai équipement. */
 .ritem.u1::before,.ritem.u1::after{background:radial-gradient(circle at 50% 24%,#C8CDD2 0 1.2px,#5A6068 1.5px 2.1px,transparent 2.4px),radial-gradient(circle at 50% 76%,#C8CDD2 0 1.2px,#5A6068 1.5px 2.1px,transparent 2.4px),var(--fp-bg)}
-/* Moniteurs en rack : écrans 16/9 sur presque toute la hauteur, tally et UMD, touches. */
-.ritem:has(.mwrap) .dec{flex:1 1 auto;justify-content:center;padding:0}
-.ritem:has(.mwrap) .rn{position:absolute;left:10px;top:3px;font-size:9px;opacity:.75;max-width:30%;z-index:1}
-.ritem:has(.mwrap) .led{position:absolute;left:10px;bottom:5px}
-.dec .mwrap{display:flex;align-items:center;justify-content:center;gap:10px;flex:1 1 auto;width:100%;height:100%;min-width:0;padding:4px 0 5px;box-sizing:border-box}
-.dec .mscr{position:relative;display:block;height:100%;aspect-ratio:16/9;flex:0 1 auto;min-width:0;border-radius:2px;background:#000;box-shadow:0 0 0 2px #0a0b0d,0 0 0 3px #4a5058;overflow:hidden}
-.dec .mscr svg{display:block;width:100%;height:100%;opacity:.92}
-.dec .mscr .umd{position:absolute;left:0;right:0;bottom:0;height:12%;min-height:3px;background:#0b0c0e;box-shadow:inset 3px 0 0 #3bd16f}
-.dec .mkeys{flex:none;width:8px;height:58%;margin-left:6px;border-radius:1px;background:repeating-linear-gradient(to bottom,#9aa1a9 0 3px,transparent 3px 6px)}
+/* Moniteurs en rack : écrans 16/9 exacts, aussi grands que la façade le permet (hauteur
+   ou largeur), mire SMPTE, tally et UMD ; pas de touches. */
+.ritem:has(.mwrap){padding-left:6px;padding-right:6px}
+.ritem:has(.mwrap) .dec{flex:1 1 auto;justify-content:center;padding:0;height:100%}
+/* Le texte d'un moniteur s'affiche comme un UMD : bandeau centré en bas de l'image. */
+.ritem:has(.mwrap) .rl{position:absolute;z-index:1;left:50%;bottom:3px;transform:translateX(-50%);max-width:72%;padding:1px 7px;border-radius:2px;background:rgba(6,7,9,.86);flex-direction:row!important;align-items:baseline!important;gap:6px!important}
+.ritem:has(.mwrap) .rl .rn{font-size:9.5px;color:#EEF0F3}
+.ritem:has(.mwrap) .rl small{font-size:9px;color:#8EE6A8}
+.ritem.u1:has(.mwrap) .rl{left:8px;bottom:auto;top:50%;transform:translateY(-50%);max-width:30%}
+.ritem:has(.mwrap) .led{display:none}
+.dec .mwrap{container-type:size;display:flex;align-items:center;justify-content:center;gap:6px;flex:1 1 auto;width:100%;height:100%;min-width:0;padding:2px 0;box-sizing:border-box}
+.dec .mscr{position:relative;display:block;flex:none;aspect-ratio:16/9;height:auto;width:min(calc((100cqw - (var(--n) - 1) * 6px) / var(--n)), calc(100cqh * 16 / 9));border-radius:1.5px;background:#000;box-shadow:0 0 0 1.5px #0a0b0d,0 0 0 2.5px #4a5058;overflow:hidden}
+.dec .mscr svg{display:block;width:100%;height:100%;opacity:.95}
+.dec .mscr .umd{position:absolute;left:0;right:0;bottom:0;height:10%;min-height:2px;background:#0b0c0e;box-shadow:inset 3px 0 0 #3bd16f}
+.dec .mkeys{display:none}
+/* Textes des équipements : taille fixe et régulière quelle que soit la hauteur, nom puis
+   libellé personnalisé, sur une pastille discrète qui reste lisible sur tous les décors. */
+.ritem .rl{display:flex;align-items:baseline;gap:6px;min-width:0;flex:0 1 auto;max-width:56%;overflow:hidden;padding:2px 6px;border-radius:3px;background:rgba(0,0,0,.32);line-height:1.2}
+.ritem.alu .rl{background:rgba(255,255,255,.42)}
+.ritem:not(.u1) .rl.two{flex-direction:column;align-items:flex-start;gap:1px}
+.ritem .rl:empty{display:none}
+.ritem .rl .rn{font:600 10.5px/1.2 var(--font);letter-spacing:.01em;color:var(--fp-ink);overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.ritem .rl small{font:500 10px/1.2 var(--font);color:var(--fp-mute);overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.ritem.acc .rl{background:none;padding:0}
+.ritem.acc .rl .rn{font-weight:500;color:var(--fp-mute)}
 /* Barre de laçage : barre ronde sur fond ajouré */
 .ritem .lace{flex:1;align-self:center;height:5px;margin:0 10px;border-radius:3px;background:linear-gradient(180deg,#F0F2F4,#8C9298);box-shadow:0 1px 2px rgba(0,0,0,.6)}
 .ritem.acc:has(.lace){background:transparent!important;box-shadow:none!important}
@@ -188,7 +204,7 @@ kbd{font-size:10.5px;padding:3px 6px}
 .rack-body{background:repeating-linear-gradient(to top,#1E2228 0 1px,#08090B 1px var(--u))}
 .ritem{--fp-bg:linear-gradient(180deg,#5A616B 0%,#474D56 45%,#3A4047 100%);--fp-ink:#FFFFFF;--fp-mute:#C9D0D8;
   font-size:13px;box-shadow:inset 0 1px 0 rgba(255,255,255,.28),inset 0 -1px 0 rgba(0,0,0,.4),0 0 0 1px #000,0 0 0 2px rgba(255,255,255,.07),0 2px 4px rgba(0,0,0,.5)}
-.ritem .rn{text-shadow:0 1px 1px rgba(0,0,0,.55)}
+.ritem .rn{text-shadow:none}
 .ritem.alu .rn{text-shadow:none}
 .ritem .led{width:7px;height:7px}
 .ritem.acc{--fp-bg:linear-gradient(180deg,#4A5059,#363B42)}

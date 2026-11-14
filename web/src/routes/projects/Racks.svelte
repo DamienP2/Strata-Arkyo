@@ -11,6 +11,7 @@
   import { join } from '../../lib/live.svelte';
   import { nf, relative } from '../../lib/format';
   import { refById, loadRefs } from '../../lib/catalog.svelte';
+  import { rackLines, rackText, setRackText, RACK_TEXT, type RackText } from '../../lib/racktext.svelte';
   import { faceType, ALU, decor, accessoryFace, visualOf } from '../../lib/faceplate';
   import { CONTAINER_KINDS, type Accessory, type Article, type ProjectView } from '../../lib/projects';
   import PanelFace from '../../components/PanelFace.svelte';
@@ -24,7 +25,7 @@
   type Face = 'front' | 'rear' | 'rear_inner';
   type W = 'full' | 'half' | 'third' | 'quarter';
   interface Placement { id: string; article_id: string; instance_id: string | null; face: Face; u_start: number; width: W; col: number; circuit_id: string | null; shelf_id: string | null; rev: number }
-  interface RackEl { placement: Placement; label: string; tag: string | null; nature: string; height_u: number; depth_mm: number | null; rear_reserve_mm: number | null; weight_kg: number | null; power_w: number | null; function: string | null; category: string | null; brand: string | null; accessory: Accessory | null; article_rev: number; type_id?: string | null; visual?: string | null }
+  interface RackEl { placement: Placement; label: string; tag: string | null; custom?: string | null; nature: string; height_u: number; depth_mm: number | null; rear_reserve_mm: number | null; weight_kg: number | null; power_w: number | null; function: string | null; category: string | null; brand: string | null; accessory: Accessory | null; article_rev: number; type_id?: string | null; visual?: string | null }
   interface Pending { article_id: string; instance_id?: string; tag?: string; label: string; nature: string; height_u: number | null; width: W | null; rackable: boolean; function: string | null; accessory: Accessory | null; type_id?: string | null; visual?: string | null }
   interface Circuit { id: string; name: string; phase: 'L1' | 'L2' | 'L3'; rating_a: number; rev: number }
   interface Rack {
@@ -248,6 +249,7 @@
       {#if !fixed}<RackPicker {view} value={cid ?? ''} onpick={(v) => navigate(`/projets/${view.project.id}/racks/${v.replace(':', '/')}`)} />{/if}
       <div class="seg" role="group" aria-label="Face">{#each [...rack.faces, 'side'] as f}<button class:on={face === f} onclick={() => { face = f as Face | 'side'; armed = null; }}>{FACES[f as Face]}</button>{/each}</div>
       <div class="seg" role="group" aria-label="Rendu"><button class:on={mode === 'real' && !show3d} onclick={() => { mode = 'real'; show3d = false; }}>Réel</button><button class:on={mode === 'schematic' && !show3d} onclick={() => { mode = 'schematic'; show3d = false; }}>Schématique</button><button class:on={show3d} onclick={() => (show3d = true)}><Icon name="box" size="sm" />3D</button></div>
+      {#if !show3d}<label class="rtx" title="Textes affichés sur les équipements"><span>Textes</span><select class="input" value={rackText.v} onchange={(e) => setRackText((e.target as HTMLSelectElement).value as RackText)}>{#each Object.entries(RACK_TEXT) as [k, l]}<option value={k}>{l}</option>{/each}</select></label>{/if}
       <span class="gap"></span>
       <span class="meter" class:err={t.over_u}><span>U</span><Vu value={(t.used_u / (t.total_u || 1)) * 100} mode="load" n={16} /><span class="mono">{nf(t.used_u, t.used_u % 1 ? 1 : 0)} / {t.total_u} U</span></span>
       <span class="meter" class:err={t.over_weight}><span>Poids</span><Vu value={rack.container.max_weight_kg ? (t.weight_kg / rack.container.max_weight_kg) * 100 : 0} mode="load" n={16} /><span class="mono">{nf(t.weight_kg, 1)}{rack.container.max_weight_kg ? ` / ${nf(rack.container.max_weight_kg)}` : ''} kg</span></span>
@@ -308,10 +310,10 @@
                 ondrop={(e) => drop(e, e.currentTarget as HTMLElement)}>
                 {#each faceEls as e (e.placement.id)}
                   <div class="ritem {e.nature === 'accessory' ? 'acc' : ''} {ALU.has(typeOf(e)) && mode === 'real' ? 'alu' : ''} {e.height_u <= 1 ? 'u1' : ''} {e.placement.width !== 'full' ? `half c${e.placement.col}` : ''}" class:sel={sel === e.placement.id} class:dw={dw(e)}
-                    style={style(e)} role="button" tabindex="0" draggable={mine} title="{e.label}{e.tag ? ` · ${e.tag}` : ''} · U{e.placement.u_start}"
+                    style={style(e)} role="button" tabindex="0" draggable={mine} title="{e.label}{e.custom ? ` · ${e.custom}` : ''} · U{e.placement.u_start}"
                     onclick={() => (sel = e.placement.id)} onkeydown={(k) => { if (k.key === 'Enter') sel = e.placement.id; }}
                     ondragstart={() => (dragging = e)} ondragend={() => (dragging = null)}>
-                    {#if e.nature !== 'accessory'}<i class="led"></i>{/if}<span class="rn">{e.label}</span>{#if isShelf(e) && onShelf(e.placement.id).length}<span class="shelf-load">{#each onShelf(e.placement.id) as x (x.placement.id)}<span class="sh-it" style="--c:{fnColor(x.function)}">{x.label}</span>{/each}</span>{:else if mode === 'real' && panelOf(e)}<span class="pdec"><PanelFace panel={panelOf(e)!} /></span>{:else if mode === 'real'}<span class="dec">{@html decor(typeOf(e))}</span>{:else}<span class="dec"></span>{/if}{#if e.tag}<span class="rr">{e.tag}</span>{/if}
+                    {#if e.nature !== 'accessory'}<i class="led"></i>{/if}<span class="rl" class:two={!!rackLines(e)[1]}>{#if rackLines(e)[0]}<b class="rn">{rackLines(e)[0]}</b>{/if}{#if rackLines(e)[1]}<small>{rackLines(e)[1]}</small>{/if}</span>{#if isShelf(e) && onShelf(e.placement.id).length}<span class="shelf-load">{#each onShelf(e.placement.id) as x (x.placement.id)}<span class="sh-it" style="--c:{fnColor(x.function)}">{x.label}</span>{/each}</span>{:else if mode === 'real' && panelOf(e)}<span class="pdec"><PanelFace panel={panelOf(e)!} /></span>{:else if mode === 'real'}<span class="dec">{@html decor(typeOf(e))}</span>{:else}<span class="dec"></span>{/if}
                   </div>
                 {/each}
                 {#if armed && hoverU}
@@ -439,4 +441,6 @@
   .pside { display: grid; gap: 8px; justify-items: start; }
   .pface-s { display: block; width: 100%; height: calc(var(--h) * 26px); background: linear-gradient(180deg, #363B42, #1D2025); border-radius: 4px; padding: 2px 4px; }
   @media (max-width: 1100px) { .rack-screen .design-body { grid-template-columns: minmax(0, 1fr); height: auto; } }
+  .rtx { display: inline-flex; align-items: center; gap: 6px; font: 600 10.5px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--fg-3); }
+  .rtx .input { height: 30px; width: auto; padding: 0 26px 0 9px; font: 500 13px var(--font); letter-spacing: 0; text-transform: none; }
 </style>

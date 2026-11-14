@@ -152,6 +152,13 @@ async fn rack_view(st: &AppState, c: &Container, token: &str) -> ApiResult<Value
             .and_then(|i| inv.instances.iter().find(|x| &x.id == i))
             .map(|x| x.tag.clone())
     };
+    // Libellé personnalisé de l'exemplaire (inventaire), affiché à côté du nom de l'équipement.
+    let custom_of = |iid: &Option<String>| {
+        iid.as_ref()
+            .and_then(|i| inv.instances.iter().find(|x| &x.id == i))
+            .and_then(|x| x.label.clone())
+            .filter(|l| !l.trim().is_empty())
+    };
     let mut elements = Vec::new();
     for p in &placements {
         let Some(a) = ctx.article(&p.article_id) else {
@@ -160,7 +167,7 @@ async fn rack_view(st: &AppState, c: &Container, token: &str) -> ApiResult<Value
         let it = ctx.item(a);
         let (h, _) = ctx.geometry(a).unwrap_or((1.0, Width::Full));
         elements.push(json!({
-            "placement": p, "label": article_label(a, &ctx.items), "tag": tag_of(&p.instance_id), "nature": a.nature,
+            "placement": p, "label": article_label(a, &ctx.items), "tag": tag_of(&p.instance_id), "custom": custom_of(&p.instance_id), "nature": a.nature,
             "height_u": h, "depth_mm": it.and_then(|i| i.depth_mm).or(a.accessory.as_ref().and_then(|x| x.depth_mm())), "accessory": a.accessory, "article_rev": a.rev,
             "rear_reserve_mm": it.and_then(|i| i.rear_reserve_mm), "weight_kg": it.and_then(|i| i.weight_kg), "power_w": it.and_then(|i| i.power_w),
             "function": it.and_then(|i| i.function.clone()), "category": it.and_then(|i| i.category.clone()), "brand": it.and_then(|i| i.brand.clone()), "item_id": a.item_id,
