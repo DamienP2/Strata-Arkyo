@@ -95,6 +95,17 @@
       {#if e.tag && ew > 24}<text x={ex + ew - 1.2} y={ey + eh / 2 + fs * 0.35} font-family="Courier, monospace" font-size={fs * 0.9} fill={MUTE} text-anchor="end">{e.tag}</text>{/if}
     {/if}
   {/each}
+  {#if face === 'rear'}
+    <!-- PDU verticaux, sur les montants (vue arrière : gauche et droite comme vus de l'arrière). -->
+    {#each r?.vpdus ?? [] as v, i (v.article_id)}
+      {@const L = Math.min(h - 2 * g.pad, v.accessory.length_mm / k)}
+      {@const px = v.accessory.side === 'left' ? x0 + g.rail * 0.1 : x1 + g.inner + g.rail * 0.1}
+      {@const py = y + (h - L) / 2}
+      {@const pw = g.rail * 0.8}
+      <rect x={px} y={py} width={pw} height={L} rx="0.4" fill="#2B2F35" stroke={INK} stroke-width="0.25" />
+      {#each Array(Math.min(60, v.accessory.outlets)) as _, j}<rect x={px + pw * 0.25} y={py + 3 + ((L - 5) / v.accessory.outlets) * j} width={pw * 0.5} height={Math.max(0.3, ((L - 5) / v.accessory.outlets) * 0.55)} fill="#FFFFFF" />{/each}
+    {/each}
+  {/if}
 {/snippet}
 
 <!-- Vue de côté d'une baie : avant à gauche, profondeur des appareils depuis leurs montants. -->
@@ -119,6 +130,10 @@
     <rect x={ex} y={ey + 0.1} width={Math.max(0.4, ed)} height={eh - 0.2} fill={e.nature === 'accessory' ? '#EEF0F2' : '#F6F7F9'} stroke={LINE} stroke-width="0.22" />
     <rect x={front ? ex - 0.6 : ex + ed} y={ey + 0.1} width="0.6" height={eh - 0.2} fill={color(e)} />
     {#if eh >= 1.1 && ed > 8}<text x={ex + (front ? 1.2 : ed - 1.2)} y={ey + eh / 2 + fs * 0.35} font-family={F} font-size={fs} fill={INK} text-anchor={front ? 'start' : 'end'} textLength={sq(e.label, ed - 2.4, fs)} lengthAdjust="spacingAndGlyphs">{fit(e.label, ed - 2.4, fs)}</text>{/if}
+  {/each}
+  {#each r?.vpdus ?? [] as v (v.article_id)}
+    {@const L = Math.min(b.h - 2 * g.pad, v.accessory.length_mm / k)}
+    <rect x={rr + 4 / k} y={y + (b.h - L) / 2} width={45 / k} height={L} rx="0.3" fill="#2B2F35" stroke={INK} stroke-width="0.25" />
   {/each}
   <text x={x0 + 1} y={y + b.h + 3} font-family={F} font-size="1.8" fill={MUTE}>AVANT</text>
   <text x={x0 + D - 1} y={y + b.h + 3} font-family={F} font-size="1.8" fill={MUTE} text-anchor="end">ARRIÈRE</text>

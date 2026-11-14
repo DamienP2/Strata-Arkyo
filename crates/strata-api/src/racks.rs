@@ -17,7 +17,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 use strata_domain::catalog::{FieldError, Width};
-use strata_domain::project::{ArticleNature, container_totals};
+use strata_domain::project::{Accessory, ArticleNature, container_totals};
 use strata_domain::rack::*;
 use strata_domain::{Domain, Level};
 use strata_store::{Article, Container, LockOutcome, PlaceSpec, Placement, Store, StoreError};
@@ -210,6 +210,30 @@ async fn rack_view(st: &AppState, c: &Container, token: &str) -> ApiResult<Value
         }
     }
     let circuits = st.store.circuits(&c.id).await?;
+    // PDU verticaux : circuit d'alimentation et prises occupées par les équipements alimentés
+    // (consommation déclarée) rattachés au même circuit.
+    let vpdus: Vec<Value> = ctx
+        .articles
+        .iter()
+        .filter_map(|a| match &a.accessory {
+            Some(Accessory::VerticalPdu { outlets, circuit_id, .. }) => Some((a, *outlets, circuit_id.clone())),
+            _ => None,
+        })
+        .map(|(a, outlets, circuit)| {
+            let fed = circuit.as_ref().map_or(0, |cid| {
+                placements
+                    .iter()
+                    .filter(|p| p.circuit_id.as_deref() == Some(cid.as_str()))
+                    .filter(|p| ctx.article(&p.article_id).and_then(|x| ctx.item(x)).and_then(|i| i.power_w).is_some_and(|w| w > 0.0))
+                    .count() as u32
+            });
+            json!({
+                "article_id": a.id, "rev": a.rev, "label": article_label(a, &ctx.items), "accessory": a.accessory,
+                "circuit": circuit.as_ref().and_then(|cid| circuits.iter().find(|x| &x.id == cid)).map(|x| x.name.clone()),
+                "fed": fed, "free": outlets.saturating_sub(fed), "over": fed > outlets,
+            })
+        })
+        .collect();
     let specs: Vec<CircuitSpec> = circuits
         .iter()
         .map(|x| CircuitSpec {
@@ -256,7 +280,7 @@ async fn rack_view(st: &AppState, c: &Container, token: &str) -> ApiResult<Value
         "elements": elements,
         "pending": pending,
         // PDU verticaux de la baie (couloirs arrière gauche et droit).
-        "vpdus": ctx.articles.iter().filter(|a| a.accessory.as_ref().is_some_and(|x| x.is_vertical())).map(|a| json!({ "article_id": a.id, "label": article_label(a, &ctx.items), "accessory": a.accessory })).collect::<Vec<_>>(),
+        "vpdus": vpdus,
         "circuits": circuits,
         "electrical": electrical(&specs, &loads),
         "totals": container_totals(&c.data, &all_loads),

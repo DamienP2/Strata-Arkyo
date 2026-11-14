@@ -1310,6 +1310,9 @@ async fn create_article(
 struct ArticlePatch {
     rev: i64,
     quantity: i64,
+    /// PDU vertical : longueur, prises, couloir et circuit d'alimentation modifiables.
+    #[serde(default)]
+    accessory: Option<Accessory>,
 }
 
 async fn update_article(
@@ -1325,6 +1328,41 @@ async fn update_article(
         .article(&id)
         .await?
         .ok_or(ApiError::NotFound("Article"))?;
+    if let Some(acc) = b.accessory {
+        let (Some(Accessory::VerticalPdu { .. }), Accessory::VerticalPdu { circuit_id, .. }) =
+            (&before.accessory, &acc)
+        else {
+            return Err(one("accessory", "Seul un PDU vertical se modifie ainsi."));
+        };
+        fields(acc.validate())?;
+        if let Some(cid) = circuit_id {
+            let ok = match before.container_id.as_deref() {
+                Some(c) => st.store.circuits(c).await?.iter().any(|x| &x.id == cid),
+                None => false,
+            };
+            if !ok {
+                return Err(one(
+                    "accessory.circuit_id",
+                    "Circuit inconnu dans cette baie.",
+                ));
+            }
+        }
+        let after = st.store.set_article_accessory(&id, b.rev, &acc).await?;
+        record(
+            &st,
+            &m,
+            &origin,
+            &after.project_id,
+            "article",
+            &id,
+            "update",
+            Some(after.rev),
+            Some(&before),
+            Some(&after),
+        )
+        .await?;
+        return Ok(Json(after));
+    }
     if !(1..=999).contains(&b.quantity) {
         return Err(one(
             "quantity",

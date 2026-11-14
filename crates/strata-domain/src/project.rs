@@ -536,6 +536,9 @@ pub enum Accessory {
         length_mm: u32,
         outlets: u32,
         side: PduSide,
+        /// Circuit qui alimente le PDU (circuits de la baie).
+        #[serde(default)]
+        circuit_id: Option<String>,
     },
     /// Panel de brassage : instance propre au projet, copiée depuis la bibliothèque.
     Panel {
@@ -601,6 +604,7 @@ impl Accessory {
                 length_mm,
                 outlets,
                 side,
+                ..
             } => format!(
                 "PDU vertical {length_mm}mm · {outlets} prises · {}",
                 if *side == PduSide::Left {

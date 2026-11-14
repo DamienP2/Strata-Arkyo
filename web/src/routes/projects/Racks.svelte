@@ -27,7 +27,7 @@
   interface Placement { id: string; article_id: string; instance_id: string | null; face: Face; u_start: number; width: W; col: number; circuit_id: string | null; shelf_id: string | null; rev: number }
   interface RackEl { placement: Placement; label: string; tag: string | null; custom?: string | null; nature: string; height_u: number; depth_mm: number | null; rear_reserve_mm: number | null; weight_kg: number | null; power_w: number | null; function: string | null; category: string | null; brand: string | null; accessory: Accessory | null; article_rev: number; type_id?: string | null; visual?: string | null }
   interface Pending { article_id: string; instance_id?: string; tag?: string; label: string; nature: string; height_u: number | null; width: W | null; rackable: boolean; function: string | null; accessory: Accessory | null; type_id?: string | null; visual?: string | null }
-  interface VPdu { article_id: string; label: string; accessory: { kind: 'vertical_pdu'; length_mm: number; outlets: number; side: 'left' | 'right' } }
+  interface VPdu { article_id: string; rev: number; label: string; accessory: { kind: 'vertical_pdu'; length_mm: number; outlets: number; side: 'left' | 'right'; circuit_id?: string | null }; circuit: string | null; fed: number; free: number; over: boolean }
   interface Circuit { id: string; name: string; phase: 'L1' | 'L2' | 'L3'; rating_a: number; rev: number }
   interface Rack {
     container: any; elements: RackEl[]; pending: Pending[]; circuits: Circuit[]; faces: Face[]; vpdus?: VPdu[];
@@ -179,6 +179,9 @@
   async function addCircuit(ev: SubmitEvent) {
     ev.preventDefault();
     try { await api.post(`/containers/${cid}/circuits`, { ...circ, name: circ.name || `PDU · ${circ.phase}` }); circ.name = ''; await load(); } catch (e) { fail(e); }
+  }
+  async function setPduCircuit(v: VPdu, circuit_id: string | null) {
+    try { await api.patch(`/articles/${v.article_id}`, { rev: v.rev, quantity: 1, accessory: { ...v.accessory, circuit_id } }); await load(); } catch (e) { fail(e); }
   }
   async function delCircuit(c: Circuit) { try { await api.del(`/circuits/${c.id}`); await load(); } catch (e) { fail(e); } }
 
@@ -404,6 +407,19 @@
             </form>
           {/if}
         </section>
+        {#if rack.vpdus?.length}
+          <section>
+            <h2>PDU verticaux</h2>
+            {#each rack.vpdus as v (v.article_id)}
+              <div class="vp-row" class:over={v.over}>
+                <span class="vp-n"><b>{v.accessory.side === 'left' ? 'Gauche' : 'Droite'} · {v.accessory.outlets} prises</b><small>{v.accessory.circuit_id ? `${v.fed} occupée${v.fed > 1 ? 's' : ''} · ${v.over ? `${v.fed - v.accessory.outlets} de trop` : `${v.free} libre${v.free > 1 ? 's' : ''}`}` : 'Rattachez un circuit pour compter les prises'}</small></span>
+                <select class="input" aria-label="Circuit d’alimentation" disabled={!mine || !rack.circuits.length} value={v.accessory.circuit_id ?? ''} onchange={(e) => setPduCircuit(v, (e.target as HTMLSelectElement).value || null)}><option value="">{rack.circuits.length ? 'Sans circuit' : 'Aucun circuit'}</option>{#each rack.circuits as c}<option value={c.id}>{c.name} · {c.phase}</option>{/each}</select>
+              </div>
+            {/each}
+            {#if rack.vpdus.some((v) => v.over)}<div class="alert warn"><Icon name="alert" /><span>Plus d’équipements alimentés que de prises sur un PDU : ajoutez un PDU ou répartissez les équipements sur un autre circuit.</span></div>{/if}
+            <p class="small muted">Prises occupées : équipements posés, avec une consommation, rattachés au même circuit que le PDU.</p>
+          </section>
+        {/if}
         <section>
           <h2>Totaux</h2>
           <dl class="kv"><dt>Hauteur</dt><dd>{nf(t.used_u, t.used_u % 1 ? 1 : 0)} / {t.total_u} U</dd><dt>Poids</dt><dd>{nf(t.weight_kg, 1)} kg</dd><dt>Puissance</dt><dd>{nf(t.power_w)} W</dd><dt>Dissipation</dt><dd>{nf(t.power_w * 3.412)} BTU/h</dd></dl>
@@ -455,6 +471,11 @@
   @media (max-width: 1100px) { .rack-screen .design-body { grid-template-columns: minmax(0, 1fr); height: auto; } }
   .rtx { display: inline-flex; align-items: center; gap: 6px; font: 600 10.5px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--fg-3); }
   .rtx .input { height: 30px; width: auto; padding: 0 26px 0 9px; font: 500 13px var(--font); letter-spacing: 0; text-transform: none; }
+  .vp-row { display: grid; grid-template-columns: minmax(0, 1fr) 150px; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line); }
+  .vp-row .input { height: 32px; font-size: 13px; }
+  .vp-n { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; }
+  .vp-n small { color: var(--fg-3); font-size: 12px; }
+  .vp-row.over .vp-n small { color: var(--err); }
   /* PDU vertical : bandeau étroit, disjoncteur en tête, prises réparties sur la longueur. */
   .rack.vpl { padding-left: 26px; }
   .rack.vpr { padding-right: 26px; }

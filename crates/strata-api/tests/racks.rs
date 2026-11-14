@@ -4509,4 +4509,33 @@ async fn vertical_pdu_sits_in_rear_channel() {
     )
     .await;
     assert!(p.status.is_client_error(), "{:?}", p.body);
+    // Circuit d'alimentation : un circuit de la baie seulement.
+    let c = call(
+        &app,
+        "POST",
+        &format!("/api/containers/{cid}/circuits"),
+        Some(json!({"name": "PDU A", "phase": "L1", "rating_a": 16})),
+        Some(&o),
+    )
+    .await;
+    let circ = c.body["id"]
+        .as_str()
+        .or(c.body["circuit"]["id"].as_str())
+        .unwrap()
+        .to_string();
+    let rev = rack.body["vpdus"][0]["rev"].as_i64().unwrap();
+    let bad = call(&app, "PATCH", &format!("/api/articles/{aid}"), Some(json!({"rev": rev, "quantity": 1, "accessory": {"kind": "vertical_pdu", "length_mm": 1200, "outlets": 24, "side": "left", "circuit_id": "inconnu"}})), Some(&o)).await;
+    assert_eq!(bad.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let ok = call(&app, "PATCH", &format!("/api/articles/{aid}"), Some(json!({"rev": rev, "quantity": 1, "accessory": {"kind": "vertical_pdu", "length_mm": 1200, "outlets": 24, "side": "left", "circuit_id": circ}})), Some(&o)).await;
+    assert_eq!(ok.status, StatusCode::OK, "{:?}", ok.body);
+    let rack = call(
+        &app,
+        "GET",
+        &format!("/api/containers/{cid}/rack"),
+        None,
+        Some(&o),
+    )
+    .await;
+    assert_eq!(rack.body["vpdus"][0]["circuit"], "PDU A");
+    assert_eq!(rack.body["vpdus"][0]["free"], 24);
 }

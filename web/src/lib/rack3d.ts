@@ -354,7 +354,7 @@ export class RackScene {
     const ham = hammered();
     const xlr = (() => { const [c, g] = canvas(128, 128); g.fillStyle = '#141416'; g.beginPath(); g.arc(64, 64, 64, 0, Math.PI * 2); g.fill(); g.fillStyle = '#000'; for (const [x, y] of [[40, 52], [88, 52], [64, 92]]) { g.beginPath(); g.arc(x!, y!, 11, 0, Math.PI * 2); g.fill(); } return tex(c); })();
     return {
-      powder: new THREE.MeshStandardMaterial({ color: '#1c1d20', roughness: 0.62, metalness: 0.35, roughnessMap: powder }),
+      powder: new THREE.MeshStandardMaterial({ color: '#33373d', roughness: 0.62, metalness: 0.35, roughnessMap: powder }),
       steel: new THREE.MeshStandardMaterial({ color: '#2a2c30', roughness: 0.5, metalness: 0.6, roughnessMap: powder }),
       alu: new THREE.MeshPhysicalMaterial({ color: '#d4d7dc', metalness: 1, roughness: 0.32, map: brushed, roughnessMap: brushedR, anisotropy: 0.6, clearcoat: 0.1 }),
       chrome: new THREE.MeshStandardMaterial({ color: '#c9ccd1', metalness: 1, roughness: 0.2 }),
@@ -406,14 +406,15 @@ export class RackScene {
 
     if (!isCase) {
       // Baie : ossature, panneaux, toit ajouré, socle, roulettes ou vérins, portes.
-      const post = 0.04;
+      // Ossature fine : montants et traverses de 22 mm, comme un profilé de baie actuel.
+      const post = 0.022, bar = 0.024;
       for (const sx of [-1, 1]) for (const sz of [-1, 1]) add(new THREE.BoxGeometry(post, H - base, post), m.powder, sx * (W / 2 - post / 2), base + (H - base) / 2, sz * (D / 2 - post / 2));
-      for (const y of [base + 0.02, H - 0.02]) for (const sz of [-1, 1]) add(new THREE.BoxGeometry(W, 0.04, post), m.powder, 0, y, sz * (D / 2 - post / 2));
-      for (const y of [base + 0.02, H - 0.02]) for (const sx of [-1, 1]) add(new THREE.BoxGeometry(post, 0.04, D), m.powder, sx * (W / 2 - post / 2), y, 0);
+      for (const y of [base + bar / 2, H - bar / 2]) for (const sz of [-1, 1]) add(new THREE.BoxGeometry(W, bar, post), m.powder, 0, y, sz * (D / 2 - post / 2));
+      for (const y of [base + bar / 2, H - bar / 2]) for (const sx of [-1, 1]) add(new THREE.BoxGeometry(post, bar, D), m.powder, sx * (W / 2 - post / 2), y, 0);
       // Toit avec ouïes.
       const roof = new THREE.Group(); roof.position.y = H;
-      add(new THREE.BoxGeometry(W, 0.012, D), m.powder, 0, 0.006, 0, roof);
-      for (let i = 0; i < 6; i++) add(new THREE.BoxGeometry(W * 0.55, 0.004, 0.012), m.cavity, 0, 0.0125, -D / 4 + i * (D / 2) / 5, roof, false);
+      add(new THREE.BoxGeometry(W, 0.006, D), m.powder, 0, 0.003, 0, roof);
+      for (let i = 0; i < 6; i++) add(new THREE.BoxGeometry(W * 0.55, 0.002, 0.012), m.cavity, 0, 0.0065, -D / 4 + i * (D / 2) / 5, roof, false);
       this.root.add(roof);
       // Socle.
       add(new THREE.BoxGeometry(W - 0.01, base - (spec.wheels ? 0.06 : 0.015), D - 0.01), m.powder, 0, (base + (spec.wheels ? 0.06 : 0.015)) / 2, 0);
@@ -422,16 +423,16 @@ export class RackScene {
         else { add(new THREE.CylinderGeometry(0.018, 0.022, 0.012, 20), m.rubber, sx * (W / 2 - 0.05), 0.006, sz * (D / 2 - 0.05)); add(new THREE.CylinderGeometry(0.006, 0.006, 0.02, 12), m.nickel, sx * (W / 2 - 0.05), 0.02, sz * (D / 2 - 0.05)); }
       }
       // Panneaux latéraux (masquables).
-      for (const sx of [-1, 1]) { const p = add(new THREE.BoxGeometry(0.008, H - base - 0.02, D - 0.08), m.powder, sx * (W / 2 - 0.004), base + (H - base) / 2, 0); this.sides.push(p); }
+      for (const sx of [-1, 1]) { const p = add(new THREE.BoxGeometry(0.003, H - base - bar, D - 2 * post), m.powder, sx * (W / 2 - 0.0015), base + (H - base) / 2, 0); this.sides.push(p); }
       // Portes perforées, gond à gauche (avant) et à droite (arrière).
       const perf = tex(perforation(), false, [Math.round(W / 0.011), Math.round(H / 0.019)]);
-      const doorMat = new THREE.MeshStandardMaterial({ color: '#18191c', metalness: 0.5, roughness: 0.55, alphaMap: perf, alphaTest: 0.5, side: THREE.DoubleSide });
+      const doorMat = new THREE.MeshStandardMaterial({ color: '#2c3035', metalness: 0.5, roughness: 0.55, alphaMap: perf, alphaTest: 0.5, side: THREE.DoubleSide });
       for (const front of [true, false]) {
         const pivot = new THREE.Group(); const hx = front ? -W / 2 + 0.01 : W / 2 - 0.01; pivot.position.set(hx, base + (H - base) / 2, front ? D / 2 + 0.006 : -D / 2 - 0.006);
         const dw = W - 0.02, dh = H - base - 0.04, dir = front ? 1 : -1;
-        const leaf = new THREE.Mesh(new THREE.PlaneGeometry(dw - 0.06, dh - 0.06), doorMat); leaf.position.x = dir * dw / 2; if (!front) leaf.rotation.y = Math.PI; leaf.castShadow = true; pivot.add(leaf);
-        const fr = new THREE.MeshStandardMaterial({ color: '#1a1b1e', metalness: 0.45, roughness: 0.5 });
-        for (const [x, y, w, h] of [[dw / 2, dh / 2 - 0.015, dw, 0.03], [dw / 2, -dh / 2 + 0.015, dw, 0.03], [0.015, 0, 0.03, dh], [dw - 0.015, 0, 0.03, dh]] as number[][]) { const b = new THREE.Mesh(new THREE.BoxGeometry(w!, h!, 0.012), fr); b.position.set(dir * x!, y!, 0); b.castShadow = true; pivot.add(b); }
+        const leaf = new THREE.Mesh(new THREE.PlaneGeometry(dw - 0.036, dh - 0.036), doorMat); leaf.position.x = dir * dw / 2; if (!front) leaf.rotation.y = Math.PI; leaf.castShadow = true; pivot.add(leaf);
+        const fr = new THREE.MeshStandardMaterial({ color: '#33373d', metalness: 0.45, roughness: 0.5 });
+        for (const [x, y, w, h] of [[dw / 2, dh / 2 - 0.009, dw, 0.018], [dw / 2, -dh / 2 + 0.009, dw, 0.018], [0.009, 0, 0.018, dh], [dw - 0.009, 0, 0.018, dh]] as number[][]) { const b = new THREE.Mesh(new THREE.BoxGeometry(w!, h!, 0.006), fr); b.position.set(dir * x!, y!, 0); b.castShadow = true; pivot.add(b); }
         const handle = new THREE.Mesh(new RoundedBoxGeometry(0.018, 0.16, 0.022, 2, 0.006), m.chrome); handle.position.set(dir * (dw - 0.04), 0.1, dir * 0.014); pivot.add(handle);
         this.root.add(pivot); this.doors.push({ pivot, target: 0 });
       }
@@ -471,6 +472,8 @@ export class RackScene {
     }
 
     // Équipements : au rack, ou posés sur une étagère.
+    // Éclairage intérieur doux : on lit les façades même au fond d'une baie sombre.
+    for (const z of [frontRail + 0.25, rearRail - 0.25]) { const l = new THREE.PointLight('#ffffff', 0.55, Math.max(1.2, H * 1.2), 2); l.position.set(0, y0 + (units * U) * 0.6, z); this.root.add(l); }
     for (const e of els.filter((x) => !x.shelf_id)) this.equipment(e, frontRail, rearRail, y0);
     // PDU verticaux : profilé noir dans le couloir arrière, disjoncteur en tête, prises
     // tournées vers l'arrière, réparties sur la longueur.
