@@ -64,7 +64,7 @@
   {/if}
   {#if st.last_error}<div class="alert err"><Icon name="alert" /><span>La dernière sauvegarde automatique a échoué : {st.last_error}</span></div>{/if}
   {#if !st.last_success}
-    <div class="alert warn bk-none"><Icon name="alert" /><span><b>Aucune sauvegarde n’a encore été faite.</b> En cas de panne du serveur, rien ne pourrait être récupéré. Faites-en une maintenant ; la suivante sera prise automatiquement le {dateTime(st.next_auto)}.</span><button class="btn primary" onclick={create} disabled={!!busy}>{#if busy === 'create'}<span class="spin"></span>{:else}<Icon name="download" />{/if}Sauvegarder</button></div>
+    <div class="alert warn bk-none"><Icon name="alert" /><span><b>Aucune sauvegarde n’a encore été faite.</b> En cas de panne du serveur, rien ne pourrait être récupéré. Faites-en une maintenant ; la suivante sera prise automatiquement le {dateTime(st.next_auto)}.</span><button class="btn" onclick={create} disabled={!!busy}>{#if busy === 'create'}<span class="spin"></span>{:else}<Icon name="download" />{/if}Sauvegarder</button></div>
   {/if}
 
   <div class="grid-2">
@@ -98,7 +98,7 @@
               <td><div class="dl-actions">
                 <button class="btn sm ghost" onclick={() => download(`/admin/backups/${encodeURIComponent(b.name)}/download`)} title="Télécharger"><Icon name="download" size="sm" /></button>
                 <button class="btn sm" onclick={() => (restoring = b)}>Restaurer</button>
-                <button class="btn sm ghost danger" onclick={() => (deleting = b)} title="Supprimer"><Icon name="trash" size="sm" /></button>
+                <button class="btn sm ghost danger" onclick={() => (deleting = b)} title="Supprimer…" aria-label="Supprimer cette sauvegarde"><Icon name="trash" size="sm" /></button>
               </div></td>
             </tr>
           {/each}

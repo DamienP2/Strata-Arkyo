@@ -4,6 +4,8 @@
   import Vu from '../../components/Vu.svelte';
   import Dialog from '../../components/Dialog.svelte';
   import Confirm from '../../components/Confirm.svelte';
+  import EmptyState from '../../components/EmptyState.svelte';
+  import { pageHead, plural } from '../../lib/pagehead.svelte';
   import { api, ApiError } from '../../lib/api';
   import { can } from '../../lib/session.svelte';
   import { toast, fail } from '../../lib/toast.svelte';
@@ -12,6 +14,7 @@
 
   const STATUS: Record<string, { label: string; chip: string }> = { draft: { label: 'Brouillon', chip: 'info' }, inactive: { label: 'Inactif', chip: '' }, active: { label: 'Actif', chip: 'ok' } };
   let list = $state<any[]>([]);
+  let loaded = $state(false);
   let q = $state('');
   let f = $state<'' | 'draft' | 'inactive' | 'active'>('');
   let sort = $state<'name' | 'date'>('name');
@@ -21,11 +24,12 @@
   let deleting = $state<any | null>(null);
   const writable = $derived(can('catalogue', 'ecriture'));
 
-  async function load() { try { list = (await api.get<{ templates: any[] }>('/templates')).templates; } catch (e) { fail(e); } }
+  async function load() { try { list = (await api.get<{ templates: any[] }>('/templates')).templates; loaded = true; } catch (e) { fail(e); } }
   load();
   const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
   const shown = $derived(list.filter((t) => (!f || t.status === f) && (!q || norm(t.name).includes(norm(q)))).sort((a, b) => (sort === 'name' ? a.name.localeCompare(b.name, 'fr') : b.updated_at.localeCompare(a.updated_at))));
 
+  pageHead(() => ({ count: list.length ? plural(list.length, 'modèle d’élément', 'modèles d’élément') : '' }));
   async function setStatus(t: any, status: string) {
     try { await api.patch(`/templates/${t.id}`, { rev: t.rev, status }); toast(`« ${t.name} » : ${STATUS[status]!.label.toLowerCase()}.`); await load(); } catch (e) { fail(e); await load(); }
   }
@@ -38,8 +42,12 @@
 </script>
 
 <p class="muted" style="max-width:70ch">Un modèle garde un élément et tout son contenu : matériel, accessoires, circuits et disposition dans la baie. Créez-en un depuis l’inventaire d’un projet (« Enregistrer comme modèle »), activez-le ici, puis ajoutez-le à n’importe quel projet. Seuls les modèles actifs sont proposés.</p>
+{#if !loaded}<span class="spin"></span>
+{:else if !list.length}
+  <EmptyState icon="case" message="Aucun modèle d’élément pour l’instant." hint="Enregistrez un élément comme modèle depuis l’inventaire d’un projet." />
+{:else}
 <div class="toolbar" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-  <label class="search" style="flex:1;min-width:220px"><Icon name="search" /><input class="input" bind:value={q} placeholder="Nom du modèle…" aria-label="Rechercher un modèle"></label>
+  <label class="search" style="flex:1;min-width:220px;max-width:480px"><Icon name="search" /><input class="input" bind:value={q} placeholder="Nom du modèle…" aria-label="Rechercher un modèle"></label>
   <div class="seg">{#each [['', 'Tous'], ['active', 'Actifs'], ['draft', 'Brouillons'], ['inactive', 'Inactifs']] as [k, l]}<button class:on={f === k} onclick={() => (f = k as typeof f)}>{l}</button>{/each}</div>
   <div class="seg"><button class:on={sort === 'name'} onclick={() => (sort = 'name')}>A → Z</button><button class:on={sort === 'date'} onclick={() => (sort = 'date')}>Récents</button></div>
 </div>
@@ -56,12 +64,13 @@
           <td style="min-width:170px">{#if t.container.rackable}<div class="small muted">Avant {s.front_pct} % · arrière {s.rear_pct} %</div><Vu value={s.front_pct} mode="load" n={18} />{:else}<span class="muted">—</span>{/if}</td>
           <td class="num" class:urg={s.over_weight}>{nf(s.weight_kg, 1)} kg</td>
           <td class="num" class:urg={s.over_power}>{nf(s.power_w)} W</td>
-          <td>{#if writable}<div class="dl-actions"><button class="btn sm ghost" title="Renommer" onclick={() => { renaming = t; newName = t.name; }}><Icon name="pen" size="sm" /></button><button class="btn sm ghost danger" title="Supprimer" onclick={() => (deleting = t)}><Icon name="trash" size="sm" /></button></div>{/if}</td>
+          <td>{#if writable}<div class="dl-actions row-acts"><button class="btn sm ghost" title="Renommer" aria-label="Renommer {t.name}" onclick={() => { renaming = t; newName = t.name; }}><Icon name="pen" size="sm" /></button><button class="btn sm ghost danger" title="Supprimer…" aria-label="Supprimer {t.name}" onclick={() => (deleting = t)}><Icon name="trash" size="sm" /></button></div>{/if}</td>
         </tr>
-      {:else}<tr><td colspan="6" class="empty">Aucun modèle. Enregistrez un élément comme modèle depuis l’inventaire d’un projet.</td></tr>{/each}
+      {:else}<tr><td colspan="6"><EmptyState card={false} icon="search" message="Aucun modèle ne correspond à ces critères." /></td></tr>{/each}
     </tbody>
   </table></div>
 </section>
+{/if}
 
 {#if detail}
   <Dialog title={detail.name} eyebrow="Modèle d’élément" onclose={() => (detail = null)}>

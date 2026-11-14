@@ -1,6 +1,7 @@
 <script lang="ts">
   import Icon from '../../components/Icon.svelte';
-  import Ill from '../../components/Ill.svelte';
+  import PageHead from '../../components/PageHead.svelte';
+  import EmptyState from '../../components/EmptyState.svelte';
   import Vu from '../../components/Vu.svelte';
   import StatusChip from '../../components/StatusChip.svelte';
   import Wizard from './Wizard.svelte';
@@ -36,6 +37,11 @@
   /** Téléphone : les filtres restent repliés derrière « Filtres (n) ». */
   let filtersOpen = $state(false);
   const toggle = <T,>(arr: T[], v: T) => (arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
+  const REGIE_ICON: Record<Regie, string> = { car: 'truck', flight_case: 'case', fixed: 'monitor' };
+  /** « Projet interne » n'informe que si d'autres projets ont un client. */
+  const anyClient = $derived(projects.some((p) => p.client));
+  const subOf = (p: ProjectSummary) => [p.client ?? (anyClient ? 'Projet interne' : ''), p.venue].filter(Boolean).join(' · ');
+  const activeCount = $derived(projects.filter((p) => !['done', 'cancelled'].includes(p.status)).length);
   const clients = $derived([...new Set(projects.map((p) => p.client).filter(Boolean))] as string[]);
 
   // Import d'un fichier portable (section 13.2) : aperçu, puis Remplacer ou Copie.
@@ -52,11 +58,11 @@
 </script>
 
 <div class="page">
-  <div class="page-head">
-    <div><p class="eyebrow">{projects.filter((p) => !['done', 'cancelled'].includes(p.status)).length} projets actifs sur {projects.length}</p><h1 class="display">Projets</h1></div>
-    {#if can('projets', 'ecriture')}<div class="head-actions"><button type="button" class="btn" onclick={(e) => (e.currentTarget.nextElementSibling as HTMLInputElement).click()}><Icon name="upload" />Importer</button><input type="file" accept=".strata" hidden onchange={(e) => { const f = (e.target as HTMLInputElement).files?.[0]; (e.target as HTMLInputElement).value = ''; if (f) previewImport(f); }}><button class="btn primary" onclick={() => (wizard = true)}><Icon name="plus" />Nouveau projet</button></div>{/if}
-  </div>
+  <PageHead title="Projets" count={loading ? '' : `${activeCount} actif${activeCount > 1 ? 's' : ''} sur ${projects.length}`}>
+    {#snippet actions()}{#if can('projets', 'ecriture')}<button type="button" class="btn" onclick={(e) => (e.currentTarget.nextElementSibling as HTMLInputElement).click()}><Icon name="upload" />Importer</button><input type="file" accept=".strata" hidden onchange={(e) => { const f = (e.target as HTMLInputElement).files?.[0]; (e.target as HTMLInputElement).value = ''; if (f) previewImport(f); }}>{#if projects.length || loading}<button class="btn primary" onclick={() => (wizard = true)}><Icon name="plus" />Nouveau projet</button>{/if}{/if}{/snippet}
+  </PageHead>
 
+  {#if loading || projects.length}
   <div class="pj-bar">
     <div class="pj-row">
       <label class="search pj-search"><Icon name="search" /><input class="input" bind:value={f.q} placeholder="Nom, client, lieu, type de projet…" aria-label="Rechercher un projet"></label>
@@ -65,18 +71,23 @@
     </div>
     <button class="btn sm pj-ftoggle" aria-expanded={filtersOpen} aria-controls="pj-filters" onclick={() => (filtersOpen = !filtersOpen)}><Icon name="sliders" size="sm" />Filtres{filters ? ` (${filters})` : ''}<Icon name="chevd" size="sm" /></button>
     <div class="pj-row pj-filters" id="pj-filters" class:open={filtersOpen}>
-      <span class="pj-lbl">Statut</span>
-      {#each STATUS_ORDER as s}<button class="fchip" class:on={f.st.includes(s)} style="--c:{STATUS[s].color}" onclick={() => (f.st = toggle(f.st, s))}>{STATUS[s].label} <span class="muted">{projects.filter((p) => p.status === s).length}</span></button>{/each}
-      <span class="pj-sep"></span>
-      <span class="pj-lbl">Régie</span>
-      {#each Object.entries(REGIE) as [k, r]}<button class="fchip cxf" class:on={f.regie.includes(k as Regie)} onclick={() => (f.regie = toggle(f.regie, k as Regie))}>{r.label}</button>{/each}
+      <div class="pj-fg" role="group" aria-labelledby="pj-l-st">
+        <span class="pj-lbl" id="pj-l-st">Statut</span>
+        {#each STATUS_ORDER as s}{@const n = projects.filter((p) => p.status === s).length}<button class="fchip" class:on={f.st.includes(s)} class:zero={!n} style="--c:{STATUS[s].color}" aria-pressed={f.st.includes(s)} onclick={() => (f.st = toggle(f.st, s))}>{STATUS[s].label} <span class="pj-n">{n}</span></button>{/each}
+      </div>
+      <div class="pj-fg" role="group" aria-labelledby="pj-l-rg">
+        <span class="pj-lbl" id="pj-l-rg">Régie</span>
+        {#each Object.entries(REGIE) as [k, r]}{@const n = projects.filter((p) => p.regie === k).length}<button class="fchip cxf" class:on={f.regie.includes(k as Regie)} class:zero={!n} aria-pressed={f.regie.includes(k as Regie)} onclick={() => (f.regie = toggle(f.regie, k as Regie))}><Icon name={REGIE_ICON[k as Regie]} size="sm" />{r.label} <span class="pj-n">{n}</span></button>{/each}
+      </div>
       {#if filters}<button class="btn ghost sm" onclick={() => { f.st = []; f.regie = []; }}>Effacer {filters} filtre{filters > 1 ? 's' : ''}</button>{/if}
     </div>
   </div>
+  {/if}
 
   {#if loading}<span class="spin"></span>
   {:else if !groups.length}
-    <div class="empty">{projects.length ? 'Aucun projet ne correspond à ces filtres.' : 'Aucun projet pour l’instant.'}{#if !projects.length && can('projets', 'ecriture')} <button class="ilink" onclick={() => (wizard = true)}>Créer le premier</button>{/if}</div>
+    {#if projects.length}<EmptyState icon="search" message="Aucun projet ne correspond à ces critères." hint="Modifiez la recherche ou effacez les filtres." />
+    {:else}<EmptyState icon="folder" message="Aucun projet pour l’instant." hint="L’assistant vous guide étape par étape.">{#snippet action()}{#if can('projets', 'ecriture')}<button class="btn primary" onclick={() => (wizard = true)}><Icon name="plus" />Créer le premier projet</button>{/if}{/snippet}</EmptyState>{/if}
   {:else if f.view === 'list'}
     <section class="card" style="padding-top:6px">
       <div class="tbl-wrap"><table class="tbl pj-tbl">
@@ -90,7 +101,7 @@
               <td><a href="/projets/{p.id}" class="pj-name" onclick={(e) => e.stopPropagation()}>{p.name}</a>{#if p.service_type}<span class="muted small">&nbsp;· {p.service_type}</span>{/if}</td>
               <td><StatusChip status={p.status} /></td>
               <td>{REGIE[p.regie].label}</td>
-              <td class="pj-cl">{p.client ?? 'Projet interne'}{p.venue ? ` · ${p.venue}` : ''}</td>
+              <td class="pj-cl" title={subOf(p)}>{subOf(p) || '—'}</td>
               <td class="tnum">{period(p)}</td>
               <td class="num">{#if act && d != null && d >= 0}<span class="tally" style="--c:{urgency(d)}">J-{d}</span>{:else if act && d != null}<span class="muted small">passée</span>{:else}<span class="muted small">—</span>{/if}</td>
               <td style="width:150px"><Vu value={p.completion} n={16} cls={p.completion >= 80 ? 'ok' : ''} /> <span class="muted small tnum">{p.completion} %</span></td>
@@ -109,10 +120,10 @@
               {@const kd = keyDate(p)}
               {@const d = kd ? daysBetween(today, kd) : null}
               {@const act = !['done', 'cancelled'].includes(p.status)}
-              <a class="pcard" class:off={!act} href="/projets/{p.id}" style="--c:{STATUS[p.status].color};text-decoration:none">
-                <span class="pc-vis"><Ill kind={REGIE[p.regie].ill} /><span class="pc-tag lbl-t">{REGIE[p.regie].label}</span>
+              <a class="pcard pj-card" class:off={!act} href="/projets/{p.id}" style="--c:{STATUS[p.status].color};text-decoration:none">
+                <span class="pj-top"><span class="pj-ico" title={REGIE[p.regie].label}><Icon name={REGIE_ICON[p.regie]} size="sm" /></span><span class="pj-kind">{REGIE[p.regie].label}{#if p.service_type} · {p.service_type}{/if}</span>
                   <span class="pc-j">{#if act && d != null && d >= 0}<span class="tally" style="--c:{urgency(d)}">J-{d}</span>{:else if !act}<span class="tally off">{p.status === 'done' ? 'Livré' : 'Annulé'}</span>{/if}</span></span>
-                <span class="pc-body">{#if p.service_type}<span class="lbl-t">{p.service_type}</span>{/if}<b class="pc-name">{p.name}</b><span class="pc-sub">{p.client ?? 'Projet interne'}{p.venue ? ` · ${p.venue}` : ''}</span>
+                <span class="pc-body"><b class="pc-name" title={p.name}>{p.name}</b>{#if subOf(p)}<span class="pc-sub" title={subOf(p)}>{subOf(p)}</span>{/if}
                   <span class="pc-foot"><span><span class="lbl-t">Exploitation</span><b>{kd ? fdate(kd, { day: 'numeric', month: 'short', year: 'numeric' }) : 'à fixer'}</b></span><span><span class="lbl-t">Fiche · {p.completion} %</span><Vu value={p.completion} n={20} cls={p.completion >= 80 ? 'ok' : ''} /></span></span></span>
               </a>
             {/each}
@@ -138,9 +149,12 @@
   .pj-bar { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border-radius: 12px; background: var(--surface); box-shadow: 0 0 0 1px var(--line), 0 1px 2px rgba(0, 0, 0, .04); }
   .pj-row { display: flex; align-items: center; gap: 8px 10px; flex-wrap: wrap; min-width: 0; }
   .pj-search { flex: 1 1 320px; max-width: none; }
-  .pj-lbl { font: 600 10px/1 var(--mono); letter-spacing: .09em; text-transform: uppercase; color: var(--fg-3); margin-right: 2px; }
-  .pj-sep { width: 1px; height: 20px; background: var(--line); margin: 0 4px; }
-  .fchip .muted { font: 600 11px var(--mono); }
+  .pj-lbl { font: 600 12.5px/1 var(--font); color: var(--fg-2); margin-right: 4px; }
+  .pj-fg { display: flex; align-items: center; gap: 6px 8px; flex-wrap: wrap; padding: 4px 10px 4px 0; }
+  .pj-fg + .pj-fg { padding-left: 14px; border-left: 1px solid var(--line-2); }
+  .pj-n { font: 600 12px var(--font); font-variant-numeric: tabular-nums; color: var(--fg-3); }
+  .fchip.on .pj-n { color: inherit; }
+  .pj-filters { gap: 8px 6px; }
   .pj-ftoggle { display: none; align-self: flex-start; }
   .pj-ftoggle[aria-expanded='true'] :global(.ic:last-child) { transform: rotate(180deg); }
   @media (max-width: 640px) {
@@ -152,14 +166,18 @@
   .pj-group :global(.group-h .chip.st) { font: 650 17px/1 var(--display); }
   .pj-group .proj-grid { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
   .pj-group :global(.pcard) { border-radius: 12px; box-shadow: 0 0 0 1px var(--line), 0 1px 2px rgba(0, 0, 0, .04); }
-  .pj-group :global(.pc-vis) { height: 128px; padding-top: 30px; }
-  .pj-group :global(.pc-tag), .pj-group :global(.pc-j) { z-index: 1; top: 8px; }
-  .pj-group :global(.pc-tag) { left: 10px; padding: 4px 7px; border-radius: 6px; background: color-mix(in srgb, var(--surface) 88%, transparent); box-shadow: 0 0 0 1px var(--line); }
-  .pj-group :global(.pc-vis .ill) { width: auto; max-width: min(78%, 220px); max-height: 92px; }
-  .pj-group :global(.pc-name) { font-size: 17px; }
-  .pj-group :global(.pc-body) { padding: 12px 14px 14px; gap: 3px; }
-  .pj-group :global(.pc-sub) { font-size: 12.5px; }
-  .pj-group :global(.pc-foot) { margin-top: 8px; padding-top: 10px; gap: 14px; }
+  .pj-card { border-top: 3px solid var(--c); }
+  .pj-top { display: flex; align-items: center; gap: 9px; padding: 12px 14px 0; min-width: 0; }
+  .pj-ico { flex: none; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; background: color-mix(in srgb, var(--c) 14%, var(--surface)); color: var(--c); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 30%, transparent); }
+  .pj-kind { flex: 1; min-width: 0; font-size: 12.5px; font-weight: 600; color: var(--fg-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pj-top .pc-j { position: static; flex: none; }
+  .pcard.off .pj-ico { filter: grayscale(1); opacity: .6; }
+  .pj-group :global(.pc-name), .pj-group :global(.pc-sub) { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: normal; }
+  .pj-group :global(.pc-name) { font-size: 17px; line-height: 1.2; }
+  .pj-group :global(.pc-body) { flex: 1; padding: 10px 14px 14px; gap: 3px; }
+  .pj-group :global(.pc-sub) + :global(.pc-foot), .pj-group :global(.pc-name) + :global(.pc-foot) { margin-top: auto; }
+  .pj-group :global(.pc-sub) { font-size: 13px; }
+  .pj-group :global(.pc-foot) { margin-top: 10px; padding-top: 10px; gap: 14px; }
   .pj-group :global(.pc-foot b) { font-size: 13px; }
   .pj-name { font-weight: 650; color: var(--fg); text-decoration: none; }
   .pj-name:hover { color: var(--accent); }

@@ -2,6 +2,7 @@
   import { untrack } from 'svelte';
   import Icon from '../../components/Icon.svelte';
   import Confirm from '../../components/Confirm.svelte';
+  import PageHead from '../../components/PageHead.svelte';
   import { api, ApiError } from '../../lib/api';
   import { can } from '../../lib/session.svelte';
   import { toast, fail } from '../../lib/toast.svelte';
@@ -81,14 +82,10 @@
 
 {#if data}
   <div class="editor">
-    <header class="page-head">
-      <div>
-        <nav class="crumbs" aria-label="Fil d’Ariane"><a class="crumb" href="/catalogue/{kind}">Catalogue · {meta.label}</a><span class="sep">›</span><span>{id ? 'Fiche' : 'Nouvelle fiche'}</span></nav>
-        <h1 style="margin-top:4px">{data.name || (id ? item?.name : meta.newLabel)}</h1>
-        {#if item}<p class="muted small" style="margin-top:6px">Modifiée {relative(item.updated_at)} · révision {item.rev}</p>{/if}
-      </div>
-      {#if id && writable}<div class="head-actions"><button class="btn" onclick={duplicate}><Icon name="copy" />Dupliquer</button><button class="btn ghost danger" onclick={() => (deleting = true)}><Icon name="trash" />Supprimer</button></div>{/if}
-    </header>
+    <PageHead crumbs={[{ label: 'Catalogue', href: '/catalogue' }, { label: meta.label, href: `/catalogue/${kind}` }, { label: id ? (item?.name ?? 'Fiche') : 'Nouvelle fiche' }]} title={data.name || (id ? item?.name ?? '' : meta.newLabel)}>
+      {#snippet info()}{#if item}Modifiée {relative(item.updated_at)} · révision {item.rev}{/if}{/snippet}
+      {#snippet actions()}{#if id && writable}<button class="btn" onclick={duplicate}><Icon name="copy" />Dupliquer</button><button class="btn ghost danger act-danger" onclick={() => (deleting = true)}><Icon name="trash" />Supprimer…</button>{/if}{/snippet}
+    </PageHead>
 
     {#if stale}<div class="alert warn"><Icon name="alert" /><span style="flex:1">Quelqu’un a modifié cette fiche pendant que vous l’éditiez. Rechargez-la pour voir sa version ; vos changements non enregistrés seront perdus.</span><button class="btn sm" onclick={load}>Recharger</button></div>{/if}
     {#if duplicates.length}

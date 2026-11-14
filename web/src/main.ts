@@ -8,6 +8,7 @@ import '@fontsource/jetbrains-mono/latin-700.css';
 import './styles/strates.css';
 import './styles/app.css';
 import './styles/refine.css';
+import './styles/harmonie.css';
 import App from './App.svelte';
 import { applyTheme } from './lib/theme.svelte';
 

@@ -13,6 +13,8 @@
   import Panels from './Panels.svelte';
   import RegieTemplates from './RegieTemplates.svelte';
   import PanelPage from './PanelPage.svelte';
+  import PageHead from '../../components/PageHead.svelte';
+  import { pageSlot } from '../../lib/pagehead.svelte';
   import Printing from './Printing.svelte';
 
   loadRefs();
@@ -22,16 +24,17 @@
   const ICON: Record<string, string> = { equipment: 'cpu', cables: 'cable', 'cable-models': 'radio', adapters: 'plug' };
   const groups = $derived.by(() => {
     const g: SecGroup[] = [{ label: 'Fiches', items: ITEM_KINDS.map((k) => ({ key: k.path, label: k.label, href: `/catalogue/${k.path}`, icon: ICON[k.path] ?? 'box' })) }];
-    g.push({ label: 'Modèles', items: [
+    g.push({ label: 'Gabarits de projet', items: [
       { key: 'modeles', label: 'Éléments', href: '/catalogue/modeles', icon: 'case' },
       { key: 'regies', label: 'Régies', href: '/catalogue/regies', icon: 'layers' },
       { key: 'panels', label: 'Panels de brassage', href: '/catalogue/panels', icon: 'panel' },
     ] });
-    const tools = [{ key: 'referentiels', label: 'Référentiels', href: '/catalogue/referentiels', icon: 'list' }];
-    if (can('catalogue', 'ecriture')) tools.push({ key: 'import', label: 'Import de tableur', href: '/catalogue/import', icon: 'upload' });
-    tools.push({ key: 'echange', label: 'Export et échange', href: '/catalogue/echange', icon: 'download' });
-    tools.push({ key: 'impression', label: 'Impression', href: '/catalogue/impression', icon: 'printer' });
-    g.push({ label: 'Réglages', items: tools });
+    g.push({ label: 'Listes de référence', items: [{ key: 'referentiels', label: 'Référentiels', href: '/catalogue/referentiels', icon: 'list' }] });
+    const io = [];
+    if (can('catalogue', 'ecriture')) io.push({ key: 'import', label: 'Import de tableur', href: '/catalogue/import', icon: 'upload' });
+    io.push({ key: 'echange', label: 'Export et échange', href: '/catalogue/echange', icon: 'download' });
+    g.push({ label: 'Import / export', items: io });
+    g.push({ label: 'Documents', items: [{ key: 'impression', label: 'Impression', href: '/catalogue/impression', icon: 'printer' }] });
     return g;
   });
   const section = $derived(groups.flatMap((g) => g.items.map((i) => ({ ...i, group: g.label }))).find((i) => i.key === sub));
@@ -47,7 +50,7 @@
   {:else if seg.length >= 2 && kind}
     {#if refs.loaded}<ItemEditor kind={kind.path as ItemPath} id={seg[1] === 'nouveau' ? null : seg[1]!} />{:else}<span class="spin"></span>{/if}
   {:else}
-    <header class="ws-top"><div class="ws-top-main"><span class="ws-crumb">{section?.group ?? 'Catalogue'}</span><h1>{section?.label ?? 'Catalogue'}</h1></div></header>
+    <PageHead ws crumbs={[{ label: 'Catalogue', href: '/catalogue' }, { label: section?.label ?? '' }]} title={section?.label ?? 'Catalogue'} count={pageSlot.count} portal />
     <div class="page">
       {#if !refs.loaded}<span class="spin"></span>
       {:else if kind}{#key kind.path}<ItemList kind={kind.path as ItemPath} />{/key}

@@ -18,7 +18,7 @@ export interface Duplicate { id: string; name: string; reference: string | null;
 export const ITEM_KINDS: { path: ItemPath; kind: CatalogItem['kind']; label: string; one: string; newLabel: string }[] = [
   { path: 'equipment', kind: 'equipment', label: 'Équipements', one: 'Équipement', newLabel: 'Nouvel équipement' },
   { path: 'cables', kind: 'cable', label: 'Câbles', one: 'Câble', newLabel: 'Nouveau câble' },
-  { path: 'cable-models', kind: 'cable_model', label: 'Modèles de câble', one: 'Modèle de câble', newLabel: 'Nouveau modèle' },
+  { path: 'cable-models', kind: 'cable_model', label: 'Types de câble', one: 'Type de câble', newLabel: 'Nouveau type de câble' },
   { path: 'adapters', kind: 'adapter', label: 'Adaptateurs', one: 'Adaptateur', newLabel: 'Nouvel adaptateur' },
 ];
 export const pathOf = (kind: CatalogItem['kind']) => ITEM_KINDS.find((k) => k.kind === kind)!.path;
@@ -28,11 +28,11 @@ export const REF_KINDS: { path: RefPath; label: string; one: string; help: strin
   { path: 'signals', label: 'Signaux', one: 'Signal', help: 'Types de signaux, leurs connecteurs compatibles et leur préfixe de numérotation.' },
   { path: 'connectors', label: 'Connecteurs', one: 'Connecteur', help: 'Connecteurs disponibles sur les ports et les câbles.' },
   { path: 'brands', label: 'Marques', one: 'Marque', help: 'Fabricants du matériel.' },
-  { path: 'categories', label: 'Catégories', one: 'Catégorie', help: 'Classement libre des équipements, sur un ou plusieurs niveaux.' },
+  { path: 'categories', label: 'Catégories', one: 'Catégorie', help: 'Classement libre des équipements, sur un ou plusieurs niveaux, que vous gérez entièrement.' },
   { path: 'types', label: 'Types', one: 'Type', help: 'Types d’équipement, avec un niveau de sous-type qui hérite de la fonction.' },
   { path: 'phases', label: 'Phases', one: 'Phase', help: 'Étapes de la production où le matériel intervient.' },
   { path: 'dimensions', label: 'Dimensions', one: 'Préréglage', help: 'Valeurs proposées dans les formulaires : hauteurs, profondeurs, longueurs de câble…' },
-  { path: 'system-categories', label: 'Catégories système', one: 'Catégorie système', help: 'Catégories protégées, utilisées par le moteur.' },
+  { path: 'system-categories', label: 'Catégories système', one: 'Catégorie système', help: 'Catégories protégées, fixées par l’application et utilisées par le moteur (calculs, numérotation) : elles ne se modifient pas. Pour votre propre classement, utilisez les Catégories.' },
 ];
 
 export const FACES: [string, string][] = [['front', 'Avant'], ['rear', 'Arrière'], ['left', 'Gauche'], ['right', 'Droite'], ['top', 'Dessus'], ['bottom', 'Dessous']];

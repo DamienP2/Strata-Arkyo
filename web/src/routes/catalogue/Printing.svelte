@@ -4,6 +4,7 @@
   // Bibliothèque d'impression (sections 6.4 et 11.7) : cartouches, planches d'étiquettes,
   // modèles de dossier et de colonnes, logo du site. Partagés par tout le site.
   import Icon from '../../components/Icon.svelte';
+  import EmptyState from '../../components/EmptyState.svelte';
   import Dialog from '../../components/Dialog.svelte';
   import { api, ApiError } from '../../lib/api';
   import { can } from '../../lib/session.svelte';
@@ -54,11 +55,15 @@
   function setZone(i: number, p: Partial<Zone>) { if (tbEdit == null) return; tbs[tbEdit]!.zones = tbs[tbEdit]!.zones.map((z, j) => (j === i ? { ...z, ...p } : z)); dirtyTb = true; }
   const SAMPLE: Record<string, string> = { title: 'Synoptique vidéo', project: 'Finale', reference: 'REF-042', client: 'Client', address: 'Arena, Nantes', date: '11/11/2026', sheet: '3', sheets: '12', author: 'C. Martin', checker: 'L. Petit', version: 'B', standards: 'NF C 15-100', notes: 'Pour exécution', site: 'Studio', view: 'Élément', format: 'A3 paysage' };
 
+  async function delTb(i: number) { if (!(await ask({ title: `Retirer le cartouche « ${tbs[i]!.name} » ?`, text: 'Il disparaît de la liste ; la suppression est appliquée à l’enregistrement.', confirmLabel: 'Retirer', danger: true }))) return; tbs = tbs.filter((_, j) => j !== i); dirtyTb = true; }
+
   // ----- Planches -----
   let lsEdit = $state<number | null>(null);
   const curLs = $derived(lsEdit != null ? lss[lsEdit] ?? null : null);
   function newLs() { lss = [...lss, { key: `planche-${lss.length + 1}`, name: 'Nouvelle planche', reference: `REF-${lss.length + 1}`, brand: null, paper: 'A4', margin_top: 15, margin_left: 10, cols: 4, rows: 10, gap_x: 3, gap_y: 2, label_w: 45, label_h: 24, print_h: 0, diam_min: null, diam_max: null, active: true, builtin: false }]; lsEdit = lss.length - 1; dirtyLs = true; }
   function setLs(p: Partial<LabelSheet>) { if (lsEdit == null) return; lss[lsEdit] = { ...lss[lsEdit]!, ...p }; dirtyLs = true; }
+
+  async function delLs(i: number) { if (!(await ask({ title: `Retirer la planche « ${lss[i]!.name} » ?`, text: 'Elle disparaît de la liste ; la suppression est appliquée à l’enregistrement.', confirmLabel: 'Retirer', danger: true }))) return; lss = lss.filter((_, j) => j !== i); dirtyLs = true; }
 
   // ----- Modèles de dossier -----
   let dtEdit = $state<DT | null>(null);
@@ -82,7 +87,7 @@
 </div>
 
 {#if tab === 'tb'}
-  <div class="bar"><span class="muted small">Cartouches des exports PDF ; le premier actif sert par défaut. Les modèles d’origine se restaurent sans toucher aux vôtres.</span><span style="flex:1"></span>
+  <div class="pr-bar"><span class="muted small">Cartouches des exports PDF ; le premier actif sert par défaut. Les modèles d’origine se restaurent sans toucher aux vôtres.</span><span style="flex:1"></span>
     {#if canSet}<button class="btn sm ghost" onclick={() => restore('title-blocks')}>Restaurer les modèles d’origine</button><button class="btn sm" onclick={newTb}><Icon name="plus" size="sm" />Cartouche</button><button class="btn sm primary" disabled={!dirtyTb} onclick={saveTb}>Enregistrer</button>{/if}
   </div>
   <div class="grid">
@@ -94,22 +99,22 @@
           <rect width={t.width} height={t.height} fill="none" stroke="currentColor" stroke-width=".4" />
           {#each t.zones as z}<rect x={z.x} y={z.y} width={z.w} height={z.h} fill="none" stroke="currentColor" stroke-width=".2" />{#if z.label}<text x={z.x + 1} y={z.y + 2.4} font-size="1.8" fill="currentColor" opacity=".6">{z.label.toUpperCase()}</text>{/if}<text x={z.x + 1} y={z.y + z.h - 1.4} font-size={Math.min(z.size * 0.35, z.h * 0.6)} font-weight={z.bold ? 700 : 400} fill="currentColor">{z.kind === 'logo' || z.value === 'logo' ? '[logo]' : z.kind === 'text' ? z.value : (SAMPLE[z.value] ?? z.value)}</text>{/each}
         </svg>
-        <div class="it-a">
-          <span class="muted small">{t.paper} {t.landscape ? 'paysage' : 'portrait'}{t.width && t.height ? ` · ${t.width} × ${t.height} mm` : ' · aucun cartouche imprimé'}</span><span style="flex:1"></span>
-          {#if canSet}
-            <label class="toggle-row small"><input type="checkbox" checked={t.active} onchange={(e) => { tbs[i]!.active = (e.target as HTMLInputElement).checked; dirtyTb = true; }}>Actif</label>
-            <button class="icon-btn sm" aria-label="Monter" disabled={i === 0} onclick={() => { tbs = move(tbs, i, -1); dirtyTb = true; }}>↑</button>
-            <button class="icon-btn sm" aria-label="Descendre" disabled={i === tbs.length - 1} onclick={() => { tbs = move(tbs, i, 1); dirtyTb = true; }}>↓</button>
-            <button class="icon-btn sm" aria-label="Dupliquer" onclick={() => dupTb(i)}><Icon name="copy" size="sm" /></button>
-            <button class="icon-btn sm" aria-label="Modifier" onclick={() => (tbEdit = i)}><Icon name="pen" size="sm" /></button>
-            <button class="icon-btn sm" aria-label="Supprimer" onclick={() => { tbs = tbs.filter((_, j) => j !== i); dirtyTb = true; }}><Icon name="trash" size="sm" /></button>
-          {/if}
-        </div>
+        <span class="muted small">{t.paper} {t.landscape ? 'paysage' : 'portrait'}{t.width && t.height ? ` · ${t.width} × ${t.height} mm` : ' · aucun cartouche imprimé'}</span>
+        {#if canSet}
+          <div class="it-a">
+            <label class="toggle-row small"><input type="checkbox" checked={t.active} onchange={(e) => { tbs[i]!.active = (e.target as HTMLInputElement).checked; dirtyTb = true; }}>Actif</label><span style="flex:1"></span>
+            <button class="icon-btn sm up" title="Monter" aria-label="Monter {t.name}" disabled={i === 0} onclick={() => { tbs = move(tbs, i, -1); dirtyTb = true; }}><Icon name="chevd" size="sm" /></button>
+            <button class="icon-btn sm" title="Descendre" aria-label="Descendre {t.name}" disabled={i === tbs.length - 1} onclick={() => { tbs = move(tbs, i, 1); dirtyTb = true; }}><Icon name="chevd" size="sm" /></button>
+            <button class="icon-btn sm" title="Dupliquer" aria-label="Dupliquer {t.name}" onclick={() => dupTb(i)}><Icon name="copy" size="sm" /></button>
+            <button class="icon-btn sm" title="Modifier" aria-label="Modifier {t.name}" onclick={() => (tbEdit = i)}><Icon name="pen" size="sm" /></button>
+            <button class="icon-btn sm del" title="Supprimer…" aria-label="Supprimer {t.name}" onclick={() => delTb(i)}><Icon name="trash" size="sm" /></button>
+          </div>
+        {/if}
       </article>
     {/each}
   </div>
 {:else if tab === 'ls'}
-  <div class="bar"><span class="muted small">Planches pour les étiquettes de câbles : la zone transparente s’enroule autour du câble.</span><span style="flex:1"></span>
+  <div class="pr-bar"><span class="muted small">Planches pour les étiquettes de câbles : la zone transparente s’enroule autour du câble.</span><span style="flex:1"></span>
     {#if canSet}<button class="btn sm ghost" onclick={() => restore('label-sheets')}>Restaurer les modèles d’origine</button><button class="btn sm" onclick={newLs}><Icon name="plus" size="sm" />Planche</button><button class="btn sm primary" disabled={!dirtyLs} onclick={saveLs}>Enregistrer</button>{/if}
   </div>
   <div class="grid">
@@ -125,44 +130,45 @@
             {#if s.print_h}<rect {x} {y} width={s.label_w} height={s.print_h} fill="#D9E3FF" rx="1" />{/if}
           {/each}{/each}
         </svg>
-        <div class="it-a">
-          <span class="muted small">{s.paper} · {s.cols} × {s.rows} · {s.label_w} × {s.label_h} mm{s.diam_min ? ` · Ø ${s.diam_min}–${s.diam_max} mm` : ''}</span><span style="flex:1"></span>
-          {#if canSet}
-            <label class="toggle-row small"><input type="checkbox" checked={s.active} onchange={(e) => { lss[i]!.active = (e.target as HTMLInputElement).checked; dirtyLs = true; }}>Active</label>
-            <button class="icon-btn sm" aria-label="Monter" disabled={i === 0} onclick={() => { lss = move(lss, i, -1); dirtyLs = true; }}>↑</button>
-            <button class="icon-btn sm" aria-label="Descendre" disabled={i === lss.length - 1} onclick={() => { lss = move(lss, i, 1); dirtyLs = true; }}>↓</button>
-            <button class="icon-btn sm" aria-label="Modifier" onclick={() => (lsEdit = i)}><Icon name="pen" size="sm" /></button>
-            <button class="icon-btn sm" aria-label="Supprimer" onclick={() => { lss = lss.filter((_, j) => j !== i); dirtyLs = true; }}><Icon name="trash" size="sm" /></button>
-          {/if}
-        </div>
+        <span class="muted small">{s.paper} · {s.cols} × {s.rows} · {s.label_w} × {s.label_h} mm{s.diam_min ? ` · Ø ${s.diam_min}–${s.diam_max} mm` : ''}</span>
+        {#if canSet}
+          <div class="it-a">
+            <label class="toggle-row small"><input type="checkbox" checked={s.active} onchange={(e) => { lss[i]!.active = (e.target as HTMLInputElement).checked; dirtyLs = true; }}>Active</label><span style="flex:1"></span>
+            <button class="icon-btn sm up" title="Monter" aria-label="Monter {s.name}" disabled={i === 0} onclick={() => { lss = move(lss, i, -1); dirtyLs = true; }}><Icon name="chevd" size="sm" /></button>
+            <button class="icon-btn sm" title="Descendre" aria-label="Descendre {s.name}" disabled={i === lss.length - 1} onclick={() => { lss = move(lss, i, 1); dirtyLs = true; }}><Icon name="chevd" size="sm" /></button>
+            <span class="slot" aria-hidden="true"></span>
+            <button class="icon-btn sm" title="Modifier" aria-label="Modifier {s.name}" onclick={() => (lsEdit = i)}><Icon name="pen" size="sm" /></button>
+            <button class="icon-btn sm del" title="Supprimer…" aria-label="Supprimer {s.name}" onclick={() => delLs(i)}><Icon name="trash" size="sm" /></button>
+          </div>
+        {/if}
       </article>
     {/each}
   </div>
 {:else if tab === 'dt'}
-  <div class="bar"><span class="muted small">Compositions de dossier enregistrées depuis l’assistant de dossier d’un projet. Elles ne contiennent aucune donnée de projet.</span></div>
-  {#if !dts.length}<section class="card empty"><p class="muted">Aucun modèle. Créez-en un à la fin d’un export de dossier.</p></section>{/if}
+  <div class="pr-bar"><span class="muted small">Compositions de dossier enregistrées depuis l’assistant de dossier d’un projet. Elles ne contiennent aucune donnée de projet.</span></div>
+  {#if !dts.length}<EmptyState icon="file" message="Aucun modèle de dossier." hint="Créez-en un à la fin d’un export de dossier, depuis un projet." />{/if}
   <div class="grid">
     {#each dts as t (t.id)}
       <article class="card it">
         <div class="it-h"><b>{t.name}</b></div>
         {#if t.description}<p class="small muted" style="margin:0">{t.description}</p>{/if}
         <p class="small" style="margin:0">{t.docs.filter((d) => d.include).map((d) => d.title ?? docTitle(d.key)).join(' · ')}</p>
-        {#if canProj}<div class="it-a"><span style="flex:1"></span><button class="icon-btn sm" aria-label="Dupliquer" onclick={() => dupDt(t)}><Icon name="copy" size="sm" /></button><button class="icon-btn sm" aria-label="Modifier" onclick={() => (dtEdit = $state.snapshot(t) as DT)}><Icon name="pen" size="sm" /></button><button class="icon-btn sm" aria-label="Supprimer" onclick={() => delDt(t)}><Icon name="trash" size="sm" /></button></div>{/if}
+        {#if canProj}<div class="it-a"><span style="flex:1"></span><button class="icon-btn sm" title="Dupliquer" aria-label="Dupliquer {t.name}" onclick={() => dupDt(t)}><Icon name="copy" size="sm" /></button><button class="icon-btn sm" title="Modifier" aria-label="Modifier {t.name}" onclick={() => (dtEdit = $state.snapshot(t) as DT)}><Icon name="pen" size="sm" /></button><button class="icon-btn sm del" title="Supprimer…" aria-label="Supprimer {t.name}" onclick={() => delDt(t)}><Icon name="trash" size="sm" /></button></div>{/if}
       </article>
     {/each}
   </div>
 {:else if tab === 'cm'}
-  <div class="bar"><span class="muted small">Sélection et ordre des colonnes des tableaux (adressage IP, 2110, équipements, préparation), enregistrés depuis l’assistant de dossier.</span></div>
-  {#if !cms.length}<section class="card empty"><p class="muted">Aucun modèle de colonnes.</p></section>{/if}
+  <div class="pr-bar"><span class="muted small">Sélection et ordre des colonnes des tableaux (adressage IP, 2110, équipements, préparation), enregistrés depuis l’assistant de dossier.</span></div>
+  {#if !cms.length}<EmptyState icon="list" message="Aucun modèle de colonnes." hint="Ils s’enregistrent depuis l’assistant de dossier d’un projet." />{/if}
   {#each defs.docs.filter((d) => cms.some((c) => c.table === d.key)) as d}
     <h3 class="h3">{d.title}</h3>
-    {#each cms.filter((c) => c.table === d.key) as c (c.id)}<div class="card cm"><b>{c.name}</b><span class="small muted">{c.columns.join(' · ')}</span><span style="flex:1"></span>{#if canProj}<button class="icon-btn sm" aria-label="Supprimer" onclick={() => delCm(c)}><Icon name="trash" size="sm" /></button>{/if}</div>{/each}
+    {#each cms.filter((c) => c.table === d.key) as c (c.id)}<div class="card cm"><b>{c.name}</b><span class="small muted">{c.columns.join(' · ')}</span><span style="flex:1"></span>{#if canProj}<button class="icon-btn sm del" title="Supprimer…" aria-label="Supprimer {c.name}" onclick={() => delCm(c)}><Icon name="trash" size="sm" /></button>{/if}</div>{/each}
   {/each}
 {:else}
   <section class="card logo">
     <div class="lg-prev">{#if logo}<img src={logo} alt="Logo du site">{:else}<span class="muted">Aucun logo</span>{/if}</div>
     <p class="small muted">Imprimé dans les cartouches (zone logo) et sur la page de garde du dossier. PNG ou JPG, 512 Ko au plus.</p>
-    {#if canSet}<div class="row"><button type="button" class="btn sm" onclick={(e) => (e.currentTarget.nextElementSibling as HTMLInputElement).click()}><Icon name="upload" size="sm" />Choisir une image</button><input type="file" accept="image/png,image/jpeg" hidden onchange={(e) => { const f = (e.target as HTMLInputElement).files?.[0]; (e.target as HTMLInputElement).value = ''; uploadLogo(f); }}>{#if logo}<button class="btn sm ghost danger" onclick={() => (logoConfirm = true)}>Retirer</button>{/if}</div>{/if}
+    {#if canSet}<div class="row"><button type="button" class="btn sm" onclick={(e) => (e.currentTarget.nextElementSibling as HTMLInputElement).click()}><Icon name="upload" size="sm" />Choisir une image</button><input type="file" accept="image/png,image/jpeg" hidden onchange={(e) => { const f = (e.target as HTMLInputElement).files?.[0]; (e.target as HTMLInputElement).value = ''; uploadLogo(f); }}>{#if logo}<button class="btn sm ghost danger act-danger" onclick={() => (logoConfirm = true)}>Retirer le logo…</button>{/if}</div>{/if}
   </section>
 {/if}
 
@@ -229,12 +235,16 @@
 
 <style>
   .pr-tabs { margin-bottom: 14px; flex-wrap: wrap; }
-  .bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+  .pr-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+  .pr-bar > .muted { max-width: 72ch; }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
   .it { padding: 14px; display: grid; gap: 8px; }
   .it.off { opacity: .55; }
   .it-h { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
-  .it-a { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+  .it-a { display: flex; gap: 4px; align-items: center; flex-wrap: nowrap; padding-top: 8px; border-top: 1px solid var(--line); }
+  .it-a .up :global(.ic) { transform: rotate(180deg); }
+  .it-a .del { margin-left: 12px; color: var(--err); }
+  .it-a .slot { width: 30px; flex: none; }
   .tbp { width: 100%; height: 90px; color: var(--fg); background: var(--surface-2); border-radius: 8px; padding: 6px; font-family: Helvetica, Arial, sans-serif; }
   .tbp.big { height: 180px; margin: 10px 0; }
   .lsp { width: 100%; height: 220px; background: var(--surface-2); border-radius: 8px; padding: 6px; }
@@ -251,5 +261,4 @@
   .lg-prev img { max-width: 200px; max-height: 96px; }
   .row { display: flex; gap: 8px; }
   .docs { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 4px; }
-  .empty { padding: 20px; }
 </style>

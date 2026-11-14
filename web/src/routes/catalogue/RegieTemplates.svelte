@@ -5,6 +5,9 @@
   import Ill from '../../components/Ill.svelte';
   import Dialog from '../../components/Dialog.svelte';
   import Confirm from '../../components/Confirm.svelte';
+  import EmptyState from '../../components/EmptyState.svelte';
+  import HeadActions from '../../components/HeadActions.svelte';
+  import { pageHead, plural } from '../../lib/pagehead.svelte';
   import { api, ApiError } from '../../lib/api';
   import { can } from '../../lib/session.svelte';
   import { toast, fail } from '../../lib/toast.svelte';
@@ -33,6 +36,7 @@
   load();
   const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
   const shown = $derived((list ?? []).filter((r) => !q || norm(r.name).includes(norm(q))));
+  pageHead(() => ({ count: list?.length ? plural(list.length, 'modèle de régie', 'modèles de régie') : '' }));
   /** Nom du modèle d’élément sans le préfixe « {régie} · » qu'il reçoit à l'enregistrement. */
   const short = (r: { name: string }, n: string) => (n.startsWith(`${r.name} · `) ? n.slice(r.name.length + 3) : n);
   const tName = (id: string) => templates.find((t) => t.id === id)?.name ?? 'Modèle supprimé';
@@ -61,14 +65,17 @@
 </script>
 
 <p class="muted" style="max-width:70ch">Un modèle de régie assemble des modèles d’éléments dans un ordre donné. Créez-en un ici ou depuis l’onglet Régies d’un projet (« Enregistrer comme modèle »), puis recopiez-le dans n’importe quel projet : chaque élément est recréé avec son contenu.</p>
-<div class="toolbar" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-  <label class="search" style="flex:1;min-width:220px"><Icon name="search" /><input class="input" bind:value={q} placeholder="Nom du modèle…" aria-label="Rechercher un modèle de régie"></label>
-  {#if writable}<button class="btn primary" onclick={() => openEdit(null)}><Icon name="plus" />Nouveau modèle</button>{/if}
-</div>
+{#if writable && list?.length}<HeadActions><button class="btn primary" onclick={() => openEdit(null)}><Icon name="plus" />Nouveau modèle de régie</button></HeadActions>{/if}
 
 {#if list === null}<span class="spin"></span>
-{:else if !shown.length}
-  <section class="card" style="padding:28px"><p class="lead" style="margin:0">{q ? 'Aucun modèle ne correspond.' : 'La bibliothèque ne compte encore aucun modèle de régie.'}</p></section>
+{:else if !list.length}
+  <EmptyState icon="layers" message="La bibliothèque ne compte encore aucun modèle de régie.">{#snippet action()}{#if writable}<button class="btn primary" onclick={() => openEdit(null)}><Icon name="plus" />Nouveau modèle de régie</button>{/if}{/snippet}</EmptyState>
+{:else}
+<div class="toolbar" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+  <label class="search" style="flex:1;min-width:220px;max-width:480px"><Icon name="search" /><input class="input" bind:value={q} placeholder="Nom du modèle…" aria-label="Rechercher un modèle de régie"></label>
+</div>
+{#if !shown.length}
+  <EmptyState icon="search" message="Aucun modèle ne correspond à cette recherche." />
 {:else}
   <div class="rt-grid">
     {#each shown as r (r.id)}
@@ -84,6 +91,7 @@
       </article>
     {/each}
   </div>
+{/if}
 {/if}
 
 {#if edit}

@@ -9,6 +9,8 @@
   import Members from './Members.svelte';
   import Roles from './Roles.svelte';
   import Journal from './Journal.svelte';
+  import PageHead from '../../components/PageHead.svelte';
+  import { pageSlot } from '../../lib/pagehead.svelte';
 
   const groups = $derived.by(() => {
     const g: SecGroup[] = [];
@@ -37,7 +39,7 @@
     {#snippet head(folded: boolean)}
       {#if !folded}<div class="ws-proj"><b>Administration</b><span>Site et équipe</span></div>{/if}
     {/snippet}
-    <header class="ws-top"><div class="ws-top-main"><span class="ws-crumb">{section?.group ?? 'Administration'}</span><h1>{section?.label ?? ''}</h1></div></header>
+    <PageHead ws crumbs={[{ label: 'Administration', href: '/admin' }, { label: section?.label ?? '' }]} title={section?.label ?? ''} count={pageSlot.count} portal />
     <div class="page">
       {#if sub === 'mises-a-jour'}<Updates />
       {:else if sub === 'sauvegardes'}<Backups />
