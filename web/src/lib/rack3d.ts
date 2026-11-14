@@ -8,7 +8,6 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 
@@ -249,7 +248,7 @@ function connector(k: CKind, m: Mats, color: string | null): THREE.Object3D {
   } else if (k === 'rj45') {
     const frame = new THREE.Mesh(new THREE.BoxGeometry(0.0158, 0.0138, 0.003), m.nickel); frame.position.z = 0.0015; g.add(frame);
     const hole = new THREE.Mesh(new THREE.BoxGeometry(0.0118, 0.0098, 0.0005), m.cavity); hole.position.z = 0.0031; g.add(hole);
-    for (const [x, c] of [[-0.0055, '#45f58a'], [0.0055, '#ffb02e']] as [number, string][]) { const l = new THREE.Mesh(new THREE.BoxGeometry(0.0022, 0.0016, 0.0004), new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: 4 })); l.position.set(x, 0.0058, 0.0032); g.add(l); }
+    for (const [x, c] of [[-0.0055, '#45f58a'], [0.0055, '#ffb02e']] as [number, string][]) { const l = new THREE.Mesh(new THREE.BoxGeometry(0.0022, 0.0016, 0.0004), new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: 1.2 })); l.position.set(x, 0.0058, 0.0032); g.add(l); }
   } else if (k === 'fiber') {
     const b = new THREE.Mesh(new RoundedBoxGeometry(0.0135, 0.0105, 0.004, 2, 0.001), new THREE.MeshStandardMaterial({ color: color ?? '#2f7de1', roughness: 0.45 })); b.position.z = 0.002; g.add(b);
     for (const s of [-1, 1]) { const h = new THREE.Mesh(new THREE.BoxGeometry(0.0042, 0.0042, 0.0004), m.cavity); h.position.set(s * 0.0032, 0, 0.0041); g.add(h); }
@@ -319,7 +318,7 @@ export class RackScene {
     this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     this.scene.environmentIntensity = 0.9;
     if (this.transparent) this.renderer.setClearColor(0x000000, 0);
-    else { this.scene.background = new THREE.Color('#d6dae0'); this.scene.fog = new THREE.Fog('#d6dae0', 8, 22); }
+    else { this.scene.background = new THREE.Color('#d6dae0'); this.scene.fog = new THREE.Fog('#d6dae0', 14, 34); }
     // Lumières de studio clair : clé douce et neutre, contre-jour léger, débouchage de face.
     const key = new THREE.DirectionalLight('#fffaf2', 2.1); key.position.set(2.2, 4, 3.2); key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048); key.shadow.camera.left = -2; key.shadow.camera.right = 2; key.shadow.camera.top = 3; key.shadow.camera.bottom = -1; key.shadow.bias = -0.0004; key.shadow.radius = 9; key.shadow.normalBias = 0.02;
@@ -337,7 +336,7 @@ export class RackScene {
     this.mats = this.materials();
     this.composer = new EffectComposer(this.renderer);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
-    this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(512, 512), 0.1, 0.15, 2.2));
+    // Pas de halo (bloom) : écrans et voyants restent nets, sans voile sur la scène.
     this.composer.addPass(new OutputPass());
     this.resize();
     this.renderer.domElement.addEventListener('pointermove', this.hover);
@@ -581,7 +580,7 @@ export class RackScene {
       const w = Math.min(slot - 0.01, 0.3), h = Math.max(0.04, shelfU * U * 0.7);
       const body = new THREE.Mesh(new RoundedBoxGeometry(w, h, 0.22, 3, 0.006), m.chassis); body.position.y = h / 2; body.castShadow = true; g.add(body);
       const f = faceCanvases({ ...e, width: 'half' }, Math.round(w * 2400), Math.round(h * 2400));
-      const front = new THREE.Mesh(new THREE.PlaneGeometry(w - 0.006, h - 0.006), new THREE.MeshStandardMaterial({ map: f.map, emissiveMap: f.emissive, emissive: '#fff', emissiveIntensity: 3.2, roughnessMap: f.rough, metalness: 0.5 }));
+      const front = new THREE.Mesh(new THREE.PlaneGeometry(w - 0.006, h - 0.006), new THREE.MeshStandardMaterial({ map: f.map, emissiveMap: f.emissive, emissive: '#fff', emissiveIntensity: 0.9, roughnessMap: f.rough, metalness: 0.5 }));
       front.position.set(0, h / 2, 0.111); front.userData.hit = hit; this.pick.push(front); g.add(front);
     }
     this.root.add(g);
@@ -653,7 +652,7 @@ export class RackScene {
     // Face avant : plaque avec texture procédurale.
     const wPx = Math.round(fw * 2400), hPx = Math.max(40, Math.round(h * 2400));
     const f = faceCanvases(e, wPx, hPx);
-    const faceMat = new THREE.MeshPhysicalMaterial({ map: f.map, emissiveMap: f.emissive, emissive: '#ffffff', emissiveIntensity: 1.5, roughnessMap: f.rough, roughness: e.alu ? 0.38 : 0.55, metalness: e.alu ? 0.9 : 0.55, clearcoat: e.alu ? 0.05 : 0.15 });
+    const faceMat = new THREE.MeshPhysicalMaterial({ map: f.map, emissiveMap: f.emissive, emissive: '#ffffff', emissiveIntensity: 0.9, roughnessMap: f.rough, roughness: e.alu ? 0.38 : 0.55, metalness: e.alu ? 0.9 : 0.55, clearcoat: e.alu ? 0.05 : 0.15 });
     // Plaque arrondie, et la face imprimée juste devant.
     const plate = new THREE.Mesh(new RoundedBoxGeometry(fw, h, 0.003, 2, 0.0008), m.chassis); plate.castShadow = true; plate.receiveShadow = true; g.add(plate);
     const front = new THREE.Mesh(new THREE.PlaneGeometry(fw - 0.0006, h - 0.0006), faceMat); front.position.z = 0.0016; front.receiveShadow = true; g.add(front);
