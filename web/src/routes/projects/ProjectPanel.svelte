@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ask } from '../../lib/ask.svelte';
   // Panel posé dans un projet : copie propre au projet, modifiée sans toucher la bibliothèque.
   import { untrack } from 'svelte';
   import Dialog from '../../components/Dialog.svelte';
@@ -35,8 +36,8 @@
       else fail(e);
     }
   }
-  function close() {
-    if (editor?.isDirty() && !confirm('Fermer sans enregistrer les modifications du panel ?')) return;
+  async function close() {
+    if (editor?.isDirty() && !(await ask({ title: 'Fermer sans enregistrer ?', text: 'Les modifications du panel seront perdues.', confirmLabel: 'Fermer sans enregistrer', danger: true }))) return;
     onclose();
   }
 </script>

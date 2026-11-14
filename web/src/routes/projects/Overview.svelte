@@ -67,7 +67,7 @@
   <section class="card td">
     <div class="td-doms">
       {#each todo.domains as d (d.key)}
-        <a class="dom" href={d.href}><span class="flabel">{d.label}</span><b class="mono">{d.pct} %</b><span class="bar"><i style="width:{d.pct}%" class:ok={d.pct === 100}></i></span><span class="muted small">{d.note}</span></a>
+        <a class="dom" href={d.href} title={d.note}><span class="flabel">{d.label}</span><b class="mono">{d.pct} %</b><span class="bar"><i style="width:{d.pct}%" class:ok={d.pct === 100}></i></span><span class="muted small d-note">{d.note}</span><span class="muted small d-short">{d.done} / {d.total}</span></a>
       {/each}
     </div>
     <div class="td-list">
@@ -142,6 +142,18 @@
   .dom .bar { height: 5px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
   .dom .bar i { display: block; height: 100%; background: var(--fg); }
   .dom .bar i.ok { background: var(--ok, #0E8550); }
+  .d-short { display: none; }
+  /* Téléphone : grille 2 colonnes compacte, légende courte (le détail reste en infobulle). */
+  @media (max-width: 640px) {
+    .td-doms { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    .dom { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "lbl pct" "bar bar" "note note"; align-items: center; gap: 4px 8px; padding: 9px 11px; text-align: left; background: none; box-shadow: none; }
+    .dom:last-child:nth-child(odd) { grid-column: 1 / -1; }
+    .dom .flabel { grid-area: lbl; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dom b { grid-area: pct; font-size: 17px; white-space: nowrap; }
+    .dom .bar { grid-area: bar; }
+    .d-note { display: none; }
+    .d-short { display: block; grid-area: note; font-size: 12px; }
+  }
   .td-list h3 { margin: 0 0 8px; font-size: 16px; }
   .it { display: flex; gap: 10px; align-items: center; padding: 7px 10px; border-radius: 10px; color: inherit; text-decoration: none; font-size: 14px; }
   .it:hover { background: var(--surface-2); }

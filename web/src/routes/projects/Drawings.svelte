@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ask } from '../../lib/ask.svelte';
   // Dessins et plan de feu (section 11.2) : schéma de principe, implantations vidéo et audio,
   // plan de feu. Éléments posés en mm de page ; équipements tirés de la nomenclature (un
   // exemplaire une fois par nature) ; liens ; adressage DMX. Enregistrement automatique.
@@ -122,7 +123,7 @@
 
   // ----- Pages -----
   async function addPage(n: Nature) { try { const r = await api.post<{ id: string }>(`/projects/${pid}/drawings`, { nature: n }); await refreshIndex(); await openPage(r.id); } catch (e) { fail(e); } }
-  async function delPage() { if (!pg || !confirm(`Supprimer la page « ${pg.name} » ?`)) return; try { await api.post(`/projects/${pid}/drawings/${pg.id}/delete`); stopBeat(); pageId = null; pg = null; await loadIndex(); } catch (e) { fail(e); } }
+  async function delPage() { if (!pg || !(await ask({ title: `Supprimer la page « ${pg.name} » ?`, confirmLabel: 'Supprimer', danger: true }))) return; try { await api.post(`/projects/${pid}/drawings/${pg.id}/delete`); stopBeat(); pageId = null; pg = null; await loadIndex(); } catch (e) { fail(e); } }
   async function movePage(p: PageSum, d: number) {
     const list = idx!.pages.filter((x) => x.nature === p.nature).map((x) => x.id); const i = list.indexOf(p.id), j = i + d; if (j < 0 || j >= list.length) return;
     [list[i], list[j]] = [list[j]!, list[i]!];
@@ -375,7 +376,7 @@
 
   // ----- DMX : adressage d'ensemble -----
   async function dmxAuto(mode: 'missing' | 'all') {
-    if (mode === 'all' && !confirm('Réadresser tous les projecteurs de tous les plans de feu ?')) return;
+    if (mode === 'all' && !(await ask({ title: 'Réadresser tous les projecteurs ?', text: 'Les adresses DMX de tous les projecteurs de tous les plans de feu sont recalculées.', confirmLabel: 'Réadresser' }))) return;
     await flush();
     try { const r = await api.post<{ assigned: number }>(`/projects/${pid}/drawings/dmx/auto`, { mode }); toast(`${r.assigned} projecteur${r.assigned > 1 ? 's' : ''} adressé${r.assigned > 1 ? 's' : ''}.`); await loadPage(); await refreshIndex(); } catch (e) { fail(e); }
   }
@@ -632,7 +633,7 @@
               {#if canDesign}<div class="row-btns"><button class="btn sm primary" onclick={() => dmxAuto('missing')}>Adresser les manquants</button><button class="btn sm" onclick={() => dmxAuto('all')}>Tout réadresser</button></div>{/if}
               <table class="tbl dmx-t"><thead><tr><th>Appareil</th><th>#</th><th>U</th><th>Adr.</th><th>Can.</th></tr></thead><tbody>
                 {#each placedHere.slice().sort((a, b) => (a.dmx?.universe ?? 99999) - (b.dmx?.universe ?? 99999) || (a.dmx?.address ?? 0) - (b.dmx?.address ?? 0)) as e (e.id)}
-                  <tr class:bad={conflictKeys.has(`${pg.id}:${e.id}`)} onclick={() => { sel = new Set([e.id]); side = 'props'; }}><td>{e.label ?? e.snapshot.name} <span class="mono muted">{e.snapshot.tag}</span></td><td class="mono">{e.dmx?.console || '—'}</td><td class="mono">{e.dmx?.universe || '—'}</td><td class="mono">{e.dmx?.address || '—'}</td><td class="mono">{chans(e)}</td></tr>
+                  <tr class:bad={conflictKeys.has(`${pg.id}:${e.id}`)} onclick={() => { sel = new Set([e.id]); side = 'props'; }}><td><button type="button" class="rowlink" onclick={(ev) => { ev.stopPropagation(); sel = new Set([e.id]); side = 'props'; }}>{e.label ?? e.snapshot.name}</button> <span class="mono muted">{e.snapshot.tag}</span></td><td class="mono">{e.dmx?.console || '—'}</td><td class="mono">{e.dmx?.universe || '—'}</td><td class="mono">{e.dmx?.address || '—'}</td><td class="mono">{chans(e)}</td></tr>
                 {/each}
               </tbody></table>
             {/if}

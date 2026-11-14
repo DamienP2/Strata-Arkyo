@@ -1034,6 +1034,7 @@ select.input option{color:var(--fg);background:var(--surface)}
   .units i{width:13px;height:16px;padding:0;justify-content:center;align-items:flex-start;padding-top:3px}
   .next{padding:18px 18px 18px;border-radius:20px}
   .next-vis{margin:0 -18px 0 -8px}
+  .next-vis .ill{display:block;height:120px;width:auto;max-width:100%;margin:0 auto}
   .next-name{font-size:26px}
   .next-meta{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}
   .next-meta .presence{display:none}

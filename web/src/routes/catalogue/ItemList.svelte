@@ -71,18 +71,18 @@
   <div class="tbl-wrap">
     <table class="tbl">
       <thead><tr>
-        {#if writable}<th style="width:28px"><input type="checkbox" checked={allOn} onchange={toggleAll} aria-label="Tout sélectionner"></th>{/if}
+        {#if writable}<th style="width:28px"><label class="cb-hit"><input type="checkbox" checked={allOn} onchange={toggleAll} aria-label="Tout sélectionner"></label></th>{/if}
         <th>{meta.one}</th><th class="hide-m">Marque</th><th class="hide-m">Caractéristiques</th><th class="hide-m">Fonction</th><th></th>
       </tr></thead>
       <tbody>
         {#each items as i (i.id)}
           <tr class="click" onclick={(e) => { if (!(e.target as Element).closest('input,button,a')) navigate(`/catalogue/${kind}/${i.id}`); }}>
-            {#if writable}<td><input type="checkbox" checked={selected.has(i.id)} onchange={() => toggle(i.id)} aria-label="Sélectionner {i.name}"></td>{/if}
-            <td><a href="/catalogue/{kind}/{i.id}" style="text-decoration:none"><b>{i.name}</b></a>{#if !i.active} <span class="chip">inactive</span>{/if}{#if i.reference}<br><span class="mono small muted">{i.reference}</span>{/if}<span class="show-m small muted">{[refName('brands', i.brand_id), summary(i)].filter(Boolean).join(' · ')}</span></td>
+            {#if writable}<td><label class="cb-hit"><input type="checkbox" checked={selected.has(i.id)} onchange={() => toggle(i.id)} aria-label="Sélectionner {i.name}"></label></td>{/if}
+            <td><a href="/catalogue/{kind}/{i.id}" style="text-decoration:none"><b>{i.name}</b></a>{#if !i.active} <span class="chip">inactive</span>{/if}{#if i.reference}<br><span class="mono small muted">{i.reference}</span>{/if}<span class="show-m small muted">{[refName('brands', i.brand_id), summary(i)].filter(Boolean).join(' · ')}</span>{#if fns(i).length}<span class="show-m fn-m">{#each fns(i) as f}<span class="chip" style="background:color-mix(in srgb,{fnColor(f)} 14%,transparent);color:{fnColor(f)}">{refName('functions', f)}</span>{/each}</span>{/if}</td>
             <td class="hide-m">{refName('brands', i.brand_id) || '—'}</td>
             <td class="small hide-m">{summary(i)}</td>
             <td class="hide-m"><div style="display:flex;gap:6px;flex-wrap:wrap">{#each fns(i) as f}<span class="chip" style="background:color-mix(in srgb,{fnColor(f)} 14%,transparent);color:{fnColor(f)}">{refName('functions', f)}</span>{/each}</div></td>
-            <td>{#if writable}<button class="btn sm ghost" title="Dupliquer" onclick={() => duplicate(i)}><Icon name="copy" size="sm" /></button>{/if}</td>
+            <td>{#if writable}<button class="btn sm ghost dup" title="Dupliquer" aria-label="Dupliquer {i.name}" onclick={() => duplicate(i)}><Icon name="copy" size="sm" /></button>{/if}</td>
           </tr>
         {:else}
           <tr><td colspan="6" class="empty">{loading ? 'Chargement…' : q ? 'Aucune fiche ne correspond à cette recherche.' : `Aucune fiche pour l’instant.${writable ? ' Créez-en une, ou importez un tableur.' : ''}`}</td></tr>
@@ -99,3 +99,16 @@
     <p>Une fiche encore utilisée par une autre (un modèle de câble cité par un câble, une carte placée dans un châssis) est gardée. Un instantané n’est pas pris : la suppression est définitive.</p>
   </Confirm>
 {/if}
+
+<style>
+  .cb-hit { display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+  .fn-m { margin-top: 4px; }
+  .fn-m .chip { margin: 0 4px 2px 0; }
+  /* Téléphone : cases et icônes à 40 px au moins (cible tactile). */
+  @media (max-width: 640px) {
+    .cb-hit { width: 40px; height: 40px; margin: -8px -6px; }
+    .cb-hit input { width: 20px; height: 20px; }
+    .dup { min-width: 40px; min-height: 40px; }
+    .fn-m.show-m { display: flex; flex-wrap: wrap; }
+  }
+</style>

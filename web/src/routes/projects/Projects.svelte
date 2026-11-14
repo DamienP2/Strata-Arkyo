@@ -33,6 +33,8 @@
   });
   const groups = $derived(STATUS_ORDER.map((s) => ({ s, items: list.filter((p) => p.status === s) })).filter((g) => g.items.length));
   const filters = $derived(f.st.length + f.regie.length);
+  /** Téléphone : les filtres restent repliés derrière « Filtres (n) ». */
+  let filtersOpen = $state(false);
   const toggle = <T,>(arr: T[], v: T) => (arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
   const clients = $derived([...new Set(projects.map((p) => p.client).filter(Boolean))] as string[]);
 
@@ -52,7 +54,7 @@
 <div class="page">
   <div class="page-head">
     <div><p class="eyebrow">{projects.filter((p) => !['done', 'cancelled'].includes(p.status)).length} projets actifs sur {projects.length}</p><h1 class="display">Projets</h1></div>
-    {#if can('projets', 'ecriture')}<div class="head-actions"><label class="btn"><Icon name="upload" />Importer<input type="file" accept=".strata" hidden onchange={(e) => { const f = (e.target as HTMLInputElement).files?.[0]; (e.target as HTMLInputElement).value = ''; if (f) previewImport(f); }}></label><button class="btn primary" onclick={() => (wizard = true)}><Icon name="plus" />Nouveau projet</button></div>{/if}
+    {#if can('projets', 'ecriture')}<div class="head-actions"><button type="button" class="btn" onclick={(e) => (e.currentTarget.nextElementSibling as HTMLInputElement).click()}><Icon name="upload" />Importer</button><input type="file" accept=".strata" hidden onchange={(e) => { const f = (e.target as HTMLInputElement).files?.[0]; (e.target as HTMLInputElement).value = ''; if (f) previewImport(f); }}><button class="btn primary" onclick={() => (wizard = true)}><Icon name="plus" />Nouveau projet</button></div>{/if}
   </div>
 
   <div class="pj-bar">
@@ -61,7 +63,8 @@
       <div class="seg" aria-label="Tri">{#each [['updated', 'Récents'], ['date', 'Date'], ['name', 'A → Z']] as [k, l]}<button class:on={f.sort === k} onclick={() => (f.sort = k as typeof f.sort)}>{l}</button>{/each}</div>
       <div class="seg" aria-label="Affichage"><button class:on={f.view === 'cards'} onclick={() => (f.view = 'cards')} title="Cartes"><Icon name="grid" size="sm" /></button><button class:on={f.view === 'list'} onclick={() => (f.view = 'list')} title="Liste"><Icon name="list" size="sm" /></button></div>
     </div>
-    <div class="pj-row">
+    <button class="btn sm pj-ftoggle" aria-expanded={filtersOpen} aria-controls="pj-filters" onclick={() => (filtersOpen = !filtersOpen)}><Icon name="sliders" size="sm" />Filtres{filters ? ` (${filters})` : ''}<Icon name="chevd" size="sm" /></button>
+    <div class="pj-row pj-filters" id="pj-filters" class:open={filtersOpen}>
       <span class="pj-lbl">Statut</span>
       {#each STATUS_ORDER as s}<button class="fchip" class:on={f.st.includes(s)} style="--c:{STATUS[s].color}" onclick={() => (f.st = toggle(f.st, s))}>{STATUS[s].label} <span class="muted">{projects.filter((p) => p.status === s).length}</span></button>{/each}
       <span class="pj-sep"></span>
@@ -138,6 +141,12 @@
   .pj-lbl { font: 600 10px/1 var(--mono); letter-spacing: .09em; text-transform: uppercase; color: var(--fg-3); margin-right: 2px; }
   .pj-sep { width: 1px; height: 20px; background: var(--line); margin: 0 4px; }
   .fchip .muted { font: 600 11px var(--mono); }
+  .pj-ftoggle { display: none; align-self: flex-start; }
+  .pj-ftoggle[aria-expanded='true'] :global(.ic:last-child) { transform: rotate(180deg); }
+  @media (max-width: 640px) {
+    .pj-ftoggle { display: inline-flex; }
+    .pj-filters:not(.open) { display: none; }
+  }
   .pj-groups { display: flex; flex-direction: column; gap: 28px; }
   .pj-group { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
   .pj-group :global(.group-h .chip.st) { font: 650 17px/1 var(--display); }

@@ -5,6 +5,7 @@
   import { session, loadSession } from './lib/session.svelte';
   import { route, navigate } from './lib/router.svelte';
   import Toasts from './components/Toasts.svelte';
+  import AskHost from './components/AskHost.svelte';
   import Shell from './components/Shell.svelte';
   import Setup from './routes/Setup.svelte';
   import Login from './routes/Login.svelte';
@@ -46,4 +47,5 @@
     {:else}<NotFound />{/if}
   </Shell>
 {/if}
+<AskHost />
 <Toasts />

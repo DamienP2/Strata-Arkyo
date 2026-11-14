@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ask } from '../lib/ask.svelte';
   // Liens entre projets : un port externe relié au port externe d'un autre projet.
   // Avec `cable`, le lien de ce port (ou le formulaire pour le créer) ; sinon tous les liens.
   import Icon from './Icon.svelte';
@@ -23,7 +24,7 @@
   async function link() {
     try { const r = await api.post<{ warnings: string[] }>(`/projects/${pid}/links`, { cable_id: cable, remote_project: proj, remote_cable: port }); toast(r.warnings.length ? `Lien créé. ${r.warnings.join(' ')}` : 'Lien créé.', r.warnings.length ? 'warn' : 'ok'); proj = ''; port = ''; await load(); } catch (e) { fail(e); }
   }
-  async function unlink(l: L) { if (!confirm('Défaire ce lien entre projets ?')) return; try { await api.post(`/projects/${pid}/links/delete`, { id: l.id }); await load(); } catch (e) { fail(e); } }
+  async function unlink(l: L) { if (!(await ask({ title: 'Défaire ce lien entre projets ?', confirmLabel: 'Défaire le lien', danger: true }))) return; try { await api.post(`/projects/${pid}/links/delete`, { id: l.id }); await load(); } catch (e) { fail(e); } }
 </script>
 
 {#snippet row(l: L)}

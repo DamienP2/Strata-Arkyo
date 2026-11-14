@@ -51,7 +51,7 @@
       {#each shown as t (t.id)}
         {@const s = t.summary}
         <tr class="click" onclick={(e) => { if (!(e.target as Element).closest('button,select')) open(t); }}>
-          <td><b>{t.name}</b>{#if t.cable_digit != null} <span class="chip mono" title="Identifiant câble">#{t.cable_digit}</span>{/if}<br><span class="muted small">{CONTAINER_KINDS[t.container.kind as keyof typeof CONTAINER_KINDS]?.label}{t.container.rackable ? ` · ${t.container.height_u} U · ${t.container.depth_mm} mm` : ''} · modifié {relative(t.updated_at)}</span></td>
+          <td><button type="button" class="rowlink" onclick={(e) => { e.stopPropagation(); open(t); }}><b>{t.name}</b></button>{#if t.cable_digit != null} <span class="chip mono" title="Identifiant câble">#{t.cable_digit}</span>{/if}<br><span class="muted small">{CONTAINER_KINDS[t.container.kind as keyof typeof CONTAINER_KINDS]?.label}{t.container.rackable ? ` · ${t.container.height_u} U · ${t.container.depth_mm} mm` : ''} · modifié {relative(t.updated_at)}</span></td>
           <td>{#if writable}<select class="input" style="height:36px;width:auto" value={t.status} onchange={(e) => setStatus(t, (e.target as HTMLSelectElement).value)} aria-label="Statut de {t.name}">{#each Object.entries(STATUS) as [k, v]}<option value={k}>{v.label}</option>{/each}</select>{:else}<span class="chip {STATUS[t.status]?.chip}">{STATUS[t.status]?.label}</span>{/if}</td>
           <td style="min-width:170px">{#if t.container.rackable}<div class="small muted">Avant {s.front_pct} % · arrière {s.rear_pct} %</div><Vu value={s.front_pct} mode="load" n={18} />{:else}<span class="muted">—</span>{/if}</td>
           <td class="num" class:urg={s.over_weight}>{nf(s.weight_kg, 1)} kg</td>

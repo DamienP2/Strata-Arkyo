@@ -66,24 +66,26 @@
 
 <section class="card" style="padding:6px 18px 10px">
   <div class="tbl-wrap">
-    <table class="tbl">
+    <table class="tbl mem-tbl">
       <thead><tr><th>Membre</th><th>Rôle</th><th>État</th><th>Ajouté</th><th></th></tr></thead>
       <tbody>
         {#each shown as m (m.id)}
           {@const self = m.id === session.me?.account.id}
+          {@const roleLocked = self || (m.role_id === 'owner' && !session.me?.is_owner)}
           <tr>
-            <td><div style="display:flex;gap:12px;align-items:center"><Avatar name={m.name} color={roleOf(m.role_id)?.color} /><div><b>{m.name}</b>{#if self} <span class="chip">vous</span>{/if}<br><span class="muted small">{m.email}{m.username ? ` · ${m.username}` : ''}</span></div></div></td>
-            <td>
+            <td class="m-who"><div style="display:flex;gap:12px;align-items:center"><Avatar name={m.name} color={roleOf(m.role_id)?.color} /><div><b>{m.name}</b>{#if self} <span class="chip">vous</span>{/if}<br><span class="muted small">{m.email}{m.username ? ` · ${m.username}` : ''}</span></div></div></td>
+            <td class="m-role">
               {#if m.removed}<span class="muted">{m.role_name}</span>
+              {:else if roleLocked}<span class="role-ro" title={self ? 'Vous ne pouvez pas changer votre propre rôle.' : 'Seul un propriétaire peut changer ce rôle.'}>{m.role_name}</span>
               {:else}
-                <select class="input" style="height:38px;width:auto" value={m.role_id} disabled={self} aria-label="Rôle de {m.name}" onchange={(e) => patch(m, { role_id: (e.target as HTMLSelectElement).value }, 'Rôle changé.')}>
+                <select class="input" style="height:38px;width:auto" value={m.role_id} aria-label="Rôle de {m.name}" onchange={(e) => patch(m, { role_id: (e.target as HTMLSelectElement).value }, 'Rôle changé.')}>
                   {#each roles as r}<option value={r.id}>{r.name}</option>{/each}
                 </select>
               {/if}
             </td>
-            <td>{#if m.removed}<span class="chip">Retiré</span>{:else if !m.active}<span class="chip warn">Désactivé</span>{:else if m.must_change_password}<span class="chip info">Mot de passe temporaire</span>{:else}<span class="chip ok">Actif</span>{/if}</td>
-            <td class="muted small">{relative(m.created_at)}</td>
-            <td><div class="dl-actions">
+            <td class="m-state">{#if m.removed}<span class="chip">Retiré</span>{:else if !m.active}<span class="chip warn">Désactivé</span>{:else if m.must_change_password}<span class="chip info">Mot de passe temporaire</span>{:else}<span class="chip ok">Actif</span>{/if}</td>
+            <td class="muted small m-added">{relative(m.created_at)}</td>
+            <td class="m-acts"><div class="dl-actions">
               {#if !m.removed && !self}
                 <button class="btn sm" onclick={() => patch(m, { active: !m.active }, m.active ? 'Compte désactivé.' : 'Compte réactivé.')}>{m.active ? 'Désactiver' : 'Réactiver'}</button>
                 <button class="btn sm ghost" title="Réinitialiser le mot de passe" onclick={() => (resetting = m)}><Icon name="lock" size="sm" /></button>
@@ -131,3 +133,21 @@
     <p>Le compte ne pourra plus se connecter. Son historique reste dans le journal, et il peut être réactivé en l’ajoutant de nouveau avec le même e-mail.</p>
   </Confirm>
 {/if}
+
+<style>
+  .role-ro { font-weight: 550; color: var(--fg-2); }
+  .mem-tbl .chip { white-space: nowrap; }
+  /* Téléphone : une carte par membre (nom, rôle et état sur une ligne, actions dessous). */
+  @media (max-width: 640px) {
+    .mem-tbl thead { display: none; }
+    .mem-tbl, .mem-tbl tbody { display: block; }
+    .mem-tbl tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "who who" "role state" "added acts"; align-items: center; gap: 8px 10px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+    .mem-tbl tr:last-child { border-bottom: 0; }
+    .mem-tbl td { display: block; padding: 0; border: 0; min-width: 0; }
+    .mem-tbl td.empty { grid-column: 1 / -1; }
+    .m-who { grid-area: who; } .m-role { grid-area: role; } .m-state { grid-area: state; justify-self: end; }
+    .m-added { grid-area: added; } .m-acts { grid-area: acts; justify-self: end; }
+    .m-role select { max-width: 100%; }
+    .m-acts :global(.btn.sm) { min-height: 40px; min-width: 40px; }
+  }
+</style>

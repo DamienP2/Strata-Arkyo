@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ask } from '../../lib/ask.svelte';
   // Recette (section 11.5) : liaisons, équipements posés et points libres, verdicts commentés,
   // journal par point, avancement, procès-verbal PDF. Écran partagé en direct.
   import { untrack } from 'svelte';
@@ -42,7 +43,7 @@
   async function addNote(key: string) { if (!note.trim()) return; try { await api.post(`/projects/${pid}/recette/comment`, { key, comment: note }); note = ''; await loadLog(key); } catch (e) { fail(e); } }
   async function addFree() { if (!newFree.trim()) return; try { await api.post(`/projects/${pid}/recette/free`, { label: newFree }); newFree = ''; await load(); } catch (e) { fail(e); } }
   async function renameFree(p: Pt, label: string) { try { await api.patch(`/projects/${pid}/recette/free`, { key: p.key, label }); await load(); } catch (e) { fail(e); } }
-  async function deleteFree(p: Pt) { if (!confirm(`Retirer « ${p.label} » ?`)) return; try { await api.post(`/projects/${pid}/recette/free/delete`, { key: p.key }); await load(); } catch (e) { fail(e); } }
+  async function deleteFree(p: Pt) { if (!(await ask({ title: `Retirer « ${p.label} » ?`, confirmLabel: 'Retirer', danger: true }))) return; try { await api.post(`/projects/${pid}/recette/free/delete`, { key: p.key }); await load(); } catch (e) { fail(e); } }
   async function moveFree(i: number, d: number) {
     if (!r) return; const keys = r.free.map((p) => p.key); const j = i + d; if (j < 0 || j >= keys.length) return;
     [keys[i], keys[j]] = [keys[j]!, keys[i]!];

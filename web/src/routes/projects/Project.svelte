@@ -89,7 +89,16 @@
 {#if gone}
   <div class="page"><h1 class="display">Projet introuvable</h1><p class="lead">Il a peut-être été supprimé. <a class="ilink" href="/projets">Revenir aux projets</a>.</p></div>
 {:else if view && p}
-  <Workspace {groups} active={sub} label="Sections du projet" store="projet">
+  {#snippet statusSelect()}
+    <label class="st-select sm" style="--c:{STATUS[p.status].color}"><i class="dot"></i>
+      <select value={p.status} aria-label="Statut du projet" disabled={!can('projets', 'ecriture')} onchange={(e) => setStatus((e.target as HTMLSelectElement).value as Status)}>{#each STATUS_ORDER as s}<option value={s}>{STATUS[s].label}</option>{/each}</select>
+    </label>
+  {/snippet}
+  <Workspace {groups} active={sub} label="Sections du projet" store="projet" context={p.name}>
+    {#snippet mobileExtra()}
+      <span class="small muted">Statut du projet</span>
+      {@render statusSelect()}
+    {/snippet}
     {#snippet head(folded: boolean)}
       {#if folded}
         <a class="ws-proj-mini" href="/projets/{id}" title={p.name} style="--c:{STATUS[p.status].color}">{p.name.slice(0, 2).toUpperCase()}</a>
@@ -99,9 +108,7 @@
           <b title={p.name}>{p.name}</b>
           <span>{[REGIE[p.regie].label, p.service_type].filter(Boolean).join(' · ')}</span>
         </div>
-        <label class="st-select sm" style="--c:{STATUS[p.status].color}"><i class="dot"></i>
-          <select value={p.status} aria-label="Statut du projet" disabled={!can('projets', 'ecriture')} onchange={(e) => setStatus((e.target as HTMLSelectElement).value as Status)}>{#each STATUS_ORDER as s}<option value={s}>{STATUS[s].label}</option>{/each}</select>
-        </label>
+        {@render statusSelect()}
       {/if}
     {/snippet}
     {#snippet top()}

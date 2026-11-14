@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ask } from '../../lib/ask.svelte';
   import Confirm from '../../components/Confirm.svelte';
   // Bibliothèque d'impression (sections 6.4 et 11.7) : cartouches, planches d'étiquettes,
   // modèles de dossier et de colonnes, logo du site. Partagés par tout le site.
@@ -63,8 +64,8 @@
   let dtEdit = $state<DT | null>(null);
   async function saveDt() { if (!dtEdit) return; try { await api.patch('/print/dossier-templates', dtEdit); dtEdit = null; await load(); } catch (e) { fail(e); } }
   async function dupDt(t: DT) { try { await api.post('/print/dossier-templates/duplicate', { id: t.id }); await load(); } catch (e) { fail(e); } }
-  async function delDt(t: DT) { if (!confirm(`Supprimer le modèle « ${t.name} » ?`)) return; try { await api.post('/print/dossier-templates/delete', { id: t.id }); await load(); } catch (e) { fail(e); } }
-  async function delCm(c: CM) { if (!confirm(`Supprimer le modèle de colonnes « ${c.name} » ?`)) return; try { await api.post('/print/column-models/delete', { id: c.id }); await load(); } catch (e) { fail(e); } }
+  async function delDt(t: DT) { if (!(await ask({ title: `Supprimer le modèle « ${t.name} » ?`, confirmLabel: 'Supprimer', danger: true }))) return; try { await api.post('/print/dossier-templates/delete', { id: t.id }); await load(); } catch (e) { fail(e); } }
+  async function delCm(c: CM) { if (!(await ask({ title: `Supprimer le modèle de colonnes « ${c.name} » ?`, confirmLabel: 'Supprimer', danger: true }))) return; try { await api.post('/print/column-models/delete', { id: c.id }); await load(); } catch (e) { fail(e); } }
   const docTitle = (k: string) => defs.docs.find((d) => d.key === k)?.title ?? k;
 
   // ----- Logo -----
@@ -161,7 +162,7 @@
   <section class="card logo">
     <div class="lg-prev">{#if logo}<img src={logo} alt="Logo du site">{:else}<span class="muted">Aucun logo</span>{/if}</div>
     <p class="small muted">Imprimé dans les cartouches (zone logo) et sur la page de garde du dossier. PNG ou JPG, 512 Ko au plus.</p>
-    {#if canSet}<div class="row"><label class="btn sm"><Icon name="upload" size="sm" />Choisir une image<input type="file" accept="image/png,image/jpeg" hidden onchange={(e) => uploadLogo((e.target as HTMLInputElement).files?.[0])}></label>{#if logo}<button class="btn sm ghost danger" onclick={() => (logoConfirm = true)}>Retirer</button>{/if}</div>{/if}
+    {#if canSet}<div class="row"><button type="button" class="btn sm" onclick={(e) => (e.currentTarget.nextElementSibling as HTMLInputElement).click()}><Icon name="upload" size="sm" />Choisir une image</button><input type="file" accept="image/png,image/jpeg" hidden onchange={(e) => { const f = (e.target as HTMLInputElement).files?.[0]; (e.target as HTMLInputElement).value = ''; uploadLogo(f); }}>{#if logo}<button class="btn sm ghost danger" onclick={() => (logoConfirm = true)}>Retirer</button>{/if}</div>{/if}
   </section>
 {/if}
 

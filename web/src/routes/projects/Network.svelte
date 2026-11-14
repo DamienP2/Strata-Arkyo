@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ask } from '../../lib/ask.svelte';
   // Réseau (section 11.3) : VLAN, ports réseau (accès ou trunk, IP, nom d'hôte, réseau A/B),
   // plan multicast SMPTE ST 2110 et carte du réseau. Écran partagé en direct.
   import { untrack } from 'svelte';
@@ -82,13 +83,13 @@
     } catch (e) { if (e instanceof ApiError && e.fields.length) errs = e; else fail(e); }
   }
   async function delVlan(v: Vlan) {
-    if (!confirm(`Supprimer le VLAN ${v.vid} « ${v.name} » ?${v.ports ? ` ${v.ports} port${v.ports > 1 ? 's le perdront' : ' le perdra'}.` : ''}`)) return;
+    if (!(await ask({ title: `Supprimer le VLAN ${v.vid} « ${v.name} » ?`, text: v.ports ? `${v.ports} port${v.ports > 1 ? 's le perdront' : ' le perdra'}.` : undefined, confirmLabel: 'Supprimer', danger: true }))) return;
     try { await api.post(`/projects/${pid}/network/vlans/delete`, { id: v.id }); await load(); } catch (e) { fail(e); }
   }
 
   // ----- Multicast -----
   async function assign(mode: 'missing' | 'all') {
-    if (mode === 'all' && !confirm('Redistribuer tous les groupes (les saisies manuelles sont gardées) ?')) return;
+    if (mode === 'all' && !(await ask({ title: 'Redistribuer tous les groupes ?', text: 'Les saisies manuelles sont gardées.', confirmLabel: 'Redistribuer' }))) return;
     try { const x = await api.post<{ assigned: number }>(`/projects/${pid}/network/flows/assign`, { mode }); toast(`${x.assigned} groupe${x.assigned > 1 ? 's' : ''} attribué${x.assigned > 1 ? 's' : ''}.`); await load(); } catch (e) { fail(e); }
   }
   async function setFlow(f: Flow, address: string, udp?: number) {
@@ -96,7 +97,7 @@
     try { await api.post(`/projects/${pid}/network/flows/set`, { key: f.key, address, udp: udp ?? f.udp ?? undefined }); await load(); } catch (e) { fail(e); await load(); }
   }
   async function clearFlows(keys?: string[]) {
-    if (!keys && !confirm('Effacer tous les groupes multicast, saisies manuelles comprises ?')) return;
+    if (!keys && !(await ask({ title: 'Effacer tous les groupes multicast ?', text: 'Les saisies manuelles sont effacées aussi.', confirmLabel: 'Tout effacer', danger: true }))) return;
     try { await api.post(`/projects/${pid}/network/flows/clear`, keys ? { keys } : {}); await load(); } catch (e) { fail(e); }
   }
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ask } from '../../lib/ask.svelte';
   import Confirm from '../../components/Confirm.svelte';
   // Cartographie 2D et 3D (section 11.1). Positions en mm réels dans le repère commun de la
   // carte (calibration : premier point = origine, second = axe X). Une main par carte.
@@ -114,7 +115,7 @@
   let mapEdit = $state<{ name: string; kind: Kind } | null>(null);
   async function saveMap() { if (!mapEdit) return; await write(() => api.patch(`/projects/${pid}/plans/${mapId}`, mapEdit)); mapEdit = null; await loadIndex(); }
   async function deleteMap() {
-    if (!d || !confirm(`Supprimer la carte « ${d.map.name} », ses étages, fonds et tracés ?`)) return;
+    if (!d || !(await ask({ title: `Supprimer la carte « ${d.map.name} » ?`, text: 'Ses étages, fonds et tracés sont supprimés avec elle.', confirmLabel: 'Supprimer', danger: true }))) return;
     try { await api.post(`/projects/${pid}/plans/${mapId}/delete`); stopBeat(); mapId = null; d = null; await loadIndex(); } catch (e) { fail(e); }
   }
 
@@ -134,7 +135,7 @@
     if (r) { floorId = r.id; newLevel = null; await loadIndex(); }
   }
   async function deleteFloor(f: Floor) {
-    if (!confirm(`Supprimer l’étage « ${f.name} » et tout ce qui y est posé ?`)) return;
+    if (!(await ask({ title: `Supprimer l’étage « ${f.name} » ?`, text: 'Tout ce qui y est posé est supprimé avec lui.', confirmLabel: 'Supprimer', danger: true }))) return;
     await write(() => api.post(`/projects/${pid}/plans/${mapId}/floors/delete`, { id: f.id })); floorEdit = null; await loadIndex();
   }
   async function uploadBg(f: Floor, file: File) {
@@ -361,7 +362,7 @@
   }
   async function removeSel() {
     if (!selected) return;
-    if (!confirm(selected.kind === 'container' ? `Retirer « ${selected.name} » de la carte ?` : 'Supprimer cet objet ?')) return;
+    if (!(await ask(selected.kind === 'container' ? { title: `Retirer « ${selected.name} » de la carte ?`, confirmLabel: 'Retirer', danger: true } : { title: 'Supprimer cet objet ?', confirmLabel: 'Supprimer', danger: true }))) return;
     await write(() => api.post(`/projects/${pid}/plans/${mapId}/objects/delete`, { ids: [selected!.id] })); sel = null;
   }
   async function saveSel(patch: Record<string, unknown>) {
@@ -727,7 +728,7 @@
       {:else}<p class="muted small">Aucun. PNG, JPG ou SVG, 15 Mo au plus.</p>{/if}
       {#if !ro}
         <div class="row-btns">
-          <label class="btn sm"><Icon name="upload" size="sm" />{floorEdit.background ? 'Remplacer' : 'Choisir un fichier'}<input type="file" accept="image/png,image/jpeg,image/svg+xml" hidden onchange={(e) => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) uploadBg(floorEdit!, f); }}></label>
+          <button type="button" class="btn sm" onclick={(e) => (e.currentTarget.nextElementSibling as HTMLInputElement).click()}><Icon name="upload" size="sm" />{floorEdit.background ? 'Remplacer' : 'Choisir un fichier'}</button><input type="file" accept="image/png,image/jpeg,image/svg+xml" hidden onchange={(e) => { const f = (e.target as HTMLInputElement).files?.[0]; (e.target as HTMLInputElement).value = ''; if (f) uploadBg(floorEdit!, f); }}>
           {#if floorEdit.background}<button class="btn sm" onclick={() => { const f = floorEdit!; floorEdit = null; floorId = f.id; mode = '2d'; setTool('calib'); }}>Calibrer</button><button class="btn sm ghost danger" onclick={() => (bgConfirm = floorEdit)}>Retirer</button>{/if}
         </div>
       {/if}

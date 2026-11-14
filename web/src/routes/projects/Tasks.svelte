@@ -50,7 +50,31 @@
   {#if writable}<button class="btn primary" onclick={() => (editing = { title: '', status: 'todo', priority: 'normal' })}><Icon name="plus" />Nouvelle tâche</button>{/if}
 </div>
 
-<section class="card" style="padding:6px 18px 10px">
+<!-- Téléphone : une carte par tâche (le tableau à 5 colonnes est illisible). -->
+<ul class="task-cards">
+  {#each shown as t (t.id)}
+    <li class="card task-card">
+      <div class="tc-head">
+        <b class="tc-title">{t.title}</b>
+        {#if writable}<div class="dl-actions"><button class="icon-btn sm" aria-label="Modifier « {t.title} »" onclick={() => (editing = { ...t })}><Icon name="pen" size="sm" /></button><button class="icon-btn sm danger" aria-label="Supprimer « {t.title} »" onclick={() => remove(t)}><Icon name="trash" size="sm" /></button></div>{/if}
+      </div>
+      {#if t.description}<p class="muted small tc-desc">{t.description}</p>{/if}
+      <p class="tc-meta small">
+        <span>{t.assignee_id ? nameOf(t.assignee_id) || '?' : 'Personne'}</span><span aria-hidden="true">·</span>
+        <span class:urg={late(t)}>{t.due ? fdate(t.due) : 'Sans échéance'}</span><span aria-hidden="true">·</span>
+        <span>Priorité {PRIORITY[t.priority].label.toLowerCase()}</span>
+      </p>
+      <div class="tc-foot">
+        {#if writable}
+          <label class="tc-st chip {TASK_STATUS[t.status].chip}"><select value={t.status} onchange={(e) => setStatus(t, (e.target as HTMLSelectElement).value as TaskStatus)} aria-label="Statut de « {t.title} »">{#each Object.entries(TASK_STATUS) as [k, s]}<option value={k}>{s.label}</option>{/each}</select><Icon name="chevd" size="sm" /></label>
+        {:else}<span class="chip {TASK_STATUS[t.status].chip}">{TASK_STATUS[t.status].label}</span>{/if}
+        {#if t.done_on}<span class="muted small">fait le {fdate(t.done_on)}</span>{/if}
+      </div>
+    </li>
+  {:else}<li class="card empty">{filter === 'open' ? 'Rien à traiter.' : 'Aucune tâche.'}</li>{/each}
+</ul>
+
+<section class="card task-tbl" style="padding:6px 18px 10px">
   <div class="tbl-wrap"><table class="tbl">
     <thead><tr><th>Tâche</th><th>Assignée à</th><th>Échéance</th><th>Priorité</th><th>Statut</th><th></th></tr></thead>
     <tbody>
@@ -82,3 +106,24 @@
     {#snippet footer()}<button class="btn ghost" onclick={() => (editing = null)}>Annuler</button><button class="btn primary" type="submit" form="taskf">Enregistrer</button>{/snippet}
   </Dialog>
 {/if}
+
+
+<style>
+  .task-cards { display: none; list-style: none; margin: 0; padding: 0; flex-direction: column; gap: 10px; }
+  @media (max-width: 640px) {
+    .task-tbl { display: none; }
+    .task-cards { display: flex; }
+  }
+  .task-card { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; }
+  .tc-head { display: flex; align-items: flex-start; gap: 8px; }
+  .tc-title { flex: 1; min-width: 0; font-size: 15px; line-height: 1.3; overflow-wrap: anywhere; }
+  .tc-head .icon-btn { width: 40px; height: 40px; }
+  .tc-desc { margin: 0; }
+  .tc-meta { display: flex; flex-wrap: wrap; gap: 2px 6px; margin: 0; color: var(--fg-2); }
+  .tc-meta .urg { color: var(--err); font-weight: 600; }
+  .tc-foot { display: flex; align-items: center; gap: 10px; }
+  .tc-st { position: relative; display: inline-flex; align-items: center; gap: 4px; height: 32px; padding-right: 8px; }
+  .tc-st select { appearance: none; border: 0; background: none; color: inherit; font: inherit; padding: 0 2px 0 0; height: 100%; }
+  .tc-st select:focus-visible { outline: none; }
+  .tc-st:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>

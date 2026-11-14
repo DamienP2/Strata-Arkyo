@@ -60,6 +60,23 @@
   const U = 34;
   const BW = Math.round(U * 10.86) - 22;
   const units = $derived(rack?.container.height_u ?? 0);
+  // Téléphone : la baie est mise à l'échelle de la largeur disponible (pas de défilement
+  // horizontal de la page) ; la liste « À placer » devient un panneau repliable fixé en bas.
+  let narrow = $state(false);
+  $effect(() => {
+    const mq = window.matchMedia('(max-width: 767px)');
+    const on = () => (narrow = mq.matches); on();
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  });
+  let stageW = $state(0);
+  let sheetOpen = $state(false);
+  const zoom = $derived.by(() => {
+    if (!narrow || !stageW) return 1;
+    const vp = (vpOf().some((v) => v.accessory.side === 'left') ? 26 : 0) + (vpOf().some((v) => v.accessory.side === 'right') ? 26 : 0);
+    const natural = 2 * 28 + BW + 22 + 10 + vp;
+    return Math.min(1, (stageW - 24) / natural);
+  });
   const cols = (w: W) => ({ full: 1, half: 2, third: 3, quarter: 4 })[w];
 
   async function load() {
@@ -160,7 +177,7 @@
   }
   function slotFromEvent(ev: MouseEvent, el: HTMLElement): { u: number; col: number } {
     const r = el.getBoundingClientRect();
-    const u = Math.max(1, Math.min(units, Math.floor((r.bottom - ev.clientY) / U) + 1));
+    const u = Math.max(1, Math.min(units, Math.floor((r.bottom - ev.clientY) / (U * (r.height / (units * U) || 1))) + 1));
     const n = armed?.width ? cols(armed.width) : 1;
     const col = Math.min(n - 1, Math.max(0, Math.floor(((ev.clientX - r.left) / r.width) * n)));
     return { u, col };
@@ -270,14 +287,19 @@
     </div>
 
     <div class="design-body" class:ro={!mine}>
-      <aside class="pane left">
+      <aside class="pane left" class:open={sheetOpen} aria-label="À placer">
+        <button class="sheet-h" aria-expanded={sheetOpen} onclick={() => (sheetOpen = !sheetOpen)}>
+          <span><b>À placer</b> <span class="muted">· {wanted.length}</span></span>
+          {#if armed}<span class="sheet-armed">{armed.label} · touchez une position</span>{/if}
+          <Icon name="chevd" size="sm" />
+        </button>
         <section>
-          <h2>À placer <span class="muted">· {wanted.length}</span></h2>
+          <h2 class="sheet-t">À placer <span class="muted">· {wanted.length}</span></h2>
           {#if mine}<p class="small muted">Choisissez un élément, puis une position dans la baie. Échap pour annuler.</p>{/if}
           {#each wantedGroups as g (g.key)}
             <div class="pcat"><i style="--c:{g.color}"></i><span>{g.label}</span><b>{g.list.length}</b></div>
           {#each g.list as p (p.instance_id ?? p.article_id)}
-            <button class="pend mini" class:on={armed === p} disabled={!mine || face === 'side'} onclick={() => (armed = armed === p ? null : p)} title="{p.label}{p.tag ? ` · ${p.tag}` : ''}">
+            <button class="pend mini" class:on={armed === p} disabled={!mine || face === 'side'} onclick={() => { armed = armed === p ? null : p; if (armed && narrow) sheetOpen = false; }} title="{p.label}{p.tag ? ` · ${p.tag}` : ''}">
               <i class="pm-c" style="--c:{fnColor(p.function)}"></i><span class="pm-l">{p.label}</span>{#if p.tag}<span class="pm-t">{p.tag}</span>{/if}<span class="pm-u">{p.height_u} U{p.width && p.width !== 'full' ? ` · ${p.width === 'half' ? '½' : p.width === 'third' ? '⅓' : '¼'}` : ''}</span>
             </button>
           {/each}
@@ -290,11 +312,11 @@
         </section>
       </aside>
 
-      <div class="rack-stage" class:stage3d={show3d}>
+      <div class="rack-stage" class:stage3d={show3d} bind:clientWidth={stageW}>
         {#if show3d}
           <Rack3D container={rack.container} elements={rack.elements} vpdus={rack.vpdus ?? []} title={rack.container.name} />
         {:else if face === 'side'}
-          <div class="rack-wrap">
+          <div class="rack-wrap" style:zoom={zoom < 1 ? zoom : undefined}>
             <span class="rack-title"><Icon name="server" />{rack.container.name} · côté</span>
             <div class="rack" style="--units:{units};--u:{U}px;grid-template-columns:28px auto">
               <div class="rack-scale">{#each Array(units) as _, i}<span>{units - i}</span>{/each}</div>
@@ -310,7 +332,7 @@
             </div>
           </div>
         {:else}
-          <div class="rack-wrap">
+          <div class="rack-wrap" style:zoom={zoom < 1 ? zoom : undefined}>
             <span class="rack-title"><Icon name="server" />{rack.container.name} · {FACES[face].toLowerCase()}</span>
             <div class="rack" class:placing={!!armed} class:vpl={vpOf().some((v) => v.accessory.side === 'left')} class:vpr={vpOf().some((v) => v.accessory.side === 'right')} style="--units:{units};--u:{U}px;--bw:{BW}px">
               <!-- PDU verticaux : couloirs arrière, gauche et droite vus de l'arrière. -->
@@ -474,6 +496,22 @@
   .pside { display: grid; gap: 8px; justify-items: start; }
   .pface-s { display: block; width: 100%; height: calc(var(--h) * 26px); background: linear-gradient(180deg, #363B42, #1D2025); border-radius: 4px; padding: 2px 4px; }
   @media (max-width: 1100px) { .rack-screen .design-body { grid-template-columns: minmax(0, 1fr); height: auto; } }
+  .sheet-h { display: none; }
+  @media (max-width: 767px) {
+    .rack-stage:not(.stage3d) { overflow-x: hidden; }
+    /* « À placer » : panneau fixé en bas, replié sur sa barre de titre. */
+    .pane.left { position: fixed; z-index: 30; left: 0; right: 0; bottom: 0; order: 9; gap: 0; padding: 0 16px calc(10px + env(safe-area-inset-bottom, 0px)); max-height: 55vh; max-height: 55dvh; overflow: auto; border-radius: 16px 16px 0 0; background: var(--surface); box-shadow: 0 -10px 30px -12px rgba(0, 0, 0, .35), 0 -1px 0 var(--line); }
+    .pane.left:not(.open) > section { display: none; }
+    .sheet-h { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 10px; width: 100%; min-height: 48px; padding: 6px 0; border: 0; background: var(--surface); color: var(--fg); text-align: left; font-size: 15px; }
+    .sheet-h > span:first-child { flex: none; }
+    .sheet-armed { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; font-weight: 600; color: var(--accent); }
+    .sheet-h :global(.ic) { margin-left: auto; transform: rotate(180deg); transition: transform .2s; }
+    .pane.left.open .sheet-h :global(.ic) { transform: none; }
+    .sheet-t { display: none; }
+    .pend.mini { min-height: 44px; }
+    /* Place pour le panneau en bas. */
+    .rack-screen .design-body { padding-bottom: 64px; }
+  }
   .rtx { display: inline-flex; align-items: center; gap: 6px; font: 600 10.5px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--fg-3); }
   .rtx .input { height: 30px; width: auto; padding: 0 26px 0 9px; font: 500 13px var(--font); letter-spacing: 0; text-transform: none; }
   .vp-row { display: grid; grid-template-columns: minmax(0, 1fr) 150px; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line); }

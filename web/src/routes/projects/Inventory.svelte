@@ -17,6 +17,7 @@
   import { can } from '../../lib/session.svelte';
   import { toast, fail } from '../../lib/toast.svelte';
   import { nf } from '../../lib/format';
+  import { menuKeys } from '../../lib/menukeys';
   import { CONTAINER_KINDS, type Article, type ElementDetails, type Container, type Instance, type Location, type ProjectView } from '../../lib/projects';
 
   let { view = $bindable(), reload }: { view: ProjectView; reload: () => Promise<void> } = $props();
@@ -113,6 +114,21 @@
   // Modèles de régie, au niveau du lieu : tout le contenu du lieu en un modèle, ou un modèle
   // recopié dans le lieu (ses éléments et leur matériel).
   let menuOpen = $state(false);
+  // Barre d'emplacements (défile sur téléphone) : fondu au bord tant qu'il reste à voir.
+  let locBar = $state<HTMLElement>();
+  let moreR = $state(false), moreL = $state(false);
+  function locScroll() {
+    const b = locBar; if (!b) return;
+    moreL = b.scrollLeft > 4;
+    moreR = b.scrollLeft + b.clientWidth < b.scrollWidth - 4;
+  }
+  $effect(() => {
+    void view.locations.length;
+    const b = locBar; if (!b) return;
+    locScroll();
+    const ro = new ResizeObserver(locScroll); ro.observe(b);
+    return () => ro.disconnect();
+  });
   let regiePick = $state<{ lib: { id: string; name: string; members: { name: string }[] }[]; id: string; busy: boolean } | null>(null);
   async function saveLocAsRegie() {
     menuOpen = false;
@@ -232,7 +248,7 @@
 
 <svelte:window onclick={(e) => { if (menuOpen && !(e.target as Element).closest('.menu-wrap')) menuOpen = false; }} />
 <div class="inv">
-  <div class="card loc-list" style="align-items:center">
+  <div class="card loc-list" style="align-items:center" bind:this={locBar} onscroll={locScroll} class:more-r={moreR} class:more-l={moreL}>
     {#each view.locations as l (l.id)}
       <button class="loc" class:on={l.id === selLoc} onclick={() => { selLoc = l.id; selCont = null; }}>
         <span class="code mono">{l.code || '—'}</span><span class="ln"><b>{l.name}</b><span class="small muted">{l.totals.containers} élément{l.totals.containers > 1 ? 's' : ''}{l.totals.free_items ? ` · ${l.totals.free_items} libre${l.totals.free_items > 1 ? 's' : ''}` : ''}</span></span>
@@ -240,7 +256,7 @@
     {/each}
     {#if writable}<button class="btn ghost" onclick={() => (locEdit = { id: null, rev: 0, name: '', code: '' })}><Icon name="plus" size="sm" />Emplacement</button>{/if}
     <span style="flex:1"></span>
-    <button class="btn ghost" title="Fichier Excel de tout le matériel du projet, élément par élément : liste de colisage, chiffrage, logistique" onclick={() => download(`/projects/${view.project.id}/inventory/export?format=xlsx&group=container`)}><Icon name="download" size="sm" />Exporter la nomenclature (Excel)</button>
+    <button class="btn ghost" title="Fichier Excel de tout le matériel du projet, élément par élément : liste de colisage, chiffrage, logistique" onclick={() => download(`/projects/${view.project.id}/inventory/export?format=xlsx&group=container`)}><Icon name="download" size="sm" /><span class="d-only">Exporter la nomenclature (Excel)</span><span class="m-only">Exporter</span></button>
   </div>
 
   {#if !view.locations.length}
@@ -250,12 +266,15 @@
       <div class="page-head" style="align-items:center">
         <div><p class="eyebrow">Emplacement · code câble {loc.code}</p><h2 style="font:720 30px/1.1 var(--display);letter-spacing:-.03em">{loc.name}</h2><p class="muted small">{nf(loc.totals.weight_kg, 1)} kg · {nf(loc.totals.power_w)} W</p></div>
         {#if writable}<div class="head-actions">
-          <button class="btn ghost" onclick={() => (locEdit = { id: loc.id, rev: loc.rev, name: loc.name, code: loc.code })}><Icon name="pen" size="sm" />Renommer</button>
-          <button class="btn ghost danger" title="Supprimer l’emplacement" aria-label="Supprimer l’emplacement" onclick={() => (confirmDel = { kind: 'location', id: loc.id, name: loc.name })}><Icon name="trash" size="sm" /></button>
+          <button class="btn ghost d-only" onclick={() => (locEdit = { id: loc.id, rev: loc.rev, name: loc.name, code: loc.code })}><Icon name="pen" size="sm" />Renommer</button>
+          <button class="btn ghost danger d-only" title="Supprimer l’emplacement" aria-label="Supprimer l’emplacement" onclick={() => (confirmDel = { kind: 'location', id: loc.id, name: loc.name })}><Icon name="trash" size="sm" /></button>
           <div class="menu-wrap">
-            <button class="btn" aria-expanded={menuOpen} onclick={() => (menuOpen = !menuOpen)}><Icon name="copy" size="sm" />Modèles<Icon name="chevd" size="sm" /></button>
+            <button class="btn" aria-haspopup="menu" aria-expanded={menuOpen} onclick={() => (menuOpen = !menuOpen)}><Icon name="copy" size="sm" /><span class="d-only">Modèles</span><span class="m-only">Actions</span><Icon name="chevd" size="sm" /></button>
             {#if menuOpen}
-              <div class="pop-menu" role="menu">
+              <div class="pop-menu" role="menu" aria-label="Actions de l’emplacement" use:menuKeys={{ close: () => (menuOpen = false) }}>
+                <button role="menuitem" class="m-only" onclick={() => { menuOpen = false; locEdit = { id: loc.id, rev: loc.rev, name: loc.name, code: loc.code }; }}><Icon name="pen" size="sm" /><span><b>Renommer l’emplacement</b></span></button>
+                <button role="menuitem" class="m-only danger" onclick={() => { menuOpen = false; confirmDel = { kind: 'location', id: loc.id, name: loc.name }; }}><Icon name="trash" size="sm" /><span><b>Supprimer l’emplacement</b></span></button>
+                <hr class="m-only" aria-hidden="true">
                 <button role="menuitem" onclick={() => { menuOpen = false; fromTemplate = true; }}><Icon name="case" size="sm" /><span><b>Ajouter un élément depuis un modèle</b><small>Une baie, un flight-case… avec son contenu</small></span></button>
                 <button role="menuitem" onclick={openRegiePick}><Icon name="layers" size="sm" /><span><b>Ajouter une régie depuis un modèle</b><small>Plusieurs éléments d’un coup, dans ce lieu</small></span></button>
                 {#if can('catalogue', 'ecriture')}<button role="menuitem" onclick={saveLocAsRegie}><Icon name="download" size="sm" /><span><b>Enregistrer ce lieu comme modèle de régie</b><small>Tous ses éléments et leur matériel</small></span></button>{/if}
@@ -418,6 +437,19 @@
   .pop-menu span { display: flex; flex-direction: column; gap: 1px; }
   .pop-menu b { font-size: 13.5px; font-weight: 600; }
   .pop-menu small { font-size: 12px; color: var(--fg-3); }
+  .pop-menu button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .pop-menu button.danger, .pop-menu button.danger :global(.ic) { color: var(--err); }
+  .pop-menu hr { width: 100%; height: 1px; margin: 4px 0; border: 0; background: var(--line); }
+  .m-only { display: none; }
+  @media (max-width: 640px) {
+    .d-only { display: none; }
+    .m-only { display: revert; }
+    .pop-menu button.m-only { display: flex; }
+    .pop-menu { min-width: min(330px, calc(100vw - 32px)); }
+    .loc-list.more-r { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 48px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 48px), transparent); }
+    .loc-list.more-l.more-r { -webkit-mask-image: linear-gradient(90deg, transparent, #000 32px, #000 calc(100% - 48px), transparent); mask-image: linear-gradient(90deg, transparent, #000 32px, #000 calc(100% - 48px), transparent); }
+    .loc-list.more-l:not(.more-r) { -webkit-mask-image: linear-gradient(90deg, transparent, #000 32px); mask-image: linear-gradient(90deg, transparent, #000 32px); }
+  }
   .pop-menu :global(.ic) { margin-top: 2px; color: var(--fg-3); }
   .slotn { display: inline-block; margin-right: 8px; padding: 1px 6px; border-radius: 5px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line); font-size: 11px; color: var(--fg-2); }
   /* Catégories : bandeau contrasté. */

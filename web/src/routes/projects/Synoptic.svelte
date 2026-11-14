@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ask } from '../../lib/ask.svelte';
   // Synoptique (section 10) : nœuds = exemplaires d'équipements, rangées de panels et unités
   // d'adaptateurs ; entrées à gauche, sorties à droite (panel : arrière à gauche, avant à
   // droite). Fonctionnement calqué sur Arkyo : palette d'outils (Sélection, Main, Câble,
@@ -24,6 +25,7 @@
   import { route, navigate } from '../../lib/router.svelte';
   import { join } from '../../lib/live.svelte';
   import { relative, nf } from '../../lib/format';
+  import { modalOpen } from '../../lib/modal';
   import { loadRefs, refById, fnColor } from '../../lib/catalog.svelte';
   import type { ProjectView } from '../../lib/projects';
 
@@ -51,7 +53,35 @@
   const wanted = $derived(seg[4] === 'generale' ? 'overview' : seg[4] && seg[5] ? `${seg[4] === 'lieu' ? 'location' : 'container'}:${seg[5]}` : null);
 
   let syn = $state<Syn | null>(null);
-  const mine = $derived(!!syn?.lock?.mine);
+  // Téléphone (moins de 768 px) : lecture seule, canevas plein écran, déplacement et zoom au
+  // doigt, anomalies dans un panneau repliable en bas.
+  const NARROW = '(max-width: 767px)';
+  let narrow = $state(typeof window !== 'undefined' && window.matchMedia(NARROW).matches);
+  $effect(() => {
+    const mq = window.matchMedia(NARROW);
+    const on = () => (narrow = mq.matches);
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  });
+  const mine = $derived(!!syn?.lock?.mine && !narrow);
+  let sideOpen = $state(false);
+  let synEl = $state<HTMLDivElement>();
+  let synH = $state(0);
+  /** Hauteur du synoptique : tout l'écran sous les en-têtes (position dans le document, défilement compris). */
+  function fitHeight() {
+    if (!synEl || !narrow) return;
+    const top = synEl.getBoundingClientRect().top + window.scrollY + (document.querySelector('.ws-main')?.scrollTop ?? 0);
+    synH = Math.max(320, window.innerHeight - top);
+  }
+  $effect(() => { if (!narrow || !synEl) return; fitHeight(); window.addEventListener('resize', fitHeight); return () => window.removeEventListener('resize', fitHeight); });
+  /** Pincement à deux doigts : pointeurs actifs et état du geste. */
+  const touches = new Map<number, { x: number; y: number }>();
+  let pinch: { d0: number; k0: number; mx: number; my: number; tx0: number; ty0: number } | null = null;
+  function pinchState() {
+    const [a, b] = [...touches.values()] as [{ x: number; y: number }, { x: number; y: number }];
+    const r = svgEl.getBoundingClientRect();
+    return { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, mx: (a.x + b.x) / 2 - r.left, my: (a.y + b.y) / 2 - r.top };
+  }
   let sel = $state<string | null>(null);
   /** Câbles choisis (Ctrl ou Maj + clic pour en ajouter). */
   let multi = $state<Set<string>>(new Set());
@@ -133,8 +163,10 @@
   // ----- Verrou -----
   let beat: ReturnType<typeof setInterval> | null = null;
   let lastAction = Date.now();
+  let took = false;
   async function take() {
-    if (!canDesign) return;
+    if (!canDesign || narrow) return;
+    took = true;
     try { const r = await api.post<{ mine: boolean }>(`/projects/${pid}/synoptic/lock`); if (r.mine && !beat) beat = setInterval(heartbeat, 20_000); await load(); } catch (e) { fail(e); }
   }
   async function heartbeat() {
@@ -158,7 +190,7 @@
     }
     if (!mine && !drag) load();
   }));
-  onDestroy(() => { stopBeat(); if (started) fetch(`/api/projects/${pid}/synoptic/lock`, { method: 'DELETE', headers: { 'X-Strata-Request': '1' }, keepalive: true }); });
+  onDestroy(() => { stopBeat(); if (took) fetch(`/api/projects/${pid}/synoptic/lock`, { method: 'DELETE', headers: { 'X-Strata-Request': '1' }, keepalive: true }); });
 
   // ----- Géométrie -----
   const NW = 270, HH = 52, PS = 28, TAG_GAP = 26;
@@ -552,8 +584,17 @@
   }
   const panning = () => tool === 'pan' || spacePan;
   function down(e: PointerEvent) {
-    if (e.button === 2) return;
+    if (e.button === 2 || pinch) return;
     const t = e.target as Element;
+    // Téléphone (lecture seule) : glisser depuis un port ou un câble fait aussi défiler la vue.
+    if (narrow && !mine && (t.closest('.port') || t.closest('.cable') || t.closest('.lbl'))) {
+      // Toucher sans glisser : le câble (ou le câble du port) est choisi au relâcher.
+      const ref = t.closest<SVGElement>('.port')?.dataset.ref;
+      const cid = t.closest<SVGElement>('[data-cable]')?.dataset.cable;
+      drag = { kind: 'pan', ox: e.clientX - tx, oy: e.clientY - ty, moved: false, key: ref ? `p:${ref}` : cid ? `c:${cid}` : undefined };
+      try { (e.currentTarget as Element).setPointerCapture(e.pointerId); } catch { /* pointeur synthétique */ }
+      return;
+    }
     const [wx0, wy0] = toWorld(e);
     if (panning() || e.button === 1) { drag = { kind: 'pan', ox: e.clientX - tx, oy: e.clientY - ty, moved: false }; (e.currentTarget as Element).setPointerCapture(e.pointerId); return; }
     // Câblage en cours : un port aimanté termine le câble ; en multipoint, le fond pose un point.
@@ -585,6 +626,11 @@
       if (e.shiftKey) { const s2 = new Set(annMulti); if (selAnn) s2.add(selAnn); if (s2.has(a.id)) s2.delete(a.id); else s2.add(a.id); annMulti = s2; } else annMulti = new Set();
       selAnn = a.id; sel = null; multi = new Set(); selNodes = new Set();
       if (mine) drag = { kind: t.closest('.rs') ? 'resize' : 'ann', key: a.id, ox: wx0 - a.data.x, oy: wy0 - a.data.y, moved: false, from: { x: a.data.x, y: a.data.y, w: a.data.w, h: a.data.h } };
+    } else if (nodeEl && !syn?.overview && narrow && !mine) {
+      // Téléphone : toucher un nœud le sélectionne, glisser fait défiler la vue.
+      const key = nodeEl.dataset.node!;
+      selNodes = new Set([key]); sel = null; multi = new Set(); selAnn = null; annMulti = new Set();
+      drag = { kind: 'pan', ox: e.clientX - tx, oy: e.clientY - ty, moved: false };
     } else if (nodeEl && !syn?.overview) {
       // Clic sur un nœud : il est sélectionné (Maj ou Ctrl pour ajouter) et se déplace avec
       // les autres nœuds sélectionnés.
@@ -596,7 +642,7 @@
     } else if (nodeEl && mine && t.closest('.drag')) {
       const key = nodeEl.dataset.node!;
       drag = { kind: 'node', key, ox: wx0, oy: wy0, moved: false, from: { ...pos[key]! }, group: { [key]: { ...pos[key]! } } };
-    } else if (!nodeEl && !syn?.overview && (e.shiftKey || (tool === 'select' && !e.altKey))) {
+    } else if (!nodeEl && !syn?.overview && (e.shiftKey || (tool === 'select' && !e.altKey && !narrow))) {
       // Outil Sélection sur le fond : rectangle de sélection (Alt ou Main pour faire défiler).
       drag = { kind: 'lasso', ox: wx0, oy: wy0, moved: false, rect: true }; lasso = [[wx0, wy0]];
     } else if (!nodeEl) {
@@ -606,6 +652,20 @@
     }
     if (drag) { (e.currentTarget as Element).setPointerCapture(e.pointerId); }
   }
+  /** Phase de capture : suit les doigts posés ; le second lance le pincement (avant les ports). */
+  function touchDown(e: PointerEvent) {
+    if (e.pointerType !== 'touch') return;
+    touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    try { svgEl.setPointerCapture(e.pointerId); } catch { /* pointeur synthétique */ }
+    if (touches.size >= 2) {
+      e.stopPropagation();
+      if (touches.size === 2) {
+        const st = pinchState();
+        pinch = { d0: st.d, k0: k, mx: st.mx, my: st.my, tx0: tx, ty0: ty };
+        drag = null; lasso = null; draft = null;
+      }
+    }
+  }
   function addWaypoint(wx: number, wy: number) {
     // Points orthogonaux, comme Arkyo : un tronçon horizontal, puis vertical, et ainsi de suite.
     const P = portXY(armed[0]!.ref); if (!P) return;
@@ -614,6 +674,18 @@
     wps = [...wps, pt];
   }
   function move(e: PointerEvent) {
+    if (e.pointerType === 'touch' && touches.has(e.pointerId)) {
+      touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pinch && touches.size >= 2) {
+        const st = pinchState();
+        const nk = Math.min(2.5, Math.max(0.2, (pinch.k0 * st.d) / pinch.d0));
+        // Le point du dessin sous le centre initial des doigts suit le centre actuel.
+        tx = st.mx - ((pinch.mx - pinch.tx0) * nk) / pinch.k0;
+        ty = st.my - ((pinch.my - pinch.ty0) * nk) / pinch.k0;
+        k = nk;
+        return;
+      }
+    }
     if (syn?.view) { const w = toWorld(e); sendCursor(`project:${pid}/syn:${syn.view}`, w[0], w[1]); }
     const [wx, wy] = toWorld(e);
     if (armed.length || drag?.kind === 'rewire') {
@@ -626,6 +698,8 @@
     }
     if (!drag) return;
     if (!drag.moved && Math.hypot(wx - drag.ox, wy - drag.oy) * k < 4 && drag.kind !== 'pan') return;
+    // Au doigt, un léger tremblement ne transforme pas un toucher en glissé.
+    if (!drag.moved && drag.kind === 'pan' && narrow && Math.hypot(e.clientX - tx - drag.ox, e.clientY - ty - drag.oy) < 6) return;
     drag.moved = true;
     if (drag.kind === 'pan') { tx = e.clientX - drag.ox; ty = e.clientY - drag.oy; return; }
     if (drag.kind === 'rewire' || drag.kind === 'port') return;
@@ -669,6 +743,16 @@
     moving = { keys: new Set(Object.keys(drag.group ?? {})), dx: ddx, dy: ddy };
   }
   async function up(e?: PointerEvent) {
+    if (e?.pointerType === 'touch') {
+      touches.delete(e.pointerId);
+      if (pinch) { if (touches.size < 2) pinch = null; drag = null; return; }
+    }
+    if (narrow && drag?.kind === 'pan' && !drag.moved && drag.key) {
+      const kq = drag.key; drag = null;
+      const id = kq.startsWith('c:') ? kq.slice(2) : syn?.cables.find((x) => x.a === kq.slice(2) || x.b === kq.slice(2))?.id;
+      if (id) { sel = id; multi = new Set([id]); selNodes = new Set(); tab = 'cable'; sideOpen = true; }
+      return;
+    }
     const d = drag; drag = null;
     if (d?.kind !== 'node' || !d.moved) moving = null;
     if (d?.kind === 'rewire') { const r = rewire, sp = snap; rewire = null; snap = null; mouse = null; if (r && sp && d.moved) rewireCable(r.id, r.end, sp.p.ref); return; }
@@ -706,6 +790,8 @@
   }
   function portDown(p: Port, n: SNode, e: PointerEvent) {
     if (e.button !== 0 || panning()) return;
+    // Lecture seule au doigt : la vue reste déplaçable depuis un port (voir down et up).
+    if (narrow && !mine) return;
     e.stopPropagation();
     const [wx, wy] = toWorld(e);
     clickPort(p, n, e);
@@ -718,7 +804,7 @@
   let extForm = $state<{ port: Port; location_id: string; label: string } | null>(null);
   async function attachTo(adapter: Port, port: Port, replace = false) {
     try { await api.post(`/projects/${pid}/attach`, { adapter: adapter.ref, port: port.ref, replace }); toast('Adaptateur attaché.'); await load(); }
-    catch (e) { if (e instanceof ApiError && e.code === 'occupied' && confirm('Ce port porte déjà un câble. Le remplacer par l’attache ?')) await attachTo(adapter, port, true); else if (!(e instanceof ApiError && e.code === 'occupied')) { fail(e); await load(); } }
+    catch (e) { if (e instanceof ApiError && e.code === 'occupied' && (await ask({ title: 'Remplacer le câble ?', text: 'Ce port porte déjà un câble. Le remplacer par l’attache ?', confirmLabel: 'Remplacer', danger: true }))) await attachTo(adapter, port, true); else if (!(e instanceof ApiError && e.code === 'occupied')) { fail(e); await load(); } }
   }
   async function markExternal() {
     if (!extForm) return;
@@ -848,7 +934,7 @@
     const c = syn?.cables.find((x) => x.id === id); if (!c || c.fields.attach || c.fields.external) return;
     const na = end === 'a' ? to : c.a, nb = end === 'b' ? to : c.b;
     if (na === c.a && nb === c.b) return;
-    if (used.has(to) && !confirm('Ce port porte déjà un câble. Le remplacer ?')) return;
+    if (used.has(to) && !(await ask({ title: 'Remplacer le câble ?', text: 'Ce port porte déjà un câble : il sera décâblé.', confirmLabel: 'Remplacer', danger: true }))) return;
     const keep = { ...c, fields: { ...c.fields } };
     const moveTo = async (fa: string, fb: string, ta: string, tb: string) => {
       const cur = findCable(fa, fb); if (cur) await api.post(`/projects/${pid}/cables/delete`, { ids: [cur.id] });
@@ -944,7 +1030,7 @@
     if (!ids.length) return;
     try { await api.post(`/projects/${pid}/harnesses/assign`, { ids, harness_id: id }); await load(); } catch (e) { fail(e); }
   }
-  async function dropHarness(h: Harness) { if (!confirm(`Supprimer le faisceau « ${h.name} » ? Ses câbles restent.`)) return; try { await api.del(`/harnesses/${h.id}`); await load(); } catch (e) { fail(e); } }
+  async function dropHarness(h: Harness) { if (!(await ask({ title: `Supprimer le faisceau « ${h.name} » ?`, text: 'Ses câbles restent.', confirmLabel: 'Supprimer', danger: true }))) return; try { await api.del(`/harnesses/${h.id}`); await load(); } catch (e) { fail(e); } }
   function showHarness(h: Harness) { const ids = syn?.cables.filter((c) => c.fields.harness_id === h.id).map((c) => c.id) ?? []; hl = { cables: new Set(ids), nodes: new Set() }; multi = new Set(ids); sel = ids[0] ?? null; }
   async function patchSel(f: Partial<Fields>) { if (selected) await patchCable(selected, f); }
   async function deleteSel() {
@@ -968,6 +1054,8 @@
     try { const r = await api.post<{ changed: number }>(`/projects/${pid}/numbering`, { mode: 'clear', view: syn?.view }); toast(`${r.changed} numéro(s) effacé(s).`); unnumber = false; await load(); } catch (e) { fail(e); }
   }
   function key(e: KeyboardEvent) {
+    // Une boîte de dialogue ouverte garde le clavier : pas de raccourci ni de suppression derrière.
+    if (modalOpen()) return;
     if ((e.target as Element).closest('input,textarea,select')) return;
     if (e.key === 'Backspace' && armed.length && wps.length) { e.preventDefault(); wps = wps.slice(0, -1); return; }
     if (e.key === 'Escape') { ctx = null; wps = []; armed = []; mouse = null; snap = null; sel = null; multi = new Set(); selNodes = new Set(); hl = { cables: new Set(), nodes: new Set() }; }
@@ -1144,19 +1232,21 @@
 
 {#if !syn}<span class="spin"></span>
 {:else}
-  <div class="syn">
+  <div class="syn" class:narrow bind:this={synEl} style:height={narrow && synH ? `${synH}px` : undefined}>
     <div class="dtool">
       <ViewPicker views={syn.views} value={syn.view} onpick={(v) => navigate(viewUrl(v))} />
-      {#if !syn.overview}<span class="muted small">{nodes.length} nœud{nodes.length > 1 ? 's' : ''} · {syn.cables.length} câble{syn.cables.length > 1 ? 's' : ''}</span>{:else}<span class="muted small">{syn.overview.locations.length} lieu{syn.overview.locations.length > 1 ? 'x' : ''} · {nf(syn.overview.totals.weight_kg, 1)} kg · {nf(syn.overview.totals.power_w)} W · double-clic sur un lieu pour l’ouvrir</span>{/if}
-      <span style="flex:1"></span>
-      {#if mine}
+      {#if narrow}<span class="lockchip other ro-m"><Icon name="eye" size="sm" />Lecture seule</span>{/if}
+      {#if !syn.overview}<span class="muted small counts">{nodes.length} nœud{nodes.length > 1 ? 's' : ''} · {syn.cables.length} câble{syn.cables.length > 1 ? 's' : ''}</span>{:else}<span class="muted small counts">{syn.overview.locations.length} lieu{syn.overview.locations.length > 1 ? 'x' : ''} · {nf(syn.overview.totals.weight_kg, 1)} kg · {nf(syn.overview.totals.power_w)} W · double-clic sur un lieu pour l’ouvrir</span>{/if}
+      <span class="dt-gap" style="flex:1"></span>
+      {#if !narrow && mine}
         {#if requested}<span class="lockchip req"><Icon name="lock" size="sm" />{requested} demande la main · <button onclick={() => { requested = null; release(); }}>Céder</button></span>{/if}
+      {:else if narrow}<!-- téléphone : lecture seule -->
       {:else if syn.lock}
         <span class="lockchip other" title="Vous voyez la dernière version enregistrée"><Icon name="lock" size="sm" />{syn.lock.account_name} a la main{#if canDesign} · <button onclick={requestHand}>Demander</button>{/if}</span>
       {:else if canDesign}
         <button class="btn sm primary" onclick={take}><Icon name="unlock" size="sm" />Prendre la main</button>
       {:else}<span class="lockchip other"><Icon name="lock" size="sm" />Lecture seule</span>{/if}
-      <button class="btn sm valid" class:ok={issues && !issues.counts.error && !issues.counts.warning} class:bad={issues && (issues.counts.error || issues.counts.warning)} class:on={tab === 'issues'} title="Validation du câblage" onclick={() => { tab = tab === 'issues' ? 'cable' : 'issues'; if (tab === 'issues') validate(); }}><Icon name={issues && (issues.counts.error || issues.counts.warning) ? 'alert' : 'check'} size="sm" />Validation{#if issues} <span class="mono">{issues.counts.error + issues.counts.warning}</span>{/if}</button>
+      <button class="btn sm valid" class:ok={issues && !issues.counts.error && !issues.counts.warning} class:bad={issues && (issues.counts.error || issues.counts.warning)} class:on={tab === 'issues'} title="Validation du câblage" onclick={() => { if (narrow) { tab = 'issues'; sideOpen = true; validate(); return; } tab = tab === 'issues' ? 'cable' : 'issues'; if (tab === 'issues') validate(); }}><Icon name={issues && (issues.counts.error || issues.counts.warning) ? 'alert' : 'check'} size="sm" />Validation{#if issues} <span class="mono">{issues.counts.error + issues.counts.warning}</span>{/if}</button>
       <button class="btn sm" onclick={() => (exp = { format: 'pdf', paper: 'A3', landscape: true, frame: 'all', revision: '', title: 'Synoptique', busy: false })}><Icon name="download" size="sm" />Exporter</button>
       <details class="more" bind:this={moreEl}><summary class="btn sm" aria-label="Plus d’actions">⋯</summary><div class="more-m" role="menu" tabindex="-1" onclick={() => moreEl?.removeAttribute('open')} onkeydown={() => {}}>
         {#if !syn.overview}
@@ -1173,8 +1263,8 @@
       </div></details>
       {#if mine}<button class="btn sm primary" title="Numérotation (N)" onclick={() => (numbering = true)}><Icon name="hash" size="sm" />Numéroter</button>{/if}
     </div>
-    <div class="syn-body" class:norail={!!syn.overview}>
-      {#if !syn.overview}
+    <div class="syn-body" class:norail={!!syn.overview || narrow}>
+      {#if !syn.overview && !narrow}
         <nav class="rail" aria-label="Outils">
           {#each TOOLS.filter((x) => !x.edit || mine) as t, i (t.id)}
             {#if i > 0 && t.edit && !TOOLS.filter((x) => !x.edit || mine)[i - 1]!.edit}<span class="rail-sep"></span>{/if}
@@ -1211,7 +1301,7 @@
         </nav>
       {/if}
       <div class="syn-stage" bind:this={stageEl} bind:clientWidth={stageW} bind:clientHeight={stageH}><svg bind:this={svgEl} class="syn-canvas t-{panning() ? 'pan' : tool}" class:arming={armed.length > 0} role="application" aria-label="Synoptique"
-        onwheel={wheel} onpointerdown={down} onpointermove={move} onpointerup={up} oncontextmenu={contextMenu}
+        onwheel={wheel} onpointerdowncapture={touchDown} onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={(e) => { touches.delete(e.pointerId); if (touches.size < 2) pinch = null; drag = null; lasso = null; }} oncontextmenu={contextMenu}
         ondblclick={(e) => { if (!(e.target as Element).closest('[data-node],[data-cable],[data-ann],.port')) fit(); }}>
         <defs><pattern id="syn-grid" width="20" height="20" patternUnits="userSpaceOnUse" patternTransform="translate({tx} {ty}) scale({k})"><circle cx="1" cy="1" r="1" fill="var(--grid-dot, rgba(120,130,140,.25))" /></pattern></defs>
         <rect class="gridbg" width="100%" height="100%" fill="url(#syn-grid)" />
@@ -1296,8 +1386,8 @@
                     {@const s = portChip(p)}
                     {@const mk = out ? NW - 19 : 12}
                     {@const tx = out ? NW - 24 : 24}
-                    <g class="port" class:used={used.has(p.ref)} class:armed={armedRefs.has(p.ref)} class:ok={okTargets?.has(p.ref)} class:bad={okTargets && !okTargets.has(p.ref) && !armedRefs.has(p.ref)} class:tgt={tgtPreview.has(p.ref)} class:snap={snap?.p.ref === p.ref} style="--c:{portColor(p)}" role="button" tabindex="-1"
-                      onpointerdown={(e) => portDown(p, n, e)} onkeydown={(e) => { if (e.key === 'Enter') clickPort(p, n, e as unknown as MouseEvent); }}
+                    <g class="port" data-ref={p.ref} class:used={used.has(p.ref)} class:armed={armedRefs.has(p.ref)} class:ok={okTargets?.has(p.ref)} class:bad={okTargets && !okTargets.has(p.ref) && !armedRefs.has(p.ref)} class:tgt={tgtPreview.has(p.ref)} class:snap={snap?.p.ref === p.ref} style="--c:{portColor(p)}" role="button" tabindex="0" aria-label="{n.label} › {p.label}"
+                      onpointerdown={(e) => portDown(p, n, e)} onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); clickPort(p, n, e as unknown as MouseEvent); } }}
                       onpointerenter={(e) => { const r = stageEl.getBoundingClientRect(); hoverPort = { p, n, sx: e.clientX - r.left, sy: e.clientY - r.top }; }} onpointerleave={() => { if (hoverPort?.p.ref === p.ref) hoverPort = null; }}>
                       <title>{p.label} · {refById('connectors', p.connector)?.name ?? p.connector}{p.variant ? ` ${p.variant}` : ''}{p.gender ? ` · ${p.gender === 'M' ? 'mâle' : p.gender === 'F' ? 'femelle' : 'neutre'}` : ''}{p.signal ? ` · ${refById('signals', p.signal)?.name ?? p.signal}` : ''}</title>
                       <circle class="ph" cx={x} cy={y} r="13" />
@@ -1410,10 +1500,18 @@
         </div>
       {/if}</div>
 
-      <aside class="syn-side">
+      <aside class="syn-side" class:open={sideOpen} aria-label="Panneau du synoptique">
+        {#if narrow}
+          <button class="side-h" aria-expanded={sideOpen} onclick={() => { sideOpen = !sideOpen; if (sideOpen) { if (!selected && !selNodes.size) tab = 'issues'; validate(); } }}>
+            <Icon name={issues && (issues.counts.error || issues.counts.warning) ? 'alert' : 'check'} size="sm" />
+            <b>Anomalies</b>{#if issues}<span class="mono">{issues.counts.error + issues.counts.warning}</span>{/if}
+            <span class="muted small side-sub">{selected || selNodes.size ? 'Sélection · ' : ''}{tab === 'issues' ? 'Validation' : tab === 'layers' ? 'Calques' : tab === 'harness' ? 'Faisceaux' : 'Propriétés'}</span>
+            <Icon name="chevd" size="sm" />
+          </button>
+        {/if}
         <div class="stabs" role="tablist">
           {#each [['cable', 'Propriétés'], ['layers', 'Calques'], ['harness', 'Faisceaux']] as [t2, l]}<button role="tab" aria-selected={tab === t2} class:on={tab === t2} onclick={() => (tab = t2 as typeof tab)}>{l}</button>{/each}
-          {#if tab === 'issues'}<button role="tab" aria-selected="true" class="on">Validation</button>{/if}
+          {#if tab === 'issues' || narrow}<button role="tab" aria-selected={tab === 'issues'} class:on={tab === 'issues'} onclick={() => { tab = 'issues'; validate(); }}>Validation</button>{/if}
         </div>
         <div class="sbody">
         {#if tab === 'layers'}
@@ -1732,6 +1830,33 @@
   .syn-canvas:active { cursor: grabbing; }
   .syn-canvas.arming { cursor: crosshair; }
   .syn-side { border-left: 1px solid var(--line); padding: 0; overflow: auto; background: var(--surface); }
+  /* Ports au clavier : focus visible sur l'anneau du port. */
+  .port:focus { outline: none; }
+  .port:focus-visible .ph { fill: color-mix(in srgb, var(--accent, #4F6BFF) 22%, transparent); stroke: var(--accent, #4F6BFF); stroke-width: 2.5; }
+  .side-h, .ro-m { display: none; }
+  /* Téléphone : lecture seule, canevas plein écran, panneau d'anomalies repliable en bas. */
+  @media (max-width: 767px) {
+    .syn.narrow { display: flex; flex-direction: column; margin: -6px -14px 0; min-height: 320px; }
+    .syn.narrow .dtool { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; min-height: 0; gap: 6px; padding: 6px 12px; }
+    .syn.narrow .dtool::-webkit-scrollbar { display: none; }
+    .syn.narrow .dtool > :global(*) { flex: none; }
+    .syn.narrow .counts, .syn.narrow .dt-gap { display: none; }
+    .syn.narrow .ro-m { display: inline-flex; }
+    .syn.narrow .syn-body { position: relative; flex: 1; min-height: 0; height: auto; display: block; }
+    .syn.narrow .syn-stage, .syn.narrow .syn-canvas { height: 100%; }
+    .syn.narrow .syn-stage { padding-bottom: 0; }
+    .syn.narrow .minimap { display: none; }
+    .syn.narrow .zoomer { bottom: 60px; }
+    .syn.narrow .zoomer button { width: 40px; height: 40px; }
+    .syn.narrow .syn-side { position: absolute; z-index: 8; left: 0; right: 0; bottom: 0; max-height: 60%; border: 0; border-radius: 14px 14px 0 0; box-shadow: 0 -10px 30px -12px rgba(0, 0, 0, .35), 0 -1px 0 var(--line); }
+    .syn.narrow .syn-side:not(.open) .stabs, .syn.narrow .syn-side:not(.open) .sbody { display: none; }
+    .syn.narrow .side-h { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 8px; width: 100%; min-height: 48px; padding: 0 16px; border: 0; background: var(--surface); color: var(--fg); font: inherit; font-size: 15px; text-align: left; }
+    .syn.narrow .side-h .side-sub { flex: 1; min-width: 0; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .syn.narrow .side-h :global(.ic:last-child) { transform: rotate(180deg); transition: transform .2s; }
+    .syn.narrow .syn-side.open .side-h :global(.ic:last-child) { transform: none; }
+    .syn.narrow .stabs { top: 48px; overflow-x: auto; }
+    :global(.ws-main:has(.syn.narrow) > .ws-top) { display: none; }
+  }
   .syn-side section { display: grid; gap: 10px; }
   .ends { display: grid; gap: 8px; }
   .ends > div { display: flex; flex-direction: column; padding: 10px; border-radius: 12px; background: var(--surface-2); }

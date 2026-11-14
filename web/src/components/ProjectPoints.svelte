@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ask } from '../lib/ask.svelte';
   // Points de restauration d'un projet (section 13.2) et export portable.
   import Icon from './Icon.svelte';
   import { api, download } from '../lib/api';
@@ -17,10 +18,10 @@
   $effect(() => { pid; load(); });
   async function take() { busy = true; try { await api.post(`/projects/${pid}/points`, { label: label || null }); label = ''; toast('Point de restauration créé.'); await load(); } catch (e) { fail(e); } finally { busy = false; } }
   async function restore(p: Pt) {
-    if (!confirm(`Remettre le projet dans l’état du ${new Date(p.created_at).toLocaleString('fr-FR')} ? L’état actuel est d’abord gardé dans un point.`)) return;
+    if (!(await ask({ title: 'Restaurer ce point ?', eyebrow: new Date(p.created_at).toLocaleString('fr-FR'), text: `Le projet revient dans l’état du ${new Date(p.created_at).toLocaleString('fr-FR')}. L’état actuel est d’abord gardé dans un point.`, confirmLabel: 'Restaurer' }))) return;
     busy = true; try { await api.post(`/points/${p.id}/restore`); toast('Projet restauré.'); await load(); onrestored?.(); } catch (e) { fail(e); } finally { busy = false; }
   }
-  async function remove(p: Pt) { if (!confirm('Supprimer ce point de restauration ?')) return; try { await api.post(`/points/${p.id}/delete`); await load(); } catch (e) { fail(e); } }
+  async function remove(p: Pt) { if (!(await ask({ title: 'Supprimer ce point de restauration ?', confirmLabel: 'Supprimer', danger: true }))) return; try { await api.post(`/points/${p.id}/delete`); await load(); } catch (e) { fail(e); } }
   const ko = (n: number) => `${Math.max(1, Math.round(n / 1024))} Ko`;
 </script>
 

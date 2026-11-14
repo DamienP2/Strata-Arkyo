@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ask } from '../../lib/ask.svelte';
   import Icon from '../../components/Icon.svelte';
   import Confirm from '../../components/Confirm.svelte';
   import Unavailable from './Unavailable.svelte';
@@ -52,7 +53,7 @@
   async function loadPoints() { try { pInterval = (await api.get<{ interval_h: number }>('/site/points')).interval_h; orphans = (await api.get<{ points: typeof orphans }>('/points/orphans')).points; } catch { /* droits insuffisants */ } }
   loadPoints();
   async function setInterval_(h: number) { try { pInterval = (await api.put<{ interval_h: number }>('/site/points', { interval_h: h })).interval_h; toast('Fréquence enregistrée.'); } catch (e) { fail(e); } }
-  async function restoreOrphan(o: (typeof orphans)[number]) { if (!confirm(`Restaurer le projet supprimé « ${o.project_name} » ?`)) return; try { await api.post(`/points/${o.id}/restore`); toast('Projet restauré.'); await loadPoints(); } catch (e) { fail(e); } }
+  async function restoreOrphan(o: (typeof orphans)[number]) { if (!(await ask({ title: `Restaurer le projet supprimé « ${o.project_name} » ?`, confirmLabel: 'Restaurer' }))) return; try { await api.post(`/points/${o.id}/restore`); toast('Projet restauré.'); await loadPoints(); } catch (e) { fail(e); } }
 </script>
 
 {#if error}<Unavailable message={error} />
