@@ -411,3 +411,24 @@ kbd{font-size:10.5px;padding:3px 6px}
 .dec .d-pwr,.dec .pwr{box-shadow:inset 0 0 0 1.6px #A9B0B8}
 .dec .d-xkeys{filter:none}
 .ritem .led{box-shadow:none}
+/* Boutons plus fins : petites tailles, traits de 1 px, gris discrets. */
+.dec .d-pwr,.dec .pwr{width:8px;max-width:8px;box-shadow:inset 0 0 0 1.2px #8E959D}
+.dec .d-knob,.dec .knob{width:max(8px,20cqh);max-width:11px;background:#2A2E34;box-shadow:inset 0 0 0 1px #7A828B}
+.dec .d-joy{width:max(10px,30cqh);max-width:16px;background:radial-gradient(circle,#7A828B 0 20%,#121417 23% 64%,#2A2E34 67%)}
+.dec .d-recbtn{width:max(7px,18cqh);max-width:10px}
+.dec .d-trans{gap:3px}
+.dec .d-trans i{width:max(6px,16cqh);max-width:9px;background:#3A4047}
+.dec .d-xkeys{width:52%;height:min(64%,28px);background:linear-gradient(#7A828B 0 0) 0 0/6px 38%,linear-gradient(#7A828B 0 0) 0 100%/6px 38%;background-repeat:space no-repeat;-webkit-mask:none;mask:none}
+.dec .d-btns{width:34px;height:min(36%,8px);background:linear-gradient(#4A5058 0 0) 0 0/6px 100%;background-repeat:space no-repeat}
+.dec .d-btns.s{width:16px}
+.dec .d-brk{width:9px;height:min(56%,14px);background:linear-gradient(180deg,#A9B0B8 0 45%,#2A2E33 45%);box-shadow:inset 0 0 0 1px #000}
+.dec .d-jack{max-width:9px}
+.dec .d-usb{width:9px;max-height:5px}
+.dec .d-ic{background:linear-gradient(180deg,#123A33 0 44%,transparent 44% 64%,#5A6169 64%) 0 0/22px 100% repeat-x;-webkit-mask:linear-gradient(90deg,#000 0 18px,transparent 18px) 0 0/22px 100% repeat-x;mask:linear-gradient(90deg,#000 0 18px,transparent 18px) 0 0/22px 100% repeat-x}
+/* Barre de laçage : pas d'oreilles ni de façade, la barre se fixe directement sur les montants. */
+.ritem.acc:has(.lace)::before,.ritem.acc:has(.lace)::after{display:none}
+.ritem.acc:has(.lace){background:transparent!important;box-shadow:none!important}
+.ritem.acc:has(.lace) .dec{overflow:visible}
+.ritem .lace{margin:0 -11px;height:5px;background:#A9B0B8}
+.dec .d-xkeys{background:linear-gradient(90deg,#7A828B 0 6px,transparent 6px 9px) 0 0/9px 38% repeat-x,linear-gradient(90deg,#7A828B 0 6px,transparent 6px 9px) 0 100%/9px 38% repeat-x}
+.dec .d-btns{background:linear-gradient(90deg,#4A5058 0 6px,transparent 6px 9px) 0 0/9px 100% repeat-x}
