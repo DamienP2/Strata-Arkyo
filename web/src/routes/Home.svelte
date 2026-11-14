@@ -74,7 +74,11 @@
   {#if dash}
     <section class="figs">
       <a class="fig" href="/projets"><span class="lbl-t">Projets actifs</span><span><b>{dash.projects_active}<small>/{dash.projects_total}</small></b><span class="fig-s">en préparation, prêts ou en cours</span></span></a>
-      <div class="fig"><span class="lbl-t">Tâches terminées</span><span><b>{dash.tasks_pct}<small>%</small></b><span class="fig-s">{dash.tasks_done} sur {dash.tasks_total} tâche{dash.tasks_total > 1 ? 's' : ''}</span></span><span class="fig-v"><Vu value={dash.tasks_pct} n={14} cls="acc" /></span></div>
+      {#if dash.tasks_total}
+        <div class="fig"><span class="lbl-t">Tâches terminées</span><span><b>{dash.tasks_pct}<small>%</small></b><span class="fig-s">{dash.tasks_done} sur {dash.tasks_total} tâche{dash.tasks_total > 1 ? 's' : ''}</span></span><span class="fig-v"><Vu value={dash.tasks_pct} n={14} cls="acc" /></span></div>
+      {:else}
+        <div class="fig"><span class="lbl-t">Tâches</span><span><span class="fig-none">Aucune tâche</span><span class="fig-s">dans les projets en cours</span></span></div>
+      {/if}
       <div class="fig"><span class="lbl-t">Complétion des fiches</span><span><b>{dash.completion_avg}<small>%</small></b><span class="fig-s">en moyenne sur {dash.projects_total} projet{dash.projects_total > 1 ? 's' : ''}</span></span><span class="fig-v"><Vu value={dash.completion_avg} n={14} cls={dash.completion_avg >= 80 ? 'ok' : ''} /></span></div>
       {#if catalog != null}<a class="fig" href="/catalogue"><span class="lbl-t">Catalogue</span><span><b>{nf(catalog)}</b><span class="fig-s">fiches d’équipement</span></span></a>{/if}
     </section>

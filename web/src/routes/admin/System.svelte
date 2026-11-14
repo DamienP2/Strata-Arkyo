@@ -8,9 +8,9 @@
 
 {#if error}<Unavailable message={error} />
 {:else if sys}
-  <section class="card">
+  <section class="card narrow">
     <div class="card-head"><h2>Moteur</h2></div>
-    <dl class="kv">
+    <dl class="kv near">
       <dt>Version</dt><dd class="mono">{sys.version}</dd>
       <dt>Schéma de la base</dt><dd class="mono">{sys.schema}</dd>
       <dt>Architecture</dt><dd class="mono">{sys.arch}</dd>

@@ -5,6 +5,9 @@
   import FieldError from '../../components/FieldError.svelte';
   import ChipPicker from '../../components/ChipPicker.svelte';
   import NumField from '../../components/NumField.svelte';
+  import EmptyState from '../../components/EmptyState.svelte';
+  import HeadActions from '../../components/HeadActions.svelte';
+  import { pageHead, plural } from '../../lib/pagehead.svelte';
   import { api, ApiError } from '../../lib/api';
   import { can } from '../../lib/session.svelte';
   import { toast, fail } from '../../lib/toast.svelte';
@@ -89,11 +92,12 @@
   const tq = $derived(typeQuery.trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase());
   const tmatch = (r: RefItem) => !tq || r.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().includes(tq);
 
+  pageHead(() => ({ count: plural(list.length, meta.one.toLowerCase(), meta.label.toLowerCase()) }));
   const sw = (c: string) => (c ? `<span class="role-dot" style="--c:${c}"></span>` : '');
   function detail(r: RefItem): string {
     const d = r.data;
     switch (kind) {
-      case 'functions': return `Clé ${d.key} · préfixe ${d.cable_prefix || '—'}`;
+      case 'functions': return d.cable_prefix && d.cable_prefix === d.key ? `Clé et préfixe ${d.key}` : `Clé ${d.key} · préfixe ${d.cable_prefix || '—'}`;
       case 'signals': return [refName('functions', d.function), (d.connectors ?? []).map((c: string) => refName('connectors', c)).join(', '), d.impedance_ohm ? `${d.impedance_ohm} Ω` : '', d.ip ? 'IP' + (d.multicast ? ' multicast' : '') : ''].filter(Boolean).join(' · ');
       case 'connectors': return [(d.variants ?? []).join(', '), d.d_format ? 'format D' : '', (d.functions ?? []).map((f: string) => refName('functions', f)).join(', ')].filter(Boolean).join(' · ');
       case 'brands': return d.website ?? '';
@@ -107,18 +111,15 @@
 </script>
 
 <div class="seg" role="tablist" aria-label="Référentiels">
-  {#each REF_KINDS as k}<button role="tab" class:on={k.path === kind} aria-selected={k.path === kind} onclick={() => navigate(`/catalogue/referentiels/${k.path}`)}>{k.label}</button>{/each}
+  {#each REF_KINDS as k}<button role="tab" class:on={k.path === kind} aria-selected={k.path === kind} title={k.help} onclick={() => navigate(`/catalogue/referentiels/${k.path}`)}>{k.label}{#if k.path === 'system-categories'} <Icon name="lock" size="sm" />{/if}</button>{/each}
 </div>
 
-<div class="page-head" style="align-items:center">
-  <p class="muted" style="max-width:62ch">{meta.help}{#if !writable} Modifier les référentiels demande le droit « Paramètres et site : écriture ».{/if}</p>
-  {#if writable && kind !== 'system-categories'}
-    <div class="head-actions">
-      {#if kind === 'dimensions'}<button class="btn" onclick={restoreDims}><Icon name="undo" />Remettre ceux d’origine</button>{/if}
-      <button class="btn primary" onclick={() => edit()}><Icon name="plus" />Ajouter</button>
-    </div>
-  {/if}
-</div>
+{#if writable && kind !== 'system-categories'}<HeadActions>
+  {#if kind === 'dimensions'}<button class="btn" onclick={restoreDims}><Icon name="undo" />Remettre ceux d’origine</button>{/if}
+  <button class="btn primary" onclick={() => edit()}><Icon name="plus" />Ajouter {meta.one === 'Préréglage' ? 'un préréglage' : ['Fonction', 'Marque', 'Catégorie', 'Phase'].includes(meta.one) ? 'une ' + meta.one.toLowerCase() : 'un ' + meta.one.toLowerCase()}</button>
+</HeadActions>{/if}
+
+<p class="muted" style="max-width:72ch;margin:0">{meta.help}{#if !writable} Modifier les référentiels demande le droit « Paramètres et site : écriture ».{/if}</p>
 
 {#snippet typeRow(r: RefItem, sub: boolean, fnId: string)}
   <div class="tt-row" class:sub class:off={!r.active}>
@@ -169,20 +170,21 @@
 <section class="card" style="padding:6px 18px 10px">
   <div class="tbl-wrap">
     <table class="tbl">
-      <thead><tr><th>Nom</th><th>Détail</th><th class="num">Utilisé par</th><th>État</th><th></th></tr></thead>
+      <thead><tr><th>Nom</th><th>Détail</th><th class="num">Utilisé par</th><th>État</th><th><span class="sr-only">Actions</span></th></tr></thead>
       <tbody>
         {#each list as r (r.id)}
-          <tr class:muted={!r.active}>
-            <td><div style="display:flex;gap:10px;align-items:center">{@html sw(r.data?.color ?? '')}<b>{r.name}</b>{#if r.protected}<Icon name="lock" size="sm" />{/if}</div></td>
+          <tr class:off={!r.active}>
+            <td><div style="display:flex;gap:10px;align-items:center">{@html sw(r.data?.color ?? '')}<b>{r.name}</b>{#if r.protected}<span class="lock-ic" title="Protégé : utilisé par le moteur, non modifiable"><Icon name="lock" size="sm" /></span>{/if}</div></td>
             <td class="small">{detail(r)}</td>
             <td class="num">{r.uses || '—'}</td>
-            <td>{#if writable && !r.protected}<label class="toggle-row"><input type="checkbox" checked={r.active} onchange={(e) => setActive(r, (e.target as HTMLInputElement).checked)}>{r.active ? 'Actif' : 'Inactif'}</label>{:else}{r.active ? 'Actif' : 'Inactif'}{/if}</td>
-            <td><div class="dl-actions">{#if writable && !r.protected}
-              <button class="btn sm ghost" title="Modifier" onclick={() => edit(r)}><Icon name="pen" size="sm" /></button>
-              <button class="btn sm ghost danger" title={r.uses ? 'Utilisé : désactivez-le plutôt' : 'Supprimer'} disabled={r.uses > 0} onclick={() => (deleting = r)}><Icon name="trash" size="sm" /></button>
+            <td>{#if r.active}<span class="chip ok">Actif</span>{:else}<span class="chip">Inactif</span>{/if}</td>
+            <td class="num"><div class="dl-actions row-acts">{#if writable && !r.protected}
+              <button class="btn sm ghost" onclick={() => setActive(r, !r.active)}>{r.active ? 'Désactiver' : 'Activer'}</button>
+              <button class="btn sm ghost" title="Modifier" aria-label="Modifier {r.name}" onclick={() => edit(r)}><Icon name="pen" size="sm" /></button>
+              <button class="btn sm ghost danger" title={r.uses ? 'Utilisé : désactivez-le plutôt' : 'Supprimer…'} aria-label="Supprimer {r.name}" disabled={r.uses > 0} onclick={() => (deleting = r)}><Icon name="trash" size="sm" /></button>
             {/if}</div></td>
           </tr>
-        {:else}<tr><td colspan="5" class="empty">Aucun élément.</td></tr>{/each}
+        {:else}<tr><td colspan="5"><EmptyState card={false} icon="list" message="Aucun élément dans ce référentiel." /></td></tr>{/each}
       </tbody>
     </table>
   </div>
@@ -252,13 +254,15 @@
 {/if}
 
 <style>
+  tr.off td:not(:last-child) { color: var(--fg-3); }
+  .lock-ic { display: inline-flex; color: var(--fg-3); }
   .tt-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .tt-groups { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); gap: 14px; align-items: start; }
   .tt-group { padding: 0; overflow: hidden; }
   .tt-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--c) 5%, var(--surface)); box-shadow: inset 3px 0 0 var(--c); }
   .tt-head b { font: 650 14.5px var(--display); }
   .tt-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--c); flex: none; }
-  .tt-key { font-size: 10.5px; color: var(--fg-3); letter-spacing: .05em; }
+  .tt-key { font-size: 11.5px; color: var(--fg-3); letter-spacing: .05em; }
   .tt-count { min-width: 22px; height: 20px; padding: 0 6px; border-radius: 10px; display: grid; place-items: center; font: 700 11px var(--mono); background: color-mix(in srgb, var(--c) 14%, var(--surface)); color: var(--fg-2); }
   .tt-add { margin-left: auto; }
   .tt-fold { border: 0; background: none; padding: 2px; color: var(--fg-3); display: grid; place-items: center; border-radius: 5px; }

@@ -5,9 +5,13 @@
   import { api, ApiError } from '../../lib/api';
   import { toast, fail } from '../../lib/toast.svelte';
   import type { Domain, Level, Permissions, Role } from '../../lib/types';
+  import { visibleColor } from '../../lib/color';
+  import HeadActions from '../../components/HeadActions.svelte';
+  import { pageHead, plural } from '../../lib/pagehead.svelte';
 
   const DOMAINS: [Domain, string][] = [['projets', 'Projets'], ['conception', 'Conception'], ['catalogue', 'Catalogue'], ['membres', 'Membres et rôles'], ['parametres', 'Paramètres et site']];
   const LEVELS: [Level, string][] = [['aucun', 'Aucun'], ['lecture', 'Lecture'], ['ecriture', 'Écriture'], ['admin', 'Admin']];
+  const DOMAIN_HELP: Partial<Record<Domain, string>> = { conception: 'Conception : baies, synoptique, réseau, plans et dessins des projets.', parametres: 'Paramètres et site : référentiels, impression, mises à jour, sauvegardes.' };
   const LV: Record<Level, string> = { aucun: '—', lecture: 'Lecture', ecriture: 'Écriture', admin: 'Admin' };
 
   let roles = $state<Role[]>([]);
@@ -17,6 +21,7 @@
 
   async function load() { try { roles = (await api.get<{ roles: Role[] }>('/roles')).roles; } catch (e) { fail(e); } }
   load();
+  pageHead(() => ({ count: roles.length ? plural(roles.length, 'rôle') : '' }));
 
   function edit(r?: Role) {
     error = null;
@@ -38,22 +43,22 @@
   }
 </script>
 
-<div class="row-actions"><button class="btn primary" onclick={() => edit()}><Icon name="plus" />Nouveau rôle</button></div>
+<HeadActions><button class="btn primary" onclick={() => edit()}><Icon name="plus" />Nouveau rôle</button></HeadActions>
 
 <section class="card" style="padding:6px 18px 10px">
   <div class="tbl-wrap">
     <table class="tbl">
-      <thead><tr><th>Rôle</th>{#each DOMAINS as [, l]}<th>{l}</th>{/each}<th class="num">Membres</th><th></th></tr></thead>
+      <thead><tr><th>Rôle</th>{#each DOMAINS as [d, l]}<th title={DOMAIN_HELP[d]}>{#if DOMAIN_HELP[d]}<span class="th-help">{l}<span class="th-q" aria-hidden="true">?</span></span>{:else}{l}{/if}</th>{/each}<th class="num">Membres</th><th><span class="sr-only">Actions</span></th></tr></thead>
       <tbody>
         {#each roles as r (r.id)}
           <tr>
-            <td><div style="display:flex;gap:10px;align-items:center"><span class="role-dot" style="--c:{r.color}"></span><b>{r.name}</b>{#if r.builtin}<span class="chip">intégré</span>{/if}</div></td>
+            <td><div style="display:flex;gap:10px;align-items:center"><span class="role-dot" style="--c:{visibleColor(r.color)}"></span><b>{r.name}</b>{#if r.builtin}<span class="chip">intégré</span>{/if}</div></td>
             {#each DOMAINS as [d]}<td class:muted={r.permissions[d] === 'aucun'}>{LV[r.permissions[d]]}</td>{/each}
             <td class="num">{r.active_members}</td>
-            <td><div class="dl-actions">
-              {#if !r.locked}<button class="btn sm ghost" title="Modifier" onclick={() => edit(r)}><Icon name="pen" size="sm" /></button>{/if}
-              <button class="btn sm ghost" title="Dupliquer" onclick={() => duplicate(r)}><Icon name="copy" size="sm" /></button>
-              {#if !r.builtin}<button class="btn sm ghost danger" title="Supprimer" onclick={() => (deleting = r)}><Icon name="trash" size="sm" /></button>{/if}
+            <td class="num"><div class="dl-actions row-acts">
+              {#if !r.locked}<button class="btn sm ghost" title="Modifier" aria-label="Modifier {r.name}" onclick={() => edit(r)}><Icon name="pen" size="sm" /></button>{:else}<span class="slot" title="Rôle verrouillé"></span>{/if}
+              <button class="btn sm ghost" title="Dupliquer" aria-label="Dupliquer {r.name}" onclick={() => duplicate(r)}><Icon name="copy" size="sm" /></button>
+              {#if !r.builtin}<button class="btn sm ghost danger" title="Supprimer…" aria-label="Supprimer {r.name}" onclick={() => (deleting = r)}><Icon name="trash" size="sm" /></button>{:else}<span class="slot act-danger" title="Rôle intégré : non supprimable"></span>{/if}
             </div></td>
           </tr>
         {/each}
@@ -72,7 +77,7 @@
       <div class="perm-grid" role="group" aria-label="Droits par domaine">
         <span></span>{#each LEVELS as [, l]}<span class="h">{l}</span>{/each}
         {#each DOMAINS as [d, l]}
-          <span>{l}</span>
+          <span title={DOMAIN_HELP[d]}>{l}</span>
           {#each LEVELS as [lv]}<input type="radio" name="p-{d}" value={lv} bind:group={editing.permissions[d]} aria-label="{l} : {lv}">{/each}
         {/each}
       </div>
@@ -87,3 +92,8 @@
     <p>{deleting.active_members ? `Ses ${deleting.active_members} membre(s) passeront au rôle Technicien.` : 'Aucun membre n’a ce rôle.'}</p>
   </Confirm>
 {/if}
+
+<style>
+  .th-help { display: inline-flex; align-items: center; gap: 5px; cursor: help; }
+  .th-q { display: inline-grid; place-items: center; width: 15px; height: 15px; border-radius: 50%; font-size: 10.5px; font-weight: 700; color: var(--fg-3); box-shadow: inset 0 0 0 1px var(--line-2); }
+</style>

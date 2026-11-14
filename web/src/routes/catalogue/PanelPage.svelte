@@ -2,6 +2,7 @@
   // Édition d'un panel de la bibliothèque.
   import Icon from '../../components/Icon.svelte';
   import PanelEditor from '../../components/PanelEditor.svelte';
+  import PageHead from '../../components/PageHead.svelte';
   import { untrack } from 'svelte';
   import { api } from '../../lib/api';
   import { can } from '../../lib/session.svelte';
@@ -21,7 +22,7 @@
 </script>
 
 <div class="page">
-  <div class="page-head"><div><p class="eyebrow"><a class="crumb" href="/catalogue/panels">Catalogue › Panels</a></p><h1 class="display">{lib?.panel.name ?? 'Panel'}</h1></div></div>
+  <PageHead crumbs={[{ label: 'Catalogue', href: '/catalogue' }, { label: 'Panels de brassage', href: '/catalogue/panels' }, { label: lib?.panel.name ?? 'Panel' }]} title={lib?.panel.name ?? 'Panel'} />
   {#if !lib}<span class="spin"></span>
   {:else}
     {#key lib.id}<PanelEditor initial={lib.panel} readonly={!can('catalogue', 'ecriture')} onsave={save}>

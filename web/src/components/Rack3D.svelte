@@ -59,5 +59,5 @@
   .r3-spin { position: absolute; left: 50%; top: 50%; }
   .r3-err { position: absolute; inset: 0; display: grid; place-items: center; color: #23262b; }
   .r3-tip { position: absolute; pointer-events: none; background: rgba(15, 16, 18, .9); color: #fff; padding: 6px 9px; border-radius: 8px; font-size: 12.5px; line-height: 1.35; max-width: 280px; }
-  .r3-l { font: 600 10px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--fg-3); }
+  .r3-l { font: 600 11.5px var(--font); letter-spacing: .05em; text-transform: uppercase; color: var(--fg-3); }
 </style>

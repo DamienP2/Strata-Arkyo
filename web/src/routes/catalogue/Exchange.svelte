@@ -7,7 +7,7 @@
   import { loadRefs } from '../../lib/catalog.svelte';
   import { dateTime } from '../../lib/format';
 
-  const SECTIONS: [string, string][] = [['refs', 'Référentiels'], ['equipment', 'Équipements'], ['cables', 'Câbles'], ['cable-models', 'Modèles de câble'], ['adapters', 'Adaptateurs']];
+  const SECTIONS: [string, string][] = [['refs', 'Référentiels'], ['equipment', 'Équipements'], ['cables', 'Câbles'], ['cable-models', 'Types de câble'], ['adapters', 'Adaptateurs']];
   let exportSel = $state<string[]>(SECTIONS.map((s) => s[0]));
   const admin = $derived(can('catalogue', 'admin'));
 

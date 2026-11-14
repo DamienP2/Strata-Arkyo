@@ -378,7 +378,7 @@
   .fp-free { display: flex; align-items: center; gap: 10px; padding: 18px 22px; border-radius: 12px; background: var(--surface-2); color: var(--fg-2); }
   .fh-facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px 18px; margin: 0; }
   .fh-facts div { display: flex; flex-direction: column; gap: 2px; }
-  .fh-facts dt { font: 600 10.5px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--fg-3); }
+  .fh-facts dt { font: 600 11.5px var(--font); letter-spacing: .05em; text-transform: uppercase; color: var(--fg-3); }
   .fh-facts dd { margin: 0; font-weight: 600; font-size: 14.5px; }
   @media (max-width: 900px) { .fhead { grid-template-columns: minmax(0, 1fr); } .fp-big { max-width: 100%; } }
   /* Onglets */

@@ -9,6 +9,10 @@
   import { toast, fail } from '../../lib/toast.svelte';
   import { relative } from '../../lib/format';
   import type { Member, Role } from '../../lib/types';
+  import { ask } from '../../lib/ask.svelte';
+  import EmptyState from '../../components/EmptyState.svelte';
+  import HeadActions from '../../components/HeadActions.svelte';
+  import { pageHead, plural } from '../../lib/pagehead.svelte';
 
   let members = $state<Member[]>([]);
   let roles = $state<Role[]>([]);
@@ -44,6 +48,11 @@
       load();
     } catch (x) { formError = x instanceof ApiError ? x.message : 'Ajout impossible.'; }
   }
+  pageHead(() => ({ count: members.length ? plural(shown.length, 'membre') : '' }));
+  async function toggleActive(m: Member) {
+    if (m.active && !(await ask({ title: `Désactiver le compte de ${m.name} ?`, text: 'La personne ne pourra plus se connecter jusqu’à sa réactivation. Ses données et son historique sont conservés.', confirmLabel: 'Désactiver', danger: true }))) return;
+    patch(m, { active: !m.active }, m.active ? 'Compte désactivé.' : 'Compte réactivé.');
+  }
   async function patch(m: Member, body: object, ok: string) {
     try { await api.patch(`/members/${m.id}`, body); toast(ok); } catch (e) { fail(e); } finally { load(); }
   }
@@ -58,16 +67,17 @@
   async function copy(t: string) { if (await copyText(t)) toast('Mot de passe copié.'); else toast('Copie impossible dans ce navigateur : sélectionnez le mot de passe et copiez-le à la main.', 'warn'); }
 </script>
 
-<div class="toolbar" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-  <label class="search" style="flex:1;min-width:220px"><Icon name="search" /><input class="input" bind:value={q} placeholder="Nom, e-mail, identifiant…" aria-label="Rechercher un membre"></label>
-  <label class="layer" style="display:flex;gap:8px;align-items:center"><input type="checkbox" bind:checked={showRemoved}>Afficher les retirés</label>
-  <button class="btn primary" onclick={() => (creating = true)}><Icon name="plus" />Ajouter un membre</button>
+<HeadActions><button class="btn primary" onclick={() => (creating = true)}><Icon name="plus" />Ajouter un membre</button></HeadActions>
+
+<div class="toolbar" style="display:flex;gap:10px 16px;flex-wrap:wrap;align-items:center">
+  <label class="search" style="flex:1;min-width:220px;max-width:480px"><Icon name="search" /><input class="input" bind:value={q} placeholder="Nom, e-mail, identifiant…" aria-label="Rechercher un membre"></label>
+  <label class="toggle-row"><input type="checkbox" bind:checked={showRemoved}>Afficher les membres retirés du site</label>
 </div>
 
 <section class="card" style="padding:6px 18px 10px">
   <div class="tbl-wrap">
     <table class="tbl mem-tbl">
-      <thead><tr><th>Membre</th><th>Rôle</th><th>État</th><th>Ajouté</th><th></th></tr></thead>
+      <thead><tr><th>Membre</th><th>Rôle</th><th>État</th><th>Ajouté</th><th><span class="sr-only">Actions</span></th></tr></thead>
       <tbody>
         {#each shown as m (m.id)}
           {@const self = m.id === session.me?.account.id}
@@ -87,13 +97,13 @@
             <td class="muted small m-added">{relative(m.created_at)}</td>
             <td class="m-acts"><div class="dl-actions">
               {#if !m.removed && !self}
-                <button class="btn sm" onclick={() => patch(m, { active: !m.active }, m.active ? 'Compte désactivé.' : 'Compte réactivé.')}>{m.active ? 'Désactiver' : 'Réactiver'}</button>
-                <button class="btn sm ghost" title="Réinitialiser le mot de passe" onclick={() => (resetting = m)}><Icon name="lock" size="sm" /></button>
-                <button class="btn sm ghost danger" title="Retirer du site" onclick={() => (removing = m)}><Icon name="trash" size="sm" /></button>
+                <button class="btn sm ghost" title="Réinitialiser le mot de passe" aria-label="Réinitialiser le mot de passe de {m.name}" onclick={() => (resetting = m)}><Icon name="lock" size="sm" /></button>
+                <button class="btn sm" onclick={() => toggleActive(m)}>{m.active ? 'Désactiver' : 'Réactiver'}</button>
+                <button class="btn sm ghost danger" title="Retirer du site…" aria-label="Retirer {m.name} du site" onclick={() => (removing = m)}><Icon name="trash" size="sm" /></button>
               {/if}
             </div></td>
           </tr>
-        {:else}<tr><td colspan="5" class="empty">Aucun membre ne correspond.</td></tr>{/each}
+        {:else}<tr><td colspan="5"><EmptyState card={false} icon="users" message="Aucun membre ne correspond à cette recherche." /></td></tr>{/each}
       </tbody>
     </table>
   </div>
@@ -144,7 +154,7 @@
     .mem-tbl tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "who who" "role state" "added acts"; align-items: center; gap: 8px 10px; padding: 12px 0; border-bottom: 1px solid var(--line); }
     .mem-tbl tr:last-child { border-bottom: 0; }
     .mem-tbl td { display: block; padding: 0; border: 0; min-width: 0; }
-    .mem-tbl td.empty { grid-column: 1 / -1; }
+    .mem-tbl td[colspan] { grid-column: 1 / -1; }
     .m-who { grid-area: who; } .m-role { grid-area: role; } .m-state { grid-area: state; justify-self: end; }
     .m-added { grid-area: added; } .m-acts { grid-area: acts; justify-self: end; }
     .m-role select { max-width: 100%; }
