@@ -631,13 +631,13 @@ export class RackScene {
     const depth = Math.max(0.02, Math.min((e.depth_mm ?? (e.nature === 'accessory' ? 30 : 350)) / 1000, Math.abs(frontRail - rearRail) + 0.12));
     const shelf = e.accessory?.kind === 'shelf';
     if (e.accessory?.kind === 'lacing_bar') {
-      // Barre de laçage : deux équerres fixées au rail et une barre ronde déportée.
-      const off = Math.max(0.03, (e.accessory.depth_mm || 100) / 1000);
+      // Barre de laçage : sans oreilles ni équerres, une barre ronde d'un montant à l'autre,
+      // accrochée directement par un œillet à chaque bout.
+      const off = 0.012;
+      const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.0045, 0.0045, W19 - 0.03, 16), m.chrome); rod.rotation.z = Math.PI / 2; rod.position.set(0, 0, off); rod.castShadow = true; g.add(rod);
       for (const s of [-1, 1]) {
-        const ear = new THREE.Mesh(new THREE.BoxGeometry(0.018, h * 0.8, 0.002), m.blackMetal); ear.position.set(s * (W19 / 2 - 0.01), 0, 0); ear.castShadow = true; g.add(ear);
-        const arm = new THREE.Mesh(new THREE.BoxGeometry(0.003, h * 0.5, off), m.blackMetal); arm.position.set(s * (OPEN / 2 - 0.004), 0, off / 2); arm.castShadow = true; g.add(arm);
+        const eye = new THREE.Mesh(new THREE.TorusGeometry(0.0075, 0.0028, 10, 24), m.chrome); eye.position.set(s * (W19 / 2 - 0.0085), 0, off); eye.castShadow = true; g.add(eye);
       }
-      const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.0045, 0.0045, OPEN - 0.006, 16), m.chrome); rod.rotation.z = Math.PI / 2; rod.position.set(0, 0, off); rod.castShadow = true; g.add(rod);
       const hit = new THREE.Mesh(new THREE.BoxGeometry(OPEN, h, off), new THREE.MeshBasicMaterial({ visible: false })); hit.position.z = off / 2;
       hit.userData.hit = { label: e.label, tag: e.tag, u: e.u_start, height: e.height_u, face: e.face } as Hit; this.pick.push(hit); g.add(hit);
       this.root.add(g);
