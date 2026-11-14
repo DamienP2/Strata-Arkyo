@@ -136,9 +136,10 @@ async function graphics(c: Ctx, key: string, pages: string[] | undefined): Promi
     const st = await get<{ data: any }>(c, `/projects/${pid}/settings/rack_sheet`);
     const sheet = st.data; if (!sheet?.pages?.length) return [];
     const { default: SheetPage } = await import('../components/SheetPage.svelte');
-    const { pageSize } = await import('./sheet');
-    const racks: Record<string, any> = {};
-    for (const ct of c.view.containers.filter((x) => x.rackable)) { try { const r = await api.get<{ elements: any[] }>(`/containers/${ct.id}/rack`); racks[ct.id] = { name: ct.name, units: ct.height_u ?? 42, elements: r.elements }; } catch { /* rack illisible */ } }
+    const { pageSize, normalize } = await import('./sheet');
+    const { loadCtx, shotsFor } = await import('./sheetctx');
+    normalize(sheet);
+    const ctx = await loadCtx(c.view);
     const site = await get<{ name: string }>(c, '/site');
     const info = { project: c.view.project.name, client: c.view.project.client ?? 'Projet interne', venue: c.view.project.venue ?? '', site: site.name, date: new Date().toLocaleDateString('fr-FR'), locations: Object.fromEntries(c.view.locations.map((l) => [l.id, { name: l.name, code: l.code }])) };
     const host = document.createElement('div'); host.style.cssText = 'position:absolute;left:-100000px;top:0;width:2000px'; document.body.appendChild(host);
@@ -146,7 +147,8 @@ async function graphics(c: Ctx, key: string, pages: string[] | undefined): Promi
     try {
       const sel = (sheet.pages as any[]).map((p, i) => ({ p, i })).filter(({ i }) => !pages || pages.includes(String(i)));
       for (const { p, i } of sel) {
-        const comp = mount(SheetPage, { target: host, props: { sheet, page: p, racks, info, index: i, total: sheet.pages.length } });
+        const shots = await shotsFor(sheet, ctx, [p]);
+        const comp = mount(SheetPage, { target: host, props: { sheet, page: p, ctx, shots, info, index: i, total: sheet.pages.length } });
         await new Promise((r) => requestAnimationFrame(() => r(null)));
         const svg = host.querySelector('svg') as SVGSVGElement;
         const [w, h] = pageSize(sheet);

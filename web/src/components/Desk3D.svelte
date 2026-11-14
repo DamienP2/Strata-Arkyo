@@ -2,10 +2,8 @@
   // Vue 3D d'un mobilier de régie et de ses casquettes équipées (lecture seule).
   import { onDestroy } from 'svelte';
   import Icon from './Icon.svelte';
-  import { api } from '../lib/api';
-  import { fnColor, refById } from '../lib/catalog.svelte';
-  import { ALU, accessoryFace, visualOf } from '../lib/faceplate';
-  import type { RackScene, El3D, Hit, Casquette3D } from '../lib/rack3d';
+  import { deskSpec, toEl3D } from '../lib/el3d';
+  import type { RackScene, Hit, Casquette3D } from '../lib/rack3d';
 
   let { desk, casquettes }: { desk: any; casquettes: { c: any; elements: any[] }[] } = $props();
   let host = $state<HTMLDivElement>(null!);
@@ -14,24 +12,13 @@
   let error = $state<string | null>(null);
   let sides = $state(true);
   let hover = $state<{ h: Hit; x: number; y: number } | null>(null);
-  const portsCache = new Map<string, any[]>();
-  async function ports(itemId: string | null): Promise<any[]> {
-    if (!itemId) return [];
-    if (!portsCache.has(itemId)) { try { const r = await api.get<{ item: { data: { ports?: any[] } } }>(`/catalog/items/${itemId}`); portsCache.set(itemId, r.item.data.ports ?? []); } catch { portsCache.set(itemId, []); } }
-    return portsCache.get(itemId)!;
-  }
-  const toEl = async (e: any): Promise<El3D> => {
-    const kind = e.nature === 'accessory' ? (e.accessory?.kind === 'panel' ? 'panel' : e.accessory?.kind === 'plate' ? (e.accessory.variant === 'brush' ? 'brush' : e.accessory.variant === 'vented' ? 'vent' : 'blank') : accessoryFace(e.label)) : visualOf(e);
-    const ps = (await ports(e.item_id)).map((p: any) => ({ face: p.face ?? 'rear', connector: p.connector_id ?? '', quantity: p.quantity ?? 1, color: p.signal_id ? (refById('signals', p.signal_id)?.data?.color ?? null) : null, label: p.label ?? null }));
-    return { id: e.placement.id, label: e.label, tag: e.tag, nature: e.nature, height_u: e.height_u, depth_mm: e.depth_mm, function: e.function, brand: e.brand ?? null, face: e.placement.face, u_start: e.placement.u_start, width: e.placement.width, col: e.placement.col, kind, alu: ALU.has(kind), accessory: e.accessory, ports: ps, fnColor: fnColor(e.function), shelf_id: e.placement.shelf_id ?? null } as El3D;
-  };
   $effect(() => {
-    const d = { name: desk.name, length_mm: desk.length_mm ?? 2400, depth_mm: desk.width_mm ?? 900, height_mm: desk.outer_height_mm ?? 750 };
+    const d = deskSpec(desk);
     const cs = casquettes;
     (async () => {
       try {
         if (!scene) { const { RackScene } = await import('../lib/rack3d'); scene = new RackScene(host); scene.onHover = (h, x, y) => (hover = h ? { h, x, y } : null); }
-        const list: Casquette3D[] = await Promise.all(cs.map(async ({ c, elements }) => ({ id: c.id, name: c.name, offset_mm: c.offset_mm ?? 0, units: c.height_u ?? 6, depth_mm: c.depth_mm ?? 350, tilt_deg: c.tilt_deg ?? 0, els: await Promise.all(elements.map(toEl)) })));
+        const list: Casquette3D[] = await Promise.all(cs.map(async ({ c, elements }) => ({ id: c.id, name: c.name, offset_mm: c.offset_mm ?? 0, units: c.height_u ?? 6, depth_mm: c.depth_mm ?? 350, tilt_deg: c.tilt_deg ?? 0, els: await Promise.all(elements.map(toEl3D)) })));
         scene.buildDesk(d, list); scene.setSides(sides); error = null;
       } catch (e) { error = (e as Error).message; } finally { loading = false; }
     })();

@@ -299,9 +299,14 @@ export class RackScene {
   private sides: THREE.Object3D[] = []; private pick: THREE.Object3D[] = []; private ray = new THREE.Raycaster(); private mats: Mats;
   private root = new THREE.Group(); private dims = new THREE.Vector3(0.6, 2, 0.8); private disposed = false;
   onHover: (h: Hit | null, x: number, y: number) => void = () => {};
+  /** Fin d'un geste de caméra (orbite, zoom, déplacement). */
+  onCamera: () => void = () => {};
+  private transparent: boolean;
 
-  constructor(private host: HTMLElement) {
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, alpha: false });
+  /** `transparent` : sans fond ni sol (planche) ; `still` : pas de boucle d'animation (rendus hors écran). */
+  constructor(private host: HTMLElement, opts: { transparent?: boolean; still?: boolean } = {}) {
+    this.transparent = !!opts.transparent;
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, alpha: this.transparent });
     this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping; this.renderer.toneMappingExposure = 1.28;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -313,8 +318,8 @@ export class RackScene {
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     this.scene.environmentIntensity = 1.2;
-    this.scene.background = new THREE.Color('#3a3e44');
-    this.scene.fog = new THREE.Fog('#3a3e44', 7, 18);
+    if (this.transparent) this.renderer.setClearColor(0x000000, 0);
+    else { this.scene.background = new THREE.Color('#3a3e44'); this.scene.fog = new THREE.Fog('#3a3e44', 7, 18); }
     // Lumières : clé avec ombres douces, contre-jour froid.
     const key = new THREE.DirectionalLight('#fff4e6', 2.9); key.position.set(2.2, 4, 3.2); key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048); key.shadow.camera.left = -2; key.shadow.camera.right = 2; key.shadow.camera.top = 3; key.shadow.camera.bottom = -1; key.shadow.bias = -0.0004; key.shadow.radius = 6; key.shadow.normalBias = 0.02;
@@ -327,7 +332,7 @@ export class RackScene {
     const floorTex = tex(noise(512, 120, 40, 3), true, [8, 8]);
     const floorR = tex(noise(512, 170, 70, 5), false, [8, 8]);
     const floor = new THREE.Mesh(new THREE.CircleGeometry(9, 64), new THREE.MeshStandardMaterial({ color: '#6a6d72', map: floorTex, roughnessMap: floorR, roughness: 0.92, metalness: 0 }));
-    floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; this.scene.add(floor);
+    floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; floor.visible = !this.transparent; this.scene.add(floor);
     this.scene.add(this.root);
     this.mats = this.materials();
     this.composer = new EffectComposer(this.renderer);
@@ -337,7 +342,8 @@ export class RackScene {
     this.resize();
     this.renderer.domElement.addEventListener('pointermove', this.hover);
     this.renderer.domElement.addEventListener('pointerleave', () => this.onHover(null, 0, 0));
-    this.loop();
+    this.controls.addEventListener('end', () => this.onCamera());
+    if (!opts.still) this.loop();
   }
 
   private materials(): Mats {
@@ -717,10 +723,17 @@ export class RackScene {
     this.raf = requestAnimationFrame(this.loop);
     for (const d of this.doors) d.pivot.rotation.y += (d.target - d.pivot.rotation.y) * 0.08;
     this.controls.update();
-    this.composer.render();
+    this.draw();
   };
+  /** Le halo (bloom) efface la transparence : rendu direct sans fond. */
+  draw() { if (this.transparent) this.renderer.render(this.scene, this.camera); else this.composer.render(); }
 
-  snapshot(): string { this.composer.render(); return this.renderer.domElement.toDataURL('image/png'); }
+  snapshot(): string { this.controls.update(); this.draw(); return this.renderer.domElement.toDataURL('image/png'); }
+  /** Position de caméra et cible, pour retrouver un angle de vue. */
+  pose(): number[] { return [...this.camera.position.toArray(), ...this.controls.target.toArray()].map((v) => Math.round(v * 1000) / 1000); }
+  setPose(p: number[]) { if (p.length !== 6) return; this.camera.position.set(p[0]!, p[1]!, p[2]!); this.controls.target.set(p[3]!, p[4]!, p[5]!); this.controls.update(); }
+  /** Taille de rendu imposée (rendus hors écran à un format donné). */
+  setSize(w: number, h: number) { this.renderer.setPixelRatio(1); this.renderer.setSize(w, h, false); this.composer.setSize(w, h); this.camera.aspect = w / h; this.camera.updateProjectionMatrix(); }
 
   dispose() {
     this.disposed = true; cancelAnimationFrame(this.raf);

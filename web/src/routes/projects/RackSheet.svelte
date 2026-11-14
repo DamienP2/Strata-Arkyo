@@ -1,71 +1,68 @@
 <script lang="ts">
-  // Planche d'élévations (section 9.8) : composition libre des racks (faces au choix), des
-  // titres de lieux et des emplacements réservés, sur une ou plusieurs feuilles avec cartouche.
+  // Planche d'élévations (section 9.8) : composition des baies (vues avant, arrière, côté, 3D)
+  // et du mobilier (face, côté, dessus, 3D, casquettes), titres de lieux et emplacements
+  // réservés, sur une ou plusieurs feuilles avec cartouche. La feuille occupe la page ; le
+  // panneau de droite montre l'élément sélectionné, ou la bibliothèque et le cartouche.
   // Réglages mémorisés par projet ; export PDF vectoriel, PNG ou JPG.
   import { untrack } from 'svelte';
   import Icon from '../../components/Icon.svelte';
   import Confirm from '../../components/Confirm.svelte';
   import SheetPage from '../../components/SheetPage.svelte';
+  import Sheet3DView from '../../components/Sheet3DView.svelte';
   import { api, ApiError } from '../../lib/api';
   import { can } from '../../lib/session.svelte';
   import { toast, fail } from '../../lib/toast.svelte';
   import { loadRefs } from '../../lib/catalog.svelte';
   import type { ProjectView } from '../../lib/projects';
   import {
-    PAPERS, SCALES, FACE_LABEL, MARGIN, autoLayout, blankSheet, fileName, itemSize, pageSize, uid,
-    type Face, type Paper, type RackData, type Sheet, type SheetItem,
+    PAPERS, SCALES, RACK_VIEWS, DESK_VIEWS, MARGIN, autoLayout, blankSheet, fileName, groupLayout, itemSize, normalize, pageSize, uid, usableW, viewsOf,
+    type Ctx, type Paper, type Sheet, type SheetItem,
   } from '../../lib/sheet';
+  import { isDesk, loadCtx, shot3D, shotsFor } from '../../lib/sheetctx';
 
   let { view }: { view: ProjectView } = $props();
   loadRefs();
   const pid = $derived(view.project.id);
   const writable = $derived(can('projets', 'ecriture'));
-  const rackables = $derived(view.containers.filter((c) => c.rackable));
+  const bays = $derived(view.containers.filter((c) => c.rackable && c.kind !== 'casquette'));
+  const desks = $derived(view.containers.filter(isDesk));
 
   let sheet = $state<Sheet | null>(null);
   let rev = 0;
-  let racks = $state<Record<string, RackData>>({});
+  let ctx = $state<Ctx>({ racks: {}, desks: {} });
+  let shots = $state<Record<string, string>>({});
   let site = $state('Strata Arkyo');
   let cur = $state(0);
   let selected = $state<string | null>(null);
   let saving = $state<'idle' | 'pending' | 'saving' | 'saved'>('idle');
   let relayout = $state(false);
-  let faces = $state<Face[]>(['front']);
-  let addRack = $state({ cid: '', face: 'front' as Face });
+  let rackViews = $state<string[]>(['front', 'rear', 'side']);
+  let deskViews = $state<string[]>(['front', 'side', 'top']);
   let exporting = $state(false);
   let svgHost = $state<HTMLDivElement>(null!);
   let exportHost = $state<HTMLDivElement>(null!);
+  let exportShots = $state<Record<string, string>>({});
+  let viewer = $state<{ frame: (v: 'front' | 'rear' | 'quarter' | 'side' | 'top') => void } | null>(null);
 
   const info = $derived({
     project: view.project.name, client: view.project.client ?? 'Projet interne', venue: view.project.venue ?? '', site,
     date: new Date().toLocaleDateString('fr-FR'),
     locations: Object.fromEntries(view.locations.map((l) => [l.id, { name: l.name, code: l.code }])),
   });
-  const units = (cid: string) => racks[cid]?.units ?? 42;
 
-  async function loadRacks() {
-    const out: Record<string, RackData> = {};
-    await Promise.all(rackables.map(async (c) => {
-      try { const r = await api.get<{ elements: any[] }>(`/containers/${c.id}/rack`); out[c.id] = { name: c.name, units: c.height_u ?? 42, elements: r.elements }; }
-      catch { out[c.id] = { name: c.name, units: c.height_u ?? 42, elements: [] }; }
-    }));
-    racks = out;
-  }
   async function load() {
     try {
-      const [s, st] = await Promise.all([api.get<{ data: Sheet | null; rev: number }>(`/projects/${pid}/settings/rack_sheet`), api.get<{ name: string }>('/site')]);
-      site = st.name;
-      await loadRacks();
-      rev = s.rev;
-      if (s.data && s.data.pages) sheet = { ...blankSheet(), ...s.data, block: { ...blankSheet().block, ...s.data.block } };
-      else { const b = blankSheet(); b.pages = layout(b, ['front']); sheet = b; }
+      const [s, st, c] = await Promise.all([api.get<{ data: Sheet | null; rev: number }>(`/projects/${pid}/settings/rack_sheet`), api.get<{ name: string }>('/site'), loadCtx(view)]);
+      site = st.name; ctx = c; rev = s.rev;
+      if (s.data && s.data.pages) sheet = normalize({ ...blankSheet(), ...s.data, block: { ...blankSheet().block, ...s.data.block } });
+      else { const b = blankSheet(); b.pages = layout(b); sheet = b; }
       cur = Math.min(cur, sheet.pages.length - 1);
     } catch (e) { fail(e); }
   }
-  // Le projet se recharge sur les événements des autres membres : les racks suivent.
-  $effect(() => { view; untrack(() => { if (!sheet) load(); else loadRacks(); }); });
+  // Le projet se recharge sur les événements des autres membres : les élévations suivent.
+  $effect(() => { view; untrack(() => { if (!sheet) load(); else loadCtx(view).then((c) => (ctx = c)); }); });
 
-  const layout = (s: Sheet, f: Face[]) => autoLayout(s, rackables.map((c) => ({ id: c.id, location_id: c.location_id, units: c.height_u ?? 42 })), view.locations, f);
+  const layout = (s: Sheet) => autoLayout(s, ctx, bays, desks, view.locations, rackViews.length ? rackViews : ['front'], deskViews.length ? deskViews : ['front']);
 
   // Enregistrement automatique, regroupé.
   let timer: ReturnType<typeof setTimeout>;
@@ -87,6 +84,17 @@
 
   const page = $derived(sheet?.pages[cur] ?? null);
   const sel = $derived(page?.items.find((i) => i.id === selected) ?? null);
+  const selName = $derived(sel ? (sel.kind === 'rack' ? ctx.racks[sel.container_id ?? '']?.name : sel.kind === 'desk' ? ctx.desks[sel.container_id ?? '']?.name : sel.kind === 'location' ? (info.locations[sel.location_id ?? '']?.name ?? 'Titre de lieu') : 'Emplacement réservé') ?? 'Élément retiré' : '');
+  const box3d = $derived(sel && sheet && (sel.kind === 'rack' || sel.kind === 'desk') ? groupLayout(sel, sheet.scale, ctx).views.find((v) => v.v === '3d') ?? null : null);
+
+  // Vues 3D de la feuille affichée : rendues sans fond, au format du cadre, à chaque changement.
+  $effect(() => {
+    if (!sheet || !page) return;
+    const k = sheet.scale;
+    const list = page.items.filter((i) => (i.kind === 'rack' || i.kind === 'desk') && i.views?.includes('3d'));
+    void JSON.stringify(list); void ctx;
+    untrack(() => { for (const it of list) shot3D($state.snapshot(it) as SheetItem, ctx, k).then((u) => { if (u) shots[it.id] = u; }).catch(() => {}); });
+  });
 
   // Glisser un élément de la feuille, au millimètre.
   let drag: { it: SheetItem; dx: number; dy: number } | null = null;
@@ -108,9 +116,9 @@
     if (!drag || !sheet) return;
     const [x, y] = toMm(e);
     const [W, H] = pageSize(sheet);
-    const [w, h] = itemSize(drag.it, sheet.scale, units);
-    drag.it.x = Math.round(Math.min(Math.max(MARGIN / 2, x - drag.dx), W - MARGIN / 2 - w));
-    drag.it.y = Math.round(Math.min(Math.max(MARGIN / 2, y - drag.dy), H - MARGIN / 2 - h));
+    const [w, h] = itemSize(drag.it, sheet.scale, ctx, usableW(sheet));
+    drag.it.x = Math.round(Math.min(Math.max(MARGIN / 2, x - drag.dx), Math.max(MARGIN / 2, W - MARGIN / 2 - w)));
+    drag.it.y = Math.round(Math.min(Math.max(MARGIN / 2, y - drag.dy), Math.max(MARGIN / 2, H - MARGIN / 2 - h)));
   }
   function up() { window.removeEventListener('pointermove', move); if (drag) changed(); drag = null; }
 
@@ -132,8 +140,26 @@
   }
   function addPage() { if (!sheet) return; sheet.pages.push({ id: uid(), items: [] }); cur = sheet.pages.length - 1; selected = null; changed(); }
   function dropPage() { if (!sheet || sheet.pages.length < 2) return; sheet.pages.splice(cur, 1); cur = Math.max(0, cur - 1); selected = null; changed(); }
-  function doLayout() { if (!sheet) return; sheet.pages = layout(sheet, faces.length ? faces : ['front']); cur = 0; selected = null; relayout = false; changed(); }
-  const missing = $derived(rackables.filter((c) => !sheet?.pages.some((p) => p.items.some((i) => i.kind === 'rack' && i.container_id === c.id))));
+  function doLayout() { if (!sheet) return; sheet.pages = layout(sheet); cur = 0; selected = null; relayout = false; changed(); }
+  /** Feuilles où figure un élément (numéros à partir de 1). */
+  const where = (cid: string) => (sheet?.pages ?? []).flatMap((p, i) => (p.items.some((x) => x.container_id === cid && (x.kind === 'rack' || x.kind === 'desk')) ? [i + 1] : []));
+  function toggleView(it: SheetItem, v: string) {
+    const order = Object.keys(it.kind === 'rack' ? RACK_VIEWS : DESK_VIEWS);
+    const cur = viewsOf(it);
+    const next = cur.includes(v) ? cur.filter((x) => x !== v) : [...cur, v];
+    if (!next.length) return;
+    it.views = order.filter((x) => next.includes(x));
+    keepIn(it);
+    changed();
+  }
+  /** Un groupe qui s'élargit reste sur la feuille. */
+  function keepIn(it: SheetItem) {
+    if (!sheet) return;
+    const [W, H] = pageSize(sheet), [w, h] = itemSize(it, sheet.scale, ctx, usableW(sheet));
+    if (it.x + w > W - MARGIN / 2) it.x = Math.max(MARGIN / 2, Math.round(W - MARGIN / 2 - w));
+    if (it.y + h > H - MARGIN / 2) it.y = Math.max(MARGIN / 2, Math.round(H - MARGIN / 2 - h));
+  }
+  const locName = (id: string) => view.locations.find((l) => l.id === id);
 
   // ----- Export -----
   function download(blob: Blob, name: string) {
@@ -160,7 +186,8 @@
     if (!sheet) return;
     exporting = true;
     try {
-      await new Promise((r) => setTimeout(r, 50));
+      exportShots = await shotsFor($state.snapshot(sheet) as Sheet, ctx);
+      await new Promise((r) => setTimeout(r, 80));
       const svgs = [...exportHost.querySelectorAll('svg')] as SVGSVGElement[];
       const [W, H] = pageSize(sheet);
       if (sheet.format === 'pdf') {
@@ -182,119 +209,168 @@
 </script>
 
 {#if !sheet}<span class="spin"></span>
-{:else if !rackables.length}
-  <section class="card" style="padding:28px;display:grid;gap:12px;justify-items:start"><p class="lead" style="margin:0">Aucun élément rackable : ajoutez une baie ou un flight-case pour composer la planche.</p><a class="btn primary" href="/projets/{pid}/inventaire"><Icon name="plus" size="sm" />Ajouter un élément</a></section>
+{:else if !bays.length && !desks.length}
+  <section class="card" style="padding:28px;display:grid;gap:12px;justify-items:start"><p class="lead" style="margin:0">Aucune baie ni mobilier : ajoutez-en pour composer la planche.</p><a class="btn primary" href="/projets/{pid}/inventaire"><Icon name="plus" size="sm" />Ajouter un élément</a></section>
 {:else}
-  <div class="sh">
-    <aside class="sh-side">
-      <section class="card sh-card">
-        <span class="lbl-t">Feuille</span>
-        <div class="field"><span class="flabel">Format</span><div class="seg wrap">{#each Object.keys(PAPERS) as p}<button class:on={sheet.paper === p} disabled={!writable} onclick={() => { sheet!.paper = p as Paper; changed(); }}>{p}</button>{/each}</div></div>
-        <div class="sh-2 wide">
-          <div class="field"><span class="flabel">Orientation</span><div class="seg">{#each [['portrait', 'Portrait'], ['landscape', 'Paysage']] as [k, l]}<button class:on={sheet.orientation === k} disabled={!writable} onclick={() => { sheet!.orientation = k as Sheet['orientation']; changed(); }}>{l}</button>{/each}</div></div>
-          <div class="field"><label for="sh-sc">Échelle</label><select class="input" id="sh-sc" value={sheet.scale} disabled={!writable} onchange={(e) => { sheet!.scale = Number((e.target as HTMLSelectElement).value); changed(); }}>{#each SCALES as s}<option value={s}>1:{s}</option>{/each}</select></div>
+  <div class="pl">
+    <div class="pl-bar">
+      <select class="input pl-sel" aria-label="Format" value={sheet.paper} disabled={!writable} onchange={(e) => { sheet!.paper = (e.target as HTMLSelectElement).value as Paper; changed(); }}>{#each Object.keys(PAPERS) as p}<option value={p}>{p}</option>{/each}</select>
+      <div class="seg">{#each [['portrait', 'Portrait'], ['landscape', 'Paysage']] as [k, l]}<button class:on={sheet.orientation === k} disabled={!writable} onclick={() => { sheet!.orientation = k as Sheet['orientation']; changed(); }}>{l}</button>{/each}</div>
+      <select class="input pl-sel" aria-label="Échelle" value={sheet.scale} disabled={!writable} onchange={(e) => { sheet!.scale = Number((e.target as HTMLSelectElement).value); changed(); }}>{#each SCALES as s}<option value={s}>1:{s}</option>{/each}</select>
+      {#if writable}<button class="btn sm ghost" onclick={() => (relayout = true)}><Icon name="grid" size="sm" />Disposer</button>{/if}
+      <span class="pl-sep"></span>
+      <div class="seg" role="tablist" aria-label="Feuilles">{#each sheet.pages as p, i (p.id)}<button class:on={cur === i} onclick={() => { cur = i; selected = null; }}>F{i + 1}</button>{/each}</div>
+      {#if writable}<button class="icon-btn sm" title="Nouvelle feuille" aria-label="Nouvelle feuille" onclick={addPage}><Icon name="plus" size="sm" /></button>{#if sheet.pages.length > 1}<button class="icon-btn sm" title="Supprimer cette feuille" aria-label="Supprimer cette feuille" onclick={dropPage}><Icon name="trash" size="sm" /></button>{/if}{/if}
+      <span style="flex:1"></span>
+      <span class="muted small">{saving === 'pending' || saving === 'saving' ? 'Enregistrement…' : saving === 'saved' ? 'Enregistré' : ''}</span>
+      <div class="seg">{#each [['pdf', 'PDF'], ['png', 'PNG'], ['jpg', 'JPG']] as [k, l]}<button class:on={sheet.format === k} onclick={() => { sheet!.format = k as Sheet['format']; changed(); }}>{l}</button>{/each}</div>
+      <button class="btn primary" disabled={exporting} onclick={exportSheet}>{#if exporting}<span class="spin"></span>{:else}<Icon name="download" size="sm" />{/if}Exporter</button>
+    </div>
+
+    <div class="pl-body">
+      <div class="pl-desk" role="presentation" onpointerdown={(e) => { if (!(e.target as Element).closest('.it')) selected = null; }}>
+        <div class="pl-paper" bind:this={svgHost} style="aspect-ratio:{pageSize(sheet)[0]} / {pageSize(sheet)[1]}">
+          {#if page}<SheetPage {sheet} {page} {ctx} {info} {shots} index={cur} total={sheet.pages.length} editable={writable} {selected} onpick={pick} />{/if}
         </div>
-        {#if writable}<button class="btn sm" onclick={() => (relayout = true)}><Icon name="grid" size="sm" />Disposer automatiquement</button>{/if}
-      </section>
+        <p class="muted small pl-foot">{sheet.paper} {sheet.orientation === 'portrait' ? 'portrait' : 'paysage'} · 1:{sheet.scale} · feuille {cur + 1} / {sheet.pages.length}{writable ? ' · cliquez un élément pour le régler, glissez-le pour le placer' : ''}</p>
+      </div>
 
-      {#if writable}
-        <section class="card sh-card">
-          <span class="lbl-t">Ajouter sur la feuille</span>
-          <div class="sh-2">
-            <select class="input" bind:value={addRack.cid} aria-label="Rack à ajouter"><option value="">Rack…</option>{#each rackables as c}<option value={c.id}>{c.name}{missing.includes(c) ? ' · absent' : ''}</option>{/each}</select>
-            <select class="input" bind:value={addRack.face} aria-label="Face">{#each Object.entries(FACE_LABEL) as [f, l]}<option value={f}>{l}</option>{/each}</select>
-          </div>
-          <button class="btn sm" disabled={!addRack.cid} onclick={() => add({ kind: 'rack', container_id: addRack.cid, face: addRack.face })}><Icon name="server" size="sm" />Ajouter le rack</button>
-          <div class="sh-2">
-            <select class="input" aria-label="Titre de lieu" onchange={(e) => { const s = e.target as HTMLSelectElement; if (s.value) add({ kind: 'location', location_id: s.value, w: 160 }); s.value = ''; }}><option value="">+ Titre de lieu…</option>{#each view.locations as l}<option value={l.id}>{l.name}</option>{/each}</select>
-            <button class="btn sm" onclick={() => add({ kind: 'reserved', label: 'Emplacement réservé', w: 60, h: 80 })}><Icon name="plus" size="sm" />Réservé</button>
-          </div>
-          {#if missing.length}<span class="muted small">Absents de la planche : {missing.map((c) => c.name).join(', ')}</span>{/if}
-        </section>
-      {/if}
+      <aside class="pl-panel">
+        {#if sel}
+          <header class="pl-ph">
+            <span class="pl-ic"><Icon name={sel.kind === 'rack' ? 'server' : sel.kind === 'desk' ? 'grid' : sel.kind === 'location' ? 'pin' : 'plus'} size="sm" /></span>
+            <span class="pl-pt"><b>{selName}</b><small>{sel.kind === 'rack' ? 'Baie' : sel.kind === 'desk' ? 'Mobilier' : sel.kind === 'location' ? 'Titre de lieu' : 'Emplacement réservé'}</small></span>
+            <button class="icon-btn sm" aria-label="Fermer" title="Fermer" onclick={() => (selected = null)}><Icon name="x" size="sm" /></button>
+          </header>
 
-      {#if sel && writable}
-        <section class="card sh-card sel">
-          <span class="lbl-t">Sélection</span>
-          {#if sel.kind === 'rack'}
-            <b>{racks[sel.container_id ?? '']?.name ?? 'Rack'}</b>
-            <div class="field"><span class="flabel">Face</span><div class="seg wrap">{#each Object.entries(FACE_LABEL) as [f, l]}<button class:on={sel.face === f} onclick={() => { sel.face = f as Face; changed(); }}>{l}</button>{/each}</div></div>
+          {#if sel.kind === 'rack' || sel.kind === 'desk'}
+            {@const opts = sel.kind === 'rack' ? RACK_VIEWS : DESK_VIEWS}
+            <section class="pl-sec">
+              <span class="lbl-t">Vues affichées</span>
+              <div class="pl-chips">{#each Object.entries(opts) as [v, l]}{@const on = viewsOf(sel).includes(v)}<button class="pl-chip" class:on disabled={!writable || (sel.kind === 'desk' && v === 'casq' && !ctx.desks[sel.container_id ?? '']?.casq.length)} aria-pressed={on} onclick={() => toggleView(sel, v)}>{#if on}<Icon name="check" size="sm" />{/if}{l}</button>{/each}</div>
+            </section>
+            {#if box3d}
+              <section class="pl-sec">
+                <span class="lbl-t">Vue 3D</span>
+                <Sheet3DView bind:this={viewer} it={sel} {ctx} aspect={box3d.w / box3d.h} oncamera={(p) => { sel.cam = p; changed(); }} />
+                <span class="muted small">Glisser : tourner · molette : zoom · clic droit : décaler. L’angle est repris sur la feuille.</span>
+                <div class="seg wrap">{#each [['quarter', '3/4'], ['front', sel.kind === 'desk' ? 'Opérateur' : 'Avant'], ['side', 'Côté'], ['rear', 'Arrière'], ['top', 'Dessus']] as [k, l]}<button disabled={!writable} onclick={() => viewer?.frame(k as never)}>{l}</button>{/each}</div>
+                {#if sel.kind === 'rack' && !/case/.test(ctx.racks[sel.container_id ?? '']?.c?.kind ?? '')}
+                  <div class="pl-row"><span class="pl-l">Portes</span><div class="seg">{#each [['removed', 'Retirées'], ['closed', 'Fermées']] as [k, l]}<button class:on={(sel.doors ?? 'removed') === k} disabled={!writable} onclick={() => { sel.doors = k as 'removed' | 'closed'; changed(); }}>{l}</button>{/each}</div></div>
+                {/if}
+                <div class="pl-row"><span class="pl-l">{sel.kind === 'desk' ? 'Joues' : 'Flancs'}</span><div class="seg">{#each [[true, 'Avec'], [false, 'Sans']] as [k, l]}<button class:on={(sel.sides ?? true) === k} disabled={!writable} onclick={() => { sel.sides = k as boolean; changed(); }}>{l}</button>{/each}</div></div>
+                <label class="pl-row"><span class="pl-l">Cadre</span><input type="range" min="0.4" max="3" step="0.05" value={sel.r3d ?? (sel.kind === 'desk' ? 1.8 : 0.8)} disabled={!writable} oninput={(e) => { sel.r3d = Number((e.target as HTMLInputElement).value); keepIn(sel); changed(); }}><span class="mono small">{(sel.r3d ?? (sel.kind === 'desk' ? 1.8 : 0.8)).toFixed(2)}</span></label>
+              </section>
+            {/if}
           {:else if sel.kind === 'reserved'}
-            <div class="field"><label for="sh-rl">Libellé</label><input class="input" id="sh-rl" bind:value={sel.label} oninput={changed} maxlength="60"></div>
-            <div class="sh-2">
-              <div class="field"><label for="sh-rw">Largeur (mm)</label><input class="input mono" id="sh-rw" type="number" min="10" max="1000" bind:value={sel.w} oninput={changed}></div>
-              <div class="field"><label for="sh-rh">Hauteur (mm)</label><input class="input mono" id="sh-rh" type="number" min="10" max="1000" bind:value={sel.h} oninput={changed}></div>
-            </div>
+            <section class="pl-sec">
+              <div class="field"><label for="pl-rl">Libellé</label><input class="input" id="pl-rl" bind:value={sel.label} oninput={changed} maxlength="60" disabled={!writable}></div>
+              <div class="pl-2">
+                <div class="field"><label for="pl-rw">Largeur (mm)</label><input class="input mono" id="pl-rw" type="number" min="10" max="1000" bind:value={sel.w} oninput={changed} disabled={!writable}></div>
+                <div class="field"><label for="pl-rh">Hauteur (mm)</label><input class="input mono" id="pl-rh" type="number" min="10" max="1000" bind:value={sel.h} oninput={changed} disabled={!writable}></div>
+              </div>
+            </section>
           {:else}
-            <div class="field"><label for="sh-lw">Largeur du titre (mm)</label><input class="input mono" id="sh-lw" type="number" min="30" max="1100" bind:value={sel.w} oninput={changed}></div>
+            <section class="pl-sec"><div class="field"><label for="pl-lw">Largeur du titre (mm)</label><input class="input mono" id="pl-lw" type="number" min="30" max="1100" bind:value={sel.w} oninput={changed} disabled={!writable}></div></section>
           {/if}
-          <div class="sh-2">
-            <select class="input" aria-label="Envoyer sur une autre feuille" onchange={(e) => { const s = e.target as HTMLSelectElement; if (s.value !== '') toPage(Number(s.value)); s.value = ''; }}><option value="">Envoyer sur…</option>{#each sheet.pages as _, i}{#if i !== cur}<option value={i}>Feuille {i + 1}</option>{/if}{/each}<option value={sheet.pages.length}>Nouvelle feuille</option></select>
-            <button class="btn sm ghost danger" onclick={removeSel}><Icon name="trash" size="sm" />Retirer</button>
-          </div>
-        </section>
-      {/if}
 
-      <section class="card sh-card">
-        <label class="toggle-row"><input type="checkbox" bind:checked={sheet.titleBlock} disabled={!writable} onchange={changed}><span class="lbl-t">Cartouche</span></label>
-        {#if sheet.titleBlock}
-          <div class="field"><label for="sh-t">Titre</label><input class="input" id="sh-t" bind:value={sheet.block.title} oninput={changed} disabled={!writable} maxlength="80"></div>
-          <div class="sh-2">
-            <div class="field"><label for="sh-ref">Référence</label><input class="input mono" id="sh-ref" bind:value={sheet.block.reference} oninput={changed} disabled={!writable} maxlength="40"></div>
-            <div class="field"><label for="sh-v">Version</label><input class="input mono" id="sh-v" bind:value={sheet.block.version} oninput={changed} disabled={!writable} maxlength="10"></div>
-            <div class="field"><label for="sh-a">Auteur</label><input class="input" id="sh-a" bind:value={sheet.block.author} oninput={changed} disabled={!writable} maxlength="60"></div>
-            <div class="field"><label for="sh-c">Vérificateur</label><input class="input" id="sh-c" bind:value={sheet.block.checker} oninput={changed} disabled={!writable} maxlength="60"></div>
-          </div>
-          <div class="field"><label for="sh-n">Normes</label><input class="input" id="sh-n" bind:value={sheet.block.standards} oninput={changed} disabled={!writable} maxlength="80"></div>
-          <div class="field"><label for="sh-no">Notes</label><input class="input" id="sh-no" bind:value={sheet.block.notes} oninput={changed} disabled={!writable} maxlength="120"></div>
-          <span class="muted small">Site, projet, client, lieu, date, numéro de feuille et échelle sont remplis automatiquement.</span>
+          {#if writable}
+            <section class="pl-sec pl-2">
+              <select class="input" aria-label="Envoyer sur une autre feuille" onchange={(e) => { const s = e.target as HTMLSelectElement; if (s.value !== '') toPage(Number(s.value)); s.value = ''; }}><option value="">Envoyer sur…</option>{#each sheet.pages as _, i}{#if i !== cur}<option value={i}>Feuille {i + 1}</option>{/if}{/each}<option value={sheet.pages.length}>Nouvelle feuille</option></select>
+              <button class="btn sm ghost danger" onclick={removeSel}><Icon name="trash" size="sm" />Retirer</button>
+            </section>
+          {/if}
+        {:else}
+          {#if writable}
+            <section class="pl-sec">
+              <span class="lbl-t">Baies</span>
+              {#each bays as c (c.id)}
+                {@const w = where(c.id)}
+                <div class="pl-lib"><span class="pl-n"><b>{c.name}</b><small>{locName(c.location_id)?.code || locName(c.location_id)?.name || ''} · {c.height_u} U</small></span>{#if w.length}<span class="pl-ok">F{w.join(', F')}</span>{/if}<button class="btn sm" onclick={() => add({ kind: 'rack', container_id: c.id, views: [...rackViews] })}><Icon name="plus" size="sm" />Ajouter</button></div>
+              {:else}<span class="muted small">Aucune baie.</span>{/each}
+            </section>
+            {#if desks.length}
+              <section class="pl-sec">
+                <span class="lbl-t">Mobilier</span>
+                {#each desks as c (c.id)}
+                  {@const w = where(c.id)}
+                  <div class="pl-lib"><span class="pl-n"><b>{c.name}</b><small>{locName(c.location_id)?.code || locName(c.location_id)?.name || ''} · {ctx.desks[c.id]?.casq.length ?? 0} casquette(s)</small></span>{#if w.length}<span class="pl-ok">F{w.join(', F')}</span>{/if}<button class="btn sm" onclick={() => add({ kind: 'desk', container_id: c.id, views: [...deskViews] })}><Icon name="plus" size="sm" />Ajouter</button></div>
+                {/each}
+              </section>
+            {/if}
+            <section class="pl-sec pl-2">
+              <select class="input" aria-label="Titre de lieu" onchange={(e) => { const s = e.target as HTMLSelectElement; if (s.value) add({ kind: 'location', location_id: s.value, w: 160 }); s.value = ''; }}><option value="">+ Titre de lieu…</option>{#each view.locations as l}<option value={l.id}>{l.name}</option>{/each}</select>
+              <button class="btn sm" onclick={() => add({ kind: 'reserved', label: 'Emplacement réservé', w: 60, h: 80 })}><Icon name="plus" size="sm" />Réservé</button>
+            </section>
+          {/if}
+          <section class="pl-sec">
+            <label class="toggle-row"><input type="checkbox" bind:checked={sheet.titleBlock} disabled={!writable} onchange={changed}><span class="lbl-t">Cartouche</span></label>
+            {#if sheet.titleBlock}
+              <div class="field"><label for="pl-t">Titre</label><input class="input" id="pl-t" bind:value={sheet.block.title} oninput={changed} disabled={!writable} maxlength="80"></div>
+              <div class="pl-2">
+                <div class="field"><label for="pl-ref">Référence</label><input class="input mono" id="pl-ref" bind:value={sheet.block.reference} oninput={changed} disabled={!writable} maxlength="40"></div>
+                <div class="field"><label for="pl-v">Version</label><input class="input mono" id="pl-v" bind:value={sheet.block.version} oninput={changed} disabled={!writable} maxlength="10"></div>
+                <div class="field"><label for="pl-a">Auteur</label><input class="input" id="pl-a" bind:value={sheet.block.author} oninput={changed} disabled={!writable} maxlength="60"></div>
+                <div class="field"><label for="pl-c">Vérificateur</label><input class="input" id="pl-c" bind:value={sheet.block.checker} oninput={changed} disabled={!writable} maxlength="60"></div>
+              </div>
+              <div class="field"><label for="pl-n">Normes</label><input class="input" id="pl-n" bind:value={sheet.block.standards} oninput={changed} disabled={!writable} maxlength="80"></div>
+              <div class="field"><label for="pl-no">Notes</label><input class="input" id="pl-no" bind:value={sheet.block.notes} oninput={changed} disabled={!writable} maxlength="120"></div>
+              <span class="muted small">Site, projet, client, lieu, date, numéro de feuille et échelle sont remplis automatiquement.</span>
+            {/if}
+          </section>
         {/if}
-      </section>
-    </aside>
-
-    <section class="sh-main">
-      <div class="sh-bar">
-        <div class="seg" role="tablist" aria-label="Feuilles">{#each sheet.pages as p, i (p.id)}<button class:on={cur === i} onclick={() => { cur = i; selected = null; }}>Feuille {i + 1} <span class="muted mono">{p.items.filter((x) => x.kind === 'rack').length}</span></button>{/each}</div>
-        {#if writable}<button class="icon-btn sm" title="Nouvelle feuille" aria-label="Nouvelle feuille" onclick={addPage}><Icon name="plus" size="sm" /></button>{#if sheet.pages.length > 1}<button class="icon-btn sm" title="Supprimer cette feuille" aria-label="Supprimer cette feuille" onclick={dropPage}><Icon name="trash" size="sm" /></button>{/if}{/if}
-        <span style="flex:1"></span>
-        <span class="muted small sh-save">{saving === 'pending' || saving === 'saving' ? 'Enregistrement…' : saving === 'saved' ? 'Réglages enregistrés' : ''}</span>
-        <div class="seg">{#each [['pdf', 'PDF'], ['png', 'PNG'], ['jpg', 'JPG']] as [k, l]}<button class:on={sheet.format === k} onclick={() => { sheet!.format = k as Sheet['format']; changed(); }}>{l}</button>{/each}</div>
-        <button class="btn primary" disabled={exporting} onclick={exportSheet}>{#if exporting}<span class="spin"></span>{:else}<Icon name="download" size="sm" />{/if}Exporter</button>
-      </div>
-      <div class="sh-desk" role="presentation" onpointerdown={(e) => { if (!(e.target as Element).closest('.it')) selected = null; }}>
-        <div class="sh-paper" bind:this={svgHost} style="aspect-ratio:{pageSize(sheet)[0]} / {pageSize(sheet)[1]}">
-          {#if page}<SheetPage {sheet} {page} {racks} {info} index={cur} total={sheet.pages.length} editable={writable} {selected} onpick={pick} />{/if}
-        </div>
-      </div>
-      <p class="muted small" style="margin:6px 2px 0">{sheet.paper} {sheet.orientation === 'portrait' ? 'portrait' : 'paysage'} · 1:{sheet.scale}{writable ? ' · glissez les racks, titres et réservations pour composer la feuille' : ''} · fichier {fileName(view.project.name, sheet.format)}</p>
-    </section>
+      </aside>
+    </div>
   </div>
 
-  <div class="sh-export" bind:this={exportHost} aria-hidden="true">
-    {#each sheet.pages as p, i (p.id)}<SheetPage {sheet} page={p} {racks} {info} index={i} total={sheet.pages.length} />{/each}
+  <div class="pl-export" bind:this={exportHost} aria-hidden="true">
+    {#if exporting}{#each sheet.pages as p, i (p.id)}<SheetPage {sheet} page={p} {ctx} {info} shots={exportShots} index={i} total={sheet.pages.length} />{/each}{/if}
   </div>
 {/if}
 
 {#if relayout}
   <Confirm title="Disposer automatiquement ?" confirmLabel="Disposer" onconfirm={doLayout} onclose={() => (relayout = false)}>
-    <p>Les racks sont rangés lieu par lieu, de gauche à droite, sur autant de feuilles que nécessaire. La composition actuelle est remplacée.</p>
-    <div class="seg" style="margin-top:8px">{#each Object.entries(FACE_LABEL) as [f, l]}<button class:on={faces.includes(f as Face)} onclick={() => (faces = faces.includes(f as Face) ? faces.filter((x) => x !== f) : [...faces, f as Face])}>{l}</button>{/each}</div>
+    <p>Baies puis mobilier, lieu par lieu, de gauche à droite, sur autant de feuilles que nécessaire. La composition actuelle est remplacée.</p>
+    <p class="lbl-t" style="margin:10px 0 4px">Vues des baies</p>
+    <div class="seg wrap">{#each Object.entries(RACK_VIEWS) as [v, l]}<button class:on={rackViews.includes(v)} onclick={() => (rackViews = rackViews.includes(v) ? rackViews.filter((x) => x !== v) : Object.keys(RACK_VIEWS).filter((x) => x === v || rackViews.includes(x)))}>{l}</button>{/each}</div>
+    {#if desks.length}
+      <p class="lbl-t" style="margin:10px 0 4px">Vues du mobilier</p>
+      <div class="seg wrap">{#each Object.entries(DESK_VIEWS) as [v, l]}<button class:on={deskViews.includes(v)} onclick={() => (deskViews = deskViews.includes(v) ? deskViews.filter((x) => x !== v) : Object.keys(DESK_VIEWS).filter((x) => x === v || deskViews.includes(x)))}>{l}</button>{/each}</div>
+    {/if}
   </Confirm>
 {/if}
 
 <style>
-  .sh { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 18px; align-items: start; }
-  .sh-side { display: grid; gap: 12px; position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto; padding-bottom: 4px; }
-  .sh-card { padding: 14px; display: grid; gap: 10px; }
-  .sh-card.sel { box-shadow: 0 0 0 1.5px var(--accent, #4F6BFF); }
-  .sh-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: end; }
-  .sh-2 .input { height: 38px; font-size: 14px; }
+  .pl { display: grid; gap: 10px; }
+  .pl-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 10px; border-radius: 12px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); }
+  .pl-sel { width: auto; height: 32px; padding: 0 28px 0 10px; font-size: 13px; }
+  .pl-sep { width: 1px; height: 22px; background: var(--line-2); margin: 0 4px; }
+  .pl-body { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 12px; align-items: start; }
+  .pl-desk { padding: 28px; border-radius: 14px; background: radial-gradient(90% 70% at 50% 0%, color-mix(in srgb, var(--fg) 6%, var(--surface-2)), var(--surface-2)); overflow: auto; min-height: 60vh; }
+  .pl-paper { width: 100%; max-width: 1500px; margin: 0 auto; background: #fff; box-shadow: 0 24px 50px -22px rgba(0, 0, 0, .55), 0 0 0 1px rgba(0, 0, 0, .08); touch-action: none; }
+  .pl-foot { text-align: center; margin: 12px 0 0; }
+  .pl-panel { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto; border-radius: 14px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); }
+  .pl-ph { display: flex; align-items: center; gap: 10px; padding: 12px 12px 12px 14px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--surface); z-index: 1; }
+  .pl-ic { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 8px; background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--fg); flex: none; }
+  .pl-pt { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.2; }
+  .pl-pt b { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pl-pt small { font-size: 12px; color: var(--fg-3); }
+  .pl-sec { padding: 14px; display: grid; gap: 10px; border-bottom: 1px solid var(--line); }
+  .pl-sec:last-child { border-bottom: 0; }
+  .pl-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: end; }
+  .pl-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .pl-chip { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 12px; border: 0; border-radius: 15px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line-2); color: var(--fg-2); font: 600 13px var(--font); cursor: pointer; }
+  .pl-chip.on { background: color-mix(in srgb, var(--accent) 18%, transparent); box-shadow: inset 0 0 0 1px var(--accent); color: var(--fg); }
+  .pl-chip:disabled { opacity: .45; cursor: default; }
+  .pl-row { display: flex; align-items: center; gap: 10px; }
+  .pl-row input[type='range'] { flex: 1; }
+  .pl-l { width: 58px; font: 600 10.5px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--fg-3); }
   .seg.wrap { flex-wrap: wrap; }
-  .sh-2.wide { grid-template-columns: 1.4fr 1fr; }
-  .sh-main { min-width: 0; display: grid; gap: 10px; }
-  .sh-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-  .sh-desk { padding: 28px; border-radius: 18px; background: repeating-linear-gradient(0deg, transparent 0 23px, color-mix(in srgb, var(--fg) 5%, transparent) 23px 24px), repeating-linear-gradient(90deg, transparent 0 23px, color-mix(in srgb, var(--fg) 5%, transparent) 23px 24px), var(--surface-2); overflow: auto; }
-  .sh-paper { width: 100%; max-width: 1400px; margin: 0 auto; background: #fff; box-shadow: 0 18px 40px -18px rgba(0, 0, 0, .45), 0 0 0 1px rgba(0, 0, 0, .08); touch-action: none; }
-  .sh-export { position: fixed; left: -100000px; top: 0; width: 1200px; pointer-events: none; }
-  @media (max-width: 1000px) { .sh { grid-template-columns: 1fr; } .sh-side { position: static; max-height: none; } }
+  .pl-lib { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 10px; border-radius: 9px; background: var(--surface-2); }
+  .pl-n { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.2; }
+  .pl-n b { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pl-n small { font-size: 11.5px; color: var(--fg-3); }
+  .pl-ok { font: 600 11px var(--mono); color: var(--ok); }
+  .pl-export { position: fixed; left: -100000px; top: 0; width: 1200px; pointer-events: none; }
+  @media (max-width: 1100px) { .pl-body { grid-template-columns: 1fr; } .pl-panel { position: static; max-height: none; } }
 </style>

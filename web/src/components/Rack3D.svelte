@@ -3,10 +3,8 @@
   // portes, panneaux latéraux, survol des équipements, capture PNG.
   import { onDestroy } from 'svelte';
   import Icon from './Icon.svelte';
-  import { api } from '../lib/api';
-  import { fnColor, refById } from '../lib/catalog.svelte';
-  import { ALU, accessoryFace, visualOf } from '../lib/faceplate';
-  import type { RackScene, El3D, Hit } from '../lib/rack3d';
+  import { boxSpec, toEl3D } from '../lib/el3d';
+  import type { RackScene, Hit } from '../lib/rack3d';
 
   let { container, elements, title }: { container: any; elements: any[]; title: string } = $props();
   let host = $state<HTMLDivElement>(null!);
@@ -15,21 +13,8 @@
   let error = $state<string | null>(null);
   let doors = $state<'closed' | 'open' | 'removed'>('open'), sides = $state(true);
   let hover = $state<{ h: Hit; x: number; y: number } | null>(null);
-  const portsCache = new Map<string, any[]>();
-
-  async function ports(itemId: string | null): Promise<any[]> {
-    if (!itemId) return [];
-    if (!portsCache.has(itemId)) { try { const r = await api.get<{ item: { data: { ports?: any[] } } }>(`/catalog/items/${itemId}`); portsCache.set(itemId, r.item.data.ports ?? []); } catch { portsCache.set(itemId, []); } }
-    return portsCache.get(itemId)!;
-  }
-  async function toEls(): Promise<El3D[]> {
-    return Promise.all(elements.map(async (e) => {
-      const kind = e.nature === 'accessory' ? (e.accessory?.kind === 'panel' ? 'panel' : e.accessory?.kind === 'plate' ? (e.accessory.variant === 'brush' ? 'brush' : e.accessory.variant === 'vented' ? 'vent' : 'blank') : accessoryFace(e.label)) : visualOf(e);
-      const ps = (await ports(e.item_id)).map((p: any) => ({ face: p.face ?? 'rear', connector: p.connector_id ?? '', quantity: p.quantity ?? 1, color: p.signal_id ? (refById('signals', p.signal_id)?.data?.color ?? null) : null, label: p.label ?? null }));
-      return { id: e.placement.id, label: e.label, tag: e.tag, nature: e.nature, height_u: e.height_u, depth_mm: e.depth_mm, function: e.function, brand: e.brand ?? null, face: e.placement.face, u_start: e.placement.u_start, width: e.placement.width, col: e.placement.col, kind, alu: ALU.has(kind), accessory: e.accessory, ports: ps, fnColor: fnColor(e.function), shelf_id: e.placement.shelf_id ?? null } as El3D;
-    }));
-  }
-  const spec = $derived({ kind: container.kind ?? 'rack', name: container.name, units: container.height_u ?? 42, width_mm: container.width_mm ?? null, depth_mm: container.depth_mm ?? container.length_mm ?? null, height_mm: container.outer_height_mm ?? null, rear_rails_mm: container.rear_rails_mm ?? null, wheels: !!container.wheels });
+  const toEls = () => Promise.all(elements.map(toEl3D));
+  const spec = $derived(boxSpec(container));
 
   $effect(() => {
     const s = spec, els = elements; void els;
