@@ -11,6 +11,7 @@
   import NumberingDialog from './NumberingDialog.svelte';
   import Dialog from '../../components/Dialog.svelte';
   import { withLightTheme, standalone, raster, pdf as toPdf, save } from '../../lib/svgexport';
+  import { familyDash } from '../../lib/pdfkit';
   import { PAPERS, type Paper } from '../../lib/sheet';
   import RemoteCursors from '../../components/RemoteCursors.svelte';
   import { fitText, shareRow, textWidth } from '../../lib/fit';
@@ -502,6 +503,8 @@
   function toggleLock(f: string) { const l = new Set(lockedFam); if (l.has(f)) l.delete(f); else l.add(f); lockedFam = l; lsSet('locked', [...l]); if (l.has(f)) multi = new Set([...multi].filter((id) => { const c = syn?.cables.find((x) => x.id === id); return !c || famOf(c) !== f; })); }
   function renameLayer(f: string) { const cur = famNames[f] ?? layerName(f, true); const n = prompt('Nom du calque :', cur); if (n === null) return; const m = { ...famNames }; if (n.trim()) m[f] = n.trim().slice(0, 60); else delete m[f]; famNames = m; lsSet('names', m); }
   const layerName = (f: string, raw = false) => (!raw && famNames[f]) || (f === '—' ? (layerBy === 'signal' ? 'Sans signal' : 'Sans famille') : layerBy === 'signal' ? (refById('signals', f)?.name ?? f) : (refById('functions', f)?.name ?? f));
+  /** Famille de signal d'un câble (style de trait des exports en noir et blanc). */
+  const cabFam = (c: CableV) => portByRef(c.a)?.family ?? portByRef(c.b)?.family ?? '';
   const famOf = (c: CableV) => layerBy === 'signal' ? (portByRef(c.a)?.signal ?? portByRef(c.b)?.signal ?? '—') : (portByRef(c.a)?.family ?? portByRef(c.b)?.family ?? '—');
   const layerColor = (f: string) => f === '—' ? 'var(--fg-3)' : layerBy === 'signal' ? ((refById('signals', f) as any)?.data?.color || fnColor((refById('signals', f) as any)?.data?.function)) : fnColor(f);
   const families = $derived([...new Set((syn?.cables ?? []).map(famOf))]);
@@ -1089,13 +1092,25 @@
         let vb: [number, number, number, number];
         if (exp!.frame === 'all') { const b = world.getBBox(); vb = [b.x - 30, b.y - 30, b.width + 60, b.height + 60]; }
         else { const r = svgEl.getBoundingClientRect(); vb = [-tx / k, -ty / k, r.width / k, r.height / k]; }
-        const svg = standalone(svgEl, vb, (el) => el.classList.contains('gridbg') || el.classList.contains('hit') || el.classList.contains('preview') || el.classList.contains('rs') || el.classList.contains('off'));
+        // Familles de signal : un style de trait par famille, lisible en noir et blanc, et sa légende.
+        const fams = new Set<string>();
+        const svg = standalone(svgEl, vb, (el) => el.classList.contains('gridbg') || el.classList.contains('hit') || el.classList.contains('preview') || el.classList.contains('rs') || el.classList.contains('off'), (el, c) => {
+          // Petits textes gris : passés en gris foncé (#333) pour l'impression.
+          if (el.tagName === 'text' || el.tagName === 'tspan') { const m = /rgb\((\d+), (\d+), (\d+)\)/.exec(getComputedStyle(el).fill); if (m && Math.max(+m[1]!, +m[2]!, +m[3]!) - Math.min(+m[1]!, +m[2]!, +m[3]!) < 40 && +m[1]! > 51 && +m[1]! < 225) c.setAttribute('style', (c.getAttribute('style') ?? '').replace(/(^|;)fill:[^;]*;/, '$1') + 'fill:#333333;'); return; }
+          if (!el.classList.contains('vis')) return;
+          const g = el.closest('g.cable'); if (!g || g.classList.contains('attach')) return;
+          const f = g.getAttribute('data-family') ?? ''; fams.add(f);
+          const sw = parseFloat(getComputedStyle(el).strokeWidth) || 2.2;
+          const d = familyDash(f || null);
+          c.setAttribute('style', (c.getAttribute('style') ?? '').replace(/stroke-dasharray:[^;]*;/, '') + `stroke-dasharray:${d.length ? d.map((x) => +(x * sw).toFixed(2)).join(' ') : 'none'};stroke-linecap:${d.length && Math.min(...d) <= 1 ? 'round' : 'butt'};`);
+        });
+        const legend = [...fams].sort((a, b) => (a ? (refById('functions', a)?.name ?? a) : '~').localeCompare(b ? (refById('functions', b)?.name ?? b) : '~', 'fr')).map((f) => ({ label: f ? refById('functions', f)?.name ?? f : 'Famille non définie', color: f ? fnColor(f) : '#8A919B', dash: familyDash(f || null) }));
         svg.querySelector('g')?.removeAttribute('transform');
         for (const g of svg.querySelectorAll('g')) if (g.getAttribute('transform')?.startsWith('translate(') && g.getAttribute('transform')?.includes('scale(')) g.removeAttribute('transform');
         const viewName = syn!.view === 'overview' ? 'Vue générale' : syn!.views.containers.find((c) => syn!.view === `container:${c.id}`)?.name ?? syn!.views.locations.find((l) => syn!.view === `location:${l.id}`)?.name ?? '';
         const day = new Date().toISOString().slice(0, 10);
         const stem = `Synoptique_${project.project.name}_${viewName}`.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9]+/g, '_') + `_${day}`;
-        if (exp!.format === 'pdf') save(await toPdf(svg, vb[2], vb[3], exp!.paper, exp!.landscape, { title: exp!.title, project: project.project.name, client: project.project.client ?? 'Projet interne', view: viewName, revision: exp!.revision, site, date: new Date().toLocaleDateString('fr-FR') }), `${stem}.pdf`);
+        if (exp!.format === 'pdf') save(await toPdf(svg, vb[2], vb[3], exp!.paper, exp!.landscape, { title: exp!.title, project: project.project.name, client: project.project.client ?? 'Projet interne', view: viewName, revision: exp!.revision, site, date: new Date().toLocaleDateString('fr-FR') }, null, { legend: legend.map((l) => ({ ...l, color: l.color.startsWith('#') ? l.color : '#8A919B' })) }), `${stem}.pdf`);
         else save(await raster(svg, vb[2], vb[3], exp!.format === 'png' ? 'image/png' : 'image/jpeg'), `${stem}.${exp!.format}`);
       });
       toast('Synoptique exporté.');
@@ -1259,7 +1274,7 @@
               {#if c.a_in_view && c.b_in_view}
                 {@const g = cPath(c)}
                 {#if g}
-                  <g class="cable" data-cable={c.id} class:renvoi={!!g.renvoi} class:off={hiddenFam.has(famOf(c))} class:attach={c.fields.attach} class:harnessed={!!harnessOf(c)} class:sel={multi.has(c.id) || sel === c.id} class:rsel={rsel.has(c.id)} class:hl={hl.cables.has(c.id)} class:warn={c.warnings.length > 0} style="--c:{cableColor(c)};--h:{harnessOf(c)?.color ?? 'transparent'};--rs:{rsel.get(c.id) ?? 'transparent'}" role="button" tabindex="-1" onclick={(e) => pickCable(c.id, e)} onkeydown={() => {}}>
+                  <g class="cable" data-cable={c.id} data-family={cabFam(c)} class:renvoi={!!g.renvoi} class:off={hiddenFam.has(famOf(c))} class:attach={c.fields.attach} class:harnessed={!!harnessOf(c)} class:sel={multi.has(c.id) || sel === c.id} class:rsel={rsel.has(c.id)} class:hl={hl.cables.has(c.id)} class:warn={c.warnings.length > 0} style="--c:{cableColor(c)};--h:{harnessOf(c)?.color ?? 'transparent'};--rs:{rsel.get(c.id) ?? 'transparent'}" role="button" tabindex="-1" onclick={(e) => pickCable(c.id, e)} onkeydown={() => {}}>
                     <title>{c.fields.number ?? 'Sans numéro'} · {endName(c.a, c.a_info)} → {endName(c.b, c.b_info)}</title>
                     <path class="case" d={g.d} /><path class="vis" d={g.d} /><path class="hit" d={g.d} />{#if g.ah}<path class="ahead" d={g.ah} />{/if}
                   </g>
@@ -1267,7 +1282,7 @@
               {:else}
                 {@const s = stub(c)}
                 {#if s}
-                  <g class="cable stub" data-cable={c.id} class:off={hiddenFam.has(famOf(c))} class:sel={multi.has(c.id) || sel === c.id} class:hl={hl.cables.has(c.id)} class:warn={c.warnings.length > 0} style="--c:{cableColor(c)}" role="button" tabindex="-1" onclick={(e) => pickCable(c.id, e)} onkeydown={() => {}}>
+                  <g class="cable stub" data-cable={c.id} data-family={cabFam(c)} class:off={hiddenFam.has(famOf(c))} class:sel={multi.has(c.id) || sel === c.id} class:hl={hl.cables.has(c.id)} class:warn={c.warnings.length > 0} style="--c:{cableColor(c)}" role="button" tabindex="-1" onclick={(e) => pickCable(c.id, e)} onkeydown={() => {}}>
                     <path class="case" d={s.d} /><path class="vis" d={s.d} /><path class="hit" d={s.d} />
                     <g class="far" transform="translate({s.dx > 0 ? s.ex + 4 : s.ex - 4} {s.ey - 11})"><rect x={s.dx > 0 ? 0 : -190} width="190" height="22" rx="6" /><text x={s.dx > 0 ? 8 : -182} y="15">{s.far?.external ? '↗' : '→'} {(s.far ? (s.far.external ? s.far.label : `${s.far.label} › ${s.far.port}`) : 'Extrémité manquante').slice(0, 30)}</text></g>
                   </g>

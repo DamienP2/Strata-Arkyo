@@ -108,9 +108,10 @@
   async function pdf() {
     const kit = await import('../../lib/pdfkit');
     const doc = await kit.newDoc('A4', true);
-    const h = kit.projectHeader(view.project, `Câbles (${shown.length})`);
-    kit.drawTable(doc, h, [{ label: 'N°', w: 24 }, { label: 'Signal', w: 22 }, { label: 'De', w: 90 }, { label: 'Vers', w: 90 }, { label: 'Long. (m)', w: 18, align: 'right' }, { label: 'Notes', w: 32 }],
-      shown.map((r) => [String(val(r, 'number') ?? '—'), r.signal, `${r.a.element} › ${r.a.equipment} ${r.a.tag} › ${r.a.port}`, `${r.b.element} › ${r.b.equipment} ${r.b.tag} › ${r.b.port}`, String(val(r, 'length_m') ?? r.estimate_m ?? ''), String(val(r, 'notes') ?? '')]), 'A4', true);
+    const h = kit.projectHeader(view.project, `Liste des câbles (${shown.length})`);
+    // Largeurs selon le contenu (les indications ne servent qu'à répartir la place restante).
+    kit.drawTable(doc, h, [{ label: 'N°', w: 14 }, { label: 'Signal', w: 18 }, { label: 'De', w: 90 }, { label: 'Vers', w: 90 }, { label: 'Long. (m)', w: 12, align: 'right' }, { label: 'Notes', w: 30 }],
+      shown.map((r) => [String(val(r, 'number') ?? '—'), r.signal || 'Non défini', `${r.a.element} › ${r.a.equipment} ${r.a.tag} › ${r.a.port}`, `${r.b.element} › ${r.b.equipment} ${r.b.tag} › ${r.b.port}`, String(val(r, 'length_m') ?? r.estimate_m ?? ''), String(val(r, 'notes') ?? '')]), 'A4', true);
     kit.paginate(doc, 1, undefined, view.project.name);
     doc.save(`${kit.fileStem('Cables', view.project.name)}.pdf`);
   }

@@ -15,7 +15,7 @@
   import { loadRefs } from '../../lib/catalog.svelte';
   import type { ProjectView } from '../../lib/projects';
   import {
-    PAPERS, SCALES, RACK_VIEWS, DESK_VIEWS, MARGIN, autoLayout, blankSheet, fileName, groupLayout, itemSize, normalize, pageSize, uid, usableW, viewsOf,
+    PAPERS, SCALES, RACK_VIEWS, DESK_VIEWS, FRAME, MARGIN, autoLayout, blankSheet, fileName, groupLayout, itemSize, normalize, pageSize, uid, usableW, viewsOf,
     type Ctx, type Paper, type Sheet, type SheetItem,
   } from '../../lib/sheet';
   import { isDesk, loadCtx, shot3D, shotsFor } from '../../lib/sheetctx';
@@ -117,8 +117,8 @@
     const [x, y] = toMm(e);
     const [W, H] = pageSize(sheet);
     const [w, h] = itemSize(drag.it, sheet.scale, ctx, usableW(sheet));
-    drag.it.x = Math.round(Math.min(Math.max(MARGIN / 2, x - drag.dx), Math.max(MARGIN / 2, W - MARGIN / 2 - w)));
-    drag.it.y = Math.round(Math.min(Math.max(MARGIN / 2, y - drag.dy), Math.max(MARGIN / 2, H - MARGIN / 2 - h)));
+    drag.it.x = Math.round(Math.min(Math.max(FRAME, x - drag.dx), Math.max(FRAME, W - FRAME - w)));
+    drag.it.y = Math.round(Math.min(Math.max(FRAME, y - drag.dy), Math.max(FRAME, H - FRAME - h)));
   }
   function up() { window.removeEventListener('pointermove', move); if (drag) changed(); drag = null; }
 
@@ -156,8 +156,8 @@
   function keepIn(it: SheetItem) {
     if (!sheet) return;
     const [W, H] = pageSize(sheet), [w, h] = itemSize(it, sheet.scale, ctx, usableW(sheet));
-    if (it.x + w > W - MARGIN / 2) it.x = Math.max(MARGIN / 2, Math.round(W - MARGIN / 2 - w));
-    if (it.y + h > H - MARGIN / 2) it.y = Math.max(MARGIN / 2, Math.round(H - MARGIN / 2 - h));
+    if (it.x + w > W - FRAME) it.x = Math.max(FRAME, Math.round(W - FRAME - w));
+    if (it.y + h > H - FRAME) it.y = Math.max(FRAME, Math.round(H - FRAME - h));
   }
   const locName = (id: string) => view.locations.find((l) => l.id === id);
 
@@ -182,8 +182,10 @@
       return await new Promise<Blob>((ok, ko) => c.toBlob((b) => (b ? ok(b) : ko(new Error('Image impossible'))), type, 0.92));
     } finally { URL.revokeObjectURL(url); }
   }
+  /** Une planche sans aucun élément n'est pas exportée (feuilles vides). */
+  const hasItems = $derived(!!sheet?.pages.some((p) => p.items.length));
   async function exportSheet() {
-    if (!sheet) return;
+    if (!sheet || !hasItems) return;
     exporting = true;
     try {
       exportShots = await shotsFor($state.snapshot(sheet) as Sheet, ctx);
@@ -191,9 +193,8 @@
       const svgs = [...exportHost.querySelectorAll('svg')] as SVGSVGElement[];
       const [W, H] = pageSize(sheet);
       if (sheet.format === 'pdf') {
-        const { jsPDF } = await import('jspdf');
-        await import('svg2pdf.js');
-        const doc = new jsPDF({ unit: 'mm', format: [W, H], orientation: W > H ? 'landscape' : 'portrait' });
+        const { newDocMm } = await import('../../lib/pdfkit');
+        const doc = await newDocMm(W, H);
         for (let i = 0; i < svgs.length; i++) {
           if (i > 0) doc.addPage([W, H], W > H ? 'landscape' : 'portrait');
           await doc.svg(svgs[i]!, { x: 0, y: 0, width: W, height: H });
@@ -224,7 +225,8 @@
       <span style="flex:1"></span>
       <span class="muted small">{saving === 'pending' || saving === 'saving' ? 'Enregistrement…' : saving === 'saved' ? 'Enregistré' : ''}</span>
       <div class="seg">{#each [['pdf', 'PDF'], ['png', 'PNG'], ['jpg', 'JPG']] as [k, l]}<button class:on={sheet.format === k} onclick={() => { sheet!.format = k as Sheet['format']; changed(); }}>{l}</button>{/each}</div>
-      <button class="btn primary" disabled={exporting} onclick={exportSheet}>{#if exporting}<span class="spin"></span>{:else}<Icon name="download" size="sm" />{/if}Exporter</button>
+      {#if !hasItems}<span class="muted small">Planche vide : rien à exporter</span>{/if}
+      <button class="btn primary" disabled={exporting || !hasItems} title={hasItems ? undefined : 'Aucune feuille ne contient d’élément : composez la planche avant de l’exporter.'} onclick={exportSheet}>{#if exporting}<span class="spin"></span>{:else}<Icon name="download" size="sm" />{/if}Exporter</button>
     </div>
 
     <div class="pl-body">

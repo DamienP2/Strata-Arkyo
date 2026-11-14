@@ -54,14 +54,12 @@
   // ----- Procès-verbal PDF -----
   async function pv() {
     if (!r) return;
-    const { jsPDF } = await import('jspdf');
-    const { drawPV } = await import('../../lib/pv');
-    const st = await api.get<{ name: string; logo: string | null }>('/site');
-    const doc = new jsPDF({ unit: 'mm', format: paper, orientation: 'portrait' });
-    const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), m = 14;
-    drawPV(doc, r, view, st.name, st.logo, paper === 'a3' ? 'A3' : 'A4');
-    const n = doc.getNumberOfPages();
-    for (let i = 1; i <= n; i++) { doc.setPage(i); doc.setFontSize(8); doc.setTextColor(91, 99, 109); doc.text(`${view.project.name} · procès-verbal de recette`, m, H - 7); doc.text(`${i} / ${n}`, W - m, H - 7, { align: 'right' }); }
+    const kit = await import('../../lib/pdfkit');
+    const { drawPV, pvEnds } = await import('../../lib/pv');
+    const st = await kit.siteInfo();
+    const doc = await kit.newDoc(paper === 'a3' ? 'A3' : 'A4', false);
+    drawPV(doc, r, view, st.name, st.logo, paper === 'a3' ? 'A3' : 'A4', await pvEnds(view.project.id));
+    kit.paginate(doc, 1, undefined, `${view.project.name} · procès-verbal de recette`);
     const name = view.project.name.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9]+/g, '_');
     doc.save(`Recette_${name}_${new Date().toISOString().slice(0, 10)}.pdf`);
     toast('Procès-verbal exporté.');

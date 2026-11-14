@@ -57,6 +57,9 @@
   const fmt = (o: DocOpt) => FIXED[o.key] ?? [o.paper ?? DEFAULT_FMT[o.key]?.[0] ?? 'A4', o.landscape ?? DEFAULT_FMT[o.key]?.[1] ?? false];
   const def = (k: string) => defs.find((d) => d.key === k)!;
   const included = $derived(docs.filter((o) => o.include));
+  /** Tout en A4, ou A3 pour les plans (formats par défaut) : un choix explicite, annoncé au sommaire. */
+  const allA4 = $derived(included.every((o) => fmt(o)[0] === 'A4'));
+  function setPlans(p: 'A4' | 'A3') { for (const o of docs) { if (FIXED[o.key]) continue; if (def(o.key)?.group === 'plans') o.paper = p; else if (p === 'A4') o.paper = 'A4'; } }
 
   function toggleCol(o: DocOpt, c: string, on: boolean) { if (on) { o.columns = [...o.columns, c]; o.hidden = o.hidden.filter((x) => x !== c); } else { o.columns = o.columns.filter((x) => x !== c); o.hidden = [...o.hidden, c]; } }
   function moveCol(o: DocOpt, i: number, d: number) { const j = i + d; if (j < 0 || j >= o.columns.length) return; const l = [...o.columns]; [l[i], l[j]] = [l[j]!, l[i]!]; o.columns = l; }
@@ -109,6 +112,7 @@
   {:else if step === 1}
     <section class="card st1">
       <div class="row"><label class="field grow">Titre du dossier<input class="input" bind:value={title} maxlength="80"></label></div>
+      <div class="row fmtmode"><span class="flabel">Formats</span><div class="seg" role="group" aria-label="Formats du dossier"><button class:on={allA4} onclick={() => setPlans('A4')}>Tout en A4</button><button class:on={!allA4} onclick={() => setPlans('A3')}>A3 pour les plans</button></div><span class="muted small">{allA4 ? 'Un seul format : A4.' : 'Formats mélangés : A4 pour les listes, A3 pour les plans (indiqué au sommaire).'}</span></div>
       {#each Object.entries(GROUPS) as [g, gl]}
         <h3 class="grp">{gl}</h3>
         {#each docs.filter((o) => def(o.key)?.group === g) as o (o.key)}
@@ -211,4 +215,5 @@
   .errt { color: var(--err); }
   .ok-t { color: var(--ok, #0E8550); font-weight: 600; }
   .spin.sm { width: 14px; height: 14px; }
+  .fmtmode { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 </style>

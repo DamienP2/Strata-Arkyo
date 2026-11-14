@@ -3,6 +3,10 @@
 // vectoriel avec cartouche.
 
 import type { Paper } from './sheet';
+import type { LegendItem } from './pdfkit';
+
+// Mêmes noms que les polices incorporées au PDF (pdfkit) ; repli sur les polices standard.
+const SANS = 'Inter, Helvetica, Arial, sans-serif', MONO = 'JetBrainsMono, Courier, monospace';
 
 const PROPS = ['fill', 'fill-opacity', 'stroke', 'stroke-width', 'stroke-dasharray', 'stroke-linecap', 'stroke-linejoin', 'stroke-opacity', 'opacity',
   'font-family', 'font-size', 'font-weight', 'font-style', 'text-decoration', 'letter-spacing', 'text-anchor', 'dominant-baseline', 'display', 'visibility'];
@@ -17,7 +21,7 @@ export async function withLightTheme<T>(f: () => Promise<T> | T): Promise<T> {
 }
 
 /** Copie autonome d'un SVG : styles calculés en ligne, sans classes ni variables CSS. */
-export function standalone(src: SVGSVGElement, viewBox: [number, number, number, number], skip: (el: Element) => boolean = () => false): SVGSVGElement {
+export function standalone(src: SVGSVGElement, viewBox: [number, number, number, number], skip: (el: Element) => boolean = () => false, decorate?: (src: Element, clone: SVGElement) => void): SVGSVGElement {
   const clone = src.cloneNode(true) as SVGSVGElement;
   const a = [src, ...src.querySelectorAll('*')];
   const b = [clone, ...clone.querySelectorAll('*')];
@@ -32,11 +36,12 @@ export function standalone(src: SVGSVGElement, viewBox: [number, number, number,
       if (!v) continue;
       if (p === 'text-decoration') v = v.split(' ')[0] ?? v;
       if (p === 'font-weight') v = Number(v) >= 600 || v === 'bold' ? 'bold' : 'normal';
-      // Polices standard : rendu identique en PDF et en image.
-      if (p === 'font-family') v = /mono|courier|menlo|consol/i.test(v) ? 'Courier, monospace' : /serif/i.test(v) && !/sans/i.test(v) ? 'Times, serif' : 'Helvetica, Arial, sans-serif';
+      // Polices incorporées au PDF (Inter, JetBrains Mono), repli sur les polices standard.
+      if (p === 'font-family') v = /mono|courier|menlo|consol/i.test(v) ? MONO : /serif/i.test(v) && !/sans/i.test(v) ? 'Times, serif' : SANS;
       style += `${p}:${v};`;
     }
     c.setAttribute('style', style);
+    decorate?.(el, c);
     c.removeAttribute('class');
   });
   for (const d of drop) d.remove();
@@ -66,8 +71,9 @@ export async function raster(svg: SVGSVGElement, w: number, h: number, type: 'im
 export interface Block { title: string; project: string; client: string; view: string; revision: string; site: string; date: string; address?: string; author?: string }
 
 /** PDF vectoriel : le dessin ajusté dans la page, cartouche du site (modèle choisi, sinon le
- * premier actif) en bas à droite. */
-export async function pdf(svg: SVGSVGElement, w: number, h: number, paper: Paper, landscape: boolean, block: Block, template?: string | null): Promise<Blob> {
+ * premier actif) en bas à droite ; découpé en plusieurs feuilles quand le texte deviendrait
+ * illisible (moins de 6,5 pt), avec la légende des familles de signal. */
+export async function pdf(svg: SVGSVGElement, w: number, h: number, paper: Paper, landscape: boolean, block: Block, template?: string | null, extra: { legend?: LegendItem[] } = {}): Promise<Blob> {
   const kit = await import('./pdfkit');
   const doc = await kit.newDoc(paper as import('./pdfkit').PaperKey, landscape);
   const site = await kit.siteInfo();
@@ -76,7 +82,7 @@ export async function pdf(svg: SVGSVGElement, w: number, h: number, paper: Paper
     title: block.title, project: block.project, client: block.client, view: block.view, version: block.revision,
     site: block.site || site.name, date: block.date, format: `${paper} ${landscape ? 'paysage' : 'portrait'}`, sheet: '1', sheets: '1',
     logo: site.logo ?? '', address: block.address ?? '', author: block.author ?? '',
-  });
+  }, { tile: true, legend: extra.legend });
   return doc.output('blob');
 }
 
