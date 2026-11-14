@@ -1049,11 +1049,31 @@
     } catch (e) { fail(e); if (exp) exp.busy = false; }
     finally { ({ sel, multi, hl, armed, selAnn } = keep); }
   }
+  // Aperçu du câblage : toujours orthogonal (horizontal, vertical, horizontal), quelle que
+  // soit la position de la souris. En câblage multiple, chaque câble garde l'écart de ses
+  // ports jusqu'à l'arrivée et tourne sur sa propre colonne : faisceau parallèle, sans
+  // croisement ni convergence sur le pointeur.
+  const LANE = 10;
+  const elbow = (fx: number, fy: number, tx: number, ty: number, rank: number, n: number) => {
+    if (Math.abs(ty - fy) < 0.5) return `H${tx}`;
+    const right = tx >= fx, down = ty > fy;
+    // En descendant, les câbles du bas tournent les premiers ; en montant, ceux du haut.
+    const k = down ? n - 1 - rank : rank;
+    const cx = (fx + tx) / 2 + (k - (n - 1) / 2) * LANE * (right ? 1 : -1);
+    return `H${Math.round(cx)}V${ty}H${tx}`;
+  };
   const armedPreview = $derived.by(() => {
     if (!armed.length || !mouse) return '';
-    return armed.map((a, i) => { const P = portXY(a.ref); if (!P) return ''; const [x, y, s] = P; const mx = x + (s === 'r' ? 30 : -30);
-      const via = wps.map(([wx, wy]) => (cab.parallel === 'spread' ? `L${wx + i * 10} ${wy + i * 10}` : `L${wx} ${wy}`)).join('');
-      return `M${x} ${y}H${mx}${via}L${mouse![0]} ${mouse![1]}`; }).join(' ');
+    const pts = armed.map((a) => portXY(a.ref)).filter((P): P is NonNullable<typeof P> => !!P);
+    if (!pts.length) return '';
+    const n = pts.length, y0 = Math.min(...pts.map((P) => P[1]));
+    const order = [...pts.keys()].sort((i, j) => pts[i]![1] - pts[j]![1]);
+    return pts.map((P, i) => {
+      const rank = order.indexOf(i), [x, y, s] = P, mx = x + (s === 'r' ? 30 : -30), dy = y - y0;
+      let d = `M${x} ${y}H${mx}`, cx = mx, cy = y;
+      for (const [wx, wy] of wps) { const tx = wx, ty = wy + dy; d += elbow(cx, cy, tx, ty, rank, n); cx = tx; cy = ty; }
+      return d + elbow(cx, cy, mouse![0], mouse![1] + dy, rank, n);
+    }).join(' ');
   });
   const endName = (ref: string, info: Far | null) => { const n = nodeOf(ref); const p = n?.ports.find((x) => x.ref === ref); return n && p ? `${n.label} › ${p.label}` : info ? `${info.label} › ${info.port}` : 'Extrémité manquante'; };
 </script>
@@ -1262,7 +1282,7 @@
             {/if}
             {#each [['a', selected.a], ['b', selected.b]] as [end, ref]}{@const P = portXY(ref)}{#if P && !selected.fields.external}<circle class="end-h" data-handle="end:{end}" cx={P[0]} cy={P[1]} r="7"><title>Glisser vers un autre port pour rebrancher</title></circle>{/if}{/each}
           {/if}
-          {#if rewire && selected}{@const O = portXY(rewire.end === 'a' ? selected.b : selected.a)}{#if O}<path class="preview" d="M{O[0]} {O[1]}L{rewire.at[0]} {rewire.at[1]}" />{/if}{/if}
+          {#if rewire && selected}{@const O = portXY(rewire.end === 'a' ? selected.b : selected.a)}{#if O}<path class="preview" d="M{O[0]} {O[1]}H{O[0] + (O[2] === 'r' ? 30 : -30)}{elbow(O[0] + (O[2] === 'r' ? 30 : -30), O[1], rewire.at[0], rewire.at[1], 0, 1)}" />{/if}{/if}
           {#each wps as w}<circle class="wp" cx={w[0]} cy={w[1]} r="4" />{/each}
         </g>
       </svg>
