@@ -383,7 +383,7 @@ export class RackScene {
     const waterproof = spec.kind === 'waterproof_case';
     const W = (spec.width_mm ?? (isCase ? 560 : 600)) / 1000;
     const D = (spec.depth_mm ?? (isCase ? 600 : 800)) / 1000;
-    const base = isCase ? (spec.wheels ? 0.16 : 0.03) : spec.wheels ? 0.13 : 0.1;
+    const base = isCase ? (spec.wheels ? 0.16 : 0.03) : spec.wheels ? 0.1 : 0.04; // socle de baie fin
     const top = isCase ? 0.06 : 0.12;
     const H = spec.height_mm ? spec.height_mm / 1000 : units * U + base + top;
     const y0 = base + (H - base - top - units * U) / 2 + (isCase ? 0.025 : 0); // bas de la U1
@@ -417,7 +417,7 @@ export class RackScene {
       for (let i = 0; i < 6; i++) add(new THREE.BoxGeometry(W * 0.55, 0.002, 0.012), m.cavity, 0, 0.0065, -D / 4 + i * (D / 2) / 5, roof, false);
       this.root.add(roof);
       // Socle.
-      add(new THREE.BoxGeometry(W - 0.01, base - (spec.wheels ? 0.06 : 0.015), D - 0.01), m.powder, 0, (base + (spec.wheels ? 0.06 : 0.015)) / 2, 0);
+      add(new THREE.BoxGeometry(W - 0.03, base - (spec.wheels ? 0.06 : 0.012), D - 0.03), m.powder, 0, (base + (spec.wheels ? 0.06 : 0.012)) / 2, 0);
       for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
         if (spec.wheels) this.castor(sx * (W / 2 - 0.06), sz * (D / 2 - 0.06), 0.06);
         else { add(new THREE.CylinderGeometry(0.018, 0.022, 0.012, 20), m.rubber, sx * (W / 2 - 0.05), 0.006, sz * (D / 2 - 0.05)); add(new THREE.CylinderGeometry(0.006, 0.006, 0.02, 12), m.nickel, sx * (W / 2 - 0.05), 0.02, sz * (D / 2 - 0.05)); }
