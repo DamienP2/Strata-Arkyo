@@ -280,7 +280,11 @@ fn element_detail(d: &strata_domain::project::ContainerData) -> String {
         K::Desk => format!(
             "{kind} · {} poste{} · mobilier, éclairage et câblage des postes",
             d.details.positions.len(),
-            if d.details.positions.len() > 1 { "s" } else { "" }
+            if d.details.positions.len() > 1 {
+                "s"
+            } else {
+                ""
+            }
         ),
         K::Zone => format!("{kind} · surface prête, protégée et balisée"),
         K::CameraPosition => format!("{kind} · support, sécurité et passage des câbles"),

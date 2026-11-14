@@ -169,8 +169,9 @@ export function synopticSvg(syn: { nodes: any[]; cables: any[]; layout: Record<s
   const dash = (f: string) => { const d = familyDash(f || null); return d.length ? ` stroke-dasharray="${d.map((x) => x * 2).join(' ')}"${Math.min(...d) <= 1 ? ' stroke-linecap="round"' : ''}` : ''; };
   for (const c of syn.cables) {
     if (c.fields?.attach) continue;
-    const A = portXY(c.a), B = portXY(c.b), col = esc(c.fields?.color ?? '#5B636D');
-    const fam = famOf(c.a) || famOf(c.b); if (A || B) fams.add(fam);
+    // Couleur du câble : uniquement la catégorie de son signal.
+    const fam = famOf(c.a) || famOf(c.b); if (portXY(c.a) || portXY(c.b)) fams.add(fam);
+    const A = portXY(c.a), B = portXY(c.b), col = esc(fam ? opts.fnColor(fam) : '#5B636D');
     if (A && B) {
       const ax = A[0] + (A[2] === 'l' ? -24 : 24), bx = B[0] + (B[2] === 'l' ? -24 : 24);
       out.push(`<path d="M${A[0]} ${A[1]} H${ax} L${bx} ${B[1]} H${B[0]}" fill="none" stroke="${col}" stroke-width="2"${dash(fam)}/>`);

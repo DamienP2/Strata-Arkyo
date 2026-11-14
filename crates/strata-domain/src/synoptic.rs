@@ -225,20 +225,14 @@ pub fn validate_cable(c: &mut CableFields) -> Vec<FieldError> {
     };
     c.number = clean(&c.number);
     c.notes = clean(&c.notes);
-    c.color = clean(&c.color);
+    // La couleur d'un câble vient uniquement de la catégorie de son signal : elle n'est pas
+    // saisie (une ancienne couleur manuelle est ignorée).
+    c.color = None;
     if c.number.as_ref().is_some_and(|n| n.chars().count() > 40) {
         e.push(err("number", "40 caractères au plus."));
     }
     if c.notes.as_ref().is_some_and(|n| n.chars().count() > 2000) {
         e.push(err("notes", "2 000 caractères au plus."));
-    }
-    if let Some(col) = &c.color {
-        let ok = col.len() == 7
-            && col.starts_with('#')
-            && col[1..].chars().all(|x| x.is_ascii_hexdigit());
-        if !ok {
-            e.push(err("color", "Couleur au format #RRVVBB."));
-        }
     }
     c.tags = c
         .tags
@@ -414,7 +408,9 @@ mod tests {
             color: Some("#12ab".into()),
             ..Default::default()
         };
-        assert_eq!(validate_cable(&mut f).len(), 1);
+        // La couleur saisie est ignorée : elle vient de la catégorie du signal.
+        assert!(validate_cable(&mut f).is_empty());
+        assert_eq!(f.color, None);
         assert_eq!(f.number.as_deref(), Some("V-001"));
     }
 }

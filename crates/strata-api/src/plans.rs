@@ -678,9 +678,7 @@ async fn floor_delete(
         .find(|f| f.id == b.id)
         .ok_or(ApiError::NotFound("Étage"))?;
     if floors.len() == 1 {
-        return Err(ApiError::Invalid(
-            "Un plan garde au moins un étage.".into(),
-        ));
+        return Err(ApiError::Invalid("Un plan garde au moins un étage.".into()));
     }
     st.store.delete_floor(&map, &b.id).await?;
     record(
@@ -875,10 +873,7 @@ async fn check_object(store: &Store, pid: &str, map: &str, b: &mut ObjBody) -> A
             .iter()
             .any(|c| &c.id == container_id)
         {
-            return Err(one(
-                "container_id",
-                "Cet élément n'est pas dans le projet.",
-            ));
+            return Err(one("container_id", "Cet élément n'est pas dans le projet."));
         }
     }
     if let ObjectData::Point {
@@ -1053,12 +1048,10 @@ async fn link_create(
 ) -> ApiResult<Json<Value>> {
     editing(&st, &m, &pid, &map).await?;
     let objs = st.store.plan_objects(&pid, Some(&map)).await?;
-    let p = objs.iter().find(|o| o.id == b.point_id).ok_or_else(|| {
-        one(
-            "point_id",
-            "Point de connexion introuvable sur ce plan.",
-        )
-    })?;
+    let p = objs
+        .iter()
+        .find(|o| o.id == b.point_id)
+        .ok_or_else(|| one("point_id", "Point de connexion introuvable sur ce plan."))?;
     let ObjectData::Point { ports, .. } = &p.data else {
         return Err(one("point_id", "Un lien part d'un point de connexion."));
     };
@@ -1167,10 +1160,7 @@ async fn route_set(
         objs.iter().any(|o| matches!(&o.data, ObjectData::Container { container_id, .. } if container_id == cid))
     };
     if !on_map(a) || !on_map(c) {
-        return Err(one(
-            "key",
-            "Posez d'abord les deux éléments sur ce plan.",
-        ));
+        return Err(one("key", "Posez d'abord les deux éléments sur ce plan."));
     }
     st.store
         .set_plan_route(&pid, &b.key, &map, &b.waypoints)

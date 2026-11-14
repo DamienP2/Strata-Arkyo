@@ -232,7 +232,10 @@ pub fn validate_details(kind: ContainerKind, d: &mut ElementDetails) -> Vec<Fiel
             let max = if kind == K::Desk { 24 } else { 1 };
             let mut ps = o.positions;
             if ps.len() > max {
-                e.push(err("details.positions", format!("{max} poste{} au plus.", if max > 1 { "s" } else { "" })));
+                e.push(err(
+                    "details.positions",
+                    format!("{max} poste{} au plus.", if max > 1 { "s" } else { "" }),
+                ));
             }
             let mut seen = std::collections::HashSet::new();
             for (k, p) in ps.iter_mut().enumerate() {

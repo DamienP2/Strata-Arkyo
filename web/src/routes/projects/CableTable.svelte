@@ -9,7 +9,7 @@
   import { can } from '../../lib/session.svelte';
   import { toast, fail } from '../../lib/toast.svelte';
   import { nf, pl } from '../../lib/format';
-  import { loadRefs, fnColor, refList } from '../../lib/catalog.svelte';
+  import { loadRefs, fnColor, refList, refById } from '../../lib/catalog.svelte';
   import Dialog from '../../components/Dialog.svelte';
   import AnomalyGroups from '../../components/AnomalyGroups.svelte';
   import type { Anomaly } from '../../lib/anomalies';
@@ -17,7 +17,7 @@
 
   interface End { port_ref: string; element: string; container_id: string | null; location: string; location_id: string | null; equipment: string; tag: string; port: string; connector: string; missing: boolean }
   interface Row { id: string; rev: number; number: string | null; color: string | null; notes: string | null; length_m: number | null; estimate_m: number | null; signal: string; family: string | null; a: End; b: End; warnings: string[] }
-  type Field = 'number' | 'color' | 'notes' | 'length_m';
+  type Field = 'number' | 'notes' | 'length_m';
 
   let { view }: { view: ProjectView } = $props();
   loadRefs();
@@ -142,7 +142,7 @@
     const sigColor = (r: Row) => { const sg = refList('signals').find((x) => x.name === r.signal) as any; return sg?.data?.color || (r.family ? fnColor(r.family) : null); };
     const { cableLabels } = await import('../../lib/labels');
     const kit = await import('../../lib/pdfkit');
-    const blob = await cableLabels(labelRows.map((r) => ({ number: String(val(r, 'number')), color: (val(r, 'color') as string | null) || sigColor(r), a: r.a, b: r.b })), sh, { perEnd: lbl.perEnd, skip: lbl.skip });
+    const blob = await cableLabels(labelRows.map((r) => ({ number: String(val(r, 'number')), color: r.family ? fnColor(r.family) : sigColor(r), a: r.a, b: r.b })), sh, { perEnd: lbl.perEnd, skip: lbl.skip });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `${kit.fileStem('Etiquettes', view.project.name)}.pdf`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
     lbl = null;
   }
@@ -194,7 +194,7 @@
         <th>N° {#if writable}<button class="fd" title="Recopier vers le bas en incrémentant" aria-label="Recopier les numéros vers le bas" onclick={() => fillDown('number')}>↓</button>{/if}</th>
         <th>Signal</th><th class="c-end">De</th><th class="c-end">Vers</th>
         <th class="num">Longueur (m) {#if writable}<button class="fd" title="Recopier vers le bas" aria-label="Recopier les longueurs vers le bas" onclick={() => fillDown('length_m')}>↓</button>{/if}</th>
-        <th>Couleur {#if writable}<button class="fd" title="Recopier vers le bas" aria-label="Recopier les couleurs vers le bas" onclick={() => fillDown('color')}>↓</button>{/if}</th>
+        <th title="Couleur de la catégorie du signal (non modifiable)">Couleur</th>
         <th class="c-notes">Notes {#if writable}<button class="fd" title="Recopier vers le bas" aria-label="Recopier les notes vers le bas" onclick={() => fillDown('notes')}>↓</button>{/if}</th>
         <th></th>
       </tr></thead>
@@ -207,7 +207,7 @@
             <td><span class="sig"><i class="dot" style="--c:{r.family ? fnColor(r.family) : 'var(--fg-3)'}"></i>{r.signal || '—'}</span></td>
             {@render end(r.a)}{@render end(r.b)}
             <td class="num"><input class="cell mono num" class:dirty={'length_m' in e} type="number" min="0" step="0.5" value={val(r, 'length_m') ?? ''} disabled={!writable} placeholder={r.estimate_m ? `≈ ${nf(r.estimate_m, 1)}` : ''} oninput={(x) => { const v = (x.target as HTMLInputElement).value; set(r, 'length_m', v === '' ? null : Number(v)); }} aria-label="Longueur"></td>
-            <td><input class="swatch" class:dirty={'color' in e} type="color" value={(val(r, 'color') as string) ?? (r.family ? fnColor(r.family) : '#8A919B')} disabled={!writable} oninput={(x) => set(r, 'color', (x.target as HTMLInputElement).value)} aria-label="Couleur"></td>
+            <td><span class="swatch-ro" style="background:{r.family ? fnColor(r.family) : '#8A919B'}" title={r.family ? (refById('functions', r.family)?.name ?? '') : 'Catégorie non définie'} aria-label="Couleur de la catégorie du signal"></span></td>
             <td class="c-notes"><input class="cell" class:dirty={'notes' in e} value={val(r, 'notes') ?? ''} disabled={!writable} maxlength="2000" oninput={(x) => set(r, 'notes', (x.target as HTMLInputElement).value)} aria-label="Notes" title={(val(r, 'notes') as string) || undefined}></td>
             <td>{#if r.warnings.length}<span class="warn-i" title={r.warnings.join(' ')}><Icon name="alert" size="sm" /></span>{/if}</td>
           </tr>
@@ -268,4 +268,5 @@
   .ct-issues { padding: 10px 14px; margin-bottom: 12px; }
   .ct-issues summary { cursor: pointer; font-weight: 600; display: flex; gap: 8px; align-items: center; color: var(--warn, #B78400); margin-bottom: 4px; }
   .ct-issues[open] summary { margin-bottom: 10px; }
+  .swatch-ro { display: inline-block; width: 28px; height: 18px; border-radius: 5px; vertical-align: middle; box-shadow: inset 0 0 0 1px rgba(0,0,0,.25); }
 </style>

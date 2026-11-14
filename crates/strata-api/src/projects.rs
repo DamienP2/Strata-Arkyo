@@ -956,7 +956,11 @@ async fn update_container(
             return Err(ApiError::Conflict(format!(
                 "{} {} : {}. Confirmez pour {} retirer de l'élévation.",
                 over.len(),
-                if over.len() > 1 { "éléments dépasseraient" } else { "élément dépasserait" },
+                if over.len() > 1 {
+                    "éléments dépasseraient"
+                } else {
+                    "élément dépasserait"
+                },
                 names.join(", "),
                 if over.len() > 1 { "les" } else { "le" }
             )));
@@ -1343,10 +1347,7 @@ async fn update_article(
                 None => false,
             };
             if !ok {
-                return Err(one(
-                    "accessory.circuit_id",
-                    "Circuit inconnu dans ce rack.",
-                ));
+                return Err(one("accessory.circuit_id", "Circuit inconnu dans ce rack."));
             }
         }
         let after = st.store.set_article_accessory(&id, b.rev, &acc).await?;

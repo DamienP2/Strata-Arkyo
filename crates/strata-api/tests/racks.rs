@@ -2072,7 +2072,7 @@ async fn cable_table_bulk_edit_and_export() {
         &url,
         Some(json!({"changes": [
             {"id": rows[2]["id"], "rev": rows[2]["rev"], "number": "V-11", "notes": "Retour réal"},
-            {"id": rows[0]["id"], "rev": rows[0]["rev"], "color": "#0E8550"},
+            {"id": rows[0]["id"], "rev": rows[0]["rev"], "notes": "Couleur ignorée", "color": "#0E8550"},
             {"id": rows[1]["id"], "rev": 99, "number": "X"}
         ]})),
         Some(&lea),
@@ -2081,8 +2081,26 @@ async fn cable_table_bulk_edit_and_export() {
     assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
     assert_eq!(r.body["updated"].as_array().unwrap().len(), 2);
     assert_eq!(r.body["conflicts"][0]["reason"], "stale");
-    let r = call(&app, "POST", &url, Some(json!({"changes": [{"id": rows[0]["id"], "rev": rows[0]["rev"].as_i64().unwrap() + 1, "color": "vert"}]})), Some(&lea)).await;
+    // Numéro trop long : refusé.
+    let r = call(&app, "POST", &url, Some(json!({"changes": [{"id": rows[0]["id"], "rev": rows[0]["rev"].as_i64().unwrap() + 1, "number": "N".repeat(41)}]})), Some(&lea)).await;
     assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
+    // La couleur ne se saisit pas : elle vient de la catégorie du signal.
+    let t = call(
+        &app,
+        "GET",
+        &format!("/api/projects/{pid}/cables/table"),
+        None,
+        Some(&o),
+    )
+    .await
+    .body;
+    assert!(
+        t["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|x| x["color"].is_null())
+    );
     let t = call(
         &app,
         "GET",

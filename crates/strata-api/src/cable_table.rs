@@ -138,7 +138,7 @@ async fn rows(store: &Store, pid: &str) -> ApiResult<Vec<Row>> {
             id: c.id.clone(),
             rev: c.rev,
             number: c.fields.number.clone(),
-            color: c.fields.color.clone(),
+            color: None,
             notes: c.fields.notes.clone(),
             length_m: c.fields.length_m,
             estimate_m: estimate(ea.as_ref(), eb.as_ref(), &containers, &routes),
@@ -273,7 +273,6 @@ async fn bulk(
             let txt = || v.as_str().map(str::to_string);
             match k.as_str() {
                 "number" => f.number = txt(),
-                "color" => f.color = txt(),
                 "notes" => f.notes = txt(),
                 "length_m" => f.length_m = v.as_f64(),
                 _ => {}
@@ -339,6 +338,14 @@ async fn export(
         .await?
         .ok_or(ApiError::NotFound("Projet"))?;
     let list = rows(&st.store, &pid).await?;
+    // Nom des catégories de signal (fonctions du catalogue) pour la colonne de l'export.
+    let fam_names: HashMap<String, String> = st
+        .store
+        .list_refs(Some(RefKind::Function))
+        .await?
+        .into_iter()
+        .map(|r| (r.id, r.name))
+        .collect();
     let headers: Vec<String> = [
         "Numéro",
         "Signal",
@@ -354,7 +361,7 @@ async fn export(
         "Vers : connecteur",
         "Longueur (m)",
         "Estimée (m)",
-        "Couleur",
+        "Catégorie de signal",
         "Notes",
         "À vérifier",
     ]
@@ -380,7 +387,11 @@ async fn export(
                 t(&r.b.connector),
                 Cell::Number(r.length_m),
                 Cell::Number(r.estimate_m),
-                t(r.color.as_deref().unwrap_or("")),
+                t(r.family
+                    .as_deref()
+                    .and_then(|f| fam_names.get(f))
+                    .map(String::as_str)
+                    .unwrap_or(r.family.as_deref().unwrap_or(""))),
                 t(r.notes.as_deref().unwrap_or("")),
                 t(&r.warnings.join(" ")),
             ]

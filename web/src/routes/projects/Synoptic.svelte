@@ -372,7 +372,9 @@
   }
   const portColor = (p: Port | undefined) => (p?.family ? fnColor(p.family) : refById('connectors', p?.connector)?.data?.color ?? '#8A919B');
   const portByRef = (ref: string) => nodeOf(ref)?.ports.find((p) => p.ref === ref);
-  const cableColor = (c: CableV) => c.fields.color ?? portColor(portByRef(c.a) ?? portByRef(c.b));
+  // Couleur d'un câble : uniquement la catégorie de son signal (non modifiable) ; gris neutre
+  // quand aucune catégorie n'est définie.
+  const cableColor = (c: CableV) => { const f = portByRef(c.a)?.family ?? portByRef(c.b)?.family; return f ? fnColor(f) : '#8A919B'; };
   const used = $derived(new Set(syn?.cables.flatMap((c) => [c.a, c.b]) ?? []));
   const short = (c: string) => { const n = refById('connectors', c)?.name ?? c; const s = n.replace(/\s*\/.*$/, ''); return s.length > 9 ? s.split(/\s+/)[0]!.slice(0, 9) : s; };
   const dups = $derived.by(() => { const seen = new Map<string, number>(); for (const c of syn?.cables ?? []) if (c.fields.number && !c.fields.attach) seen.set(c.fields.number, (seen.get(c.fields.number) ?? 0) + 1); return new Set([...seen].filter(([, n]) => n > 1).map(([x]) => x)); });
@@ -1668,7 +1670,7 @@
             {#each c.warnings as w}<div class="alert warn"><Icon name="alert" /><span>{w}</span></div>{/each}
             {#if c.fields.external && !c.fields.external.location_id}<ProjectLinks {pid} cable={c.id} />{/if}
             <div class="sh2">
-              <div class="field"><label for="cc">Couleur</label><input class="input" id="cc" type="color" style="padding:4px;height:40px" value={c.fields.color ?? cableColor(c)} disabled={!mine} onchange={(e) => patchSel({ color: (e.target as HTMLInputElement).value })}></div>
+              <div class="field"><span class="flabel">Couleur</span><span class="cat-col"><i style="background:{cableColor(c)}"></i>{refById('functions', portByRef(c.a)?.family ?? portByRef(c.b)?.family)?.name ?? 'Catégorie non définie'}</span><span class="help">Donnée par la catégorie du signal.</span></div>
               <div class="field"><label for="cl">Longueur réelle (m)</label><input class="input mono" id="cl" type="number" min="0" step="0.5" value={c.fields.length_m ?? ''} disabled={!mine} placeholder={c.estimate_m ? `≈ ${nf(c.estimate_m, 1)}` : 'À saisir'} onchange={(e) => { const v = (e.target as HTMLInputElement).value; patchSel({ length_m: v === '' ? null : Number(v) }); }}></div>
             </div>
             <div class="field"><label for="ch">Faisceau</label><select class="input" id="ch" disabled={!mine} value={c.fields.harness_id ?? ''} onchange={(e) => { const v = (e.target as HTMLSelectElement).value; if (v === '+') { newHarness = { name: '', color: '#2459E0' }; } else assign(v || null); }}><option value="">Aucun</option>{#each syn.harnesses as h}<option value={h.id}>{h.name}</option>{/each}{#if mine}<option value="+">+ Nouveau faisceau…</option>{/if}</select></div>
@@ -2036,4 +2038,6 @@
   @media (max-width: 700px) { .keys { grid-template-columns: 1fr; } }
   .preview { fill: none; stroke: var(--accent, #4F6BFF); stroke-width: 2; stroke-dasharray: 6 4; pointer-events: none; }
   @media (max-width: 1000px) { .syn-body, .syn-body.norail { grid-template-columns: 1fr; height: auto; } .rail { flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--line); padding: 6px; } .rail-sep { width: 1px; height: 24px; margin: 0 4px; } .syn-canvas, .syn-stage { height: 70vh; } .syn-side { border-left: 0; border-top: 1px solid var(--line); } }
+  .cat-col { display: inline-flex; align-items: center; gap: 8px; height: 36px; font-size: 14px; }
+  .cat-col i { width: 18px; height: 18px; border-radius: 5px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.25); }
 </style>
