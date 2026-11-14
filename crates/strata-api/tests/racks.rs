@@ -1984,8 +1984,8 @@ async fn numbering_and_validation() {
             .as_array()
             .unwrap()
             .iter()
-            .any(|i| i["code"] == 5),
-        "sans numéro"
+            .any(|i| i["code"] == 5 && i["subject"] == "Câble non numéroté"),
+        "sans numéro, nommé pour être retrouvé"
     );
 }
 

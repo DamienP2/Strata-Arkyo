@@ -1061,20 +1061,7 @@ impl Store {
             .bind(limit.clamp(1, 500))
             .fetch_all(&self.pool)
             .await?;
-        let parse = |s: Option<String>| s.and_then(|s| serde_json::from_str(&s).ok());
-        Ok(rows
-            .iter()
-            .map(|r| crate::AuditEntry {
-                id: r.get("id"),
-                at: r.get("at"),
-                actor_id: r.get("actor_id"),
-                action: r.get("action"),
-                object_type: r.get("object_type"),
-                object_id: r.get("object_id"),
-                before: parse(r.get("before")),
-                after: parse(r.get("after")),
-            })
-            .collect())
+        Ok(rows.iter().map(crate::audit_row).collect())
     }
 }
 

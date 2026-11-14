@@ -95,6 +95,13 @@
     rack: { label: 'Élément', icon: 'server' }, equipment: { label: 'Équipements', icon: 'cpu' }, panel: { label: 'Panel', icon: 'grid' },
     accessory: { label: 'Accessoire', icon: 'layers' }, adapter: { label: 'Adaptateurs', icon: 'zap' },
   };
+  // Ce que compte chaque famille de la liste à cocher.
+  const conns = (sh: Sheet) => sh.families.find((f) => f.key === 'connexions')?.total ?? 0;
+  const FAM: Record<string, { label: string; hint: string; note: (n: number, sh: Sheet) => string }> = {
+    materiel: { label: 'Matériel', hint: 'L’élément lui-même, puis chaque ligne de matériel (un modèle et ses exemplaires), panel, accessoire et adaptateur.', note: (n) => `${n} ligne${n > 1 ? 's' : ''} : élément et matériel` },
+    cables: { label: 'Lots de câbles', hint: 'Câbles à préparer, regroupés par faisceau ou, à défaut, par signal : un lot se coche quand tous ses câbles sont prêts.', note: (n, sh) => `${n} lot${n > 1 ? 's' : ''} pour ${conns(sh)} câble${conns(sh) > 1 ? 's' : ''}` },
+    connexions: { label: 'Connexions', hint: 'Un câble par ligne, à brancher sur cet élément (y compris ceux qui partent vers un autre élément), et les attaches d’adaptateurs.', note: (n) => `${n} câble${n > 1 ? 's' : ''} à brancher` },
+  };
   const locName = (id: string) => view.locations.find((l) => l.id === id)?.name ?? '';
   const total = $derived(sums?.reduce((a, s) => ({ d: a.d + s.done, t: a.t + s.total }), { d: 0, t: 0 }) ?? { d: 0, t: 0 });
 </script>
@@ -108,12 +115,12 @@
 {:else}
   <div class="ws">
     <aside class="ws-side card">
-      <div class="ws-all"><span class="flabel">Projet</span><b class="mono">{total.d} / {total.t}</b><span class="bar"><i style="width:{pct(total.d, total.t)}%"></i></span></div>
+      <div class="ws-all" title="Somme des listes à cocher de tous les éléments : l’élément lui-même, son matériel, ses lots de câbles et ses connexions. Un câble qui relie deux éléments se coche dans chacun des deux."><span class="flabel">Projet · lignes cochées</span><b class="mono">{total.d} / {total.t}</b><span class="muted small">dans {sums.length} élément{sums.length > 1 ? 's' : ''}</span><span class="bar"><i style="width:{pct(total.d, total.t)}%"></i></span></div>
       <nav aria-label="Éléments">
         {#each sums as s (s.id)}
           <button class="ws-c" class:on={s.id === cur} onclick={() => (cur = s.id)} aria-current={s.id === cur ? 'true' : undefined}>
             <span class="ring" style="--p:{pct(s.done, s.total)}" class:full={s.total > 0 && s.done === s.total}>{#if s.total > 0 && s.done === s.total}<Icon name="ok" size="sm" />{:else}<span class="mono">{pct(s.done, s.total)}</span>{/if}</span>
-            <span class="ws-ct"><b>{s.name}</b><span class="muted small">{locName(s.location_id)} · {s.done}/{s.total}</span></span>
+            <span class="ws-ct"><b>{s.name}</b><span class="muted small" title="{s.done} ligne{s.done > 1 ? 's' : ''} cochée{s.done > 1 ? 's' : ''} sur {s.total}">{locName(s.location_id)} · {s.done}/{s.total} ligne{s.total > 1 ? 's' : ''}</span></span>
           </button>
         {/each}
       </nav>
@@ -127,15 +134,15 @@
             <span class="eyebrow">Contrôles de construction</span>
             <h2>{sheet.container.name}</h2>
             <div class="cons"><select class="input sm" bind:value={cview} aria-label="Vue du dossier de construction"><option value="inventory">Inventaire</option><option value="cabling">Câblage</option><option value="equipment">Par équipement</option></select>{#each [['pdf', 'PDF'], ['csv', 'Tableur'], ['doc', 'Word']] as [f, l]}<button class="btn sm ghost" onclick={() => consExport(f as 'pdf' | 'csv' | 'doc')}><Icon name="download" size="sm" />{l}</button>{/each}</div>
-            <div class="ws-num"><b class="mono">{p.done}</b><span class="mono">/ {p.total}</span><span class="chip {p.total && p.done === p.total ? 'ok' : ''}">{pct(p.done, p.total)} %</span></div>
+            <div class="ws-num" title="Lignes cochées sur les lignes à contrôler de cet élément"><b class="mono">{p.done}</b><span class="mono">/ {p.total}</span><span class="muted small">lignes cochées</span><span class="chip {p.total && p.done === p.total ? 'ok' : ''}">{pct(p.done, p.total)} %</span></div>
             <span class="bar big"><i style="width:{pct(p.done, p.total)}%"></i></span>
           </div>
           <div class="ws-fams">
             {#each sheet.families as f (f.key)}
-              <div class="fam" class:empty={!f.total}>
-                <span class="flabel">{f.label}</span>
+              <div class="fam" class:empty={!f.total} title={FAM[f.key]?.hint}>
+                <span class="flabel">{FAM[f.key]?.label ?? f.label}</span>
                 <b class="mono">{f.done} / {f.total}</b>
-                {#if f.total}<span class="bar"><i style="width:{pct(f.done, f.total)}%"></i></span>{:else}<span class="muted small">Avec le câblage (synoptique)</span>{/if}
+                {#if f.total}<span class="bar"><i style="width:{pct(f.done, f.total)}%"></i></span><span class="muted small">{FAM[f.key]?.note(f.total, sheet) ?? ''}</span>{:else}<span class="muted small">Avec le câblage (synoptique)</span>{/if}
               </div>
             {/each}
           </div>
@@ -190,6 +197,7 @@
   .ws-head { padding: 20px 22px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 24px; align-items: end; }
   .ws-big h2 { font-size: 30px; margin: 4px 0 6px; }
   .ws-num { display: flex; gap: 8px; align-items: baseline; margin-bottom: 8px; }
+  .ws-num .small { align-self: center; margin-left: 4px; }
   .ws-num b { font-size: 44px; line-height: 1; letter-spacing: -.02em; }
   .ws-num > .mono:not(b) { font-size: 20px; color: var(--fg-3); }
   .ws-fams { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }

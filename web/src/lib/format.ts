@@ -31,6 +31,35 @@ export function relative(iso: string | null | undefined): string {
   return dateTime(iso);
 }
 
+/** Jour en titre de groupe : « Aujourd’hui », « Hier », sinon « Samedi 14 novembre 2026 ». */
+export function dayTitle(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(+d)) return iso;
+  const day = (x: Date) => x.toDateString();
+  const now = new Date();
+  if (day(d) === day(now)) return 'Aujourd’hui';
+  if (day(d) === day(new Date(now.getTime() - 86400000))) return 'Hier';
+  const s = d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/** Heure seule : « 07:03 ». */
+export function timeOf(iso: string): string {
+  const d = new Date(iso);
+  return isNaN(+d) ? iso : d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+}
+
+/** Regroupe des entrées datées par jour local, dans l'ordre reçu. */
+export function byDay<T extends { at: string }>(list: T[]): { key: string; title: string; items: T[] }[] {
+  const out: { key: string; title: string; items: T[] }[] = [];
+  for (const e of list) {
+    const key = new Date(e.at).toDateString();
+    const last = out[out.length - 1];
+    if (last && last.key === key) last.items.push(e); else out.push({ key, title: dayTitle(e.at), items: [e] });
+  }
+  return out;
+}
+
 export function initials(name: string): string {
   return name.split(/[\s.@_-]+/).filter(Boolean).slice(0, 2).map((p) => p[0]!.toUpperCase()).join('');
 }

@@ -74,7 +74,7 @@
     </div>
     <section class="card pp">
       <div class="tbl-wrap"><table class="tbl">
-        <thead><tr><th>Désignation</th><th class="num">Quantité</th><th>Approvisionnement</th><th>Statut</th><th>Note</th><th></th></tr></thead>
+        <thead><tr><th>Désignation</th><th class="num qh">Quantité<span>Besoin + Réserve = Total</span></th><th>Approvisionnement</th><th>Statut</th><th>Note</th><th></th></tr></thead>
         <tbody>
           {#each shown as l (l.key)}
             {@const r = rank(fam, l.status)}
@@ -85,18 +85,18 @@
                 {#if tab === 'cables'}<select class="input mdl" disabled={!writable} value={l.model_id ?? ''} onchange={(e) => model(l, (e.target as HTMLSelectElement).value)} aria-label="Modèle de câble"><option value="">Modèle à choisir…</option>{#each models as m}<option value={m.id}>{m.name}</option>{/each}</select>{/if}
               </td>
               <td class="num">
-                <span class="qty"><span class="mono" title="Minimum calculé">{l.min}</span> + <input class="input mono rsv" type="number" min="0" max="9999" value={l.reserve} disabled={!writable} onchange={(e) => set(l, { reserve: Math.max(0, Number((e.target as HTMLInputElement).value) || 0) })} aria-label="Réserve"> = <b class="mono">{l.total}</b></span>
+                <span class="qty"><span class="mono" title="Besoin calculé depuis l’inventaire et le câblage">{l.min}</span> + <input class="input mono rsv" type="number" min="0" max="9999" value={l.reserve} disabled={!writable} onchange={(e) => set(l, { reserve: Math.max(0, Number((e.target as HTMLInputElement).value) || 0) })} aria-label="Réserve" title="Réserve : quantité en plus du besoin"> = <b class="mono" title="Total à préparer">{l.total}</b></span>
               </td>
               <td><select class="input" disabled={!writable} value={l.supply ?? 'stock'} onchange={(e) => set(l, { supply: (e.target as HTMLSelectElement).value })} aria-label="Approvisionnement"><option value="stock">Stock</option><option value="purchase">Achat</option><option value="rental">Location</option></select></td>
               <td><select class="input st st{r}" class:done={r === fam.statuses.length - 1} disabled={!writable} value={l.status} onchange={(e) => set(l, { status: (e.target as HTMLSelectElement).value })} aria-label="Statut">{#each fam.statuses as s}<option value={s.key}>{s.label}</option>{/each}</select></td>
-              <td><input class="input note" value={l.note ?? ''} disabled={!writable} maxlength="1000" placeholder="—" onchange={(e) => set(l, { note: (e.target as HTMLInputElement).value })} aria-label="Note">{#if l.updated_at}<span class="muted small">{l.updated_by ?? ''} · {relative(l.updated_at)}</span>{/if}</td>
+              <td><input class="input note" value={l.note ?? ''} disabled={!writable} maxlength="1000" placeholder="" onchange={(e) => set(l, { note: (e.target as HTMLInputElement).value })} aria-label="Note">{#if l.updated_at}<span class="muted small">{l.updated_by ?? ''} · {relative(l.updated_at)}</span>{/if}</td>
               <td>{#if tab === 'cables'}<button class="btn sm ghost" onclick={() => toggle(l.key)} aria-expanded={open.has(l.key)}>{l.cabled}/{l.cables.length} câblé{l.cabled > 1 ? 's' : ''}<Icon name="chevd" size="sm" /></button>{/if}</td>
             </tr>
             {#if open.has(l.key)}
               <tr class="sub"><td colspan="6">
                 {#each l.cables as c (c.id)}
                   <div class="cb">
-                    <label class="toggle-row"><input type="checkbox" checked={!!c.done_at} disabled={!writable} onchange={(e) => cabled(c, (e.target as HTMLInputElement).checked)}><b class="mono">{c.number ?? 'Sans numéro'}</b></label>
+                    <label class="toggle-row"><input type="checkbox" checked={!!c.done_at} disabled={!writable} onchange={(e) => cabled(c, (e.target as HTMLInputElement).checked)}><b class="mono">{c.number ?? 'Câble non numéroté'}</b></label>
                     <span class="small">{c.from} → {c.to}</span>
                     <span class="muted small">{c.done_at ? `Câblé ${relative(c.done_at)}${c.done_by ? ` par ${c.done_by}` : ''}` : 'À câbler'}</span>
                     {#if c.done_at}<input class="input note" value={c.note ?? ''} disabled={!writable} placeholder="Note" onchange={(e) => cabled(c, true, (e.target as HTMLInputElement).value)} aria-label="Note de câblage">{/if}
@@ -108,7 +108,7 @@
         </tbody>
       </table></div>
     </section>
-    <p class="muted small">Quantité = minimum calculé depuis l’inventaire et le câblage, plus une réserve. Un câble sans modèle compte comme manquant ; choisir un modèle l’affecte à toute la ligne.</p>
+    <p class="muted small">Quantité : le besoin, calculé depuis l’inventaire et le câblage, plus la réserve que vous saisissez, donne le total à préparer. Un câble sans modèle compte comme manquant ; choisir un modèle l’affecte à toute la ligne.</p>
   {/if}
 {/if}
 
@@ -124,6 +124,7 @@
   .des { display: flex; flex-direction: column; gap: 3px; min-width: 240px; }
   .des .chip { align-self: flex-start; }
   .mdl { height: 34px; max-width: 260px; font-size: 13.5px; }
+  .qh span { display: block; font: 500 11px var(--font); letter-spacing: 0; text-transform: none; color: var(--fg-3); white-space: nowrap; }
   .qty { display: inline-flex; gap: 6px; align-items: center; white-space: nowrap; }
   .rsv { width: 64px; height: 34px; text-align: right; }
   td select.input { height: 36px; width: auto; min-width: 130px; font-size: 14px; }

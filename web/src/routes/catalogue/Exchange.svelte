@@ -49,7 +49,14 @@
       toast(`Retour arrière effectué : ${r.restored.items} fiche(s), ${r.restored.refs} élément(s) de référentiel.`); restoring = null; loadRefs(true); loadSnaps();
     } catch (e) { fail(e); }
   }
-  const SEC = (s: string) => s.startsWith('refs/') ? `Référentiel ${s.slice(5)}` : SECTIONS.find((x) => x[0] === s)?.[1] ?? s;
+  const REFS: Record<string, string> = { functions: 'fonctions', types: 'types', brands: 'marques', connectors: 'connecteurs', signals: 'signaux', categories: 'catégories', dimensions: 'dimensions' };
+  const SEC = (s: string) => s.startsWith('refs/') ? `Référentiel des ${REFS[s.slice(5)] ?? s.slice(5)}` : SECTIONS.find((x) => x[0] === s)?.[1] ?? s;
+  /** Sections d'un instantané en clair : les référentiels sont réunis en une mention. */
+  const secList = (ss: string[]) => {
+    const refs = ss.filter((x) => x.startsWith('refs/')).map((x) => REFS[x.slice(5)] ?? x.slice(5));
+    const rest = ss.filter((x) => !x.startsWith('refs/')).map(SEC);
+    return [...(refs.length ? [`Référentiels (${refs.join(', ')})`] : []), ...rest].join(' · ');
+  };
   const counts = (c: any) => `${c.added} ajouté(s), ${c.updated} mis à jour, ${c.unchanged} inchangé(s)${c.rejected ? `, ${c.rejected} refusé(s)` : ''}`;
 </script>
 
@@ -79,7 +86,7 @@
       <input type="file" accept=".json,application/json" bind:this={fileIn} hidden onchange={pick}>
     </div>
     {#if doc}
-      <p class="muted small">Exporté {doc.site ? `par ${doc.site} ` : ''}le {dateTime(doc.exported_at)} · moteur {doc.engine}.</p>
+      <p class="muted small">Exporté {doc.site ? `par ${doc.site} ` : ''}le {dateTime(doc.exported_at)} · version {doc.engine} de l’application.</p>
       <div style="display:flex;gap:14px;flex-wrap:wrap">{#each SECTIONS as [k, l]}<label class="toggle-row"><input type="checkbox" value={k} bind:group={importSel}>{l}</label>{/each}</div>
       <div class="field"><span class="flabel">Mode</span>
         <div class="seg"><button class:on={mode === 'merge'} onclick={() => (mode = 'merge')}>Fusionner</button><button class:on={mode === 'replace'} onclick={() => (mode = 'replace')}>Remplacer</button></div>
@@ -100,17 +107,18 @@
   </section>
 
   <section class="card">
-    <div class="card-head"><div><p class="eyebrow">Retour arrière</p><h2>Instantanés du catalogue</h2></div><span class="muted small">Pris avant chaque import ou échange · 20 gardés</span></div>
+    <div class="card-head"><div><p class="eyebrow">Retour arrière</p><h2>Instantanés du catalogue</h2></div><span class="muted small">Un état est enregistré avant chaque import ou échange ; les 20 derniers sont gardés.</span></div>
     <div class="tbl-wrap"><table class="tbl"><tbody>
       {#each snapshots as s (s.id)}
-        <tr><td class="mono" style="white-space:nowrap">{dateTime(s.created_at)}</td><td>{s.reason}<br><span class="muted small">{s.sections.map(SEC).join(', ')}</span></td><td><div class="dl-actions"><button class="btn sm" onclick={() => (restoring = s)}><Icon name="undo" size="sm" />Revenir</button></div></td></tr>
+        <tr><td class="mono" style="white-space:nowrap">{dateTime(s.created_at)}</td><td>{s.reason}<br><span class="muted small">{secList(s.sections)}</span></td><td><div class="dl-actions"><button class="btn sm" onclick={() => (restoring = s)}><Icon name="undo" size="sm" />Restaurer cet état…</button></div></td></tr>
       {:else}<tr><td class="empty">Aucun instantané pour l’instant.</td></tr>{/each}
     </tbody></table></div>
   </section>
 {/if}
 
 {#if restoring}
-  <Confirm title="Revenir à cet instantané ?" eyebrow={dateTime(restoring.created_at)} confirmLabel="Revenir" danger onconfirm={restore} onclose={() => (restoring = null)}>
-    <p>Les sections {restoring.sections.map(SEC).join(', ')} reprennent leur état du {dateTime(restoring.created_at)}. L’état actuel est photographié d’abord : ce retour arrière se défait lui aussi.</p>
+  <Confirm title="Restaurer le catalogue dans cet état ?" eyebrow={dateTime(restoring.created_at)} confirmLabel="Restaurer cet état" danger onconfirm={restore} onclose={() => (restoring = null)}>
+    <p>{secList(restoring.sections)} reprennent leur état du {dateTime(restoring.created_at)} ; les fiches ajoutées ou modifiées depuis sont remplacées.</p>
+    <p class="muted small">L’état actuel est d’abord enregistré dans un nouvel instantané : cette restauration peut elle aussi être annulée.</p>
   </Confirm>
 {/if}

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { registerLeaveGuard } from '../../lib/router.svelte';
+  import { registerLeaveGuard, route, navigate } from '../../lib/router.svelte';
   // Mode tableau des câbles (section 10.9) : tous les câbles du projet, filtrables, avec les
   // deux extrémités et le signal. Saisie en série des numéros, couleurs, notes et longueurs,
   // recopie vers le bas, enregistrement groupé ; écran partagé en direct.
@@ -11,9 +11,11 @@
   import { nf } from '../../lib/format';
   import { loadRefs, fnColor, refList } from '../../lib/catalog.svelte';
   import Dialog from '../../components/Dialog.svelte';
+  import AnomalyGroups from '../../components/AnomalyGroups.svelte';
+  import type { Anomaly } from '../../lib/anomalies';
   import type { ProjectView } from '../../lib/projects';
 
-  interface End { port_ref: string; element: string; container_id: string | null; location: string; location_id: string | null; equipment: string; tag: string; port: string; connector: string }
+  interface End { port_ref: string; element: string; container_id: string | null; location: string; location_id: string | null; equipment: string; tag: string; port: string; connector: string; missing: boolean }
   interface Row { id: string; rev: number; number: string | null; color: string | null; notes: string | null; length_m: number | null; estimate_m: number | null; signal: string; family: string | null; a: End; b: End; warnings: string[] }
   type Field = 'number' | 'color' | 'notes' | 'length_m';
 
@@ -32,6 +34,15 @@
   let onlyWarn = $state(false);
   let saving = $state(false);
   let focusRow = $state<string | null>(null);
+  // Arrivée depuis une anomalie (vue d'ensemble, validation) : ?cable=id1,id2 ne montre qu'eux.
+  const only = $derived(new Set(route.query.get('cable')?.split(',').filter(Boolean) ?? []));
+  const showAllCables = () => navigate(`/projets/${pid}/cables`);
+  interface Issue { severity: string; title: string; subject: string; place: string | null; detail: string; cables: string[] }
+  let issues = $state<Issue[]>([]);
+  async function loadIssues() { try { issues = (await api.get<{ issues: Issue[] }>(`/projects/${pid}/synoptic/validate`)).issues.filter((i) => i.cables.length && i.severity !== 'info'); } catch { issues = []; } }
+  // Anomalies des câbles, regroupées par type ; un clic filtre la liste sur le câble.
+  const anomalies = $derived<Anomaly<Issue>[]>(issues.map((i) => ({ group: i.title, severity: i.severity, subject: i.subject, place: i.place, detail: i.detail, href: `/projets/${pid}/cables?cable=${i.cables.join(',')}`, src: i })));
+  const groupHref = (g: { items: Anomaly<Issue>[] }) => `/projets/${pid}/cables?cable=${[...new Set(g.items.flatMap((a) => a.src?.cables ?? []))].join(',')}`;
 
   async function load() {
     try {
@@ -42,7 +53,7 @@
       picked = new Set([...picked].filter((id) => r.rows.some((x) => x.id === id)));
     } catch (e) { fail(e); }
   }
-  $effect(() => { view; untrack(() => { if (!saving) load(); }); });
+  $effect(() => { view; untrack(() => { if (!saving) { load(); loadIssues(); } }); });
 
   const val = (r: Row, f: Field) => (f in (edits[r.id] ?? {}) ? edits[r.id]![f] : r[f]);
   function set(r: Row, f: Field, v: string | number | null) {
@@ -55,6 +66,7 @@
   $effect(() => registerLeaveGuard(() => dirty > 0));
   const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
   const shown = $derived((rows ?? []).filter((r) => {
+    if (only.size && !only.has(r.id)) return false;
     if (onlyMissing && val(r, 'number')) return false;
     if (onlyWarn && !r.warnings.length) return false;
     if (fam && r.family !== fam) return false;
@@ -138,6 +150,12 @@
 
 <svelte:window onbeforeunload={(e) => { if (dirty > 0) e.preventDefault(); }} />
 
+{#snippet end(x: End)}
+  {#if x.missing}<td class="end gone"><b>Extrémité supprimée</b><span class="muted small">L’équipement ou le port n’existe plus.</span></td>
+  {:else if !x.port}<td class="end"><b>{x.equipment}</b><span class="muted small">{x.location}</span></td>
+  {:else}<td class="end"><b>{x.equipment} <span class="mono muted">{x.tag}</span></b><span class="muted small">{x.element} › <b class="pt">{x.port}</b>{#if x.connector}{' · '}{x.connector}{/if}</span></td>{/if}
+{/snippet}
+
 {#if !rows}<span class="spin"></span>
 {:else}
   <div class="ct-bar">
@@ -150,6 +168,11 @@
     <label class="toggle-row small"><input type="checkbox" bind:checked={onlyMissing}>Sans numéro</label>
     <label class="toggle-row small"><input type="checkbox" bind:checked={onlyWarn}>À vérifier</label>
   </div>
+  {#if only.size}
+    <div class="alert info ct-only"><Icon name="info" /><span>Liste filtrée sur {only.size > 1 ? `les ${only.size} câbles concernés` : 'le câble concerné'} par une anomalie.</span><button class="btn sm" onclick={showAllCables}>Afficher tous les câbles</button></div>
+  {:else if anomalies.length}
+    <details class="card ct-issues"><summary><Icon name="alert" size="sm" />{anomalies.length} anomalie{anomalies.length > 1 ? 's' : ''} sur les câbles</summary><AnomalyGroups list={anomalies} {groupHref} groupLink="Filtrer la liste" /></details>
+  {/if}
   <div class="ct-bar">
     <span class="muted small">{shown.length} / {rows.length} câble{rows.length > 1 ? 's' : ''}{picked.size ? ` · ${picked.size} choisi${picked.size > 1 ? 's' : ''}` : ''}</span>
     <span style="flex:1"></span>
@@ -181,8 +204,7 @@
             <td class="ck"><input type="checkbox" checked={picked.has(r.id)} onchange={() => togglePick(r.id)} aria-label="Choisir {r.number ?? 'ce câble'}"></td>
             <td><input class="cell mono" class:dirty={'number' in e} value={val(r, 'number') ?? ''} disabled={!writable} placeholder="—" maxlength="40" oninput={(x) => set(r, 'number', (x.target as HTMLInputElement).value.trim())} aria-label="Numéro"></td>
             <td><span class="sig"><i class="dot" style="--c:{r.family ? fnColor(r.family) : 'var(--fg-3)'}"></i>{r.signal || '—'}</span></td>
-            <td class="end"><b>{r.a.equipment} <span class="mono muted">{r.a.tag}</span></b><span class="muted small">{r.a.element} › <b class="pt">{r.a.port}</b> · {r.a.connector}</span></td>
-            <td class="end"><b>{r.b.equipment} <span class="mono muted">{r.b.tag}</span></b><span class="muted small">{r.b.element} › <b class="pt">{r.b.port}</b> · {r.b.connector}</span></td>
+            {@render end(r.a)}{@render end(r.b)}
             <td class="num"><input class="cell mono num" class:dirty={'length_m' in e} type="number" min="0" step="0.5" value={val(r, 'length_m') ?? ''} disabled={!writable} placeholder={r.estimate_m ? `≈ ${nf(r.estimate_m, 1)}` : ''} oninput={(x) => { const v = (x.target as HTMLInputElement).value; set(r, 'length_m', v === '' ? null : Number(v)); }} aria-label="Longueur"></td>
             <td><input class="swatch" class:dirty={'color' in e} type="color" value={(val(r, 'color') as string) ?? (r.family ? fnColor(r.family) : '#8A919B')} disabled={!writable} oninput={(x) => set(r, 'color', (x.target as HTMLInputElement).value)} aria-label="Couleur"></td>
             <td><input class="cell" class:dirty={'notes' in e} value={val(r, 'notes') ?? ''} disabled={!writable} maxlength="2000" oninput={(x) => set(r, 'notes', (x.target as HTMLInputElement).value)} aria-label="Notes"></td>
@@ -234,4 +256,10 @@
   .fd { margin-left: 4px; width: 22px; height: 22px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); cursor: pointer; font-size: 12px; line-height: 1; }
   .fd:hover { background: var(--surface-2); }
   .warn-i { color: var(--warn, #B78400); }
+  .end.gone b { color: var(--warn, #B78400); }
+  .ct-only { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
+  .ct-only span { flex: 1; }
+  .ct-issues { padding: 10px 14px; margin-bottom: 12px; }
+  .ct-issues summary { cursor: pointer; font-weight: 600; display: flex; gap: 8px; align-items: center; color: var(--warn, #B78400); margin-bottom: 4px; }
+  .ct-issues[open] summary { margin-bottom: 10px; }
 </style>

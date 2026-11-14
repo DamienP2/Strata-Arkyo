@@ -32,6 +32,8 @@
     if (selCont !== 'free' && !conts.some((c) => c.id === selCont)) selCont = conts[0]?.id ?? (selLoc ? 'free' : null);
   });
   const loc = $derived(view.locations.find((l) => l.id === selLoc));
+  // Un emplacement ne se supprime que vide (ni élément ni matériel) : le bouton le dit avant.
+  const busyLoc = $derived(!!loc && (loc.totals.containers > 0 || view.articles.some((a) => a.location_id === loc.id)));
   const conts = $derived(view.containers.filter((c) => c.location_id === selLoc));
   const cont = $derived(view.containers.find((c) => c.id === selCont) ?? null);
   // Les modules glissés dans un châssis s'affichent sous leur châssis, pas comme des lignes à part.
@@ -206,7 +208,7 @@
     const d = confirmDel!;
     try {
       await api.del(d.kind === 'container' ? `/containers/${d.id}` : d.kind === 'article' ? `/articles/${d.id}` : `/locations/${d.id}`);
-      toast('Supprimé.'); confirmDel = null; await reload();
+      toast(d.kind === 'location' ? `Emplacement « ${d.name} » supprimé.` : d.kind === 'container' ? `Élément « ${d.name} » supprimé, avec son contenu.` : `« ${d.name} » retiré de l’inventaire.`); confirmDel = null; await reload();
     } catch (e) { fail(e); confirmDel = null; }
   }
   async function doMove() {
@@ -234,6 +236,15 @@
     queue.set(i.id, next);
   }
   const pct = (v: number, max: number | null | undefined) => (max ? (v / max) * 100 : 0);
+  /** Dépassements d'un élément, en clair : « 14 U de matériel pour 6 U disponibles ». */
+  function overs(c: Container): string[] {
+    const t = c.totals;
+    return [
+      t.over_u && `${nf(t.used_u, t.used_u % 1 ? 1 : 0)} U de matériel pour ${c.height_u} U disponibles`,
+      t.over_weight && `${nf(t.weight_kg, 1)} kg pour ${nf(c.max_weight_kg ?? 0)} kg admis`,
+      t.over_power && `${nf(t.power_w)} W pour ${nf(c.max_power_w ?? 0)} W admis`,
+    ].filter(Boolean) as string[];
+  }
   /** Blocs de la mini-baie : chaque article rackable, de bas en haut, à l'échelle. */
   function blocks(c: Container) {
     const total = c.height_u ?? 1;
@@ -267,7 +278,7 @@
         <div><p class="eyebrow">Emplacement · code câble {loc.code}</p><h2 style="font:720 30px/1.1 var(--display);letter-spacing:-.03em">{loc.name}</h2><p class="muted small">{nf(loc.totals.weight_kg, 1)} kg · {nf(loc.totals.power_w)} W</p></div>
         {#if writable}<div class="head-actions">
           <button class="btn ghost d-only" onclick={() => (locEdit = { id: loc.id, rev: loc.rev, name: loc.name, code: loc.code })}><Icon name="pen" size="sm" />Renommer</button>
-          <button class="btn ghost danger d-only" title="Supprimer l’emplacement" aria-label="Supprimer l’emplacement" onclick={() => (confirmDel = { kind: 'location', id: loc.id, name: loc.name })}><Icon name="trash" size="sm" /></button>
+          <span class="d-only" title={busyLoc ? `Impossible de supprimer « ${loc.name} » : il contient encore ${loc.totals.containers ? `${loc.totals.containers} élément${loc.totals.containers > 1 ? 's' : ''}` : 'du matériel'}. Déplacez ou supprimez son contenu d’abord.` : 'Supprimer l’emplacement'}><button class="btn ghost danger" disabled={busyLoc} aria-label="Supprimer l’emplacement" onclick={() => (confirmDel = { kind: 'location', id: loc.id, name: loc.name })}><Icon name="trash" size="sm" /></button></span>
           <div class="menu-wrap">
             <button class="btn" aria-haspopup="menu" aria-expanded={menuOpen} onclick={() => (menuOpen = !menuOpen)}><Icon name="copy" size="sm" /><span class="d-only">Modèles</span><span class="m-only">Actions</span><Icon name="chevd" size="sm" /></button>
             {#if menuOpen}
@@ -293,7 +304,7 @@
               {#if c.rackable}<span class="mini-rack" class:case={c.kind !== 'rack'}>{#each blocks(c) as b}<i style="height:{b.h}%;--c:{b.color}"></i>{/each}</span>{:else}<span class="kind-vis"><KindIll kind={c.kind} size={78} /></span>{/if}
             </span>
             <span class="cont-info">
-              <span class="cont-top"><span class="chip">{CONTAINER_KINDS[c.kind].label}</span>{#if c.wheels}<span class="chip">Roulettes</span>{/if}{#if t.over_weight || t.over_power || t.over_u}<span class="chip err"><Icon name="alert" />Alerte</span>{/if}</span>
+              <span class="cont-top"><span class="chip">{CONTAINER_KINDS[c.kind].label}</span>{#if c.wheels}<span class="chip">Roulettes</span>{/if}{#if t.over_weight || t.over_power || t.over_u}<span class="chip err"><Icon name="alert" />Dépassement</span>{/if}</span>
               <b class="cont-name">{c.name}</b>
               <span class="mono small muted">{c.cable_code} · {specLine(c)}</span>
               <span class="meters">
@@ -301,6 +312,7 @@
                 <span class="meter" class:err={t.over_weight}><span>Poids</span><span class="mono">{nf(t.weight_kg, 1)}{c.max_weight_kg ? ` / ${nf(c.max_weight_kg)}` : ''} kg</span>{#if c.max_weight_kg}<Vu value={pct(t.weight_kg, c.max_weight_kg)} mode="load" n={24} />{/if}</span>
                 <span class="meter" class:err={t.over_power}><span>Conso</span><span class="mono">{nf(t.power_w)}{c.max_power_w ? ` / ${nf(c.max_power_w)}` : ''} W</span>{#if c.max_power_w}<Vu value={pct(t.power_w, c.max_power_w)} mode="load" n={24} />{/if}</span>
               </span>
+              {#each overs(c) as o}<span class="over small">Dépassement : {o}</span>{/each}
             </span>
           </button>
         {/each}
@@ -325,7 +337,7 @@
           <DeskView positions={cont.details.positions} gear={gearOf(cont)} {writable} onsave={(ps) => saveDetails(cont, { ...cont.details, positions: ps })} />
         {/if}
         {#if cont && (cont.totals.over_u || cont.totals.over_weight || cont.totals.over_power)}
-          <div class="alert err" style="margin-top:12px"><Icon name="alert" /><span>{[cont.totals.over_u && 'la hauteur disponible', cont.totals.over_weight && 'le poids maximum', cont.totals.over_power && 'la puissance maximum'].filter(Boolean).join(', ')} {cont.totals.over_u || cont.totals.over_weight || cont.totals.over_power ? 'dépassé(e)' : ''}.</span></div>
+          <div class="alert err" style="margin-top:12px"><Icon name="alert" /><span><b>Dépassement : {[cont.totals.over_u && 'hauteur', cont.totals.over_weight && 'poids', cont.totals.over_power && 'consommation'].filter(Boolean).join(', ')}.</b> {overs(cont).map((o) => o.charAt(0).toUpperCase() + o.slice(1)).join(' ; ')}.</span></div>
         {/if}
         <div class="tbl-wrap"><table class="tbl inv-tbl">
           <thead><tr><th class="c-id">ID</th><th>Libellé</th><th>Statut</th><th></th></tr></thead>
@@ -430,6 +442,7 @@
 {#if panelOf}<ProjectPanel article={panelOf} readonly={!writable} eyebrow="Panel du projet" onclose={() => (panelOf = null)} ondone={reload} />{/if}
 
 <style>
+  .over { color: var(--err); font-weight: 600; }
   .menu-wrap { position: relative; }
   .pop-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 40; min-width: 330px; display: flex; flex-direction: column; gap: 2px; padding: 6px; border-radius: 12px; background: var(--surface); box-shadow: var(--e3); }
   .pop-menu button { display: flex; align-items: flex-start; gap: 10px; padding: 8px 10px; border: 0; border-radius: 8px; background: none; text-align: left; color: var(--fg); }

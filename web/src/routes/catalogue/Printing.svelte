@@ -88,14 +88,14 @@
   <div class="grid">
     {#each tbs as t, i (t.key + i)}
       <article class="card it" class:off={!t.active}>
-        <div class="it-h"><b>{t.name}</b><span class="mono muted small">{t.key}</span>{#if t.builtin}<span class="chip sm">fourni</span>{/if}</div>
+        <div class="it-h"><b>{t.name}</b>{#if t.builtin}<span class="chip sm" title="Modèle d’origine, livré avec l’application">par défaut</span>{/if}</div>
         <svg class="tbp" viewBox="-1 -1 {Math.max(t.width, 10) + 2} {Math.max(t.height, 6) + 2}" aria-label="Aperçu du cartouche {t.name}">
           {#if !t.width}<text x="1" y="4" font-size="3" fill="currentColor" opacity=".5">Sans cartouche</text>{/if}
           <rect width={t.width} height={t.height} fill="none" stroke="currentColor" stroke-width=".4" />
           {#each t.zones as z}<rect x={z.x} y={z.y} width={z.w} height={z.h} fill="none" stroke="currentColor" stroke-width=".2" />{#if z.label}<text x={z.x + 1} y={z.y + 2.4} font-size="1.8" fill="currentColor" opacity=".6">{z.label.toUpperCase()}</text>{/if}<text x={z.x + 1} y={z.y + z.h - 1.4} font-size={Math.min(z.size * 0.35, z.h * 0.6)} font-weight={z.bold ? 700 : 400} fill="currentColor">{z.kind === 'logo' || z.value === 'logo' ? '[logo]' : z.kind === 'text' ? z.value : (SAMPLE[z.value] ?? z.value)}</text>{/each}
         </svg>
         <div class="it-a">
-          <span class="muted small">{t.paper} {t.landscape ? 'paysage' : 'portrait'} · {t.width} × {t.height} mm</span><span style="flex:1"></span>
+          <span class="muted small">{t.paper} {t.landscape ? 'paysage' : 'portrait'}{t.width && t.height ? ` · ${t.width} × ${t.height} mm` : ' · aucun cartouche imprimé'}</span><span style="flex:1"></span>
           {#if canSet}
             <label class="toggle-row small"><input type="checkbox" checked={t.active} onchange={(e) => { tbs[i]!.active = (e.target as HTMLInputElement).checked; dirtyTb = true; }}>Actif</label>
             <button class="icon-btn sm" aria-label="Monter" disabled={i === 0} onclick={() => { tbs = move(tbs, i, -1); dirtyTb = true; }}>↑</button>

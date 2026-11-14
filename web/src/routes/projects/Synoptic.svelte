@@ -19,6 +19,8 @@
   import { routeAll, rounded, simplify, orthoTo, offsetPath, type Routed, type Req as RouteReq } from '../../lib/cableroute';
   import ProjectLinks from '../../components/ProjectLinks.svelte';
   import ViewPicker from '../../components/ViewPicker.svelte';
+  import AnomalyGroups from '../../components/AnomalyGroups.svelte';
+  import type { Anomaly } from '../../lib/anomalies';
   import { sendCursor, sendSelection, type PresenceMember } from '../../lib/live.svelte';
   import { api, ApiError } from '../../lib/api';
   import { can } from '../../lib/session.svelte';
@@ -92,7 +94,7 @@
   $effect(() => { const ids = [...new Set([...(sel ? [sel] : []), ...multi])]; if (syn?.view) sendSelection(`project:${pid}/syn:${syn.view}`, ids); });
   let numbering = $state(false);
   let tab = $state<'cable' | 'issues' | 'layers' | 'harness'>('cable');
-  interface Issue { code: number; severity: 'error' | 'warning' | 'info'; title: string; detail: string; cables: string[]; nodes: string[]; view: string | null }
+  interface Issue { code: number; severity: 'error' | 'warning' | 'info'; title: string; subject: string; place: string | null; detail: string; cables: string[]; nodes: string[]; view: string | null }
   let issues = $state<{ counts: { error: number; warning: number; info: number }; issues: Issue[] } | null>(null);
   let hl = $state<{ cables: Set<string>; nodes: Set<string> }>({ cables: new Set(), nodes: new Set() });
   let pendingHl: Issue | null = null;
@@ -111,7 +113,21 @@
     hl = { cables: new Set(i.cables), nodes: new Set(i.nodes) };
     if (i.view && syn && i.view !== syn.view) { pendingHl = i; navigate(viewUrl(i.view)); return; }
     if (i.cables[0]) { sel = i.cables[0]; multi = new Set(i.cables); }
+    centerOn(i.cables[0] ? `[data-cable="${i.cables[0]}"]` : i.nodes[0] ? `[data-node="${i.nodes[0]}"]` : null);
   }
+  /** Centre la vue sur un câble ou un nœud (après son rendu). */
+  function centerOn(selector: string | null) {
+    if (!selector) return;
+    requestAnimationFrame(() => {
+      const el = svgEl?.querySelector<SVGGraphicsElement>(selector);
+      if (!el) return;
+      const b = el.getBBox(), r = svgEl.getBoundingClientRect();
+      if (k < 0.6) k = 0.8;
+      tx = r.width / 2 - (b.x + b.width / 2) * k; ty = r.height / 2 - (b.y + b.height / 2) * k;
+    });
+  }
+  // Anomalies de la validation et câbles à vérifier, regroupés par type.
+  const issueList = $derived<Anomaly<Issue>[]>((issues?.issues ?? []).map((i) => ({ group: i.title, severity: i.severity, subject: i.subject, place: i.place, detail: i.detail, src: i })));
   let armed = $state<Port[]>([]);
   // Barre de câblage : nombre de câbles, tracé automatique ou multipoint, style, câbles parallèles.
   type CabPrefs = { count: 'simple' | 'multiple'; mode: 'auto' | 'multipoint'; style: 'orthogonal' | 'rounded' | 'arrow'; parallel: 'stacked' | 'spread'; askModel: boolean };
@@ -149,7 +165,7 @@
       pos = s.overview ? { ...ovLayout(s.overview), ...s.layout } : { ...autoLayout(s.nodes.filter((n) => showEmpty || n.ports.length)), ...s.layout };
       if (sel && !s.cables.some((c) => c.id === sel)) sel = null;
       multi = new Set([...multi].filter((id) => s.cables.some((c) => c.id === id)));
-      if (pendingHl && pendingHl.view === s.view) { const i = pendingHl; pendingHl = null; if (i.cables[0]) { sel = i.cables[0]; multi = new Set(i.cables); } }
+      if (pendingHl && pendingHl.view === s.view) { const i = pendingHl; pendingHl = null; if (i.cables[0]) { sel = i.cables[0]; multi = new Set(i.cables); } setTimeout(() => centerOn(i.cables[0] ? `[data-cable="${i.cables[0]}"]` : i.nodes[0] ? `[data-node="${i.nodes[0]}"]` : null), 300); }
       validate();
       // La position de chaque nœud est enregistrée une fois : les zones et la validation en dépendent.
       if (s.lock?.mine && !s.overview) {
@@ -361,6 +377,12 @@
   const short = (c: string) => { const n = refById('connectors', c)?.name ?? c; const s = n.replace(/\s*\/.*$/, ''); return s.length > 9 ? s.split(/\s+/)[0]!.slice(0, 9) : s; };
   const dups = $derived.by(() => { const seen = new Map<string, number>(); for (const c of syn?.cables ?? []) if (c.fields.number && !c.fields.attach) seen.set(c.fields.number, (seen.get(c.fields.number) ?? 0) + 1); return new Set([...seen].filter(([, n]) => n > 1).map(([x]) => x)); });
   const warnCount = $derived(syn?.cables.filter((c) => c.warnings.length).length ?? 0);
+  // Câbles à vérifier : regroupés par constat, chacun nommé (numéro, sinon extrémité connue).
+  const toCheck = $derived<Anomaly<string>[]>((syn?.cables ?? []).flatMap((c) => c.warnings.map((w) => {
+    const ends = [endName(c.a, c.a_info), endName(c.b, c.b_info)].filter((x) => x !== 'Extrémité supprimée');
+    const gone = w.includes('n’existe') || w.includes("n'existe");
+    return { group: gone ? 'Extrémité manquante' : 'À vérifier', severity: 'warning', subject: c.fields.number ?? 'Câble non numéroté', place: c.fields.number ? null : (ends[0] ?? null), detail: w, src: c.id };
+  })));
   const selected = $derived(syn?.cables.find((c) => c.id === sel) ?? null);
 
   // ----- Vue : déplacement et zoom -----
@@ -1240,7 +1262,7 @@
     if (!armed.length || !mouse) return '';
     return bundle(armed, cab.mode === 'multipoint' ? wps : [], mouse, cab.parallel === 'spread' || cab.mode !== 'multipoint').map((b) => linePath(b.pts)).join(' ');
   });
-  const endName = (ref: string, info: Far | null) => { const n = nodeOf(ref); const p = n?.ports.find((x) => x.ref === ref); return n && p ? `${n.label} › ${p.label}` : info ? `${info.label} › ${info.port}` : 'Extrémité manquante'; };
+  const endName = (ref: string, info: Far | null) => { const n = nodeOf(ref); const p = n?.ports.find((x) => x.ref === ref); return n && p ? `${n.label} › ${p.label}` : info ? `${info.label} › ${info.port}` : 'Extrémité supprimée'; };
 </script>
 
 <svelte:window onkeydown={key} onkeyup={(e) => { if (e.key === ' ') spacePan = false; }} onpointerdown={(e) => { if (ctx && !(e.target as Element).closest('.ctx')) ctx = null; }} />
@@ -1374,7 +1396,7 @@
                 {#if s}
                   <g class="cable stub" data-cable={c.id} data-family={cabFam(c)} class:off={hiddenFam.has(famOf(c))} class:sel={multi.has(c.id) || sel === c.id} class:hl={hl.cables.has(c.id)} class:warn={c.warnings.length > 0} style="--c:{cableColor(c)}" role="button" tabindex="-1" onclick={(e) => pickCable(c.id, e)} onkeydown={() => {}}>
                     <path class="case" d={s.d} /><path class="vis" d={s.d} /><path class="hit" d={s.d} />
-                    <g class="far" transform="translate({s.dx > 0 ? s.ex + 4 : s.ex - 4} {s.ey - 11})"><rect x={s.dx > 0 ? 0 : -190} width="190" height="22" rx="6" /><text x={s.dx > 0 ? 8 : -182} y="15">{s.far?.external ? '↗' : '→'} {(s.far ? (s.far.external ? s.far.label : `${s.far.label} › ${s.far.port}`) : 'Extrémité manquante').slice(0, 30)}</text></g>
+                    <g class="far" transform="translate({s.dx > 0 ? s.ex + 4 : s.ex - 4} {s.ey - 11})"><rect x={s.dx > 0 ? 0 : -190} width="190" height="22" rx="6" /><text x={s.dx > 0 ? 8 : -182} y="15">{s.far?.external ? '↗' : '→'} {(s.far ? (s.far.external ? s.far.label : `${s.far.label} › ${s.far.port}`) : 'Extrémité supprimée').slice(0, 30)}</text></g>
                   </g>
                 {/if}
               {/if}
@@ -1586,9 +1608,8 @@
             {#if !issues}<span class="spin"></span>
             {:else}
               <div class="counts"><span class="cnt err"><b>{issues.counts.error}</b> erreur{issues.counts.error > 1 ? 's' : ''}</span><span class="cnt warn"><b>{issues.counts.warning}</b> avertissement{issues.counts.warning > 1 ? 's' : ''}</span><span class="cnt info"><b>{issues.counts.info}</b> info{issues.counts.info > 1 ? 's' : ''}</span></div>
-              {#each issues.issues as i, k (k)}
-                <button class="issue {i.severity}" onclick={() => goIssue(i)}><Icon name={i.severity === 'info' ? 'info' : 'alert'} size="sm" /><span><b>{i.title}</b><span class="muted small">{i.detail}</span></span></button>
-              {:else}<p class="muted">Aucune anomalie : le câblage est cohérent.</p>{/each}
+              {#if issues.issues.length}<AnomalyGroups compact list={issueList} onpick={(a) => a.src && goIssue(a.src)} />
+              {:else}<p class="muted">Aucune anomalie : le câblage est cohérent.</p>{/if}
               <button class="btn sm ghost" onclick={validate}><Icon name="refresh" size="sm" />Relancer</button>
             {/if}
           </section>
@@ -1686,9 +1707,7 @@
             <p class="muted small" style="margin:0">{mine ? 'Outil Câble (C) : cliquez ou glissez d’un port à l’autre ; les ports compatibles s’allument. Outil Sélection (V) : cliquez un nœud ou un câble, glissez le fond pour sélectionner au rectangle. Clic droit : actions. ? : raccourcis.' : 'Cliquez un câble ou un port câblé pour voir ses détails.'}</p>
             {#if warnCount}
               <span class="lbl-t" style="margin-top:8px">À vérifier</span>
-              {#each syn.cables.filter((x) => x.warnings.length) as w (w.id)}
-                <button class="warn-row" onclick={() => (sel = w.id)}><Icon name="alert" size="sm" /><span><b>{w.fields.number ?? 'Sans numéro'}</b><span class="muted small">{w.warnings.join(' ')}</span></span></button>
-              {/each}
+              <AnomalyGroups compact list={toCheck} onpick={(a) => { if (a.src) { sel = a.src; multi = new Set([a.src]); centerOn(`[data-cable="${a.src}"]`); } }} />
             {/if}
           </section>
         {/if}

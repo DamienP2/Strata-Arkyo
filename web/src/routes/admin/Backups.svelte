@@ -52,7 +52,8 @@
   let orphans = $state<{ id: string; project_name: string; label: string | null; created_at: string }[]>([]);
   async function loadPoints() { try { pInterval = (await api.get<{ interval_h: number }>('/site/points')).interval_h; orphans = (await api.get<{ points: typeof orphans }>('/points/orphans')).points; } catch { /* droits insuffisants */ } }
   loadPoints();
-  async function setInterval_(h: number) { try { pInterval = (await api.put<{ interval_h: number }>('/site/points', { interval_h: h })).interval_h; toast('Fréquence enregistrée.'); } catch (e) { fail(e); } }
+  const FREQ: [number, string][] = [[1, 'chaque heure'], [6, 'toutes les 6 h'], [24, 'chaque jour']];
+  async function setInterval_(h: number) { try { pInterval = (await api.put<{ interval_h: number }>('/site/points', { interval_h: h })).interval_h; toast('Fréquence des points de restauration enregistrée.'); } catch (e) { fail(e); } }
   async function restoreOrphan(o: (typeof orphans)[number]) { if (!(await ask({ title: `Restaurer le projet supprimé « ${o.project_name} » ?`, confirmLabel: 'Restaurer' }))) return; try { await api.post(`/points/${o.id}/restore`); toast('Projet restauré.'); await loadPoints(); } catch (e) { fail(e); } }
 </script>
 
@@ -62,10 +63,13 @@
     <div class="alert warn"><Icon name="alert" /><span style="flex:1">Une restauration de la sauvegarde du <b>{dateTime(st.pending_restore.created_at)}</b> s’appliquera au prochain démarrage du service.</span><button class="btn sm" onclick={cancelRestore}>Annuler</button></div>
   {/if}
   {#if st.last_error}<div class="alert err"><Icon name="alert" /><span>La dernière sauvegarde automatique a échoué : {st.last_error}</span></div>{/if}
+  {#if !st.last_success}
+    <div class="alert warn bk-none"><Icon name="alert" /><span><b>Aucune sauvegarde n’a encore été faite.</b> En cas de panne du serveur, rien ne pourrait être récupéré. Faites-en une maintenant ; la suivante sera prise automatiquement le {dateTime(st.next_auto)}.</span><button class="btn primary" onclick={create} disabled={!!busy}>{#if busy === 'create'}<span class="spin"></span>{:else}<Icon name="download" />{/if}Sauvegarder</button></div>
+  {/if}
 
   <div class="grid-2">
     <section class="card stack">
-      <div class="card-head"><div><p class="eyebrow">Dernière réussie</p><h2>{relative(st.last_success)}</h2></div></div>
+      <div class="card-head"><div><p class="eyebrow">Dernière sauvegarde réussie</p><h2>{st.last_success ? relative(st.last_success) : 'Aucune pour l’instant'}</h2></div></div>
       <p class="muted">Une sauvegarde automatique est prise chaque nuit à 03:00 ; les 7 dernières sont gardées. Prochaine : {dateTime(st.next_auto)}.</p>
       <div class="field"><label for="bl">Sauvegarder maintenant</label>
         <div style="display:flex;gap:8px"><input class="input" id="bl" bind:value={label} placeholder="Libellé facultatif, ex. « avant la finale »"><button class="btn primary" onclick={create} disabled={!!busy}>{#if busy === 'create'}<span class="spin"></span>{:else}<Icon name="download" />{/if}Sauvegarder</button></div>
@@ -79,6 +83,8 @@
   </div>
 
   <section class="card" style="padding:6px 18px 10px">
+    <div class="card-head" style="padding-top:12px"><h2>Sauvegardes disponibles</h2>{#if st.backups.length}<span class="muted small">{st.backups.length} dans le dossier</span>{/if}</div>
+    {#if st.backups.length}
     <div class="tbl-wrap">
       <table class="tbl">
         <thead><tr><th>Date</th><th>Type</th><th>Version</th><th class="num">Taille</th><th></th></tr></thead>
@@ -95,20 +101,28 @@
                 <button class="btn sm ghost danger" onclick={() => (deleting = b)} title="Supprimer"><Icon name="trash" size="sm" /></button>
               </div></td>
             </tr>
-          {:else}<tr><td colspan="5" class="empty">Aucune sauvegarde pour l’instant.</td></tr>{/each}
+          {/each}
         </tbody>
       </table>
     </div>
+    {:else}<p class="muted small" style="margin:10px 0 8px">Aucune sauvegarde dans ce dossier : elles apparaîtront ici, avec leur date, leur taille et un bouton pour restaurer.</p>{/if}
   </section>
 {:else}<span class="spin"></span>{/if}
 
 <section class="card stack" style="margin-top:20px">
   <div class="card-head"><div><h2>Points de restauration des projets</h2><span class="muted small">Un point automatique est pris si le projet a changé ; les 48 derniers sont gardés par projet.</span></div></div>
-  <div class="seg" role="group" aria-label="Fréquence">{#each [1, 6, 24] as h}<button class:on={pInterval === h} onclick={() => setInterval_(h)}>Toutes les {h} h</button>{/each}</div>
-  <h3 style="margin:10px 0 0;font-size:15px">Projets supprimés</h3>
+  <div class="bk-freq">
+    <span class="flabel" id="pfreq">Fréquence des points de restauration</span>
+    <div class="seg" role="group" aria-labelledby="pfreq">{#each FREQ as [h, l]}<button class:on={pInterval === h} aria-pressed={pInterval === h} onclick={() => setInterval_(h)}>{l}</button>{/each}</div>
+    <span class="muted small"><Icon name="check" size="sm" /> Enregistré : {FREQ.find(([h]) => h === pInterval)?.[1] ?? `toutes les ${pInterval} h`}</span>
+  </div>
+</section>
+
+<section class="card stack" style="margin-top:20px">
+  <div class="card-head"><div><h2>Projets supprimés</h2><span class="muted small">Un projet supprimé se récupère depuis son dernier point de restauration.</span></div></div>
   {#each orphans as o (o.id)}
     <div style="display:flex;gap:10px;align-items:center;border-top:1px solid var(--line);padding:6px 0"><span style="flex:1"><b>{o.project_name}</b> <span class="muted small">{o.label ?? 'point'} · {dateTime(o.created_at)}</span></span><button class="icon-btn sm" aria-label="Télécharger" onclick={() => download(`/points/${o.id}/download`)}><Icon name="download" size="sm" /></button><button class="btn sm" onclick={() => restoreOrphan(o)}>Restaurer</button></div>
-  {:else}<p class="muted small">Aucun projet supprimé n’a de point de restauration.</p>{/each}
+  {:else}<p class="muted small" style="margin:0">Aucun projet supprimé n’a de point de restauration.</p>{/each}
 </section>
 
 {#if restoring}
@@ -122,3 +136,10 @@
     <p>Le fichier {deleting.name} sera effacé du dossier des sauvegardes.</p>
   </Confirm>
 {/if}
+
+<style>
+  .bk-none { align-items: center; margin-bottom: 16px; }
+  .bk-none > span { flex: 1; }
+  .bk-freq { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .bk-freq .small { display: inline-flex; gap: 4px; align-items: center; }
+</style>

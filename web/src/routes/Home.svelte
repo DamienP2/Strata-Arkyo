@@ -65,7 +65,7 @@
       <a class="next" href="/admin/mises-a-jour">
         <span class="next-top"><span class="lbl-t">État du site</span></span>
         <span class="next-name">Strata Arkyo {site.version}</span>
-        <span class="next-sub">{site.available ? `La version ${site.available} est prête à installer.` : 'Le moteur est à jour.'}</span>
+        <span class="next-sub">{site.available ? `La version ${site.available} est prête à installer.` : 'L’application est à jour.'}</span>
         <span class="next-meta" style="grid-template-columns:1fr"><span><span class="lbl-t">Dernière sauvegarde</span><b>{relative(site.lastBackup)}</b></span></span>
       </a>
     {/if}
