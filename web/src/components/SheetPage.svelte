@@ -20,7 +20,17 @@
   const size = $derived(pageSize(sheet));
   const k = $derived(sheet.scale);
   const maxW = $derived(usableW(sheet));
-  const fit = (s: string, width: number, fs: number) => { const n = Math.max(1, Math.floor(width / (fs * 0.56))); return s.length > n ? s.slice(0, Math.max(1, n - 1)) + '…' : s; };
+  // Textes : jamais de points de suspension tant que c'est possible. Un texte un peu trop long
+  // est resserré à la largeur disponible (textLength) ; seul un texte vraiment trop long est
+  // raccourci, au dernier mot entier.
+  const est = (s: string, fs: number) => s.length * fs * 0.56;
+  const fit = (s: string, width: number, fs: number) => {
+    const max = Math.max(1, Math.floor((width * 1.6) / (fs * 0.56)));
+    if (s.length <= max) return s;
+    const cut = s.slice(0, max), sp = cut.lastIndexOf(' ');
+    return (sp > max * 0.6 ? cut.slice(0, sp) : cut).trimEnd();
+  };
+  const sq = (s: string, width: number, fs: number) => { const t = fit(s, width, fs); return est(t, fs) > width ? Math.max(1, width) : undefined; };
   const COLS: Record<string, number> = { full: 1, half: 2, third: 3, quarter: 4 };
   const color = (e: any) => (e.function ? fnColor(e.function) : '#8A919B');
   const block = $derived({ x: size[0] - MARGIN - BLOCK[0], y: size[1] - MARGIN - BLOCK[1] });
@@ -78,10 +88,10 @@
         {@const col = (s.index - 1) % per}
         <circle cx={ex + ew * 0.36 + (col + s.width / 2) * pw} cy={ey + (row + 0.5) * (eh / panel.height_u)} r={Math.min(pw * 0.36, (eh / panel.height_u) * 0.3)} fill="#FFFFFF" stroke={s.function ? fnColor(s.function) : '#2459E0'} stroke-width="0.25" />
       {/each}
-      <text x={ex + 2} y={ey + eh / 2 + fs * 0.35} font-family={F} font-size={fs} fill={INK}>{fit(e.label, ew * 0.33, fs)}</text>
+      <text x={ex + 2} y={ey + eh / 2 + fs * 0.35} font-family={F} font-size={fs} fill={INK} textLength={sq(e.label, ew * 0.33, fs)} lengthAdjust="spacingAndGlyphs">{fit(e.label, ew * 0.33, fs)}</text>
     {:else if eh >= 1.1}
       {@const carried = (r?.elements ?? []).filter((x) => x.placement.shelf_id === e.placement.id).map((x) => x.label)}
-      <text x={ex + (acc ? 1.2 : 2.2)} y={ey + eh / 2 + fs * 0.35} font-family={F} font-size={fs} fill={acc ? MUTE : INK} font-weight={acc ? 'normal' : 'bold'}>{fit(carried.length ? `${e.label} · ${carried.join(', ')}` : e.label, ew - (e.tag ? 14 : 4), fs)}</text>
+      <text x={ex + (acc ? 1.2 : 2.2)} y={ey + eh / 2 + fs * 0.35} font-family={F} font-size={fs} fill={acc ? MUTE : INK} font-weight={acc ? 'normal' : 'bold'} textLength={sq(carried.length ? `${e.label} · ${carried.join(', ')}` : e.label, ew - (e.tag ? 14 : 4), fs)} lengthAdjust="spacingAndGlyphs">{fit(carried.length ? `${e.label} · ${carried.join(', ')}` : e.label, ew - (e.tag ? 14 : 4), fs)}</text>
       {#if e.tag && ew > 24}<text x={ex + ew - 1.2} y={ey + eh / 2 + fs * 0.35} font-family="Courier, monospace" font-size={fs * 0.9} fill={MUTE} text-anchor="end">{e.tag}</text>{/if}
     {/if}
   {/each}
@@ -108,7 +118,7 @@
     {@const fs = Math.max(0.9, Math.min(2.4, eh * 0.42))}
     <rect x={ex} y={ey + 0.1} width={Math.max(0.4, ed)} height={eh - 0.2} fill={e.nature === 'accessory' ? '#EEF0F2' : '#F6F7F9'} stroke={LINE} stroke-width="0.22" />
     <rect x={front ? ex - 0.6 : ex + ed} y={ey + 0.1} width="0.6" height={eh - 0.2} fill={color(e)} />
-    {#if eh >= 1.1 && ed > 8}<text x={ex + (front ? 1.2 : ed - 1.2)} y={ey + eh / 2 + fs * 0.35} font-family={F} font-size={fs} fill={INK} text-anchor={front ? 'start' : 'end'}>{fit(e.label, ed - 2.4, fs)}</text>{/if}
+    {#if eh >= 1.1 && ed > 8}<text x={ex + (front ? 1.2 : ed - 1.2)} y={ey + eh / 2 + fs * 0.35} font-family={F} font-size={fs} fill={INK} text-anchor={front ? 'start' : 'end'} textLength={sq(e.label, ed - 2.4, fs)} lengthAdjust="spacingAndGlyphs">{fit(e.label, ed - 2.4, fs)}</text>{/if}
   {/each}
   <text x={x0 + 1} y={y + b.h + 3} font-family={F} font-size="1.8" fill={MUTE}>AVANT</text>
   <text x={x0 + D - 1} y={y + b.h + 3} font-family={F} font-size="1.8" fill={MUTE} text-anchor="end">ARRIÈRE</text>
@@ -144,9 +154,9 @@
           {@const fs = Math.max(0.8, Math.min(2, eh * 0.45))}
           <rect x={ex + 0.1} y={ey + 0.08} width={ew - 0.2} height={Math.max(0.2, eh - 0.16)} fill="#F6F7F9" stroke={LINE} stroke-width="0.16" />
           <rect x={ex + 0.1} y={ey + 0.08} width={Math.min(0.8, ew * 0.08)} height={Math.max(0.2, eh - 0.16)} fill={color(e)} />
-          {#if eh >= 1}<text x={ex + 1.3} y={ey + eh / 2 + fs * 0.35} font-family={F} font-size={fs} fill={INK}>{fit(e.label, ew - 2, fs)}</text>{/if}
+          {#if eh >= 1}<text x={ex + 1.3} y={ey + eh / 2 + fs * 0.35} font-family={F} font-size={fs} fill={INK} textLength={sq(e.label, ew - 2, fs)} lengthAdjust="spacingAndGlyphs">{fit(e.label, ew - 2, fs)}</text>{/if}
         {/each}
-        {#if cw > 14 && !(ctx.racks[c.id]?.elements ?? []).some((x) => x.placement.face === 'front')}<text x={cx + cw / 2} y={top - Hc / 2 + 1} font-family={F} font-size={Math.min(2.4, cw / 12)} fill={MUTE} text-anchor="middle">{fit(c.name, cw - 3, Math.min(2.4, cw / 12))}</text>{/if}
+        {#if cw > 14 && !(ctx.racks[c.id]?.elements ?? []).some((x) => x.placement.face === 'front')}<text x={cx + cw / 2} y={top - Hc / 2 + 1} font-family={F} font-size={Math.min(2.4, cw / 12)} fill={MUTE} text-anchor="middle" textLength={sq(c.name, cw - 3, Math.min(2.4, cw / 12))} lengthAdjust="spacingAndGlyphs">{fit(c.name, cw - 3, Math.min(2.4, cw / 12))}</text>{/if}
       {/each}
       <rect x={x} y={top} width={e.L * s} height={T} fill="#2B2D31" stroke={INK} stroke-width="0.3" />
       <rect x={x} y={top + T} width={J} height={fy - top - T} fill="#C9CDD3" stroke={INK} stroke-width="0.3" />
@@ -169,7 +179,7 @@
         {@const z1 = Math.max(...p.map((q) => q[0]))}
         {@const cx = x + Math.max(0, Math.min(d.length_mm - CASQ_W, c.offset_mm)) * s}
         <rect x={cx} y={y + (d.depth_mm - z1) * s} width={CASQ_W * s} height={(z1 - z0) * s} fill="#F6F7F9" stroke={INK} stroke-width="0.35" />
-        {#if CASQ_W * s > 14}<text x={cx + (CASQ_W * s) / 2} y={y + (d.depth_mm - (z0 + z1) / 2) * s + 1} font-family={F} font-size="2.2" fill={INK} text-anchor="middle">{fit(c.name, CASQ_W * s - 3, 2.2)}</text>{/if}
+        {#if CASQ_W * s > 14}<text x={cx + (CASQ_W * s) / 2} y={y + (d.depth_mm - (z0 + z1) / 2) * s + 1} font-family={F} font-size="2.2" fill={INK} text-anchor="middle" textLength={sq(c.name, CASQ_W * s - 3, 2.2)} lengthAdjust="spacingAndGlyphs">{fit(c.name, CASQ_W * s - 3, 2.2)}</text>{/if}
       {/each}
       <text x={x + 1} y={y + d.depth_mm * s + 3} font-family={F} font-size="1.8" fill={MUTE}>CÔTÉ OPÉRATEUR</text>
     {/if}
@@ -179,12 +189,12 @@
 {#snippet group(it: SheetItem)}
   {@const L = groupLayout(it, k, ctx, maxW)}
   {@const [name, sub] = title(it)}
-  <text x={it.x} y={it.y + 4} font-family={F} font-size="3.6" font-weight="bold" fill={INK}>{fit(name, Math.max(30, L.w - 40), 3.6)}</text>
+  <text x={it.x} y={it.y + 4} font-family={F} font-size="3.6" font-weight="bold" fill={INK} textLength={sq(name, Math.max(30, L.w - 40), 3.6)} lengthAdjust="spacingAndGlyphs">{fit(name, Math.max(30, L.w - 40), 3.6)}</text>
   {#if sub}<text x={it.x + L.w} y={it.y + 4} font-family={F} font-size="2.4" fill={MUTE} text-anchor="end">{L.w > 60 ? sub : ''}</text>{/if}
   {#each L.views as b, i (i)}
     {@const bx = it.x + b.x}
     {@const by = it.y + b.y}
-    <text x={bx + (b.v === 'front' || b.v === 'rear' || b.v === 'casq' ? RACK_NUM : 0)} y={by - 1.4} font-family={F} font-size="2.3" fill={MUTE} letter-spacing=".2">{fit(viewLabel(it, b).toUpperCase(), b.w, 2.3)}</text>
+    <text x={bx + (b.v === 'front' || b.v === 'rear' || b.v === 'casq' ? RACK_NUM : 0)} y={by - 1.4} font-family={F} font-size="2.3" fill={MUTE} letter-spacing=".2" textLength={sq(viewLabel(it, b).toUpperCase(), b.w, 2.3)} lengthAdjust="spacingAndGlyphs">{fit(viewLabel(it, b).toUpperCase(), b.w, 2.3)}</text>
     {#if b.v === '3d'}
       {#if shots[it.id]}<image href={shots[it.id]} x={bx} y={by} width={b.w} height={b.h} preserveAspectRatio="xMidYMid meet" />
       {:else}<rect x={bx} y={by} width={b.w} height={b.h} fill="#F6F7F9" stroke="#C9CDD3" stroke-width="0.3" stroke-dasharray="2 1" /><text x={bx + b.w / 2} y={by + b.h / 2} font-family={F} font-size="2.6" fill={MUTE} text-anchor="middle">Vue 3D…</text>{/if}
@@ -206,12 +216,12 @@
       {#if it.kind === 'rack' || it.kind === 'desk'}{@render group(it)}
       {:else if it.kind === 'location'}
         {@const l = info.locations[it.location_id ?? '']}
-        <text x={it.x} y={it.y + 6} font-family={F} font-size="5.2" font-weight="bold" fill={INK}>{fit(l?.name ?? it.label ?? 'Lieu', w - 20, 5.2)}</text>
+        <text x={it.x} y={it.y + 6} font-family={F} font-size="5.2" font-weight="bold" fill={INK} textLength={sq(l?.name ?? it.label ?? 'Lieu', w - 20, 5.2)} lengthAdjust="spacingAndGlyphs">{fit(l?.name ?? it.label ?? 'Lieu', w - 20, 5.2)}</text>
         {#if l?.code}<text x={it.x + w} y={it.y + 6} font-family="Courier, monospace" font-size="3" fill={MUTE} text-anchor="end">{l.code}</text>{/if}
         <line x1={it.x} x2={it.x + w} y1={it.y + 8.6} y2={it.y + 8.6} stroke={INK} stroke-width="0.5" />
       {:else}
         <rect x={it.x} y={it.y} width={w} height={h} fill="#FAFBFC" stroke="#8A919B" stroke-width="0.35" stroke-dasharray="2.5 1.5" />
-        <text x={it.x + w / 2} y={it.y + h / 2} font-family={F} font-size="3.4" fill={MUTE} text-anchor="middle">{fit(it.label || 'Emplacement réservé', w - 4, 3.4)}</text>
+        <text x={it.x + w / 2} y={it.y + h / 2} font-family={F} font-size="3.4" fill={MUTE} text-anchor="middle" textLength={sq(it.label || 'Emplacement réservé', w - 4, 3.4)} lengthAdjust="spacingAndGlyphs">{fit(it.label || 'Emplacement réservé', w - 4, 3.4)}</text>
         <text x={it.x + w / 2} y={it.y + h / 2 + 4.4} font-family={F} font-size="2.4" fill="#8A919B" text-anchor="middle">RÉSERVÉ</text>
       {/if}
     </g>
@@ -226,7 +236,7 @@
           {@const cx = block.x + row.slice(0, ci).reduce((a, b) => a + b.w, 0)}
           {#if ci > 0}<line x1={cx} x2={cx} y1={ry} y2={ry + ROWH[ri]!} stroke={INK} stroke-width="0.25" />{/if}
           <text x={cx + 1.4} y={ry + 2.8} font-family={F} font-size="1.9" fill={MUTE} letter-spacing=".15">{c.l.toUpperCase()}</text>
-          <text x={cx + 1.4} y={ry + ROWH[ri]! - 2.2} font-family={F} font-size={'big' in c ? 4.4 : 3} font-weight={'big' in c || ri === 1 && ci === 0 ? 'bold' : 'normal'} fill={INK}>{fit(c.v || '—', c.w - 3, 'big' in c ? 4.4 : 3)}</text>
+          <text x={cx + 1.4} y={ry + ROWH[ri]! - 2.2} font-family={F} font-size={'big' in c ? 4.4 : 3} font-weight={'big' in c || ri === 1 && ci === 0 ? 'bold' : 'normal'} fill={INK} textLength={sq(c.v || '—', c.w - 3, 'big' in c ? 4.4 : 3)} lengthAdjust="spacingAndGlyphs">{fit(c.v || '—', c.w - 3, 'big' in c ? 4.4 : 3)}</text>
         {/each}
       {/each}
     </g>

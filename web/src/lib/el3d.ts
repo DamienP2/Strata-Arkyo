@@ -2,7 +2,7 @@
 // les connecteurs du catalogue (mis en cache).
 import { api } from './api';
 import { fnColor, refById } from './catalog.svelte';
-import { ALU, accessoryFace, visualOf } from './faceplate';
+import { accessoryFace, visualOf } from './faceplate';
 import type { El3D } from './rack3d';
 
 const portsCache = new Map<string, Promise<any[]>>();
@@ -15,7 +15,8 @@ function ports(itemId: string | null): Promise<any[]> {
 export async function toEl3D(e: any): Promise<El3D> {
   const kind = e.nature === 'accessory' ? (e.accessory?.kind === 'panel' ? 'panel' : e.accessory?.kind === 'plate' ? (e.accessory.variant === 'brush' ? 'brush' : e.accessory.variant === 'vented' ? 'vent' : 'blank') : accessoryFace(e.label)) : visualOf(e);
   const ps = (await ports(e.item_id)).map((p: any) => ({ face: p.face ?? 'rear', connector: p.connector_id ?? '', quantity: p.quantity ?? 1, color: p.signal_id ? (refById('signals', p.signal_id)?.data?.color ?? null) : null, label: p.label ?? null }));
-  return { id: e.placement.id, label: e.label, tag: e.tag, nature: e.nature, height_u: e.height_u, depth_mm: e.depth_mm, function: e.function, brand: e.brand ?? null, face: e.placement.face, u_start: e.placement.u_start, width: e.placement.width, col: e.placement.col, kind, alu: ALU.has(kind), accessory: e.accessory, ports: ps, fnColor: fnColor(e.function), shelf_id: e.placement.shelf_id ?? null } as El3D;
+  return { id: e.placement.id, label: e.label, tag: e.tag, nature: e.nature, height_u: e.height_u, depth_mm: e.depth_mm, function: e.function, brand: e.brand ?? null, face: e.placement.face, u_start: e.placement.u_start, width: e.placement.width, col: e.placement.col, kind, alu: false, // façades toutes foncées
+    accessory: e.accessory, ports: ps, fnColor: fnColor(e.function), shelf_id: e.placement.shelf_id ?? null } as El3D;
 }
 
 /** Spécification 3D d'une baie ou d'un flight-case. */

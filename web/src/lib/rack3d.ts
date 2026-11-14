@@ -308,7 +308,7 @@ export class RackScene {
     this.transparent = !!opts.transparent;
     this.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, alpha: this.transparent });
     this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping; this.renderer.toneMappingExposure = 1.28;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping; this.renderer.toneMappingExposure = 1.05;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.shadowMap.enabled = true; this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     host.appendChild(this.renderer.domElement);
@@ -317,27 +317,27 @@ export class RackScene {
     this.controls.enableDamping = true; this.controls.dampingFactor = 0.08; this.controls.minDistance = 0.3; this.controls.maxDistance = 12; this.controls.maxPolarAngle = Math.PI * 0.495;
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    this.scene.environmentIntensity = 1.2;
+    this.scene.environmentIntensity = 0.9;
     if (this.transparent) this.renderer.setClearColor(0x000000, 0);
-    else { this.scene.background = new THREE.Color('#3a3e44'); this.scene.fog = new THREE.Fog('#3a3e44', 7, 18); }
-    // Lumières : clé avec ombres douces, contre-jour froid.
-    const key = new THREE.DirectionalLight('#fff4e6', 2.9); key.position.set(2.2, 4, 3.2); key.castShadow = true;
-    key.shadow.mapSize.set(2048, 2048); key.shadow.camera.left = -2; key.shadow.camera.right = 2; key.shadow.camera.top = 3; key.shadow.camera.bottom = -1; key.shadow.bias = -0.0004; key.shadow.radius = 6; key.shadow.normalBias = 0.02;
+    else { this.scene.background = new THREE.Color('#d6dae0'); this.scene.fog = new THREE.Fog('#d6dae0', 8, 22); }
+    // Lumières de studio clair : clé douce et neutre, contre-jour léger, débouchage de face.
+    const key = new THREE.DirectionalLight('#fffaf2', 2.1); key.position.set(2.2, 4, 3.2); key.castShadow = true;
+    key.shadow.mapSize.set(2048, 2048); key.shadow.camera.left = -2; key.shadow.camera.right = 2; key.shadow.camera.top = 3; key.shadow.camera.bottom = -1; key.shadow.bias = -0.0004; key.shadow.radius = 9; key.shadow.normalBias = 0.02;
     this.scene.add(key);
-    const rim = new THREE.DirectionalLight('#b8d4ff', 1.1); rim.position.set(-3, 2.5, -2.5); this.scene.add(rim);
-    this.scene.add(new THREE.HemisphereLight('#eef2ff', '#3a342e', 0.8));
+    const rim = new THREE.DirectionalLight('#e6efff', 0.7); rim.position.set(-3, 2.5, -2.5); this.scene.add(rim);
+    this.scene.add(new THREE.HemisphereLight('#f4f6fa', '#a9a49c', 1.1));
     // Débouchage de face : on lit les façades même en vue de face.
-    const fill = new THREE.DirectionalLight('#ffffff', 0.75); fill.position.set(0.4, 1.6, 5); this.scene.add(fill);
+    const fill = new THREE.DirectionalLight('#ffffff', 0.9); fill.position.set(0.4, 1.6, 5); this.scene.add(fill);
     // Sol : béton lissé, rugosité variable.
     const floorTex = tex(noise(512, 120, 40, 3), true, [8, 8]);
     const floorR = tex(noise(512, 170, 70, 5), false, [8, 8]);
-    const floor = new THREE.Mesh(new THREE.CircleGeometry(9, 64), new THREE.MeshStandardMaterial({ color: '#6a6d72', map: floorTex, roughnessMap: floorR, roughness: 0.92, metalness: 0 }));
+    const floor = new THREE.Mesh(new THREE.CircleGeometry(9, 64), new THREE.MeshStandardMaterial({ color: '#c3c7cd', map: floorTex, roughnessMap: floorR, roughness: 0.92, metalness: 0 }));
     floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; floor.visible = !this.transparent; this.scene.add(floor);
     this.scene.add(this.root);
     this.mats = this.materials();
     this.composer = new EffectComposer(this.renderer);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
-    this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(512, 512), 0.35, 0.35, 1.6));
+    this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(512, 512), 0.1, 0.15, 2.2));
     this.composer.addPass(new OutputPass());
     this.resize();
     this.renderer.domElement.addEventListener('pointermove', this.hover);
@@ -653,7 +653,7 @@ export class RackScene {
     // Face avant : plaque avec texture procédurale.
     const wPx = Math.round(fw * 2400), hPx = Math.max(40, Math.round(h * 2400));
     const f = faceCanvases(e, wPx, hPx);
-    const faceMat = new THREE.MeshPhysicalMaterial({ map: f.map, emissiveMap: f.emissive, emissive: '#ffffff', emissiveIntensity: 3.2, roughnessMap: f.rough, roughness: e.alu ? 0.38 : 0.55, metalness: e.alu ? 0.9 : 0.55, clearcoat: e.alu ? 0.05 : 0.15 });
+    const faceMat = new THREE.MeshPhysicalMaterial({ map: f.map, emissiveMap: f.emissive, emissive: '#ffffff', emissiveIntensity: 1.5, roughnessMap: f.rough, roughness: e.alu ? 0.38 : 0.55, metalness: e.alu ? 0.9 : 0.55, clearcoat: e.alu ? 0.05 : 0.15 });
     // Plaque arrondie, et la face imprimée juste devant.
     const plate = new THREE.Mesh(new RoundedBoxGeometry(fw, h, 0.003, 2, 0.0008), m.chassis); plate.castShadow = true; plate.receiveShadow = true; g.add(plate);
     const front = new THREE.Mesh(new THREE.PlaneGeometry(fw - 0.0006, h - 0.0006), faceMat); front.position.z = 0.0016; front.receiveShadow = true; g.add(front);

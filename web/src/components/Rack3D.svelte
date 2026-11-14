@@ -25,8 +25,9 @@
       } catch (e) { error = (e as Error).message; } finally { loading = false; }
     })();
   });
-  $effect(() => { scene?.setDoors(doors); });
-  $effect(() => { scene?.setSides(sides); });
+  // L'état est lu avant `scene?.` : sinon l'effet ne suit pas le réglage.
+  $effect(() => { const d = doors; scene?.setDoors(d); });
+  $effect(() => { const v = sides; scene?.setSides(v); });
   const ro = new ResizeObserver(() => scene?.resize());
   $effect(() => { if (host) { ro.observe(host); return () => ro.unobserve(host); } });
   onDestroy(() => { ro.disconnect(); scene?.dispose(); scene = null; });
@@ -53,10 +54,10 @@
 <style>
   .r3 { display: flex; flex-direction: column; height: 100%; min-height: 560px; }
   .r3-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 8px 12px; border-bottom: 1px solid var(--line); }
-  .r3-view { position: relative; flex: none; height: max(560px, calc(100vh - 300px)); background: #2b2e33; overflow: hidden; border-radius: 0 0 16px 16px; }
+  .r3-view { position: relative; flex: none; height: max(560px, calc(100vh - 300px)); background: #d6dae0; overflow: hidden; border-radius: 0 0 16px 16px; }
   .r3-view :global(canvas) { position: absolute; inset: 0; display: block; width: 100% !important; height: 100% !important; cursor: grab; }
   .r3-spin { position: absolute; left: 50%; top: 50%; }
-  .r3-err { position: absolute; inset: 0; display: grid; place-items: center; color: #fff; }
+  .r3-err { position: absolute; inset: 0; display: grid; place-items: center; color: #23262b; }
   .r3-tip { position: absolute; pointer-events: none; background: rgba(15, 16, 18, .9); color: #fff; padding: 6px 9px; border-radius: 8px; font-size: 12.5px; line-height: 1.35; max-width: 280px; }
   .r3-l { font: 600 10px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--fg-3); }
 </style>

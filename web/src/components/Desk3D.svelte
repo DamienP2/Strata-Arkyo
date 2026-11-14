@@ -23,7 +23,7 @@
       } catch (e) { error = (e as Error).message; } finally { loading = false; }
     })();
   });
-  $effect(() => { scene?.setSides(sides); });
+  $effect(() => { const v = sides; scene?.setSides(v); });
   const ro = new ResizeObserver(() => scene?.resize());
   $effect(() => { if (host) { ro.observe(host); return () => ro.unobserve(host); } });
   onDestroy(() => { ro.disconnect(); scene?.dispose(); scene = null; });
@@ -48,10 +48,10 @@
 <style>
   .d3 { display: flex; flex-direction: column; height: 100%; }
   .d3-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 8px 12px; border-bottom: 1px solid var(--line); }
-  .d3-view { position: relative; flex: 1; min-height: 520px; background: #2b2e33; overflow: hidden; }
+  .d3-view { position: relative; flex: 1; min-height: 520px; background: #d6dae0; overflow: hidden; }
   .d3-view :global(canvas) { position: absolute; inset: 0; display: block; width: 100% !important; height: 100% !important; cursor: grab; }
   .d3-spin { position: absolute; left: 50%; top: 50%; }
-  .d3-err { position: absolute; inset: 0; display: grid; place-items: center; color: #fff; }
+  .d3-err { position: absolute; inset: 0; display: grid; place-items: center; color: #23262b; }
   .d3-tip { position: absolute; pointer-events: none; background: rgba(15, 16, 18, .9); color: #fff; padding: 6px 9px; border-radius: 8px; font-size: 12.5px; line-height: 1.35; max-width: 280px; }
   .d3-l { font: 600 10px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--fg-3); }
 </style>
