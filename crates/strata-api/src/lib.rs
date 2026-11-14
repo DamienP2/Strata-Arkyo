@@ -13,6 +13,7 @@ pub mod checks;
 pub mod collab;
 pub mod drawings;
 pub mod error;
+pub mod journal;
 pub mod links;
 pub mod live;
 pub mod network;
@@ -793,6 +794,12 @@ async fn delete_role(
 #[derive(Deserialize)]
 struct AuditQuery {
     limit: Option<i64>,
+    actor: Option<String>,
+    action: Option<String>,
+    project: Option<String>,
+    /// Période : dates ISO (AAAA-MM-JJ), bornes incluses.
+    since: Option<String>,
+    until: Option<String>,
 }
 
 async fn audit(
@@ -801,7 +808,26 @@ async fn audit(
     Query(q): Query<AuditQuery>,
 ) -> ApiResult<Json<Value>> {
     s.require(Domain::Membres, Level::Admin, MEMBERS_ADMIN)?;
-    Ok(Json(
-        json!({ "entries": st.store.audit_entries(q.limit.unwrap_or(150)).await? }),
-    ))
+    let some = |v: Option<String>| v.filter(|x| !x.trim().is_empty());
+    let f = strata_store::AuditFilter {
+        actor_id: some(q.actor),
+        action: some(q.action),
+        project_id: some(q.project),
+        since: some(q.since),
+        // Borne haute incluse : jusqu'à la fin du jour donné.
+        until: some(q.until).map(|d| format!("{d}T99")),
+    };
+    let entries = st.store.audit_filtered(&f, q.limit.unwrap_or(150)).await?;
+    let (actions, pids) = st.store.audit_facets().await?;
+    let mut projects: Vec<Value> = Vec::new();
+    for p in pids {
+        let name = st.store.project(&p).await?.map(|x| x.data.name);
+        projects.push(json!({ "id": p, "name": name.unwrap_or_else(|| "Projet supprimé".into()) }));
+    }
+    projects.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+    Ok(Json(json!({
+        "entries": journal::describe(&st.store, entries).await?,
+        "actions": actions.iter().map(|a| json!({ "key": a, "label": journal::action_label(a) })).collect::<Vec<_>>(),
+        "projects": projects,
+    })))
 }

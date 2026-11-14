@@ -43,6 +43,8 @@ struct End {
     tag: String,
     port: String,
     connector: String,
+    /// L'équipement ou le port visé n'existe plus.
+    missing: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -102,17 +104,19 @@ async fn rows(store: &Store, pid: &str) -> ApiResult<Vec<Row>> {
             tag: n.sub.rsplit(" · ").next().unwrap_or("").to_string(),
             port: p.label.clone(),
             connector: name_of(RefKind::Connector, &p.connector),
+            missing: false,
         },
         None => End {
             port_ref: r.to_string(),
-            element: "—".into(),
+            element: String::new(),
             container_id: None,
-            location: "—".into(),
+            location: String::new(),
             location_id: None,
-            equipment: "Extrémité manquante".into(),
+            equipment: "Extrémité supprimée".into(),
             tag: String::new(),
             port: String::new(),
             connector: String::new(),
+            missing: true,
         },
     };
     let mut out = Vec::new();
@@ -170,6 +174,7 @@ async fn rows(store: &Store, pid: &str) -> ApiResult<Vec<Row>> {
                     tag: String::new(),
                     port: String::new(),
                     connector: String::new(),
+                    missing: false,
                 },
                 None => end(&c.b),
             },

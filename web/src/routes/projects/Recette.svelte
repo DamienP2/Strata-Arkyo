@@ -31,6 +31,12 @@
   let paper = $state<'a4' | 'a3'>('a4');
   let showDeleted = $state(false);
 
+  const MISSING = 'Extrémité supprimée';
+  // Les liaisons dont un bout a disparu sont mises à part, repliées, avec leur nombre.
+  const missing = $derived(r?.cables.find((g) => g.title === MISSING) ?? null);
+  const liaisons = $derived((r?.cables ?? []).filter((g) => g.title !== MISSING));
+  const nPts = (gs: Group[]) => gs.reduce((n, g) => n + g.points.length, 0);
+  const totalHint = $derived(r ? `Une liaison par câble (${nPts(r.cables)}), un point par équipement rangé dans un élément (${nPts(r.equipment)}) et les points libres (${r.free.length}).` : '');
   async function load() { try { r = await api.get(`/projects/${pid}/recette`); if (openLog) loadLog(openLog); } catch (e) { fail(e); } }
   $effect(() => { view; untrack(load); });
   async function loadLog(key: string) { try { logs = (await api.get<{ entries: typeof logs }>(`/projects/${pid}/recette/log?key=${encodeURIComponent(key)}`)).entries; } catch (e) { fail(e); } }
@@ -97,7 +103,7 @@
 {#if !r}<span class="spin"></span>
 {:else}
   <div class="rc-head card">
-    <div class="rc-big"><span class="eyebrow">Recette</span><b class="mono">{r.progress} %</b><span class="muted small">{r.total - r.counts.to_test} point{r.total - r.counts.to_test > 1 ? 's' : ''} testé{r.total - r.counts.to_test > 1 ? 's' : ''} sur {r.total}</span></div>
+    <div class="rc-big"><span class="eyebrow">Recette</span><b class="mono">{r.progress} %</b><span class="muted small" title={totalHint}>{r.total - r.counts.to_test} point{r.total - r.counts.to_test > 1 ? 's' : ''} testé{r.total - r.counts.to_test > 1 ? 's' : ''} sur {r.total} <span class="rc-q" aria-hidden="true">?</span></span></div>
     <div class="rc-counts">
       {#each Object.entries(ST) as [k, s]}<button class="cnt {k}" class:on={filter === k} onclick={() => (filter = filter === k ? '' : (k as St))}><b class="mono">{r.counts[k as St]}</b>{s.label}</button>{/each}
     </div>
@@ -108,7 +114,14 @@
   </div>
   <div class="toolbar" style="margin:12px 0"><label class="search" style="flex:1"><Icon name="search" /><input class="input" bind:value={q} placeholder="Rechercher un point…" aria-label="Rechercher"></label></div>
 
-  {#each [['Liaisons', r.cables], ['Équipements', r.equipment]] as [title, groups]}
+  {#if missing && missing.points.some(keep)}
+    <details class="card rc-miss">
+      <summary><Icon name="alert" size="sm" />{missing.points.length} liaison{missing.points.length > 1 ? 's' : ''} dont une extrémité n’existe plus (équipement ou port supprimé)<a class="small" href="/projets/{pid}/cables?cable={missing.points.map((p) => p.key.slice(6)).join(',')}" onclick={(e) => e.stopPropagation()}>Voir ces câbles</a></summary>
+      <p class="muted small">À corriger dans le synoptique (rebrancher ou supprimer le câble) avant de les tester.</p>
+      {#each missing.points.filter(keep) as p (p.key)}{@render row(p)}{/each}
+    </details>
+  {/if}
+  {#each [['Liaisons', liaisons], ['Équipements', r.equipment]] as [title, groups]}
     {#if (groups as Group[]).some((g) => g.points.some(keep))}
       <h2 class="rc-h">{title}</h2>
       {#each groups as Group[] as g (g.title)}
@@ -138,6 +151,10 @@
   .cnt.ok b { color: var(--ok, #0E8550); } .cnt.reserve b { color: var(--warn, #B78400); } .cnt.ko b { color: var(--err); }
   .rc-act { display: flex; gap: 8px; align-items: center; }
   .rc-act select { width: auto; height: 40px; }
+  .rc-q { display: inline-grid; place-items: center; width: 14px; height: 14px; border-radius: 50%; border: 1px solid currentColor; font-size: 9.5px; cursor: help; }
+  .rc-miss { padding: 10px 14px; margin-top: 14px; border-color: color-mix(in srgb, var(--warn, #B78400) 40%, var(--line)); }
+  .rc-miss summary { cursor: pointer; font-weight: 600; display: flex; gap: 8px; align-items: center; color: var(--warn, #B78400); }
+  .rc-miss summary a { margin-left: auto; font-weight: 500; }
   .rc-h { font-size: 22px; margin: 22px 0 10px; }
   .rc-g { padding: 12px 14px; display: grid; gap: 4px; margin-bottom: 10px; }
   .pt { border-top: 1px solid var(--line); padding: 8px 0; }

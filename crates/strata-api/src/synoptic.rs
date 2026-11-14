@@ -448,22 +448,30 @@ fn in_view(view: &str, n: &Node) -> bool {
     }
 }
 
+/// Constat d'un câble dont une extrémité (ou les deux) ne correspond plus à aucun port.
+pub(crate) fn missing_end(a_ok: bool, b_ok: bool) -> String {
+    if !a_ok && !b_ok {
+        "Les deux extrémités n'existent plus (équipement ou port supprimé).".into()
+    } else {
+        "L'autre extrémité n'existe plus (équipement ou port supprimé).".into()
+    }
+}
+
 /// Avertissements d'un câble : extrémité disparue, compatibilité (ou règle d'attache).
 pub(crate) fn cable_warnings(
     ea: Option<(&Node, &Port)>,
     eb: Option<(&Node, &Port)>,
     f: &CableFields,
 ) -> Vec<String> {
-    let missing = || "Extrémité manquante : l'équipement ou le port a disparu.".to_string();
     let mut w = Vec::new();
     if f.external.is_some() {
         if ea.is_none() {
-            w.push(missing());
+            w.push(missing_end(false, true));
         }
         return w;
     }
     if ea.is_none() || eb.is_none() {
-        w.push(missing());
+        w.push(missing_end(ea.is_some(), eb.is_some()));
     }
     if let (Some((_, pa)), Some((_, pb))) = (ea, eb) {
         if f.attach {

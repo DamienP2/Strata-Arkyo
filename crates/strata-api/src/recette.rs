@@ -31,6 +31,9 @@ pub fn routes() -> Router<AppState> {
         .route("/projects/{id}/recette/free/order", post(free_order))
 }
 
+/// Groupe des liaisons dont une extrémité n'existe plus (équipement ou port supprimé).
+pub(crate) const MISSING_GROUP: &str = "Extrémité supprimée";
+
 struct Live {
     key: String,
     kind: &'static str,
@@ -66,7 +69,11 @@ async fn live_points(store: &Store, pid: &str) -> ApiResult<Vec<Live>> {
         let cb = port_of
             .get(c.b.as_str())
             .and_then(|(n, _)| n.container_id.clone());
+        let gone = !port_of.contains_key(c.a.as_str())
+            || (c.fields.external.is_none() && !port_of.contains_key(c.b.as_str()));
         let group = match (&ca, &cb, &c.fields.external) {
+            // Rangés à part : un câble dont l'autre bout a été supprimé n'est pas « inter-éléments ».
+            _ if gone => MISSING_GROUP.into(),
             (Some(a), _, Some(_)) => names.get(a.as_str()).unwrap_or(&"").to_string(),
             (Some(a), Some(b), None) if a == b => names.get(a.as_str()).unwrap_or(&"").to_string(),
             _ => "Inter-éléments".into(),
@@ -79,7 +86,7 @@ async fn live_points(store: &Store, pid: &str) -> ApiResult<Vec<Live>> {
                     .map(|l| format!(" · {l}"))
                     .unwrap_or_default()
             ),
-            None => end(&c.b).unwrap_or_else(|| "?".into()),
+            None => end(&c.b).unwrap_or_else(|| "extrémité supprimée".into()),
         };
         out.push(Live {
             key: format!("cable:{}", c.id),
@@ -89,8 +96,11 @@ async fn live_points(store: &Store, pid: &str) -> ApiResult<Vec<Live>> {
                 .fields
                 .number
                 .clone()
-                .unwrap_or_else(|| "Câble sans numéro".into()),
-            detail: format!("{} → {to}", end(&c.a).unwrap_or_else(|| "?".into())),
+                .unwrap_or_else(|| "Câble non numéroté".into()),
+            detail: format!(
+                "{} → {to}",
+                end(&c.a).unwrap_or_else(|| "extrémité supprimée".into())
+            ),
         });
     }
     let ids: HashSet<String> = inv

@@ -2,47 +2,36 @@
   import { untrack } from 'svelte';
   import { api } from '../../lib/api';
   import { fail } from '../../lib/toast.svelte';
-  import { dateTime } from '../../lib/format';
+  import { byDay, timeOf } from '../../lib/format';
   import ProjectPoints from '../../components/ProjectPoints.svelte';
-  import type { AuditEntry, Member } from '../../lib/types';
+  import type { Member } from '../../lib/types';
 
   let { projectId }: { projectId: string } = $props();
-  let entries = $state<AuditEntry[]>([]);
+  // Libellés, nom de l'objet et changement fournis par le serveur (comme le journal d'administration).
+  interface Entry { id: number; at: string; actor_id: string | null; action_label: string; object_label: string; subject: string; detail: string }
+  let entries = $state<Entry[]>([]);
   let names = $state<Record<string, string>>({});
-  Promise.all([api.get<{ entries: AuditEntry[] }>(`/projects/${untrack(() => projectId)}/history?limit=300`), api.get<{ members: Member[] }>('/members?removed=true')])
+  Promise.all([api.get<{ entries: Entry[] }>(`/projects/${untrack(() => projectId)}/history?limit=300`), api.get<{ members: Member[] }>('/members?removed=true')])
     .then(([h, m]) => { entries = h.entries; names = Object.fromEntries(m.members.map((x) => [x.id, x.name])); })
     .catch(fail);
-
-  const OBJ: Record<string, [string, string]> = {
-    project: ['du projet', 'le projet'], location: ['d’un emplacement', 'l’emplacement'], container: ['d’un élément', 'l’élément'],
-    article: ['d’un article', 'l’article'], instance: ['d’un exemplaire', 'l’exemplaire'], task: ['d’une tâche', 'la tâche'],
-  };
-  const ACT: Record<string, string> = { create: 'Création', update: 'Modification', delete: 'Suppression', move: 'Déplacement' };
-  function label(e: AuditEntry): string {
-    const o = OBJ[e.object_type]?.[0] ?? e.object_type;
-    return `${ACT[e.action] ?? e.action} ${o}`;
-  }
-  function what(e: AuditEntry): string {
-    const a = (e.after ?? e.before) as any;
-    if (!a) return '';
-    if (e.object_type === 'instance') return `${a.tag}${a.serial ? ` · série ${a.serial}` : ''}${a.mac ? ` · ${a.mac}` : ''}`;
-    if (e.object_type === 'article') {
-      const b = e.before as any;
-      return b && a && b.quantity !== a.quantity ? `quantité ${b.quantity} → ${a.quantity}` : `${a.quantity} ×`;
-    }
-    if (e.object_type === 'project' && e.before && e.after && (e.before as any).status !== a.status) return `statut ${(e.before as any).status} → ${a.status}`;
-    return a.name ?? a.title ?? '';
-  }
+  const days = $derived(byDay(entries));
 </script>
 
 <ProjectPoints pid={projectId} onrestored={() => location.reload()} />
 
 <section class="card" style="padding:6px 18px 10px">
-  <div class="tbl-wrap"><table class="tbl">
-    <thead><tr><th>Quand</th><th>Qui</th><th>Action</th><th>Détail</th></tr></thead>
+  <div class="tbl-wrap"><table class="tbl hs">
+    <thead><tr><th>Heure</th><th>Qui</th><th>Action</th><th>Objet et changement</th></tr></thead>
     <tbody>
-      {#each entries as e (e.id)}<tr><td class="mono small" style="white-space:nowrap">{dateTime(e.at)}</td><td>{e.actor_id ? (names[e.actor_id] ?? '—') : 'Système'}</td><td>{label(e)}</td><td class="small">{what(e)}</td></tr>
+      {#each days as d (d.key)}
+        <tr class="day"><th colspan="4">{d.title}<span class="muted">{' · '}{d.items.length} modification{d.items.length > 1 ? 's' : ''}</span></th></tr>
+        {#each d.items as e (e.id)}<tr><td class="mono" style="white-space:nowrap">{timeOf(e.at)}</td><td>{e.actor_id ? (names[e.actor_id] ?? 'Compte supprimé') : 'Système'}</td><td>{e.action_label}</td><td>{e.object_label}{#if e.subject}<span class="muted">{' · '}</span><b>{e.subject}</b>{/if}{#if e.detail}<span class="muted small hs-d">{e.detail}</span>{/if}</td></tr>{/each}
       {:else}<tr><td colspan="4" class="empty">Aucune modification enregistrée.</td></tr>{/each}
     </tbody>
   </table></div>
 </section>
+
+<style>
+  .hs tr.day th { text-align: left; padding: 16px 8px 6px; font: 650 14px var(--font); letter-spacing: 0; text-transform: none; color: var(--fg); border-bottom: 1px solid var(--line); }
+  .hs-d { display: block; }
+</style>

@@ -130,6 +130,12 @@
     }
     return [...g.values()];
   });
+  // D'où viennent les flux : les sorties ST 2110 déclarées dans les fiches des équipements.
+  const flowEquip = $derived([...new Map((r?.flows ?? []).map((f) => [f.instance, `${f.equipment} ${f.tag}`])).values()]);
+  const flowCount = $derived(flowEquip.length);
+  const flowSources = $derived(flowCount === 1 ? flowEquip[0]! : `${flowCount} équipements (${flowEquip.slice(0, 3).join(', ')}${flowCount > 3 ? '…' : ''})`);
+  const flowHint = $derived(r ? `Flux ST 2110 déclarés dans les fiches du catalogue des équipements du projet (${r.stats.flows}), indépendamment des ports câblés ; « adressés » : avec un groupe multicast attribué (${r.stats.flows_assigned}).` : '');
+  const empty = $derived(!!r && !r.ports.length && !r.vlans.length && !r.stats.flows_assigned);
   const linkColor = (l: MapLink) => l.redundancy === 'A' ? '#3A7BD5' : l.redundancy === 'B' ? '#E0A030' : (l.vlans.length === 1 ? vlanOf(l.vlans[0]!)?.color : null) ?? 'var(--fg-3)';
 </script>
 
@@ -139,13 +145,14 @@
     <div class="nw-stats">
       <div><b>{r.vlans.length}</b><span class="muted small">VLAN</span></div>
       <div><b>{r.stats.with_ip}<span class="muted">/{r.stats.ports}</span></b><span class="muted small">ports adressés</span></div>
-      <div><b>{r.stats.flows_assigned}<span class="muted">/{r.stats.flows}</span></b><span class="muted small">flux multicast</span></div>
+      <div title={flowHint}><b>{r.stats.flows_assigned}<span class="muted">/{r.stats.flows}</span></b><span class="muted small">flux multicast adressés <span class="nw-q" aria-hidden="true">?</span></span></div>
       <div class:bad={r.issues.length}><b>{r.issues.length}</b><span class="muted small">anomalie{r.issues.length > 1 ? 's' : ''}</span></div>
     </div>
     <div class="nw-act">
-      <button class="btn sm ghost" onclick={() => download(`/projects/${pid}/network/export?format=csv`)}><Icon name="download" size="sm" />CSV</button>
-      <button class="btn sm ghost" onclick={() => download(`/projects/${pid}/network/export?format=xlsx`)}><Icon name="download" size="sm" />Plan IP XLSX</button>
+      <span title={empty ? 'Rien à exporter : aucun port réseau, aucun VLAN et aucun flux adressé.' : undefined}><button class="btn sm ghost" disabled={empty} onclick={() => download(`/projects/${pid}/network/export?format=csv`)}><Icon name="download" size="sm" />CSV</button></span>
+      <span title={empty ? 'Rien à exporter : aucun port réseau, aucun VLAN et aucun flux adressé.' : undefined}><button class="btn sm ghost" disabled={empty} onclick={() => download(`/projects/${pid}/network/export?format=xlsx`)}><Icon name="download" size="sm" />Plan IP XLSX</button></span>
     </div>
+    {#if r.stats.flows && !r.stats.ports}<p class="muted small nw-note">Les {r.stats.flows} flux viennent des fiches du catalogue : {flowSources} déclare{flowCount > 1 ? 'nt' : ''} des sorties ST 2110, même si aucun de ses ports n’est encore câblé en réseau.</p>{/if}
   </section>
 
   {#if r.issues.length}
@@ -329,6 +336,8 @@
   .nw-stats b { font-size: 26px; line-height: 1.1; letter-spacing: -.01em; }
   .nw-stats .bad b { color: var(--err); }
   .nw-act { display: flex; gap: 8px; flex-wrap: wrap; }
+  .nw-note { flex-basis: 100%; margin: 0; }
+  .nw-q { display: inline-grid; place-items: center; width: 14px; height: 14px; border-radius: 50%; border: 1px solid currentColor; font-size: 9.5px; cursor: help; }
   .nw-issues { padding: 10px 16px; margin-bottom: 12px; border-color: color-mix(in srgb, var(--err) 40%, var(--line)); }
   .nw-issues summary { cursor: pointer; font-weight: 600; display: flex; gap: 8px; align-items: center; color: var(--err); }
   .nw-issues ul { margin: 8px 0 2px; padding-left: 20px; display: grid; gap: 4px; font-size: 14px; }

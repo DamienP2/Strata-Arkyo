@@ -4,6 +4,8 @@
   import ProjectLinks from '../../components/ProjectLinks.svelte';
   import Confirm from '../../components/Confirm.svelte';
   import FieldError from '../../components/FieldError.svelte';
+  import AnomalyGroups from '../../components/AnomalyGroups.svelte';
+  import type { Anomaly } from '../../lib/anomalies';
   import { api, ApiError } from '../../lib/api';
   import { can } from '../../lib/session.svelte';
   import { toast, fail } from '../../lib/toast.svelte';
@@ -53,9 +55,20 @@
     !view.containers.length && 'un élément',
     !view.articles.length && 'du matériel',
   ].filter(Boolean) as string[]);
-  interface Todo { domains: { key: string; label: string; done: number; total: number; pct: number; href: string; note: string }[]; items: { kind: string; severity: string; message: string; href: string }[] }
+  interface Item { kind: string; group?: string; severity: string; subject?: string; place?: string | null; detail?: string; message: string; href: string }
+  interface Todo { domains: { key: string; label: string; done: number; total: number; pct: number; href: string; note: string; hint?: string }[]; items: Item[] }
   let todo = $state<Todo | null>(null);
-  let showAll = $state(false);
+  const KIND_GROUP: Record<string, string> = { network: 'Réseau', dmx: 'DMX', sheet: 'Fiche', rack: 'Non posé en baie' };
+  // Une ligne par objet, regroupée par type d'anomalie ; les points sans sujet gardent leur phrase.
+  const anomalies = $derived<Anomaly<Item>[]>((todo?.items ?? []).map((it) => ({
+    group: it.group ?? KIND_GROUP[it.kind] ?? it.kind, severity: it.severity,
+    subject: it.subject ?? it.message, place: it.place, detail: it.subject ? (it.detail ?? '') : '', href: it.href, src: it,
+  })));
+  // « Tout voir » d'un groupe de câbles : la liste des câbles filtrée sur eux.
+  const groupHref = (g: { items: Anomaly<Item>[] }) => {
+    const ids = g.items.flatMap((a) => new URLSearchParams(a.href?.split('?')[1] ?? '').get('cable')?.split(',') ?? []);
+    return ids.length > 1 ? `/projets/${view.project.id}/cables?cable=${[...new Set(ids)].join(',')}` : undefined;
+  };
   // Relue à chaque changement du projet (la vue se recharge sur les événements des autres).
   $effect(() => { view; api.get<Todo>(`/projects/${view.project.id}/todo`).then((t) => (todo = t)).catch(() => {}); });
   const openTasks = $derived(view.tasks.filter((t) => t.status === 'todo' || t.status === 'in_progress').length);
@@ -67,16 +80,13 @@
   <section class="card td">
     <div class="td-doms">
       {#each todo.domains as d (d.key)}
-        <a class="dom" href={d.href}><span class="flabel">{d.label}</span><b class="mono">{d.pct} %</b><span class="bar"><i style="width:{d.pct}%" class:ok={d.pct === 100}></i></span><span class="muted small">{d.note}</span></a>
+        <a class="dom" href={d.href} title={d.hint}><span class="flabel">{d.label}{#if d.hint}<span class="hint" aria-hidden="true">?</span>{/if}</span><b class="mono">{d.pct} %</b><span class="bar"><i style="width:{d.pct}%" class:ok={d.pct === 100}></i></span><span class="muted small">{d.note}</span></a>
       {/each}
     </div>
     <div class="td-list">
-      <h3>Ce qu’il reste à faire {#if todo.items.length}<span class="muted">· {todo.items.length}</span>{/if}</h3>
-      {#if !todo.items.length}<p class="muted small">Rien en attente : aucune anomalie, tout est posé, la fiche est complète.</p>{/if}
-      {#each todo.items.slice(0, showAll ? 200 : 8) as it}
-        <a class="it {it.severity}" href={it.href}><i></i><span>{it.message}</span><Icon name="chevr" size="sm" /></a>
-      {/each}
-      {#if todo.items.length > 8}<button class="btn sm ghost" onclick={() => (showAll = !showAll)}>{showAll ? 'Réduire' : `Tout afficher (${todo.items.length})`}</button>{/if}
+      <h3>Ce qu’il reste à faire {#if todo.items.length}<span class="muted">· {todo.items.length} point{todo.items.length > 1 ? 's' : ''}</span>{/if}</h3>
+      {#if !todo.items.length}<p class="muted small">Rien en attente : aucune anomalie, tout est posé, la fiche est complète.</p>
+      {:else}<AnomalyGroups list={anomalies} {groupHref} groupLink="Voir ces câbles" />{/if}
     </div>
   </section>
 {/if}
@@ -143,10 +153,5 @@
   .dom .bar i { display: block; height: 100%; background: var(--fg); }
   .dom .bar i.ok { background: var(--ok, #0E8550); }
   .td-list h3 { margin: 0 0 8px; font-size: 16px; }
-  .it { display: flex; gap: 10px; align-items: center; padding: 7px 10px; border-radius: 10px; color: inherit; text-decoration: none; font-size: 14px; }
-  .it:hover { background: var(--surface-2); }
-  .it span { flex: 1; }
-  .it > i { width: 8px; height: 8px; border-radius: 50%; background: var(--fg-3); flex: none; }
-  .it.error > i { background: var(--err); }
-  .it.warning > i { background: var(--warn, #B78400); }
+  .hint { display: inline-grid; place-items: center; width: 15px; height: 15px; margin-left: 5px; border-radius: 50%; border: 1px solid var(--fg-3); color: var(--fg-3); font-size: 10px; vertical-align: 1px; cursor: help; }
 </style>

@@ -640,7 +640,7 @@ async fn history(
     read(&m)?;
     project_of(&st.store, &id).await?;
     Ok(Json(
-        json!({ "entries": st.store.project_history(&id, q.limit.unwrap_or(150)).await? }),
+        json!({ "entries": crate::journal::describe(&st.store, st.store.project_history(&id, q.limit.unwrap_or(150)).await?).await? }),
     ))
 }
 

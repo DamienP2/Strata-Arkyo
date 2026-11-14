@@ -600,8 +600,27 @@ async fn every_change_is_audited() {
     let r = call(&app, "GET", "/api/audit?limit=10", None, Some(&owner)).await;
     let last = &r.body["entries"][0];
     assert_eq!(last["action"], "update");
-    assert_eq!(last["before"]["role_id"], "technician");
-    assert_eq!(last["after"]["role_id"], "viewer");
+    // Lecture humaine : libellés français et ce qui a changé.
+    assert_eq!(last["action_label"], "Modification");
+    assert_eq!(last["object_label"], "Compte");
+    assert!(
+        last["detail"].as_str().unwrap().contains("Rôle"),
+        "{}",
+        last["detail"]
+    );
+    // Filtres : par action, par membre.
+    let r = call(&app, "GET", "/api/audit?action=create", None, Some(&owner)).await;
+    let entries = r.body["entries"].as_array().unwrap();
+    assert!(!entries.is_empty() && entries.iter().all(|e| e["action"] == "create"));
+    assert!(
+        r.body["actions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|a| a["key"] == "update" && a["label"] == "Modification")
+    );
+    let r = call(&app, "GET", "/api/audit?actor=personne", None, Some(&owner)).await;
+    assert!(r.body["entries"].as_array().unwrap().is_empty());
 }
 
 #[tokio::test]

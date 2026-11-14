@@ -379,10 +379,15 @@ pub(crate) struct Issue {
     pub(crate) code: u8,
     pub(crate) severity: &'static str,
     pub(crate) title: &'static str,
+    /// Ce dont il s'agit : le câble (numéro, à défaut « Câble non numéroté »), le port, le nœud…
+    pub(crate) subject: String,
+    /// Où le trouver : une extrémité connue « Équipement › port », le modèle d'un nœud.
+    pub(crate) place: Option<String>,
+    /// Le constat, en une phrase.
     pub(crate) detail: String,
-    cables: Vec<String>,
+    pub(crate) cables: Vec<String>,
     nodes: Vec<String>,
-    view: Option<String>,
+    pub(crate) view: Option<String>,
 }
 
 fn view_of(n: &Node) -> String {
@@ -407,8 +412,15 @@ pub(crate) async fn issues_of(store: &Store, pid: &str) -> ApiResult<Vec<Issue>>
         c.fields
             .number
             .clone()
-            .unwrap_or_else(|| "Sans numéro".into())
+            .unwrap_or_else(|| "Câble non numéroté".into())
     };
+    let end_label = |r: &str| {
+        port_of
+            .get(r)
+            .map(|(n, p)| format!("{} › {}", n.label, p.label))
+    };
+    // Extrémité connue d'un câble (pour le retrouver quand il n'a pas de numéro).
+    let known = |c: &strata_store::cables::Cable| end_label(&c.a).or_else(|| end_label(&c.b));
     let where_ = |c: &strata_store::cables::Cable| {
         [&c.a, &c.b]
             .iter()
@@ -434,7 +446,12 @@ pub(crate) async fn issues_of(store: &Store, pid: &str) -> ApiResult<Vec<Issue>>
                 code: 1,
                 severity: "error",
                 title: "Extrémité manquante",
-                detail: format!("{} vise un équipement ou un port disparu.", name(c)),
+                subject: name(c),
+                place: known(c),
+                detail: crate::synoptic::missing_end(
+                    port_of.contains_key(c.a.as_str()),
+                    c.fields.external.is_some() || port_of.contains_key(c.b.as_str()),
+                ),
                 cables: vec![c.id.clone()],
                 nodes: vec![],
                 view: where_(c),
@@ -454,11 +471,17 @@ pub(crate) async fn issues_of(store: &Store, pid: &str) -> ApiResult<Vec<Issue>>
                 port_of.get(c.b.as_str()).copied(),
                 &c.fields,
             );
-            if let Some(m) = w.into_iter().find(|m| !m.starts_with("Extrémité")) {
+            let gone = [
+                crate::synoptic::missing_end(true, false),
+                crate::synoptic::missing_end(false, false),
+            ];
+            if let Some(m) = w.into_iter().find(|m| !gone.contains(m)) {
                 out.push(Issue {
                     code: 4,
                     severity: "error",
                     title: "Attache incompatible",
+                    subject: name(c),
+                    place: known(c),
                     detail: m,
                     cables: vec![c.id.clone()],
                     nodes: vec![],
@@ -483,7 +506,13 @@ pub(crate) async fn issues_of(store: &Store, pid: &str) -> ApiResult<Vec<Issue>>
                     code: 4,
                     severity: "error",
                     title: "Incompatibilité",
-                    detail: format!("{} : {}", name(c), w.join(" ")),
+                    subject: name(c),
+                    place: Some(format!(
+                        "{} → {}",
+                        end_label(&c.a).unwrap_or_default(),
+                        end_label(&c.b).unwrap_or_default()
+                    )),
+                    detail: w.join(" "),
                     cables: vec![c.id.clone()],
                     nodes: vec![],
                     view: where_(c),
@@ -496,14 +525,11 @@ pub(crate) async fn issues_of(store: &Store, pid: &str) -> ApiResult<Vec<Issue>>
                 code: 5,
                 severity: "warning",
                 title: "Câble sans numéro",
+                subject: name(c),
+                place: None,
                 detail: [&c.a, &c.b]
                     .iter()
-                    .map(|p| {
-                        port_of
-                            .get(p.as_str())
-                            .map(|(n, p)| format!("{} › {}", n.label, p.label))
-                            .unwrap_or_else(|| "?".into())
-                    })
+                    .map(|p| end_label(p).unwrap_or_else(|| "extrémité supprimée".into()))
                     .collect::<Vec<_>>()
                     .join(" → "),
                 cables: vec![c.id.clone()],
@@ -519,7 +545,9 @@ pub(crate) async fn issues_of(store: &Store, pid: &str) -> ApiResult<Vec<Issue>>
                 code: 2,
                 severity: "error",
                 title: "Numéro en double",
-                detail: format!("{n} sur {} câbles.", ids.len()),
+                subject: n.to_string(),
+                place: None,
+                detail: format!("Porté par {} câbles.", ids.len()),
                 cables: ids.clone(),
                 nodes: vec![],
                 view: None,
@@ -537,7 +565,9 @@ pub(crate) async fn issues_of(store: &Store, pid: &str) -> ApiResult<Vec<Issue>>
                 code: 3,
                 severity: "error",
                 title: "Port surutilisé",
-                detail: format!("{label} porte {} câbles.", ids.len()),
+                subject: label,
+                place: None,
+                detail: format!("Porte {} câbles.", ids.len()),
                 cables: ids.clone(),
                 nodes: vec![],
                 view: None,
@@ -554,7 +584,9 @@ pub(crate) async fn issues_of(store: &Store, pid: &str) -> ApiResult<Vec<Issue>>
                 code: 6,
                 severity: "info",
                 title: "Emplacement vide",
-                detail: format!("{} : ni équipement ni panel.", l.name),
+                subject: l.name.clone(),
+                place: None,
+                detail: "Ni équipement ni panel.".into(),
                 cables: vec![],
                 nodes: vec![],
                 view: Some(format!("location:{}", l.id)),
@@ -569,7 +601,9 @@ pub(crate) async fn issues_of(store: &Store, pid: &str) -> ApiResult<Vec<Issue>>
                 code: 7,
                 severity: "info",
                 title: "Équipement non câblé",
-                detail: format!("{} ({})", n.label, n.sub),
+                subject: n.label.clone(),
+                place: Some(n.sub.clone()),
+                detail: "Aucun de ses ports n'est câblé.".into(),
                 cables: vec![],
                 nodes: vec![n.key.clone()],
                 view: Some(view_of(n)),
@@ -581,7 +615,9 @@ pub(crate) async fn issues_of(store: &Store, pid: &str) -> ApiResult<Vec<Issue>>
                         code: 8,
                         severity: "info",
                         title: "Panel non câblé",
-                        detail: n.label.clone(),
+                        subject: n.label.clone(),
+                        place: None,
+                        detail: "Aucun de ses ports n'est câblé.".into(),
                         cables: vec![],
                         nodes: vec![n.key.clone()],
                         view: Some(view_of(n)),
@@ -601,11 +637,9 @@ pub(crate) async fn issues_of(store: &Store, pid: &str) -> ApiResult<Vec<Issue>>
                             code: 8,
                             severity: "warning",
                             title: "Panel mal câblé",
-                            detail: format!(
-                                "{} : un seul côté câblé ({}).",
-                                n.label,
-                                half.join(", ")
-                            ),
+                            subject: n.label.clone(),
+                            place: None,
+                            detail: format!("Un seul côté câblé : {}.", half.join(", ")),
                             cables: vec![],
                             nodes: vec![n.key.clone()],
                             view: Some(view_of(n)),
@@ -618,7 +652,9 @@ pub(crate) async fn issues_of(store: &Store, pid: &str) -> ApiResult<Vec<Issue>>
                 code: 9,
                 severity: "info",
                 title: "Adaptateur orphelin",
-                detail: format!("{} ({})", n.label, n.sub),
+                subject: n.label.clone(),
+                place: Some(n.sub.clone()),
+                detail: "Rattaché à aucun port.".into(),
                 cables: vec![],
                 nodes: vec![n.key.clone()],
                 view: Some(view_of(n)),
@@ -641,7 +677,9 @@ pub(crate) async fn issues_of(store: &Store, pid: &str) -> ApiResult<Vec<Issue>>
                 code: 10,
                 severity: "info",
                 title: "Zone sans nom",
-                detail: "Une zone n'a pas de nom.".into(),
+                subject: "Zone sans nom".into(),
+                place: None,
+                detail: "Donnez-lui un nom pour la retrouver.".into(),
                 cables: vec![],
                 nodes: vec![],
                 view: view.clone(),
@@ -656,14 +694,13 @@ pub(crate) async fn issues_of(store: &Store, pid: &str) -> ApiResult<Vec<Issue>>
                 code: 11,
                 severity: "info",
                 title: "Zone vide",
-                detail: format!(
-                    "{} : aucun nœud dedans.",
-                    if name.is_empty() {
-                        "Zone sans nom"
-                    } else {
-                        name.as_str()
-                    }
-                ),
+                subject: if name.is_empty() {
+                    "Zone sans nom".into()
+                } else {
+                    name.clone()
+                },
+                place: None,
+                detail: "Aucun nœud dedans.".into(),
                 cables: vec![],
                 nodes: vec![],
                 view,
@@ -697,6 +734,6 @@ async fn validate(
     let count = |s: &str| out.iter().filter(|i| i.severity == s).count();
     Ok(Json(json!({
         "counts": { "error": count("error"), "warning": count("warning"), "info": count("info") },
-        "issues": out.iter().map(|i| json!({ "code": i.code, "severity": i.severity, "title": i.title, "detail": i.detail, "cables": i.cables, "nodes": i.nodes, "view": i.view })).collect::<Vec<_>>(),
+        "issues": out.iter().map(|i| json!({ "code": i.code, "severity": i.severity, "title": i.title, "subject": i.subject, "place": i.place, "detail": i.detail, "cables": i.cables, "nodes": i.nodes, "view": i.view })).collect::<Vec<_>>(),
     })))
 }

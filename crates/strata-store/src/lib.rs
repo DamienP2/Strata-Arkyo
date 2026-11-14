@@ -207,6 +207,18 @@ pub struct AuditEntry {
     pub object_id: String,
     pub before: Option<serde_json::Value>,
     pub after: Option<serde_json::Value>,
+    /// Projet de rattachement (entrées faites dans un projet).
+    pub project_id: Option<String>,
+}
+
+/// Filtres du journal : membre, action, projet, période (dates ISO, bornes incluses).
+#[derive(Debug, Clone, Default)]
+pub struct AuditFilter {
+    pub actor_id: Option<String>,
+    pub action: Option<String>,
+    pub project_id: Option<String>,
+    pub since: Option<String>,
+    pub until: Option<String>,
 }
 
 /// Ouvre un fichier de base en lecture seule et renvoie (intégrité correcte, version de schéma).
@@ -702,24 +714,60 @@ impl Store {
 
     /// Entrées du journal, de la plus récente à la plus ancienne.
     pub async fn audit_entries(&self, limit: i64) -> Result<Vec<AuditEntry>> {
-        let rows = sqlx::query("SELECT * FROM audit ORDER BY id DESC LIMIT ?")
-            .bind(limit.clamp(1, 500))
+        self.audit_filtered(&AuditFilter::default(), limit).await
+    }
+
+    /// Entrées du journal filtrées, de la plus récente à la plus ancienne.
+    pub async fn audit_filtered(&self, f: &AuditFilter, limit: i64) -> Result<Vec<AuditEntry>> {
+        let mut sql = String::from("SELECT * FROM audit WHERE 1 = 1");
+        let mut binds: Vec<String> = Vec::new();
+        for (v, clause) in [
+            (&f.actor_id, " AND actor_id = ?"),
+            (&f.action, " AND action = ?"),
+            (&f.project_id, " AND project_id = ?"),
+            (&f.since, " AND at >= ?"),
+            (&f.until, " AND at < ?"),
+        ] {
+            if let Some(v) = v {
+                sql.push_str(clause);
+                binds.push(v.clone());
+            }
+        }
+        sql.push_str(" ORDER BY id DESC LIMIT ?");
+        let mut q = sqlx::query(&sql);
+        for b in &binds {
+            q = q.bind(b);
+        }
+        let rows = q.bind(limit.clamp(1, 1000)).fetch_all(&self.pool).await?;
+        Ok(rows.iter().map(audit_row).collect())
+    }
+
+    /// Actions et projets présents dans le journal (pour les filtres).
+    pub async fn audit_facets(&self) -> Result<(Vec<String>, Vec<String>)> {
+        let actions = sqlx::query_scalar("SELECT DISTINCT action FROM audit ORDER BY action")
             .fetch_all(&self.pool)
             .await?;
-        let parse = |s: Option<String>| s.and_then(|s| serde_json::from_str(&s).ok());
-        Ok(rows
-            .iter()
-            .map(|r| AuditEntry {
-                id: r.get("id"),
-                at: r.get("at"),
-                actor_id: r.get("actor_id"),
-                action: r.get("action"),
-                object_type: r.get("object_type"),
-                object_id: r.get("object_id"),
-                before: parse(r.get("before")),
-                after: parse(r.get("after")),
-            })
-            .collect())
+        let projects = sqlx::query_scalar(
+            "SELECT DISTINCT project_id FROM audit WHERE project_id IS NOT NULL",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok((actions, projects))
+    }
+}
+
+pub(crate) fn audit_row(r: &sqlx::sqlite::SqliteRow) -> AuditEntry {
+    let parse = |s: Option<String>| s.and_then(|s| serde_json::from_str(&s).ok());
+    AuditEntry {
+        id: r.get("id"),
+        at: r.get("at"),
+        actor_id: r.get("actor_id"),
+        action: r.get("action"),
+        object_type: r.get("object_type"),
+        object_id: r.get("object_id"),
+        before: parse(r.get("before")),
+        after: parse(r.get("after")),
+        project_id: r.try_get("project_id").ok().flatten(),
     }
 }
 
