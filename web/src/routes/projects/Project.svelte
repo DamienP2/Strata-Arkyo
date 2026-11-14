@@ -55,7 +55,7 @@
     { key: '', label: 'Vue d’ensemble', href: `/projets/${id}`, icon: 'grid' },
     { key: 'inventaire', label: 'Inventaire', href: `/projets/${id}/inventaire`, icon: 'box' },
     { key: 'taches', label: 'Tâches', href: `/projets/${id}/taches`, icon: 'check', badge: view?.tasks.filter((t) => t.status === 'todo' || t.status === 'in_progress').length || undefined },
-  ] }, { label: 'Conception', lock: true, items: [
+  ] }, { label: 'Conception', items: [
     { key: 'racks', label: 'Racks', href: `/projets/${id}/racks`, icon: 'server' },
     { key: 'mobilier', label: 'Mobilier', href: `/projets/${id}/mobilier`, icon: 'layers' },
     { key: 'planche', label: 'Planche d’élévations', href: `/projets/${id}/planche`, icon: 'sheet' },
@@ -72,6 +72,12 @@
     { key: 'dossier', label: 'Dossier et exports', href: `/projets/${id}/dossier`, icon: 'file' },
     { key: 'historique', label: 'Historique', href: `/projets/${id}/historique`, icon: 'clock' },
   ] }]);
+  // Une ligne sous le titre des pages dont le rôle n'est pas évident d'après leur nom.
+  const DESC: Record<string, string> = {
+    planche: 'Les élévations des baies et du mobilier mises en page sur des feuilles, pour l’impression ou l’export.',
+    plans: 'Les éléments du projet placés sur le site, avec les liaisons tracées et leurs longueurs réelles.',
+    dessins: 'Schémas de principe, implantations vidéo et audio, plans de feu avec adressage DMX.',
+  };
   const section = $derived(groups.flatMap((g) => g.items.map((i) => ({ ...i, group: g.label }))).find((i) => i.key === sub));
 
   async function setStatus(s: Status) {
@@ -116,12 +122,13 @@
         <div class="ws-top-main">
           <span class="ws-crumb">{section?.group ?? 'Projet'}</span>
           <h1>{section?.label ?? 'Section'}</h1>
+          {#if DESC[sub]}<p class="ws-desc">{DESC[sub]}</p>{/if}
         </div>
         <div class="ws-top-meta">
           {#if days != null && days >= 0 && !['done', 'cancelled'].includes(p.status)}<span class="tally" style="--c:{urgency(days)}">J-{days}</span>{/if}
-          <span>Exploitation {period(p)}</span>
-          {#if p.venue}<span class="hide-m">{p.venue}</span>{/if}
-          <span class="hide-m">{p.client ?? 'Projet interne'}</span>
+          <span class="meta"><span class="mk">Exploitation</span>{period(p)}</span>
+          {#if p.venue}<span class="meta hide-m"><span class="mk">Lieu</span>{p.venue}</span>{/if}
+          <span class="meta hide-m"><span class="mk">Client</span>{p.client ?? 'Projet interne'}</span>
           {#if presence.length}<span class="presence" title="Présents sur ce projet">{#each presence as m (m.id)}<Avatar name={m.name} color={m.color} size="sm" />{/each}</span><span class="mode live"><i></i><span>En direct</span></span>{/if}
         </div>
       </header>
@@ -147,3 +154,10 @@
     </div>
   </Workspace>
 {:else}<span class="spin"></span>{/if}
+
+<style>
+  /* En-tête : chaque information porte son étiquette (ce ne sont pas des liens). */
+  .meta { display: inline-flex; align-items: baseline; gap: 6px; color: var(--fg-2); cursor: default; }
+  .mk { font: 600 10px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--fg-3); }
+  .ws-desc { margin: 2px 0 0; max-width: 640px; font-size: 13px; line-height: 1.35; color: var(--fg-3); }
+</style>

@@ -171,7 +171,7 @@
 
   {#if tab === 'ports'}
     {#if !r.ports.length}
-      <section class="card empty-card"><h3>Aucun port réseau</h3><p class="muted">Les ports dont le signal est IP (Ethernet, Dante, ST 2110…) des équipements du projet apparaîtront ici.</p></section>
+      <section class="card empty-card"><h3>Aucun port réseau</h3><p class="muted">Les ports dont le signal est IP (Ethernet, Dante, ST 2110…) des équipements du projet apparaîtront ici.</p><a class="btn" href="/projets/{pid}/inventaire"><Icon name="box" size="sm" />Ajouter du matériel</a></section>
     {:else}
       <div class="ct-bar">
         <label class="search" style="flex:1;min-width:220px"><Icon name="search" /><input class="input" bind:value={q} placeholder="Équipement, port, IP, nom d’hôte…" aria-label="Rechercher un port"></label>
@@ -227,9 +227,9 @@
     {/if}
 
   {:else if tab === 'vlans'}
-    <div class="ct-bar"><span class="muted small">Numéro unique de 1 à 4094. Le sous-réseau sert à l’adressage automatique.</span><span style="flex:1"></span>{#if writable}<button class="btn sm primary" onclick={newVlan}><Icon name="plus" size="sm" />Nouveau VLAN</button>{/if}</div>
+    <div class="ct-bar"><span class="muted small">Numéro unique de 1 à 4094. Le sous-réseau sert à l’adressage automatique.</span><span style="flex:1"></span>{#if writable && r.vlans.length}<button class="btn sm primary" onclick={newVlan}><Icon name="plus" size="sm" />Nouveau VLAN</button>{/if}</div>
     {#if !r.vlans.length}
-      <section class="card empty-card"><h3>Aucun VLAN</h3><p class="muted">Créez les VLAN du projet (production, contrôle, Dante, gestion…), puis affectez-les aux ports.</p></section>
+      <section class="card empty-card"><h3>Aucun VLAN</h3><p class="muted">Créez les VLAN du projet (production, contrôle, Dante, gestion…), puis affectez-les aux ports.</p>{#if writable}<button class="btn primary" onclick={newVlan}><Icon name="plus" size="sm" />Créer un VLAN</button>{/if}</section>
     {:else}
       <div class="vgrid">
         {#each r.vlans as v (v.id)}
@@ -262,7 +262,7 @@
       {/if}
     </div>
     {#if !r.flows.length}
-      <section class="card empty-card"><h3>Aucun flux IP</h3><p class="muted">Déclarez les flux des équipements dans le catalogue (fiche équipement › Flux IP) : chaque sortie reçoit ici un groupe multicast.</p></section>
+      <section class="card empty-card"><h3>Aucun flux IP</h3><p class="muted">Déclarez les flux des équipements dans le catalogue (fiche équipement › Flux IP) : chaque sortie reçoit ici un groupe multicast.</p><a class="btn" href="/catalogue">Ouvrir le catalogue</a></section>
     {:else}
       <section class="card ct">
         <div class="tbl-wrap"><table class="tbl ct-tbl">
@@ -285,7 +285,7 @@
 
   {:else}
     {#if !r.map.nodes.length}
-      <section class="card empty-card"><h3>Carte vide</h3><p class="muted">Elle se dessine à partir des équipements à ports IP et de leurs câbles.</p></section>
+      <section class="card empty-card"><h3>Carte vide</h3><p class="muted">Elle se dessine à partir des équipements à ports IP et de leurs câbles.</p><a class="btn" href="/projets/{pid}/synoptique"><Icon name="syn" size="sm" />Ouvrir le synoptique</a></section>
     {:else}
       <div class="ct-bar small muted"><select class="input" bind:value={mapVlan} aria-label="Filtrer par VLAN"><option value="">Tous les VLAN</option>{#each r.vlans as v}<option value={v.vid}>VLAN {v.vid} · {v.name}</option>{/each}</select><span class="lg"><i style="background:#3A7BD5"></i>Réseau A</span><span class="lg"><i style="background:#E0A030"></i>Réseau B</span><span class="lg"><i class="dash"></i>Trunk</span>{#each r.vlans as v}<span class="lg"><i style="background:{v.color}"></i>VLAN {v.vid}</span>{/each}</div>
       <section class="card nw-map">
@@ -389,6 +389,8 @@
   .lg { display: inline-flex; gap: 6px; align-items: center; }
   .lg i { width: 18px; height: 4px; border-radius: 2px; display: inline-block; }
   .lg i.dash { background: repeating-linear-gradient(90deg, var(--fg-2) 0 6px, transparent 6px 9px); }
-  .empty-card { padding: 28px; text-align: center; }
+  .empty-card { display: grid; justify-items: center; gap: 8px; padding: 32px 24px; text-align: center; }
+  .empty-card h3, .empty-card p { margin: 0; }
+  .empty-card .btn { margin-top: 6px; }
   @media (max-width: 700px) { .nw-stats { gap: 16px; } .nw-stats b { font-size: 20px; } }
 </style>

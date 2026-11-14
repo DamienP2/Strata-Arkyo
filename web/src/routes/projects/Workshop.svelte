@@ -24,7 +24,16 @@
   const writable = $derived(can('projets', 'ecriture'));
   const pid = $derived(view.project.id);
   let cview = $state<'inventory' | 'cabling' | 'equipment'>('inventory');
-  async function consExport(f: 'pdf' | 'csv' | 'doc') { if (!cur) return; try { const { construction } = await import('../../lib/construction'); await construction(view, cur, cview, f); } catch (e) { fail(e); } }
+  // Exports du dossier de construction : un menu, et « Génération… » tant que le fichier se prépare.
+  let exporting = $state<string | null>(null);
+  let expOpen = $state(false);
+  const EXPORTS: [f: 'pdf' | 'csv' | 'doc', label: string, hint: string][] = [['pdf', 'PDF', 'Document à imprimer'], ['csv', 'Tableur', 'Fichier CSV pour Excel ou LibreOffice'], ['doc', 'Word', 'Document modifiable']];
+  async function consExport(f: 'pdf' | 'csv' | 'doc') {
+    expOpen = false;
+    if (!cur || exporting) return;
+    exporting = f;
+    try { const { construction } = await import('../../lib/construction'); await construction(view, cur, cview, f); } catch (e) { fail(e); } finally { exporting = null; }
+  }
 
   async function loadSums() {
     try {
@@ -106,6 +115,8 @@
   const total = $derived(sums?.reduce((a, s) => ({ d: a.d + s.done, t: a.t + s.total }), { d: 0, t: 0 }) ?? { d: 0, t: 0 });
 </script>
 
+<svelte:window onclick={(e) => { if (expOpen && !(e.target as Element).closest('.exp-wrap')) expOpen = false; }} onkeydown={(e) => { if (e.key === 'Escape') expOpen = false; }} />
+
 {#if sums === null}<span class="spin"></span>
 {:else if !sums.length}
   <section class="card" style="padding:28px;display:grid;gap:12px;justify-items:start">
@@ -133,7 +144,10 @@
           <div class="ws-big">
             <span class="eyebrow">Contrôles de construction</span>
             <h2>{sheet.container.name}</h2>
-            <div class="cons"><select class="input sm" bind:value={cview} aria-label="Vue du dossier de construction"><option value="inventory">Inventaire</option><option value="cabling">Câblage</option><option value="equipment">Par équipement</option></select>{#each [['pdf', 'PDF'], ['csv', 'Tableur'], ['doc', 'Word']] as [f, l]}<button class="btn sm ghost" onclick={() => consExport(f as 'pdf' | 'csv' | 'doc')}><Icon name="download" size="sm" />{l}</button>{/each}</div>
+            <div class="cons"><select class="input sm" bind:value={cview} aria-label="Vue du dossier de construction"><option value="inventory">Inventaire</option><option value="cabling">Câblage</option><option value="equipment">Par équipement</option></select><div class="exp-wrap">
+                <button class="btn sm" aria-haspopup="menu" aria-expanded={expOpen} disabled={!!exporting} onclick={() => (expOpen = !expOpen)}>{#if exporting}<span class="spin"></span>Génération…{:else}<Icon name="download" size="sm" />Exporter<Icon name="chevd" size="sm" />{/if}</button>
+                {#if expOpen}<div class="exp-menu" role="menu" aria-label="Exporter le dossier de construction">{#each EXPORTS as [f, l, h]}<button role="menuitem" onclick={() => consExport(f)}><b>{l}</b><small>{h}</small></button>{/each}</div>{/if}
+              </div></div>
             <div class="ws-num" title="Lignes cochées sur les lignes à contrôler de cet élément"><b class="mono">{p.done}</b><span class="mono">/ {p.total}</span><span class="muted small">lignes cochées</span><span class="chip {p.total && p.done === p.total ? 'ok' : ''}">{pct(p.done, p.total)} %</span></div>
             <span class="bar big"><i style="width:{pct(p.done, p.total)}%"></i></span>
           </div>
@@ -179,6 +193,12 @@
 <style>
   .cons { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 6px 0; }
   .cons select { width: auto; height: 32px; }
+  .exp-wrap { position: relative; }
+  .exp-menu { position: absolute; left: 0; top: calc(100% + 6px); z-index: 40; min-width: 240px; display: flex; flex-direction: column; gap: 2px; padding: 6px; border-radius: 12px; background: var(--surface); box-shadow: var(--e3); }
+  .exp-menu button { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 8px 10px; border: 0; border-radius: 8px; background: none; text-align: left; color: var(--fg); font: inherit; cursor: pointer; }
+  .exp-menu button:hover, .exp-menu button:focus-visible { background: var(--surface-2); outline: none; }
+  .exp-menu b { font-size: 13.5px; font-weight: 600; }
+  .exp-menu small { font-size: 12px; color: var(--fg-3); }
   .ws { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 18px; align-items: start; }
   .ws-side { padding: 14px; display: grid; gap: 12px; position: sticky; top: 12px; }
   .ws-all { display: grid; gap: 4px; padding: 4px 6px 10px; border-bottom: 1px solid var(--line); }
@@ -186,8 +206,9 @@
   .ws-side nav { display: grid; gap: 4px; }
   .ws-c { display: flex; gap: 10px; align-items: center; padding: 8px; border: 0; border-radius: 12px; background: none; cursor: pointer; text-align: left; font: inherit; color: inherit; }
   .ws-c:hover { background: var(--surface-2); }
-  .ws-c.on { background: var(--primary-bg); color: var(--primary-fg); }
-  .ws-c.on .muted { color: inherit; opacity: .7; }
+  /* Sélection habituelle : fond teinté et liseré à gauche. */
+  .ws-c.on { background: color-mix(in srgb, var(--accent, #4F6BFF) 12%, transparent); box-shadow: inset 3px 0 0 var(--accent, #4F6BFF); color: var(--fg); }
+  .ws-c.on .ws-ct b { font-weight: 700; }
   .ws-ct { display: flex; flex-direction: column; min-width: 0; }
   .ws-ct b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ring { --p: 0; width: 36px; height: 36px; flex: none; border-radius: 50%; display: grid; place-items: center; font-size: 10.5px;

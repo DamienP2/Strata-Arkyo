@@ -93,8 +93,8 @@
 </script>
 
 <div class="dz">
-  <ol class="steps" aria-label="Étapes">
-    {#each steps as s, i}<li class:on={i === step} class:done={i < step}><button disabled={i > 0 && !docs.length} onclick={() => (step = i)}><span class="n">{i + 1}</span>{s}</button></li>{/each}
+  <ol class="dz-steps" aria-label="Étapes">
+    {#each steps as s, i}<li class:on={i === step} class:done={i < step}>{#if i}<span class="sep" aria-hidden="true"></span>{/if}<button disabled={i > 0 && !docs.length} aria-current={i === step ? 'step' : undefined} onclick={() => (step = i)}><span class="n">{#if i < step}<Icon name="check" size="sm" />{:else}{i + 1}{/if}</span>{s}</button></li>{/each}
   </ol>
 
   {#if step === 0}
@@ -104,7 +104,7 @@
       <div class="starts">
         <button class="card start" onclick={() => startWith(fresh())}><Icon name="plus" /><b>Nouvelle composition</b><span class="muted small">Tous les documents, réglages par défaut.</span></button>
         <button class="card start" disabled={!last.data?.docs} onclick={() => startWith(last.data!.docs!, last.data!.title)}><Icon name="refresh" /><b>Reprendre la dernière</b><span class="muted small">{last.data?.docs ? 'Composition du dernier export réussi.' : 'Aucun export réussi pour ce projet.'}</span></button>
-        <div class="card start"><Icon name="file" /><b>Modèle enregistré</b>
+        <div class="card start" class:off={!templates.length} aria-disabled={!templates.length}><Icon name="file" /><b>Modèle enregistré</b>
           {#if templates.length}<select class="input" onchange={(e) => { const t = templates.find((x) => x.id === (e.target as HTMLSelectElement).value); if (t) startWith(t.docs, t.name); }}><option value="">Choisir…</option>{#each templates as t}<option value={t.id}>{t.name}</option>{/each}</select>{:else}<span class="muted small">Aucun modèle de dossier.</span>{/if}
         </div>
       </div>
@@ -179,18 +179,23 @@
 
 <style>
   .dz { display: grid; gap: 14px; }
-  .steps { display: flex; gap: 6px; list-style: none; padding: 0; margin: 0; overflow-x: auto; }
-  .steps li { flex: none; }
-  .steps button { white-space: nowrap; }
-  .steps button { display: inline-flex; gap: 8px; align-items: center; border: 1px solid var(--line); background: var(--surface); border-radius: 99px; padding: 6px 12px 6px 6px; font: 600 13px var(--font); color: var(--fg-2); cursor: pointer; }
-  .steps .n { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-2); font-size: 12px; }
-  .steps li.on button { border-color: var(--fg); color: var(--fg); }
-  .steps li.on .n { background: var(--primary-bg); color: var(--primary-fg); }
-  .steps li.done .n { background: var(--ok, #0E8550); color: #fff; }
+  /* Étapes : une rangée compacte (pastilles reliées par un trait), qui défile si elle déborde. */
+  .dz-steps { display: flex; align-items: center; gap: 0; list-style: none; padding: 0; margin: 0; overflow-x: auto; }
+  .dz-steps li { flex: none; display: flex; align-items: center; margin: 0; padding: 0; border: 0; }
+  .dz-steps .sep { width: 24px; height: 1px; margin: 0 6px; background: var(--line-2, var(--line)); }
+  .dz-steps button { display: inline-flex; gap: 8px; align-items: center; height: 34px; white-space: nowrap; border: 1px solid var(--line); background: var(--surface); border-radius: 99px; padding: 0 12px 0 5px; font: 600 13px var(--font); color: var(--fg-2); cursor: pointer; }
+  .dz-steps button:disabled { cursor: default; opacity: .55; }
+  .dz-steps .n { flex: none; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-2); font: 600 12px/1 var(--font); }
+  .dz-steps .n :global(.ic) { width: 14px; height: 14px; }
+  .dz-steps li.on button { border-color: var(--accent, #4F6BFF); background: color-mix(in srgb, var(--accent, #4F6BFF) 12%, var(--surface)); color: var(--fg); }
+  .dz-steps li.on .n { background: var(--accent, #4F6BFF); color: #fff; }
+  .dz-steps li.done .n { background: var(--ok, #0E8550); color: #fff; }
   .st0, .st1 { padding: 20px; display: grid; gap: 10px; }
   .starts { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
   .start { padding: 16px; display: grid; gap: 6px; justify-items: start; text-align: left; font: inherit; color: inherit; cursor: pointer; }
-  .start:disabled { opacity: .5; cursor: default; }
+  .start { border: 1px solid var(--line); box-shadow: none; }
+  button.start:not(:disabled):hover { border-color: var(--fg-3); }
+  .start:disabled, .start.off { opacity: .5; cursor: default; }
   .row { display: flex; gap: 10px; }
   .grow { flex: 1; }
   .field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }

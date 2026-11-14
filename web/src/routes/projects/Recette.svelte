@@ -78,7 +78,8 @@
     <div class="pt-main">
       <div class="pt-t"><b>{p.label}</b>{#if p.detail}<span class="muted small">{p.detail}</span>{/if}</div>
       <div class="pt-st" role="group" aria-label="Verdict de {p.label}">
-        {#each Object.entries(ST) as [k, s]}<button class="sv {k}" class:on={p.status === k} disabled={!writable || p.deleted} onclick={() => verdict(p, k as St)}>{s.label}</button>{/each}
+        {#each Object.entries(ST) as [k, s]}<button class="sv {k}" class:on={p.status === k} aria-pressed={p.status === k} disabled={!writable || p.deleted} onclick={() => verdict(p, k as St)}>{s.label}</button>{/each}
+        <button class="btn sm ghost pt-log-b" aria-expanded={openLog === p.key} onclick={() => { openLog = openLog === p.key ? null : p.key; if (openLog) loadLog(p.key); }}>Journal</button>
       </div>
       <div class="pt-c">
         {#if p.status !== 'to_test'}<input class="input" value={p.comment ?? ''} disabled={!writable || p.deleted} maxlength="2000" onchange={(e) => verdict(p, p.status, (e.target as HTMLInputElement).value)} aria-label="Commentaire du verdict">{/if}
@@ -87,7 +88,6 @@
       <div class="pt-a">
         {#if free && writable}<button class="icon-btn sm" disabled={i === 0} onclick={() => moveFree(i, -1)} aria-label="Monter">↑</button><button class="icon-btn sm" disabled={i === (r?.free.length ?? 1) - 1} onclick={() => moveFree(i, 1)} aria-label="Descendre">↓</button>
           <button class="icon-btn sm" onclick={() => { const l = prompt('Point libre', p.label); if (l) renameFree(p, l); }} aria-label="Renommer"><Icon name="pen" size="sm" /></button><button class="icon-btn sm" onclick={() => deleteFree(p)} aria-label="Retirer"><Icon name="trash" size="sm" /></button>{/if}
-        <button class="btn sm ghost" onclick={() => { openLog = openLog === p.key ? null : p.key; if (openLog) loadLog(p.key); }}>Journal</button>
       </div>
     </div>
     {#if openLog === p.key}
@@ -111,7 +111,7 @@
       <button class="btn primary" onclick={pv}><Icon name="download" size="sm" />Procès-verbal PDF</button>
     </div>
   </div>
-  <div class="toolbar" style="margin:12px 0"><label class="search" style="flex:1"><Icon name="search" /><input class="input" bind:value={q} placeholder="Rechercher un point…" aria-label="Rechercher"></label></div>
+  <div class="rc-tools"><label class="search" style="flex:1"><Icon name="search" /><input class="input" bind:value={q} placeholder="Rechercher un point…" aria-label="Rechercher"></label></div>
 
   {#if missing && missing.points.some(keep)}
     <details class="card rc-miss">
@@ -151,21 +151,27 @@
   .rc-act { display: flex; gap: 8px; align-items: center; }
   .rc-act select { width: auto; height: 40px; }
   .rc-q { display: inline-grid; place-items: center; width: 14px; height: 14px; border-radius: 50%; border: 1px solid currentColor; font-size: 9.5px; cursor: help; }
-  .rc-miss { padding: 10px 14px; margin-top: 14px; border-color: color-mix(in srgb, var(--warn, #B78400) 40%, var(--line)); }
+  /* La page empile ses blocs avec un écart régulier : pas de marge en plus. */
+  .rc-tools { display: flex; gap: 10px; align-items: center; margin: 0; }
+  .rc-tools .search { max-width: 520px; }
+  .rc-miss { padding: 10px 14px; margin: 0; border-color: color-mix(in srgb, var(--warn, #B78400) 40%, var(--line)); }
   .rc-miss summary { cursor: pointer; font-weight: 600; display: flex; gap: 8px; align-items: center; color: var(--warn, #B78400); }
   .rc-miss summary a { margin-left: auto; font-weight: 500; }
-  .rc-h { font-size: 22px; margin: 22px 0 10px; }
-  .rc-g { padding: 12px 14px; display: grid; gap: 4px; margin-bottom: 10px; }
+  .rc-h { font-size: 20px; margin: 6px 0 -8px; }
+  .rc-g { padding: 12px 14px; display: grid; gap: 4px; margin: 0; }
   .pt { border-top: 1px solid var(--line); padding: 8px 0; }
   .pt:first-of-type { border-top: 0; }
   .pt-main { display: grid; grid-template-columns: minmax(200px, 1.3fr) auto minmax(180px, 1fr) auto; gap: 12px; align-items: center; }
+  .pt-a:empty { display: none; }
   .pt-t { display: flex; flex-direction: column; min-width: 0; }
-  .pt-st { display: flex; gap: 4px; }
-  .sv { padding: 5px 10px; border-radius: 99px; border: 1.5px solid var(--line); background: var(--surface); cursor: pointer; font: 600 12.5px var(--font); color: var(--fg-2); }
-  .sv.on.ok { background: var(--ok, #0E8550); border-color: var(--ok, #0E8550); color: #fff; }
-  .sv.on.reserve { background: var(--warn, #B78400); border-color: var(--warn, #B78400); color: #fff; }
-  .sv.on.ko { background: var(--err); border-color: var(--err); color: #fff; }
-  .sv.on.to_test { background: var(--fg); border-color: var(--fg); color: var(--bg); }
+  .pt-st { display: flex; gap: 4px; align-items: center; }
+  .pt-log-b { margin-left: 6px; }
+  .sv { --c: var(--fg-2); padding: 5px 10px; border-radius: 99px; border: 1.5px solid var(--line); background: var(--surface); cursor: pointer; font: 600 12.5px var(--font); color: var(--fg-2); }
+  .sv.ok { --c: var(--ok, #0E8550); } .sv.reserve { --c: var(--warn, #B78400); } .sv.ko { --c: var(--err); }
+  .sv:not(.on):not(:disabled):hover { border-color: var(--c); color: var(--c); }
+  /* Verdict choisi : la couleur du résumé (texte, liseré et fond teinté), lisible dans les deux thèmes. */
+  .sv.on.ok, .sv.on.reserve, .sv.on.ko { background: color-mix(in srgb, var(--c) 18%, var(--surface)); border-color: var(--c); color: var(--c); }
+  .sv.on.to_test { background: var(--surface-2); border-color: var(--fg-3); color: var(--fg); }
   .pt-c { display: flex; flex-direction: column; gap: 2px; }
   .pt-c .input { height: 34px; font-size: 14px; }
   .pt-a { display: flex; gap: 4px; align-items: center; }

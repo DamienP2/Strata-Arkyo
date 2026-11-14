@@ -292,7 +292,7 @@
               </div>
             {/if}
           </div>
-          <button class="btn primary" onclick={() => (contEdit = { c: null })}><Icon name="plus" size="sm" />Ajouter un élément</button>
+          <button class="btn" class:primary={!conts.length} onclick={() => (contEdit = { c: null })}><Icon name="plus" size="sm" />Ajouter un élément</button>
         </div>{/if}
       </div>
 
@@ -443,6 +443,8 @@
 
 <style>
   .over { color: var(--err); font-weight: 600; }
+  /* Onglet d’emplacement actif : texte blanc plein sur le fond primaire (contraste lisible). */
+  .loc-list .loc.on, .loc-list .loc.on .ln b, .loc-list .loc.on .ln .small { color: #fff; opacity: 1; }
   .menu-wrap { position: relative; }
   .pop-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 40; min-width: 330px; display: flex; flex-direction: column; gap: 2px; padding: 6px; border-radius: 12px; background: var(--surface); box-shadow: var(--e3); }
   .pop-menu button { display: flex; align-items: flex-start; gap: 10px; padding: 8px 10px; border: 0; border-radius: 8px; background: none; text-align: left; color: var(--fg); }

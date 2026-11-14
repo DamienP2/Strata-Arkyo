@@ -1,6 +1,5 @@
 <script lang="ts">
   import Icon from '../../components/Icon.svelte';
-  import Vu from '../../components/Vu.svelte';
   import ProjectLinks from '../../components/ProjectLinks.svelte';
   import Confirm from '../../components/Confirm.svelte';
   import FieldError from '../../components/FieldError.svelte';
@@ -80,7 +79,7 @@
   <section class="card td">
     <div class="td-doms">
       {#each todo.domains as d (d.key)}
-        <a class="dom" href={d.href} title={d.hint ?? d.note}><span class="flabel">{d.label}{#if d.hint}<span class="hint" aria-hidden="true">?</span>{/if}</span><b class="mono">{d.pct} %</b><span class="bar"><i style="width:{d.pct}%" class:ok={d.pct === 100}></i></span><span class="muted small d-note">{d.note}</span><span class="muted small d-short">{d.done} / {d.total}</span></a>
+        <a class="dom" href={d.href} title={d.hint ? `${d.note}. ${d.hint}` : d.note}><span class="flabel">{d.label}{#if d.hint}<span class="hint" aria-hidden="true">?</span>{/if}</span><b class="mono">{d.pct} %</b><span class="bar"><i style="width:{d.pct}%" class={d.pct === 100 ? 'ok' : d.pct >= 50 ? 'mid' : 'low'}></i></span><span class="muted small d-note">{d.note}</span><span class="muted small d-short">{d.done} / {d.total}</span></a>
       {/each}
     </div>
     <div class="td-list">
@@ -91,9 +90,10 @@
   </section>
 {/if}
 
-<div class="grid-2" style="grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);align-items:start">
+<div class="grid-2 ov-grid">
   <section class="card">
     <div class="card-head"><h2>Fiche du projet</h2><span class="chip">{REGIE[p.regie].label}</span></div>
+    {#if missing.length}<p class="muted small fiche-miss">À compléter : {missing.join(', ')}.</p>{/if}
     <form class="form-grid" style="margin-top:16px" onsubmit={save}>
       <fieldset disabled={!writable} style="display:contents">
         <div class="field span"><label for="o-name">Nom</label><input class="input" id="o-name" bind:value={form.name} required maxlength="120"><FieldError message={errors.name} /></div>
@@ -113,11 +113,6 @@
 
   <div class="stack" style="gap:20px">
     <section class="card">
-      <div class="card-head"><div><p class="eyebrow">Complétion de la fiche</p><h2 style="font:760 48px/1 var(--display);letter-spacing:-.04em">{view.completion}<small style="font-size:.45em;color:var(--fg-3)"> %</small></h2></div></div>
-      <div style="margin-top:12px"><Vu value={view.completion} n={24} cls={view.completion >= 80 ? 'ok' : ''} /></div>
-      {#if missing.length}<p class="muted small" style="margin-top:12px">À compléter : {missing.join(', ')}.</p>{/if}
-    </section>
-    <section class="card">
       <div class="card-head"><h2>Inventaire</h2><a class="btn sm" href="/projets/{p.id}/inventaire">Ouvrir</a></div>
       <dl class="kv" style="margin-top:12px">
         <dt>Emplacements</dt><dd>{view.locations.length}</dd>
@@ -133,7 +128,7 @@
       <p class="muted small" style="margin-top:10px">{view.tasks.length ? `${view.tasks.length - openTasks} sur ${view.tasks.length} terminée${view.tasks.length > 1 ? 's' : ''}.` : 'Aucune tâche.'}</p>
     </section>
     <ProjectLinks pid={p.id} />
-    {#if writable}<button class="btn ghost danger" style="align-self:flex-start" onclick={() => (deleting = true)}><Icon name="trash" />Supprimer le projet</button>{/if}
+    {#if writable}<button class="btn ghost danger ov-del" onclick={() => (deleting = true)}><Icon name="trash" />Supprimer le projet</button>{/if}
   </div>
 </div>
 
@@ -145,20 +140,29 @@
 
 <style>
   .td { display: grid; gap: 16px; margin-bottom: 20px; }
-  .td-doms { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
-  .dom { display: grid; gap: 4px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); color: inherit; text-decoration: none; }
+  .td-doms { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
+  /* Même gabarit pour chaque carte : titre, valeur, barre, sous-texte d'une ligne (détail en infobulle). */
+  .dom { display: grid; grid-template-rows: auto auto auto auto; align-content: start; justify-items: stretch; gap: 6px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: none; box-shadow: none; color: inherit; text-decoration: none; text-align: left; min-width: 0; }
   .dom:hover { border-color: var(--fg-3); }
-  .dom b { font-size: 22px; }
-  .dom .bar { height: 5px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
-  .dom .bar i { display: block; height: 100%; background: var(--fg); }
+  .dom .flabel { display: flex; align-items: center; justify-content: flex-start; min-width: 0; margin: 0; font-size: 13px; line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dom b { font-size: 22px; line-height: 26px; }
+  .dom .bar { display: block; height: 5px; border-radius: 99px; background: color-mix(in srgb, var(--fg) 12%, transparent); overflow: hidden; }
+  .dom .bar i { display: block; height: 100%; border-radius: inherit; }
   .dom .bar i.ok { background: var(--ok, #0E8550); }
+  .dom .bar i.mid { background: var(--accent, #4F6BFF); }
+  .dom .bar i.low { background: var(--warn, #B78400); }
+  .d-note, .d-short { display: block; min-width: 0; margin: 0; line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .d-short { display: none; }
+  .fiche-miss { margin: 10px 0 0; }
+  .ov-del { align-self: flex-start; max-width: 100%; }
+  .ov-grid { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); align-items: start; }
+  @media (max-width: 900px) { .ov-grid { grid-template-columns: minmax(0, 1fr); } }
   /* Téléphone : grille 2 colonnes compacte, légende courte (le détail reste en infobulle). */
   @media (max-width: 640px) {
     .td-doms { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-    .dom { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "lbl pct" "bar bar" "note note"; align-items: center; gap: 4px 8px; padding: 9px 11px; text-align: left; background: none; box-shadow: none; }
+    .dom { grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: none; grid-template-areas: "lbl pct" "bar bar" "note note"; align-items: center; gap: 4px 8px; padding: 9px 11px; }
     .dom:last-child:nth-child(odd) { grid-column: 1 / -1; }
-    .dom .flabel { grid-area: lbl; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dom .flabel { grid-area: lbl; }
     .dom b { grid-area: pct; font-size: 17px; white-space: nowrap; }
     .dom .bar { grid-area: bar; }
     .d-note { display: none; }

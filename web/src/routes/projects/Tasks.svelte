@@ -17,7 +17,9 @@
   let errors = $state<Record<string, string>>({});
   let filter = $state<'open' | 'all'>('open');
 
+  const openCount = $derived(view.tasks.filter((t) => t.status === 'todo' || t.status === 'in_progress').length);
   const shown = $derived(view.tasks.filter((t) => filter === 'all' || t.status === 'todo' || t.status === 'in_progress'));
+  const newTask = () => (editing = { title: '', status: 'todo', priority: 'normal' });
   const nameOf = (id: string | null) => members.find((m) => m.id === id)?.name ?? '';
 
   async function save(e: SubmitEvent) {
@@ -45,11 +47,22 @@
 </script>
 
 <div class="toolbar" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-  <div class="seg"><button class:on={filter === 'open'} onclick={() => (filter = 'open')}>À traiter</button><button class:on={filter === 'all'} onclick={() => (filter = 'all')}>Toutes ({view.tasks.length})</button></div>
+  <div class="seg"><button class:on={filter === 'open'} onclick={() => (filter = 'open')}>À traiter ({openCount})</button><button class:on={filter === 'all'} onclick={() => (filter = 'all')}>Toutes ({view.tasks.length})</button></div>
   <span style="flex:1"></span>
-  {#if writable}<button class="btn primary" onclick={() => (editing = { title: '', status: 'todo', priority: 'normal' })}><Icon name="plus" />Nouvelle tâche</button>{/if}
+  {#if writable && shown.length}<button class="btn primary" onclick={newTask}><Icon name="plus" />Nouvelle tâche</button>{/if}
 </div>
 
+{#if !shown.length}
+  <section class="card tk-empty">
+    <span class="tk-ic"><Icon name="check" /></span>
+    <h3>{filter === 'open' && view.tasks.length ? 'Rien à traiter' : 'Aucune tâche'}</h3>
+    <p class="muted">{filter === 'open' && view.tasks.length ? `Les ${view.tasks.length} tâche${view.tasks.length > 1 ? 's' : ''} du projet ${view.tasks.length > 1 ? 'sont terminées ou annulées' : 'est terminée ou annulée'}.` : 'Notez ici ce qu’il reste à faire sur le projet : une commande, un essai, un rendez-vous, avec une échéance et une personne.'}</p>
+    <div class="tk-act">
+      {#if writable}<button class="btn primary" onclick={newTask}><Icon name="plus" size="sm" />Nouvelle tâche</button>{/if}
+      {#if filter === 'open' && view.tasks.length}<button class="btn" onclick={() => (filter = 'all')}>Voir toutes les tâches</button>{/if}
+    </div>
+  </section>
+{:else}
 <!-- Téléphone : une carte par tâche (le tableau à 5 colonnes est illisible). -->
 <ul class="task-cards">
   {#each shown as t (t.id)}
@@ -71,7 +84,7 @@
         {#if t.done_on}<span class="muted small">fait le {fdate(t.done_on)}</span>{/if}
       </div>
     </li>
-  {:else}<li class="card empty">{filter === 'open' ? 'Rien à traiter.' : 'Aucune tâche.'}</li>{/each}
+  {/each}
 </ul>
 
 <section class="card task-tbl" style="padding:6px 18px 10px">
@@ -87,10 +100,11 @@
           <td>{#if writable}<select class="input" style="height:36px;width:auto" value={t.status} onchange={(e) => setStatus(t, (e.target as HTMLSelectElement).value as TaskStatus)} aria-label="Statut">{#each Object.entries(TASK_STATUS) as [k, s]}<option value={k}>{s.label}</option>{/each}</select>{:else}<span class="chip {TASK_STATUS[t.status].chip}">{TASK_STATUS[t.status].label}</span>{/if}</td>
           <td>{#if writable}<div class="dl-actions"><button class="btn sm ghost" title="Modifier" onclick={() => (editing = { ...t })}><Icon name="pen" size="sm" /></button><button class="btn sm ghost danger" title="Supprimer" onclick={() => remove(t)}><Icon name="trash" size="sm" /></button></div>{/if}</td>
         </tr>
-      {:else}<tr><td colspan="6" class="empty">{filter === 'open' ? 'Rien à traiter.' : 'Aucune tâche.'}</td></tr>{/each}
+      {/each}
     </tbody>
   </table></div>
 </section>
+{/if}
 
 {#if editing}
   <Dialog title={editing.id ? 'Modifier la tâche' : 'Nouvelle tâche'} eyebrow={view.project.name} onclose={() => (editing = null)}>
@@ -109,6 +123,11 @@
 
 
 <style>
+  .tk-empty { display: grid; justify-items: center; gap: 8px; margin-top: 14px; padding: 36px 24px; text-align: center; }
+  .tk-empty h3 { margin: 0; font-size: 18px; }
+  .tk-empty p { margin: 0; max-width: 520px; }
+  .tk-ic { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 12px; background: var(--surface-2); color: var(--fg-2); }
+  .tk-act { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 6px; }
   .task-cards { display: none; list-style: none; margin: 0; padding: 0; flex-direction: column; gap: 10px; }
   @media (max-width: 640px) {
     .task-tbl { display: none; }

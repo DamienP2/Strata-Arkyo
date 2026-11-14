@@ -45,15 +45,15 @@
 
 {#if !data}<span class="spin"></span>
 {:else}
-  <div class="pp-head">
+  <div class="pp-head" role="tablist" aria-label="Familles à préparer">
     {#each data.families as f (f.key)}
-      <button class="pp-fam" class:on={tab === f.key} onclick={() => { tab = f.key; status = ''; }}>
+      <button class="pp-fam" role="tab" aria-selected={tab === f.key} class:on={tab === f.key} onclick={() => { tab = f.key; status = ''; }}>
         <span class="flabel">{f.label}</span>
         <b class="mono">{f.done} / {f.lines.length}</b>
         <span class="bar"><i style="width:{pct(f.done, f.lines.length)}%"></i></span>
       </button>
     {/each}
-    <button class="pp-fam" class:on={tab === 'packing'} onclick={() => (tab = 'packing')}><span class="flabel">Colisage</span><b class="mono">{data.packing.length}</b><span class="muted small">élément{data.packing.length > 1 ? 's' : ''}</span></button>
+    <button class="pp-fam" role="tab" aria-selected={tab === 'packing'} class:on={tab === 'packing'} onclick={() => (tab = 'packing')}><span class="flabel">Colisage</span><b class="mono">{data.packing.length}</b><span class="muted small">élément{data.packing.length > 1 ? 's' : ''}</span></button>
   </div>
 
   {#if tab === 'packing'}
@@ -115,7 +115,10 @@
 <style>
   .pp-head { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-bottom: 14px; }
   .pp-fam { display: grid; gap: 4px; padding: 12px 14px; border-radius: 14px; border: 1.5px solid var(--line); background: var(--surface); text-align: left; cursor: pointer; font: inherit; color: inherit; }
-  .pp-fam.on { border-color: var(--fg); box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--fg) 10%, transparent); }
+  .pp-fam:hover { border-color: var(--fg-3); }
+  /* Les cartes sont des onglets : celui qui filtre la liste est marqué comme une sélection (fond teinté, liseré). */
+  .pp-fam.on { border-color: var(--accent, #4F6BFF); background: color-mix(in srgb, var(--accent, #4F6BFF) 12%, var(--surface)); box-shadow: inset 0 -3px 0 var(--accent, #4F6BFF); }
+  .pp-fam.on .flabel { color: var(--fg); }
   .pp-fam b { font-size: 20px; }
   .bar { display: block; height: 6px; border-radius: 99px; background: color-mix(in srgb, var(--fg) 10%, transparent); overflow: hidden; }
   .bar i { display: block; height: 100%; background: var(--ok, #22A06B); }

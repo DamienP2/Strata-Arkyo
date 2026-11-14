@@ -31,8 +31,10 @@
   {#if writable}<div class="new"><input class="input" bind:value={label} maxlength="120" placeholder="Libellé (facultatif) : avant tournage, livraison…" aria-label="Libellé du point"><button class="btn sm primary" disabled={busy} onclick={take}><Icon name="plus" size="sm" />Créer un point</button></div>{/if}
   {#each points as p (p.id)}
     <div class="pt"><span class="chip sm">{p.auto ? 'auto' : 'manuel'}</span><span class="t"><b>{p.label ?? (p.auto ? 'Point automatique' : 'Point manuel')}</b><span class="muted small">{dateTime(p.created_at)} · {relative(p.created_at)} · {ko(p.size)}</span></span>
-      <button class="icon-btn sm" aria-label="Télécharger" onclick={() => download(`/points/${p.id}/download`)}><Icon name="download" size="sm" /></button>
-      {#if writable}<button class="btn sm" disabled={busy} onclick={() => restore(p)}>Restaurer</button><button class="icon-btn sm" aria-label="Supprimer le point" onclick={() => remove(p)}><Icon name="trash" size="sm" /></button>{/if}
+      {#if writable}<button class="btn sm" disabled={busy} onclick={() => restore(p)}>Restaurer</button>{/if}
+      <button class="icon-btn sm" title="Télécharger ce point (fichier du projet)" aria-label="Télécharger ce point" onclick={() => download(`/points/${p.id}/download`)}><Icon name="download" size="sm" /></button>
+      <!-- La corbeille est tenue à l'écart de « Restaurer » pour éviter le mauvais clic. -->
+      {#if writable}<span class="pt-sep" aria-hidden="true"></span><button class="icon-btn sm" title="Supprimer ce point de restauration" aria-label="Supprimer ce point de restauration" onclick={() => remove(p)}><Icon name="trash" size="sm" /></button>{/if}
     </div>
   {:else}<p class="muted small">Aucun point pour l’instant.</p>{/each}
 </section>
@@ -41,6 +43,7 @@
   .pts { display: grid; gap: 8px; margin-bottom: 20px; }
   .new { display: flex; gap: 8px; }
   .new .input { flex: 1; }
+  .pt-sep { width: 1px; height: 22px; margin: 0 8px; background: var(--line); }
   .pt { display: flex; gap: 10px; align-items: center; padding: 6px 0; border-top: 1px solid var(--line); }
   .t { flex: 1; display: flex; flex-direction: column; min-width: 0; }
   .chip.sm { font-size: 11px; padding: 1px 7px; border-radius: 99px; background: var(--surface-2); font-weight: 600; }

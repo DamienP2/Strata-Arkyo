@@ -307,7 +307,7 @@
           {#if notRackable.length}
             <h2 style="margin-top:8px">Sur étagère <span class="muted">· {notRackable.length}</span></h2>
             <p class="small muted">Hors format rack : choisissez une étagère posée dans la baie, puis « Poser ».</p>
-            {#each notRackable as p (p.instance_id ?? p.article_id)}<div class="pend mini" style="cursor:default"><i class="pm-c" style="--c:{fnColor(p.function)}"></i><span class="pm-l">{p.label}</span>{#if p.tag}<span class="pm-t">{p.tag}</span>{/if}</div>{/each}
+            {#each notRackable as p (p.instance_id ?? p.article_id)}<div class="pend mini" style="cursor:default" title="{p.label}{p.tag ? ` · ${p.tag}` : ''}"><i class="pm-c" style="--c:{fnColor(p.function)}"></i><span class="pm-l">{p.label}</span>{#if p.tag}<span class="pm-t">{p.tag}</span>{/if}</div>{/each}
           {/if}
         </section>
       </aside>
@@ -427,7 +427,7 @@
           {/each}
           {#if mine}
             <form class="circ-form" onsubmit={addCircuit}>
-              <input class="input" bind:value={circ.name} placeholder="PDU A · prise 1" aria-label="Nom du circuit">
+              <label class="circ-n"><span class="small muted">Nouveau circuit</span><input class="input" bind:value={circ.name} placeholder="Nom : PDU A · prise 1" aria-label="Nom du circuit" title="Nom du circuit (par défaut « PDU · phase »)"></label>
               <select class="input" bind:value={circ.phase} aria-label="Phase"><option>L1</option><option>L2</option><option>L3</option></select>
               <select class="input" bind:value={circ.rating_a} aria-label="Calibre"><option value={16}>16 A</option><option value={32}>32 A</option></select>
               <button class="btn sm"><Icon name="plus" size="sm" />Circuit</button>
@@ -452,8 +452,12 @@
           <dl class="kv"><dt>Hauteur</dt><dd>{nf(t.used_u, t.used_u % 1 ? 1 : 0)} / {t.total_u} U</dd><dt>Poids</dt><dd>{nf(t.weight_kg, 1)} kg</dd><dt>Puissance</dt><dd>{nf(t.power_w)} W</dd><dt>Dissipation</dt><dd>{nf(t.power_w * 3.412)} BTU/h</dd></dl>
           {#each rack.warnings as w}<div class="alert warn"><Icon name="alert" /><span>{w.message}</span></div>{/each}
           {#if mode === 'schematic'}<div class="legend" style="grid-template-columns:1fr">{#each legend as l}<div><span class="sw" style="--c:{catColor(l === 'Sans catégorie' ? null : l)}"></span>{l}</div>{/each}</div>{/if}
-          {#if mine && rack.elements.length}<button class="btn sm ghost danger" style="align-self:flex-start" onclick={() => (confirmClear = true)}>Vider le rack</button>{/if}
         </section>
+        {#if mine && rack.elements.length}
+          <section class="rk-clear">
+            <button class="btn sm" title="Tous les éléments posés redeviennent « à placer » (après confirmation)" onclick={() => (confirmClear = true)}><Icon name="undo" size="sm" />Vider le rack…</button>
+          </section>
+        {/if}
         {/if}
       </aside>
     </div>
@@ -490,7 +494,10 @@
   .circ { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 8px 10px; border-radius: 10px; background: var(--surface-2); font-size: 14px; }
   .circ.over { background: var(--err-soft); }
   .circ.over .mono { color: var(--err); font-weight: 700; }
-  .circ-form { display: grid; grid-template-columns: minmax(0, 1fr) 70px 80px auto; gap: 6px; }
+  /* Ajout d'un circuit : le nom sur toute la largeur, puis phase, calibre et bouton. */
+  .circ-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 6px; }
+  .circ-n { grid-column: 1 / -1; display: grid; gap: 4px; }
+  .rk-clear { padding-top: 14px; border-top: 1px solid var(--line); }
   .circ-form .input { height: 36px; font-size: 14px; padding: 0 8px; }
   .pdec { flex: 1 1 0; min-width: 0; align-self: stretch; display: block; padding: 2px 0; margin-left: 8px; }
   .pside { display: grid; gap: 8px; justify-items: start; }

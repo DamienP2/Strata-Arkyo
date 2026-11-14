@@ -151,9 +151,9 @@
 <svelte:window onbeforeunload={(e) => { if (dirty > 0) e.preventDefault(); }} />
 
 {#snippet end(x: End)}
-  {#if x.missing}<td class="end gone"><b>Extrémité supprimée</b><span class="muted small">L’équipement ou le port n’existe plus.</span></td>
-  {:else if !x.port}<td class="end"><b>{x.equipment}</b><span class="muted small">{x.location}</span></td>
-  {:else}<td class="end"><b>{x.equipment} <span class="mono muted">{x.tag}</span></b><span class="muted small">{x.element} › <b class="pt">{x.port}</b>{#if x.connector}{' · '}{x.connector}{/if}</span></td>{/if}
+  {#if x.missing}<td class="end gone" title="L’équipement ou le port n’existe plus."><span class="end-l"><b>Extrémité supprimée</b></span></td>
+  {:else if !x.port}<td class="end" title="{x.equipment} · {x.location}"><span class="end-l"><b>{x.equipment}</b> <span class="muted">· {x.location}</span></span></td>
+  {:else}<td class="end" title="{x.element} › {x.equipment}{x.tag ? ` ${x.tag}` : ''} › {x.port}{x.connector ? ` · ${x.connector}` : ''}"><span class="end-l"><b>{x.equipment}</b>{#if x.tag}{" "}<span class="mono muted">{x.tag}</span>{/if}{" "}<span class="muted">›</span>{" "}<b class="pt">{x.port}</b></span></td>{/if}
 {/snippet}
 
 {#if !rows}<span class="spin"></span>
@@ -180,9 +180,10 @@
     <button class="btn sm ghost" onclick={() => download(`/projects/${pid}/cables/export?format=xlsx`)}><Icon name="download" size="sm" />XLSX</button>
     <button class="btn sm ghost" onclick={pdf}><Icon name="download" size="sm" />PDF</button>
     <button class="btn sm ghost" onclick={openLabels}><Icon name="file" size="sm" />Étiquettes</button>
-    {#if writable}
-      <button class="btn sm" disabled={!dirty || saving} onclick={cancel}>Annuler</button>
-      <button class="btn sm primary" disabled={!dirty || saving} onclick={save}>{#if saving}<span class="spin"></span>{/if}Enregistrer{dirty ? ` (${dirty})` : ''}</button>
+    {#if writable && (dirty || saving)}
+      <span class="ct-save"><span class="muted small">{dirty} modification{dirty > 1 ? 's' : ''} non enregistrée{dirty > 1 ? 's' : ''}</span>
+      <button class="btn sm" disabled={saving} onclick={cancel}>Annuler</button>
+      <button class="btn sm primary" disabled={!dirty || saving} onclick={save}>{#if saving}<span class="spin"></span>{/if}Enregistrer</button></span>
     {/if}
   </div>
 
@@ -191,10 +192,10 @@
       <thead><tr>
         <th class="ck"><input type="checkbox" checked={allPicked} onchange={pickAll} aria-label="Tout choisir"></th>
         <th>N° {#if writable}<button class="fd" title="Recopier vers le bas en incrémentant" aria-label="Recopier les numéros vers le bas" onclick={() => fillDown('number')}>↓</button>{/if}</th>
-        <th>Signal</th><th>De</th><th>Vers</th>
-        <th class="num">Longueur {#if writable}<button class="fd" title="Recopier vers le bas" aria-label="Recopier les longueurs vers le bas" onclick={() => fillDown('length_m')}>↓</button>{/if}</th>
+        <th>Signal</th><th class="c-end">De</th><th class="c-end">Vers</th>
+        <th class="num">Longueur (m) {#if writable}<button class="fd" title="Recopier vers le bas" aria-label="Recopier les longueurs vers le bas" onclick={() => fillDown('length_m')}>↓</button>{/if}</th>
         <th>Couleur {#if writable}<button class="fd" title="Recopier vers le bas" aria-label="Recopier les couleurs vers le bas" onclick={() => fillDown('color')}>↓</button>{/if}</th>
-        <th>Notes {#if writable}<button class="fd" title="Recopier vers le bas" aria-label="Recopier les notes vers le bas" onclick={() => fillDown('notes')}>↓</button>{/if}</th>
+        <th class="c-notes">Notes {#if writable}<button class="fd" title="Recopier vers le bas" aria-label="Recopier les notes vers le bas" onclick={() => fillDown('notes')}>↓</button>{/if}</th>
         <th></th>
       </tr></thead>
       <tbody>
@@ -202,12 +203,12 @@
           {@const e = edits[r.id] ?? {}}
           <tr class:focus={focusRow === r.id} class:picked={picked.has(r.id)} onfocusin={() => (focusRow = r.id)} onclick={() => (focusRow = r.id)}>
             <td class="ck"><input type="checkbox" checked={picked.has(r.id)} onchange={() => togglePick(r.id)} aria-label="Choisir {r.number ?? 'ce câble'}"></td>
-            <td><input class="cell mono" class:dirty={'number' in e} value={val(r, 'number') ?? ''} disabled={!writable} placeholder="—" maxlength="40" oninput={(x) => set(r, 'number', (x.target as HTMLInputElement).value.trim())} aria-label="Numéro"></td>
+            <td><input class="cell mono" class:dirty={'number' in e} value={val(r, 'number') ?? ''} disabled={!writable} placeholder="non numéroté" maxlength="40" oninput={(x) => set(r, 'number', (x.target as HTMLInputElement).value.trim())} aria-label="Numéro"></td>
             <td><span class="sig"><i class="dot" style="--c:{r.family ? fnColor(r.family) : 'var(--fg-3)'}"></i>{r.signal || '—'}</span></td>
             {@render end(r.a)}{@render end(r.b)}
             <td class="num"><input class="cell mono num" class:dirty={'length_m' in e} type="number" min="0" step="0.5" value={val(r, 'length_m') ?? ''} disabled={!writable} placeholder={r.estimate_m ? `≈ ${nf(r.estimate_m, 1)}` : ''} oninput={(x) => { const v = (x.target as HTMLInputElement).value; set(r, 'length_m', v === '' ? null : Number(v)); }} aria-label="Longueur"></td>
             <td><input class="swatch" class:dirty={'color' in e} type="color" value={(val(r, 'color') as string) ?? (r.family ? fnColor(r.family) : '#8A919B')} disabled={!writable} oninput={(x) => set(r, 'color', (x.target as HTMLInputElement).value)} aria-label="Couleur"></td>
-            <td><input class="cell" class:dirty={'notes' in e} value={val(r, 'notes') ?? ''} disabled={!writable} maxlength="2000" oninput={(x) => set(r, 'notes', (x.target as HTMLInputElement).value)} aria-label="Notes"></td>
+            <td class="c-notes"><input class="cell" class:dirty={'notes' in e} value={val(r, 'notes') ?? ''} disabled={!writable} maxlength="2000" oninput={(x) => set(r, 'notes', (x.target as HTMLInputElement).value)} aria-label="Notes" title={(val(r, 'notes') as string) || undefined}></td>
             <td>{#if r.warnings.length}<span class="warn-i" title={r.warnings.join(' ')}><Icon name="alert" size="sm" /></span>{/if}</td>
           </tr>
         {:else}<tr><td colspan="9" class="empty">{rows.length ? 'Aucun câble ne correspond aux filtres.' : 'Aucun câble : tracez-les dans le synoptique.'}</td></tr>{/each}
@@ -240,18 +241,23 @@
   .ct-bar select { width: auto; height: 40px; }
   .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--c); margin-right: 6px; vertical-align: 1px; }
   .ct { padding: 4px 8px 8px; }
-  .ct-tbl td { vertical-align: middle; padding-top: 6px; padding-bottom: 6px; }
+  .ct-tbl td { vertical-align: middle; padding-top: 3px; padding-bottom: 3px; height: 40px; box-sizing: border-box; }
+  .ct-tbl th { white-space: nowrap; }
+  .ct-save { display: inline-flex; gap: 8px; align-items: center; }
   .ct-tbl tr.focus td { background: color-mix(in srgb, var(--accent, #4F6BFF) 6%, transparent); }
   .ct-tbl tr.picked td { background: color-mix(in srgb, var(--accent, #4F6BFF) 10%, transparent); }
   .ck { width: 30px; }
-  .cell { width: 100%; min-width: 90px; height: 34px; border-radius: 8px; border: 1px solid transparent; background: transparent; padding: 0 8px; font: inherit; color: inherit; }
+  .cell { width: 100%; min-width: 110px; height: 30px; border-radius: 8px; border: 1px solid transparent; background: transparent; padding: 0 8px; font: inherit; color: inherit; }
   .cell:hover:not(:disabled), .cell:focus { border-color: var(--line); background: var(--surface); outline: none; }
   .cell.num { width: 90px; min-width: 0; text-align: right; }
   .cell.dirty, .swatch.dirty { box-shadow: inset 0 0 0 2px var(--accent, #4F6BFF); background: color-mix(in srgb, var(--accent, #4F6BFF) 8%, var(--surface)); }
-  .swatch { width: 40px; height: 30px; padding: 2px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); cursor: pointer; }
-  .end { display: table-cell; min-width: 220px; }
-  .end b { display: block; font-weight: 600; }
-  .end .pt { display: inline; }
+  .swatch { display: block; width: 36px; height: 26px; padding: 2px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); cursor: pointer; }
+  .c-end { width: 34%; }
+  .end { display: table-cell; min-width: 200px; max-width: 0; }
+  .end-l { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .end b { font-weight: 600; }
+  .c-notes { width: 180px; }
+  .c-notes .cell { min-width: 0; max-width: 220px; }
   .sig { white-space: nowrap; }
   .fd { margin-left: 4px; width: 22px; height: 22px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); cursor: pointer; font-size: 12px; line-height: 1; }
   .fd:hover { background: var(--surface-2); }

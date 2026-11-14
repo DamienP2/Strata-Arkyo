@@ -4,6 +4,7 @@
   // matériel d'une casquette se pose dans l'éditeur de racks, comme dans une baie.
   import Icon from '../../components/Icon.svelte';
   import Confirm from '../../components/Confirm.svelte';
+  import Dialog from '../../components/Dialog.svelte';
   import Desk3D from '../../components/Desk3D.svelte';
   import Racks from './Racks.svelte';
   import { api } from '../../lib/api';
@@ -45,7 +46,7 @@
 
   // ----- Plan de face -----
   let planW = $state(900);
-  const s = $derived(Math.min(0.55, Math.max(0.15, (planW - 60) / L)));
+  const s = $derived(Math.min(0.55, Math.max(0.15, (planW - 160) / L)));
   const fnColor = (f: string | null) => (f ? (refById('functions', f)?.data?.color ?? 'var(--fg-3)') : 'var(--fg-3)');
   const typeOf = (e: El) => (e.nature === 'accessory' ? accFace(e as any) : visualOf(e));
   const cols = (w: string) => ({ full: 1, half: 2, third: 3, quarter: 4 } as Record<string, number>)[w] ?? 1;
@@ -87,12 +88,23 @@
       toast('Casquette ajoutée : équipez-la depuis le bouton « Équiper ».'); await reload(); sel = c.id;
     } catch (e) { fail(e); }
   }
-  async function addDesk() {
-    const loc = view.locations[0]; if (!loc) { toast('Créez d’abord un emplacement dans l’inventaire.', 'warn'); return; }
+  // Nouveau pupitre : on demande l'emplacement et le nom avant de créer.
+  let newDesk = $state<{ location_id: string; name: string; busy: boolean } | null>(null);
+  function askDesk() {
+    if (!view.locations.length) { toast('Créez d’abord un emplacement dans l’inventaire.', 'warn'); return; }
+    newDesk = { location_id: view.locations[0]!.id, name: 'Pupitre', busy: false };
+  }
+  async function addDesk(e: SubmitEvent) {
+    e.preventDefault();
+    const d = newDesk; if (!d || !d.name.trim() || !d.location_id) return;
+    d.busy = true;
     try {
-      const c = await api.post<Container>(`/projects/${pid}/containers`, { location_id: loc.id, name: 'Pupitre', kind: 'desk', rackable: false, length_mm: 2400, width_mm: 900, outer_height_mm: 750, cable_code: '', details: { positions: [] } });
+      const c = await api.post<Container>(`/projects/${pid}/containers`, { location_id: d.location_id, name: d.name.trim(), kind: 'desk', rackable: false, length_mm: 2400, width_mm: 900, outer_height_mm: 750, cable_code: '', details: { positions: [] } });
+      const loc = view.locations.find((l) => l.id === d.location_id);
+      newDesk = null;
+      toast(`Pupitre « ${c.name} » ajouté${loc ? ` dans ${loc.name}` : ''}.`);
       await reload(); navigate(`/projets/${pid}/mobilier/${c.id}`);
-    } catch (e) { fail(e); }
+    } catch (x) { fail(x); if (newDesk) newDesk.busy = false; }
   }
   let confirmDel = $state<Container | null>(null);
   async function delCasquette() {
@@ -107,7 +119,10 @@
     <span class="kind"><Icon name="layers" /></span>
     <h2>Aucun mobilier dans ce projet</h2>
     <p class="muted">Un mobilier (pupitre, console, meuble) se découpe en postes et reçoit des casquettes rackables pour les écrans, les panneaux de commande et le matériel à portée de main.</p>
-    {#if writable}<button class="btn primary" onclick={addDesk}><Icon name="plus" size="sm" />Ajouter un pupitre</button>{/if}
+    {#if writable}
+      {#if view.locations.length}<button class="btn primary" onclick={askDesk}><Icon name="plus" size="sm" />Ajouter un pupitre</button>
+      {:else}<p class="muted small">Un pupitre se range dans un emplacement : le projet n’en a pas encore.</p><a class="btn primary" href="/projets/{pid}/inventaire"><Icon name="plus" size="sm" />Créer un emplacement</a>{/if}
+    {/if}
   </div>
 {:else if desk}
   <div class="mob card" style="padding:0;overflow:hidden">
@@ -122,7 +137,7 @@
         <button class="btn sm" onclick={() => navigate(`/projets/${pid}/mobilier/${desk.id}`)}><Icon name="layers" size="sm" />Retour au mobilier</button>
       {:else}
         <div class="seg" role="group" aria-label="Vue"><button class:on={mode === 'plan'} onclick={() => (mode = 'plan')}>Plan</button><button class:on={mode === '3d'} onclick={() => (mode = '3d')}><Icon name="case" size="sm" />3D</button></div>
-        {#if writable}<button class="btn sm primary" onclick={addCasquette}><Icon name="plus" size="sm" />Casquette</button>{/if}
+        {#if writable}<button class="btn sm primary" onclick={addCasquette}><Icon name="plus" size="sm" />Ajouter une casquette</button>{/if}
       {/if}
     </div>
     {#if equip && casq.some((c) => c.id === equip)}
@@ -148,6 +163,7 @@
                 <div class="cq" class:sel={sel === c.id} class:dragging={drag?.id === c.id} style="left:{offOf(c) * s}px;width:{WC * s}px;height:{u * up + 50 * s}px;--u:{up}px"
                   role="button" tabindex="0" title="Glisser pour déplacer · double-clic pour équiper" ondblclick={() => navigate(`/projets/${pid}/mobilier/${desk.id}/${c.id}`)} onpointerdown={(e) => startDrag(e, c)} onkeydown={(e) => { if (e.key === 'Enter') sel = c.id; }}>
                   <span class="cq-name">{c.name.replace(`${desk.name} · `, '')}{c.tilt_deg ? ` · ${nf(c.tilt_deg)}°` : ''}</span>
+                  {#if (racks[c.id]?.pending.length ?? 0) > 0}<span class="cq-pend" title="Matériel de cette casquette pas encore posé : double-cliquez pour l’équiper">{racks[c.id]!.pending.length} à placer</span>{/if}
                   <div class="cq-in">
                     {#each (racks[c.id]?.elements ?? []).filter((e) => e.placement.face === 'front' && !e.placement.shelf_id) as e (e.placement.id)}
                       {@const n = cols(e.placement.width)}
@@ -155,7 +171,6 @@
                         style="--c:{fnColor(e.function)};bottom:{(e.placement.u_start - 1) * up + 1}px;height:{e.height_u * up - 2}px;left:calc({(100 * e.placement.col) / n}% + 1px);width:calc({100 / n}% - 2px)">{#if up * e.height_u > 16}<span class="rn">{e.label}</span><span class="dec">{@html decor(typeOf(e))}</span>{/if}</span>
                     {/each}
                   </div>
-                  {#if (racks[c.id]?.pending.length ?? 0) > 0}<span class="cq-pend">{racks[c.id]!.pending.length} à placer</span>{/if}
                 </div>
               {/each}
             </div>
@@ -192,8 +207,7 @@
             <span class="lbl-t" style="margin-top:6px">Casquettes</span>
             {#each casq as c (c.id)}
               <button class="cq-row" onclick={() => (sel = c.id)}><b>{c.name.replace(`${desk.name} · `, '')}</b><span class="muted small mono">{c.height_u} U · {nf(c.offset_mm ?? 0)} mm{c.tilt_deg ? ` · ${nf(c.tilt_deg)}°` : ''}</span><span class="muted small">{racks[c.id]?.elements.length ?? 0} posé{(racks[c.id]?.elements.length ?? 0) > 1 ? 's' : ''}</span></button>
-            {:else}<p class="muted small" style="margin:0">Aucune casquette.</p>{/each}
-            {#if writable}<button class="btn sm" style="justify-self:start" onclick={addCasquette}><Icon name="plus" size="sm" />Ajouter une casquette</button>{/if}
+            {:else}<p class="muted small" style="margin:0">Aucune casquette : « Ajouter une casquette » en haut à droite.</p>{/each}
             {#if desk.kind === 'desk'}<p class="muted small" style="margin:6px 0 0">{desk.details?.positions?.length ?? 0} poste{(desk.details?.positions?.length ?? 0) > 1 ? 's' : ''} : rôles et matériel par poste dans l’<a class="ilink" href="/projets/{pid}/inventaire">inventaire</a>.</p>{/if}
           </section>
         {/if}
@@ -217,13 +231,13 @@
   .mob-equip :global(.rack-screen) { border-radius: 0; box-shadow: none; }
   .mob-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 10px 14px; border-bottom: 1px solid var(--line); }
   .mob-bar select { width: auto; min-width: 260px; height: 38px; }
-  .mob-body { display: grid; grid-template-columns: minmax(0, 1fr) 320px; min-height: calc(100vh - 240px); }
+  .mob-body { display: grid; grid-template-columns: minmax(0, 1fr) 320px; }
   .mob-stage { position: relative; min-width: 0; background: radial-gradient(70% 55% at 50% 8%, var(--stage-a) 0%, transparent 100%), linear-gradient(180deg, var(--stage-a), var(--stage-b)); }
   .mob-side { border-left: 1px solid var(--line); padding: 16px; background: var(--surface); overflow: auto; }
   .mob-side section { display: grid; gap: 10px; }
   .mob-t { margin: 0; font-size: 18px; }
   .g2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .plan { position: relative; display: flex; align-items: flex-end; justify-content: center; padding: 20px 60px 50px; box-sizing: content-box; min-height: 380px; touch-action: none; }
+  .plan { position: relative; display: flex; align-items: flex-end; justify-content: center; padding: 44px 60px 50px; box-sizing: content-box; min-height: 300px; touch-action: none; }
   .desk { position: relative; flex: none; }
   /* Plateau : noir mat, bandeau noir laqué côté opérateur, repose-poignets cuir, filet LED. */
   .desk .top { position: absolute; left: -2px; right: -2px; top: 0; height: 14px; border-radius: 5px 5px 3px 3px; background: linear-gradient(180deg, #3a3d42 0%, #16171a 40%, #0b0c0e 100%); box-shadow: inset 0 1px 0 rgba(255,255,255,.25), 0 2px 0 #1a1b1e, 0 14px 26px -14px rgba(0,0,0,.65); z-index: 2; }
@@ -248,10 +262,23 @@
   .cq-name { position: absolute; left: 0; right: 0; bottom: 100%; margin-bottom: 4px; text-align: center; font: 600 11px var(--font); color: var(--fg-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .cq-in { position: absolute; left: calc(25 * var(--u) / 44.45 + 10px); right: calc(25 * var(--u) / 44.45 + 10px); top: calc(25 * var(--u) / 44.45); bottom: calc(25 * var(--u) / 44.45); background: repeating-linear-gradient(to top, #1E2228 0 1px, #08090B 1px var(--u)); }
   .cq-in .ritem { position: absolute; font-size: 11px; padding: 0 5px; }
-  .cq-pend { position: absolute; right: 4px; top: 4px; font: 600 10px var(--mono); padding: 1px 5px; border-radius: 4px; background: var(--warn, #B78400); color: #fff; }
+  .cq-pend { position: absolute; left: 50%; bottom: 100%; margin-bottom: 22px; transform: translateX(-50%); white-space: nowrap; font: 600 10.5px/1.4 var(--mono); padding: 1px 6px; border-radius: 4px; background: var(--warn, #B78400); color: #fff; z-index: 3; }
+  /* Le matériel posé au-delà de la hauteur de la casquette ne déborde pas sur le plateau. */
+  .cq-in { overflow: hidden; }
   .plan-hint { position: absolute; left: 0; right: 0; top: 30px; text-align: center; }
   .cq-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; padding: 8px 10px; border: 0; border-radius: 10px; background: var(--surface-2); text-align: left; font: inherit; color: inherit; cursor: pointer; }
   .cq-row:hover { box-shadow: inset 0 0 0 1.5px var(--accent); }
   .cq-row .muted.small:last-child { grid-column: 1 / -1; }
   @media (max-width: 1000px) { .mob-body { grid-template-columns: minmax(0, 1fr); } .mob-side { border-left: 0; border-top: 1px solid var(--line); } }
 </style>
+
+{#if newDesk}
+  <Dialog title="Ajouter un pupitre" eyebrow="Mobilier" onclose={() => (newDesk = null)}>
+    <form id="deskf" class="stack" onsubmit={addDesk}>
+      <div class="field"><label for="nd-loc">Emplacement</label><select class="input" id="nd-loc" bind:value={newDesk.location_id}>{#each view.locations as l}<option value={l.id}>{l.name}{l.code && l.code !== l.name ? ` · ${l.code}` : ''}</option>{/each}</select></div>
+      <div class="field"><label for="nd-name">Nom</label><input class="input" id="nd-name" bind:value={newDesk.name} required maxlength="120" placeholder="Pupitre réalisateur, console son…"></div>
+      <p class="muted small">Pupitre de 2 400 × 900 mm, 750 mm de haut : les cotes se règlent ensuite dans le panneau de droite.</p>
+    </form>
+    {#snippet footer()}<button class="btn ghost" onclick={() => (newDesk = null)}>Annuler</button><button class="btn primary" type="submit" form="deskf" disabled={!newDesk?.name.trim() || newDesk?.busy}>{#if newDesk?.busy}<span class="spin"></span>{/if}Ajouter le pupitre</button>{/snippet}
+  </Dialog>
+{/if}

@@ -109,13 +109,13 @@
     const levels = wiz.kind === 'multi_floor' ? Array.from({ length: Math.abs(wiz.to - wiz.from) + 1 }, (_, i) => Math.min(wiz!.from, wiz!.to) + i) : [0];
     try {
       const r = await api.post<{ id: string }>(`/projects/${pid}/plans`, { name: wiz.name, kind: wiz.kind, levels });
-      wiz = null; await loadIndex(); await openMap(r.id); toast('Carte créée.');
+      wiz = null; await loadIndex(); await openMap(r.id); toast('Plan créé.');
     } catch (e) { if (e instanceof ApiError && e.fields.length) wizErr = e; else fail(e); }
   }
   let mapEdit = $state<{ name: string; kind: Kind } | null>(null);
   async function saveMap() { if (!mapEdit) return; await write(() => api.patch(`/projects/${pid}/plans/${mapId}`, mapEdit)); mapEdit = null; await loadIndex(); }
   async function deleteMap() {
-    if (!d || !(await ask({ title: `Supprimer la carte « ${d.map.name} » ?`, text: 'Ses étages, fonds et tracés sont supprimés avec elle.', confirmLabel: 'Supprimer', danger: true }))) return;
+    if (!d || !(await ask({ title: `Supprimer le plan « ${d.map.name} » ?`, text: 'Ses étages, fonds et tracés sont supprimés avec lui.', confirmLabel: 'Supprimer', danger: true }))) return;
     try { await api.post(`/projects/${pid}/plans/${mapId}/delete`); stopBeat(); mapId = null; d = null; await loadIndex(); } catch (e) { fail(e); }
   }
 
@@ -362,7 +362,7 @@
   }
   async function removeSel() {
     if (!selected) return;
-    if (!(await ask(selected.kind === 'container' ? { title: `Retirer « ${selected.name} » de la carte ?`, confirmLabel: 'Retirer', danger: true } : { title: 'Supprimer cet objet ?', confirmLabel: 'Supprimer', danger: true }))) return;
+    if (!(await ask(selected.kind === 'container' ? { title: `Retirer « ${selected.name} » du plan ?`, confirmLabel: 'Retirer', danger: true } : { title: 'Supprimer cet objet ?', confirmLabel: 'Supprimer', danger: true }))) return;
     await write(() => api.post(`/projects/${pid}/plans/${mapId}/objects/delete`, { ids: [selected!.id] })); sel = null;
   }
   async function saveSel(patch: Record<string, unknown>) {
@@ -448,16 +448,16 @@
 {#if !idx}<span class="spin"></span>
 {:else if !idx.maps.length}
   <section class="card empty-card">
-    <h3>Aucune carte</h3>
-    <p class="muted">Une carte situe les contenants du projet sur un plan (bâtiment multi-étages, plateau, extérieur), trace les liaisons entre eux et en donne la longueur réelle.</p>
-    {#if canDesign}<button class="btn primary" onclick={() => { wiz = { name: view.project.venue ?? 'Site', kind: 'multi_floor', from: 0, to: 0 }; wizErr = null; }}><Icon name="plus" size="sm" />Créer une carte</button>{/if}
+    <h3>Aucun plan</h3>
+    <p class="muted">Un plan situe les éléments du projet sur le site (bâtiment multi-étages, plateau, extérieur), trace les liaisons entre eux et en donne la longueur réelle.</p>
+    {#if canDesign}<button class="btn primary" onclick={() => { wiz = { name: view.project.venue ?? 'Site', kind: 'multi_floor', from: 0, to: 0 }; wizErr = null; }}><Icon name="plus" size="sm" />Créer un plan</button>{/if}
   </section>
 {:else}
   <section class="card pl-head">
     <div class="pl-maps">
-      <select class="input" aria-label="Carte" value={mapId} onchange={(e) => openMap((e.target as HTMLSelectElement).value)}>{#each idx.maps as m}<option value={m.id}>{m.name} · {KINDS[m.kind]}</option>{/each}</select>
-      {#if canDesign}<button class="btn sm" onclick={() => { wiz = { name: '', kind: 'multi_floor', from: 0, to: 0 }; wizErr = null; }}><Icon name="plus" size="sm" />Carte</button>{/if}
-      {#if mine && d}<button class="icon-btn sm" aria-label="Renommer la carte" onclick={() => (mapEdit = { name: d!.map.name, kind: d!.map.kind })}><Icon name="pen" size="sm" /></button><button class="icon-btn sm" aria-label="Supprimer la carte" onclick={deleteMap}><Icon name="trash" size="sm" /></button>{/if}
+      <select class="input" aria-label="Plan" value={mapId} onchange={(e) => openMap((e.target as HTMLSelectElement).value)}>{#each idx.maps as m}<option value={m.id}>{m.name} · {KINDS[m.kind]}</option>{/each}</select>
+      {#if canDesign}<button class="btn sm" onclick={() => { wiz = { name: '', kind: 'multi_floor', from: 0, to: 0 }; wizErr = null; }}><Icon name="plus" size="sm" />Nouveau plan</button>{/if}
+      {#if mine && d}<button class="icon-btn sm" aria-label="Renommer le plan" title="Renommer le plan" onclick={() => (mapEdit = { name: d!.map.name, kind: d!.map.kind })}><Icon name="pen" size="sm" /></button><button class="icon-btn sm" aria-label="Supprimer le plan" title="Supprimer le plan" onclick={deleteMap}><Icon name="trash" size="sm" /></button>{/if}
     </div>
     <div class="pl-stats small">
       <span><b>{idx.stats.placed}</b>/{idx.stats.containers} éléments posés</span>
@@ -476,7 +476,7 @@
           <span class="lk"><span class="key-i"><Icon name="lock" /></span><span><b>{d.lock.account_name}</b> a la main depuis {relative(d.lock.taken_at)}. Vous voyez la dernière version enregistrée.</span></span>
           <span class="sp">{#if canDesign}<button class="btn sm" onclick={requestHand}>Demander la main</button>{/if}</span>
         {:else}
-          <span class="lk"><span class="key-i"><Icon name="unlock" /></span><span>Personne ne modifie cette carte.</span></span>
+          <span class="lk"><span class="key-i"><Icon name="unlock" /></span><span>Personne ne modifie ce plan.</span></span>
           <span class="sp">{#if canDesign}<button class="btn sm primary" onclick={take}>Prendre la main</button>{:else}<span class="muted small">Lecture seule : votre rôle ne permet pas de concevoir.</span>{/if}</span>
         {/if}
       </div>{/if}
@@ -618,13 +618,13 @@
               <button class="li" class:on={placing === c.id} disabled={!mine || mode === '3d'} onclick={() => { setTool('place'); placing = c.id; }}><b>{c.name}</b><span class="muted small">{Math.round(c.dims[0])} × {Math.round(c.dims[1])} × {Math.round(c.dims[2])} mm</span></button>
             {/each}
             {#if d.objects.some((o) => o.kind === 'container')}
-              <h4>Posés sur cette carte</h4>
+              <h4>Posés sur ce plan</h4>
               {#each d.objects.filter((o) => o.kind === 'container') as o (o.id)}
                 <button class="li" onclick={() => { floorId = o.floor_id; sel = o.id; side = 'sel'; }}><b>{o.name}</b><span class="muted small">{d.floors.find((f) => f.id === o.floor_id)?.name}</span></button>
               {/each}
             {/if}
           {:else if side === 'trace'}
-            {#if !d.liaisons.length}<p class="muted small">Aucune liaison entre contenants posés sur cette carte. Les liaisons viennent des câbles du synoptique.</p>{/if}
+            {#if !d.liaisons.length}<p class="muted small">Aucune liaison entre contenants posés sur ce plan. Les liaisons viennent des câbles du synoptique.</p>{/if}
             {#each d.liaisons as l (l.key)}
               <div class="li tr">
                 <span class="nm"><i class="dot" style="--c:{lcolor(l)}"></i><b>{l.a.name ?? '?'} ↔ {l.b.name ?? '?'}</b></span>
@@ -633,7 +633,7 @@
                   <span class="small">{l.waypoints ? `Tracé · ${nf1(l.length_m)}` : 'À tracer'}</span>
                   {#if mine && mode === '2d'}<span class="ra"><button class="btn sm" onclick={() => startTrace(l)}>{l.waypoints ? 'Retracer' : 'Tracer'}</button>{#if l.waypoints}<button class="btn sm ghost" onclick={() => clearRoute(l)}>Effacer</button>{/if}</span>{/if}
                 {:else}
-                  <span class="small warn-t">{l.state === 'other_map' ? 'Contenants sur deux cartes' : 'Un contenant n’est pas posé'}</span>
+                  <span class="small warn-t">{l.state === 'other_map' ? 'Contenants sur deux plans' : 'Un contenant n’est pas posé'}</span>
                 {/if}
               </div>
             {/each}
@@ -681,7 +681,7 @@
               {:else}
                 <h4>Mesure</h4><p><b>{fmtM(selected.length_mm)}</b> · {selected.points.length} points</p>
               {/if}
-              {#if !ro}<button class="btn sm ghost danger" onclick={removeSel}><Icon name="trash" size="sm" />{selected.kind === 'container' ? 'Retirer de la carte' : 'Supprimer'}</button>{/if}
+              {#if !ro}<button class="btn sm ghost danger" onclick={removeSel}><Icon name="trash" size="sm" />{selected.kind === 'container' ? 'Retirer du plan' : 'Supprimer'}</button>{/if}
             {/if}
           {/if}
         </aside>
@@ -691,7 +691,7 @@
 {/if}
 
 {#if wiz}
-  <Dialog title="Nouvelle carte" eyebrow="Cartographie" onclose={() => (wiz = null)}>
+  <Dialog title="Nouveau plan" eyebrow="Plans" onclose={() => (wiz = null)}>
     <div class="field"><label for="w-name">Nom</label><input class="input" id="w-name" bind:value={wiz.name} maxlength="80" placeholder="Stade, bâtiment A, parvis…">{#if wizErr?.field('name')}<span class="ferr">{wizErr.field('name')}</span>{/if}</div>
     <div class="field"><span class="flabel">Type</span><div class="seg">{#each Object.entries(KINDS) as [kk, l]}<button type="button" class:on={wiz.kind === kk} onclick={() => (wiz!.kind = kk as Kind)}>{l}</button>{/each}</div></div>
     {#if wiz.kind === 'multi_floor'}
@@ -701,12 +701,12 @@
       </div>
       <p class="muted small">{Math.abs(wiz.to - wiz.from) + 1} étage{wiz.to !== wiz.from ? 's' : ''}, 3 m entre sols et faux-plafond à 2,5 m par défaut. Le niveau d’un étage ne change plus ensuite.</p>
     {:else}<p class="muted small">Un seul niveau ({wiz.kind === 'outdoor' ? 'extérieur' : 'plan unique'}).</p>{/if}
-    {#snippet footer()}<button class="btn" onclick={() => (wiz = null)}>Annuler</button><button class="btn primary" disabled={!wiz?.name.trim()} onclick={createMap}>Créer la carte</button>{/snippet}
+    {#snippet footer()}<button class="btn" onclick={() => (wiz = null)}>Annuler</button><button class="btn primary" disabled={!wiz?.name.trim()} onclick={createMap}>Créer le plan</button>{/snippet}
   </Dialog>
 {/if}
 
 {#if mapEdit}
-  <Dialog title="Carte" eyebrow="Cartographie" onclose={() => (mapEdit = null)}>
+  <Dialog title="Plan" eyebrow="Plans" onclose={() => (mapEdit = null)}>
     <div class="field"><label for="m-name">Nom</label><input class="input" id="m-name" bind:value={mapEdit.name} maxlength="80"></div>
     <div class="field"><span class="flabel">Type</span><div class="seg">{#each Object.entries(KINDS) as [kk, l]}<button type="button" class:on={mapEdit.kind === kk} onclick={() => (mapEdit!.kind = kk as Kind)}>{l}</button>{/each}</div></div>
     {#snippet footer()}<button class="btn" onclick={() => (mapEdit = null)}>Annuler</button><button class="btn primary" onclick={saveMap}>Enregistrer</button>{/snippet}

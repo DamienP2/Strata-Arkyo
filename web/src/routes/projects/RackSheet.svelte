@@ -218,21 +218,20 @@
       <select class="input pl-sel" aria-label="Format" value={sheet.paper} disabled={!writable} onchange={(e) => { sheet!.paper = (e.target as HTMLSelectElement).value as Paper; changed(); }}>{#each Object.keys(PAPERS) as p}<option value={p}>{p}</option>{/each}</select>
       <div class="seg">{#each [['portrait', 'Portrait'], ['landscape', 'Paysage']] as [k, l]}<button class:on={sheet.orientation === k} disabled={!writable} onclick={() => { sheet!.orientation = k as Sheet['orientation']; changed(); }}>{l}</button>{/each}</div>
       <select class="input pl-sel" aria-label="Échelle" value={sheet.scale} disabled={!writable} onchange={(e) => { sheet!.scale = Number((e.target as HTMLSelectElement).value); changed(); }}>{#each SCALES as s}<option value={s}>1:{s}</option>{/each}</select>
-      {#if writable}<button class="btn sm ghost" onclick={() => (relayout = true)}><Icon name="grid" size="sm" />Disposer</button>{/if}
+      {#if writable}<button class="btn sm ghost" aria-label="Disposer automatiquement" title="Placer toutes les baies et le mobilier sur les feuilles, d’un coup" onclick={() => (relayout = true)}><Icon name="grid" size="sm" /><span class="pl-lbl">Disposer automatiquement</span></button>{/if}
       <span class="pl-sep"></span>
-      <div class="seg" role="tablist" aria-label="Feuilles">{#each sheet.pages as p, i (p.id)}<button class:on={cur === i} onclick={() => { cur = i; selected = null; }}>F{i + 1}</button>{/each}</div>
-      {#if writable}<button class="icon-btn sm" title="Nouvelle feuille" aria-label="Nouvelle feuille" onclick={addPage}><Icon name="plus" size="sm" /></button>{#if sheet.pages.length > 1}<button class="icon-btn sm" title="Supprimer cette feuille" aria-label="Supprimer cette feuille" onclick={dropPage}><Icon name="trash" size="sm" /></button>{/if}{/if}
+      <div class="seg" role="tablist" aria-label="Feuilles">{#each sheet.pages as p, i (p.id)}<button class:on={cur === i} role="tab" aria-selected={cur === i} title="Feuille {i + 1}" onclick={() => { cur = i; selected = null; }}>Feuille {i + 1}</button>{/each}</div>
+      {#if writable}<button class="btn sm ghost" aria-label="Ajouter une feuille" title="Ajouter une feuille à la planche" onclick={addPage}><Icon name="plus" size="sm" /><span class="pl-lbl">Ajouter une feuille</span></button>{#if sheet.pages.length > 1}<button class="icon-btn sm" title="Supprimer cette feuille" aria-label="Supprimer cette feuille" onclick={dropPage}><Icon name="trash" size="sm" /></button>{/if}{/if}
       <span style="flex:1"></span>
       <span class="muted small">{saving === 'pending' || saving === 'saving' ? 'Enregistrement…' : saving === 'saved' ? 'Enregistré' : ''}</span>
       <div class="seg">{#each [['pdf', 'PDF'], ['png', 'PNG'], ['jpg', 'JPG']] as [k, l]}<button class:on={sheet.format === k} onclick={() => { sheet!.format = k as Sheet['format']; changed(); }}>{l}</button>{/each}</div>
-      {#if !hasItems}<span class="muted small">Planche vide : rien à exporter</span>{/if}
-      <button class="btn primary" disabled={exporting || !hasItems} title={hasItems ? undefined : 'Aucune feuille ne contient d’élément : composez la planche avant de l’exporter.'} onclick={exportSheet}>{#if exporting}<span class="spin"></span>{:else}<Icon name="download" size="sm" />{/if}Exporter</button>
+      <span title={hasItems ? undefined : 'Planche vide : aucune feuille ne contient d’élément, composez la planche avant de l’exporter.'}><button class="btn primary" disabled={exporting || !hasItems} onclick={exportSheet}>{#if exporting}<span class="spin"></span>Génération…{:else}<Icon name="download" size="sm" />Exporter{/if}</button></span>
     </div>
 
     <div class="pl-body">
       <div class="pl-desk" role="presentation" onpointerdown={(e) => { if (!(e.target as Element).closest('.it')) selected = null; }}>
         <div class="pl-paper" bind:this={svgHost} style="aspect-ratio:{pageSize(sheet)[0]} / {pageSize(sheet)[1]}">
-          {#if page && !page.items.length}<div class="pl-empty"><b>Feuille vide</b><span>{writable ? 'Ajoutez des baies ou du mobilier depuis le panneau de droite, ou « Disposer » pour tout placer d’un coup.' : 'Aucun élément sur cette feuille.'}</span></div>{/if}
+          {#if page && !page.items.length}<div class="pl-empty"><b>Feuille vide</b><span>{writable ? 'Ajoutez des baies ou du mobilier depuis le panneau de droite, ou « Disposer automatiquement » pour tout placer d’un coup.' : 'Aucun élément sur cette feuille.'}</span></div>{/if}
           {#if page}<SheetPage {sheet} {page} {ctx} {info} {shots} index={cur} total={sheet.pages.length} editable={writable} {selected} onpick={pick} />{/if}
         </div>
         <p class="muted small pl-foot">{sheet.paper} {sheet.orientation === 'portrait' ? 'portrait' : 'paysage'} · 1:{sheet.scale} · feuille {cur + 1} / {sheet.pages.length}{writable ? ' · cliquez un élément pour le régler, glissez-le pour le placer' : ''}</p>
@@ -289,7 +288,7 @@
               <span class="lbl-t">Baies</span>
               {#each bays as c (c.id)}
                 {@const w = where(c.id)}
-                <div class="pl-lib"><span class="pl-n"><b>{c.name}</b><small>{locName(c.location_id)?.code || locName(c.location_id)?.name || ''} · {c.height_u} U</small></span>{#if w.length}<span class="pl-ok">F{w.join(', F')}</span>{/if}<button class="btn sm" onclick={() => add({ kind: 'rack', container_id: c.id, views: [...rackViews] })}><Icon name="plus" size="sm" />Ajouter</button></div>
+                <div class="pl-lib"><span class="pl-n"><b>{c.name}</b><small>{locName(c.location_id)?.code || locName(c.location_id)?.name || ''} · {c.height_u} U</small></span>{#if w.length}<span class="pl-ok" title="Déjà sur la feuille {w.join(', ')}">Feuille {w.join(', ')}</span>{/if}<button class="btn sm" onclick={() => add({ kind: 'rack', container_id: c.id, views: [...rackViews] })}><Icon name="plus" size="sm" />Ajouter</button></div>
               {:else}<span class="muted small">Aucune baie.</span>{/each}
             </section>
             {#if desks.length}
@@ -297,13 +296,13 @@
                 <span class="lbl-t">Mobilier</span>
                 {#each desks as c (c.id)}
                   {@const w = where(c.id)}
-                  <div class="pl-lib"><span class="pl-n"><b>{c.name}</b><small>{locName(c.location_id)?.code || locName(c.location_id)?.name || ''} · {ctx.desks[c.id]?.casq.length ?? 0} casquette(s)</small></span>{#if w.length}<span class="pl-ok">F{w.join(', F')}</span>{/if}<button class="btn sm" onclick={() => add({ kind: 'desk', container_id: c.id, views: [...deskViews] })}><Icon name="plus" size="sm" />Ajouter</button></div>
+                  <div class="pl-lib"><span class="pl-n"><b>{c.name}</b><small>{locName(c.location_id)?.code || locName(c.location_id)?.name || ''} · {ctx.desks[c.id]?.casq.length ?? 0} casquette(s)</small></span>{#if w.length}<span class="pl-ok" title="Déjà sur la feuille {w.join(', ')}">Feuille {w.join(', ')}</span>{/if}<button class="btn sm" onclick={() => add({ kind: 'desk', container_id: c.id, views: [...deskViews] })}><Icon name="plus" size="sm" />Ajouter</button></div>
                 {/each}
               </section>
             {/if}
             <section class="pl-sec pl-2">
-              <select class="input" aria-label="Titre de lieu" onchange={(e) => { const s = e.target as HTMLSelectElement; if (s.value) add({ kind: 'location', location_id: s.value, w: 160 }); s.value = ''; }}><option value="">+ Titre de lieu…</option>{#each view.locations as l}<option value={l.id}>{l.name}</option>{/each}</select>
-              <button class="btn sm" onclick={() => add({ kind: 'reserved', label: 'Emplacement réservé', w: 60, h: 80 })}><Icon name="plus" size="sm" />Réservé</button>
+              <select class="input" aria-label="Ajouter un titre de lieu" title="Ajoute sur la feuille le nom d’un emplacement, en titre au-dessus de ses baies" onchange={(e) => { const s = e.target as HTMLSelectElement; if (s.value) add({ kind: 'location', location_id: s.value, w: 160 }); s.value = ''; }}><option value="">+ Titre de lieu…</option>{#each view.locations as l}<option value={l.id}>{l.name}</option>{/each}</select>
+              <button class="btn sm" title="Ajoute un cadre « Emplacement réservé » : la place d’une baie ou d’un meuble à venir" onclick={() => add({ kind: 'reserved', label: 'Emplacement réservé', w: 60, h: 80 })}><Icon name="plus" size="sm" />Réservé</button>
             </section>
           {/if}
           <section class="pl-sec">
@@ -345,6 +344,8 @@
 
 <style>
   .pl { display: grid; gap: 10px; }
+  /* Barre étroite : les libellés longs cèdent la place à l’icône (l’infobulle reste). */
+  @media (max-width: 1280px) { .pl-lbl { display: none; } }
   .pl-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 10px; border-radius: 12px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); }
   .pl-sel { width: auto; height: 32px; padding: 0 28px 0 10px; font-size: 13px; }
   .pl-sep { width: 1px; height: 22px; background: var(--line-2); margin: 0 4px; }
