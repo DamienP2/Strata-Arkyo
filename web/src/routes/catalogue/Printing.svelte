@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Confirm from '../../components/Confirm.svelte';
   // Bibliothèque d'impression (sections 6.4 et 11.7) : cartouches, planches d'étiquettes,
   // modèles de dossier et de colonnes, logo du site. Partagés par tout le site.
   import Icon from '../../components/Icon.svelte';
@@ -71,7 +72,8 @@
     if (!f) return;
     try { const r = await api.putRaw<{ logo: string }>('/site/logo', f, f.type); logo = r.logo; forgetTitleBlocks(); toast('Logo enregistré.'); } catch (e) { fail(e); }
   }
-  async function dropLogo() { try { await api.del('/site/logo'); logo = null; forgetTitleBlocks(); } catch (e) { fail(e); } }
+  let logoConfirm = $state(false);
+  async function dropLogo() { logoConfirm = false; try { await api.del('/site/logo'); logo = null; forgetTitleBlocks(); toast('Logo retiré.'); } catch (e) { fail(e); } }
 </script>
 
 <div class="seg pr-tabs" role="tablist" aria-label="Impression">
@@ -159,7 +161,7 @@
   <section class="card logo">
     <div class="lg-prev">{#if logo}<img src={logo} alt="Logo du site">{:else}<span class="muted">Aucun logo</span>{/if}</div>
     <p class="small muted">Imprimé dans les cartouches (zone logo) et sur la page de garde du dossier. PNG ou JPG, 512 Ko au plus.</p>
-    {#if canSet}<div class="row"><label class="btn sm"><Icon name="upload" size="sm" />Choisir une image<input type="file" accept="image/png,image/jpeg" hidden onchange={(e) => uploadLogo((e.target as HTMLInputElement).files?.[0])}></label>{#if logo}<button class="btn sm ghost danger" onclick={dropLogo}>Retirer</button>{/if}</div>{/if}
+    {#if canSet}<div class="row"><label class="btn sm"><Icon name="upload" size="sm" />Choisir une image<input type="file" accept="image/png,image/jpeg" hidden onchange={(e) => uploadLogo((e.target as HTMLInputElement).files?.[0])}></label>{#if logo}<button class="btn sm ghost danger" onclick={() => (logoConfirm = true)}>Retirer</button>{/if}</div>{/if}
   </section>
 {/if}
 
@@ -216,6 +218,12 @@
     <div class="docs">{#each dtEdit.docs as d}<label class="toggle-row small"><input type="checkbox" bind:checked={d.include}>{d.title ?? docTitle(d.key)}</label>{/each}</div>
     {#snippet footer()}<button class="btn" onclick={() => (dtEdit = null)}>Annuler</button><button class="btn primary" onclick={saveDt}>Enregistrer</button>{/snippet}
   </Dialog>
+{/if}
+
+{#if logoConfirm}
+  <Confirm title="Retirer le logo du site ?" confirmLabel="Retirer le logo" danger onconfirm={dropLogo} onclose={() => (logoConfirm = false)}>
+    <p>Il disparaît des cartouches de tous les documents. Vous pourrez en choisir un autre.</p>
+  </Confirm>
 {/if}
 
 <style>

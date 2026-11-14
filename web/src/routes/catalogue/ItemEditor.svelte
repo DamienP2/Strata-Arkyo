@@ -5,7 +5,7 @@
   import { api, ApiError } from '../../lib/api';
   import { can } from '../../lib/session.svelte';
   import { toast, fail } from '../../lib/toast.svelte';
-  import { navigate } from '../../lib/router.svelte';
+  import { navigate, registerLeaveGuard } from '../../lib/router.svelte';
   import { relative } from '../../lib/format';
   import { ITEM_KINDS, blank, type CatalogItem, type Duplicate, type ItemPath } from '../../lib/catalog.svelte';
   import EquipmentForm from './forms/EquipmentForm.svelte';
@@ -55,7 +55,7 @@
         : await api.post<{ item: CatalogItem; duplicates: Duplicate[] }>('/catalog/items', { kind, data });
       duplicates = r.duplicates;
       toast(id ? 'Fiche enregistrée.' : 'Fiche créée.');
-      if (!id) { navigate(`/catalogue/${kind}/${r.item.id}`, true); return; }
+      if (!id) { saved = JSON.stringify(data); navigate(`/catalogue/${kind}/${r.item.id}`, true); return; }
       item = r.item; data = structuredClone(r.item.data); saved = JSON.stringify(data);
     } catch (e) {
       if (e instanceof ApiError && e.code === 'stale') stale = true;
@@ -66,13 +66,15 @@
   async function remove() {
     try {
       const r = await api.post<{ deleted: number; kept: unknown[] }>('/catalog/items/delete', { ids: [id] });
-      if (r.deleted) { toast('Fiche supprimée.'); navigate(`/catalogue/${kind}`); } else toast('Fiche gardée : elle est encore utilisée.', 'warn');
+      if (r.deleted) { toast('Fiche supprimée.'); saved = JSON.stringify(data); navigate(`/catalogue/${kind}`); } else toast('Fiche gardée : elle est encore utilisée.', 'warn');
     } catch (e) { fail(e); } finally { deleting = false; }
   }
   async function duplicate() {
     try { const r = await api.post<{ item: CatalogItem }>(`/catalog/items/${id}/duplicate`); toast('Fiche dupliquée : vous modifiez la copie.'); navigate(`/catalogue/${kind}/${r.item.id}`); } catch (e) { fail(e); }
   }
   function leave(e: BeforeUnloadEvent) { if (dirty) e.preventDefault(); }
+  // Changer de page (lien, menu, « Annuler ») avec des modifications : on demande.
+  $effect(() => registerLeaveGuard(() => dirty));
 </script>
 
 <svelte:window onbeforeunload={leave} />

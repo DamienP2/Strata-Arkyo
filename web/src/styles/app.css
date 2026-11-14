@@ -36,7 +36,7 @@ a.btn.primary { color: var(--primary-fg); }
 .row-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .spin { width: 18px; height: 18px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: spin .8s linear infinite; display: inline-block; }
 @keyframes spin { to { transform: rotate(360deg); } }
-.secret { font: 700 22px var(--mono); letter-spacing: .06em; padding: 14px 16px; border-radius: 12px; background: var(--sunken); box-shadow: var(--well); user-select: all; text-align: center; }
+.secret { font: 700 22px var(--mono); letter-spacing: .06em; padding: 14px 16px; border-radius: 12px; background: var(--sunken); box-shadow: var(--well); user-select: all; text-align: center; width: 100%; border: 0; color: var(--fg); box-sizing: border-box; }
 .perm-grid { display: grid; grid-template-columns: minmax(120px, 1fr) repeat(4, auto); gap: 6px 10px; align-items: center; font-size: 14.5px; }
 .perm-grid .h { font: 600 10.5px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--fg-3); text-align: center; }
 .perm-grid input { width: 18px; height: 18px; accent-color: var(--fg); justify-self: center; }
@@ -58,7 +58,7 @@ a.btn.primary { color: var(--primary-fg); }
 .fg3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px 20px; }
 .fg4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px 16px; }
 @media (max-width: 860px) { .form-grid, .fg3, .fg4 { grid-template-columns: minmax(0, 1fr) !important; } }
-.savebar { position: sticky; bottom: 12px; z-index: 30; display: flex; gap: 10px; align-items: center; padding: 12px 14px 12px 20px; border-radius: 18px; background: var(--surface); box-shadow: var(--e3); }
+.savebar { position: sticky; bottom: 12px; z-index: 30; display: flex; gap: 10px; align-items: center; padding: 12px 14px 12px 20px; border-radius: 18px; background: var(--surface); box-shadow: var(--e3), 0 -14px 22px -10px var(--bg); outline: 1px solid var(--line); }
 .savebar .grow { flex: 1; min-width: 0; font-size: 14px; color: var(--fg-3); }
 .ports-tbl td, .ports-tbl th { padding-right: 8px; }
 .ports-tbl .input, .ports-tbl select.input { height: 38px; font-size: 14px; padding: 0 10px; }

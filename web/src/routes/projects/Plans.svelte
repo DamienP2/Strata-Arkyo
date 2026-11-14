@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Confirm from '../../components/Confirm.svelte';
   // Cartographie 2D et 3D (section 11.1). Positions en mm réels dans le repère commun de la
   // carte (calibration : premier point = origine, second = axe X). Une main par carte.
   import { untrack, onDestroy } from 'svelte';
@@ -147,6 +148,7 @@
     fitted = '';
     toast('Fond de plan posé. Calibrez-le : deux points et leur distance réelle.', 'info');
   }
+  let bgConfirm = $state<Floor | null>(null);
   async function removeBg(f: Floor) { await write(() => api.del(`/projects/${pid}/plans/${mapId}/floors/${f.id}/background`)); floorEdit = null; }
 
   // ----- Repère : image → monde -----
@@ -345,7 +347,11 @@
     await write(() => api.put(`/projects/${pid}/plans/${mapId}/routes`, { key: t.key, waypoints: t.pts }));
     trace = null; tool = 'select';
   }
-  async function clearRoute(l: Liaison) { await write(() => api.post(`/projects/${pid}/plans/${mapId}/routes/delete`, { key: l.key })); }
+  async function clearRoute(l: Liaison) {
+    const pts = l.waypoints;
+    await write(() => api.post(`/projects/${pid}/plans/${mapId}/routes/delete`, { key: l.key }));
+    if (pts) toast('Tracé effacé.', 'ok', { label: 'Annuler', run: () => write(() => api.put(`/projects/${pid}/plans/${mapId}/routes`, { key: l.key, waypoints: pts })) });
+  }
   function key(e: KeyboardEvent) {
     if ((e.target as HTMLElement)?.closest('input,textarea,select')) return;
     if (e.key === 'Escape') { setTool('select'); sel = null; }
@@ -722,7 +728,7 @@
       {#if !ro}
         <div class="row-btns">
           <label class="btn sm"><Icon name="upload" size="sm" />{floorEdit.background ? 'Remplacer' : 'Choisir un fichier'}<input type="file" accept="image/png,image/jpeg,image/svg+xml" hidden onchange={(e) => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) uploadBg(floorEdit!, f); }}></label>
-          {#if floorEdit.background}<button class="btn sm" onclick={() => { const f = floorEdit!; floorEdit = null; floorId = f.id; mode = '2d'; setTool('calib'); }}>Calibrer</button><button class="btn sm ghost danger" onclick={() => removeBg(floorEdit!)}>Retirer</button>{/if}
+          {#if floorEdit.background}<button class="btn sm" onclick={() => { const f = floorEdit!; floorEdit = null; floorId = f.id; mode = '2d'; setTool('calib'); }}>Calibrer</button><button class="btn sm ghost danger" onclick={() => (bgConfirm = floorEdit)}>Retirer</button>{/if}
         </div>
       {/if}
     </div>
@@ -731,6 +737,12 @@
       <button class="btn" onclick={() => (floorEdit = null)}>Fermer</button>{#if !ro}<button class="btn primary" onclick={saveFloor}>Enregistrer</button>{/if}
     {/snippet}
   </Dialog>
+{/if}
+
+{#if bgConfirm}
+  <Confirm title="Retirer le fond de plan ?" confirmLabel="Retirer le fond" danger onconfirm={async () => { const f = bgConfirm!; bgConfirm = null; await removeBg(f); }} onclose={() => (bgConfirm = null)}>
+    <p>L’image et son calibrage sont supprimés pour cet étage. Il faudra la reposer et la recalibrer.</p>
+  </Confirm>
 {/if}
 
 <style>

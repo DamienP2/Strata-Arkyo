@@ -96,16 +96,27 @@
     clip = copies.map((c) => structuredClone(c));
     pg.elements = [...pg.elements, ...copies]; sel = new Set(copies.map((c) => c.id)); changed();
   }
+  // Enregistrement : en cas d'échec, le dessin local est gardé (rien n'est effacé) et on
+  // réessaie ; en cas de conflit avec une autre modification, on laisse choisir.
+  let failed = $state(false), conflict = $state(false);
+  let retryT: ReturnType<typeof setTimeout> | null = null;
   async function persist() {
     if (!pg || !dirty) return;
     saveT = null; saving = true; dirty = false;
     const { id, nature, rev, lock, ...data } = pg; void nature; void lock;
-    try { const r = await api.put<{ rev: number }>(`/projects/${pid}/drawings/${id}`, { rev, ...data }); if (pg && pg.id === id) pg.rev = r.rev; refreshIndex(); }
+    try { const r = await api.put<{ rev: number }>(`/projects/${pid}/drawings/${id}`, { rev, ...data }); if (pg && pg.id === id) pg.rev = r.rev; failed = false; refreshIndex(); }
     catch (e) {
-      if (e instanceof ApiError && e.code === 'stale') { toast('La page a changé ailleurs : version enregistrée rechargée.', 'warn'); await loadPage(); }
-      else { fail(e); await loadPage(); }
+      dirty = true;
+      if (e instanceof ApiError && e.code === 'stale') conflict = true;
+      else { failed = true; if (retryT) clearTimeout(retryT); retryT = setTimeout(() => { retryT = null; if (failed && dirty) persist(); }, 5000); }
     } finally { saving = false; }
   }
+  /** Conflit : garder ma version (écrase l'autre) ou reprendre la version enregistrée. */
+  async function keepMine() {
+    if (!pg) return;
+    try { const cur = await api.get<{ rev: number }>(`/projects/${pid}/drawings/${pg.id}`); pg.rev = cur.rev; conflict = false; dirty = true; await persist(); } catch (e) { fail(e); }
+  }
+  async function takeTheirs() { conflict = false; dirty = false; failed = false; await loadPage(); }
   async function flush() { if (saveT) { clearTimeout(saveT); saveT = null; } if (dirty) await persist(); }
   async function refreshIndex() { try { idx = await api.get(`/projects/${pid}/drawings`); } catch { /* plus tard */ } }
 
@@ -444,7 +455,9 @@
         </div>{/if}
         <div class="dtool">
           {#if mine}
-            <span class="save-st muted small" aria-live="polite">{saving ? 'Enregistrement…' : dirty ? 'Modifié' : 'Enregistré'}</span>
+            {#if conflict}<span class="save-st conflict" role="alert">Modifiée ailleurs entre-temps · <button class="linkbtn" onclick={keepMine}>Garder ma version</button> · <button class="linkbtn" onclick={takeTheirs}>Reprendre l’autre</button></span>
+            {:else if failed}<span class="save-st conflict" role="alert">Non enregistré (réseau) · <button class="linkbtn" onclick={() => persist()}>Réessayer</button></span>
+            {:else}<span class="save-st muted small" aria-live="polite">{saving ? 'Enregistrement…' : dirty ? 'Modifié' : 'Enregistré'}</span>{/if}
             <div class="seg" role="toolbar" aria-label="Outils">
               {#each [['select', 'Sélection', 'hand'], ['text', 'Texte', 'pen'], ['rect', 'Rectangle', 'box'], ['ellipse', 'Ellipse', 'radio'], ['line', 'Ligne', 'arrowr'], ['zone', 'Zone', 'grid'], ['link', 'Lien', 'syn'], ['image', 'Image', 'file']] as [t, l, ic]}
                 <button class:on={tool === t && !placing} title={l} aria-label={l} onclick={() => setTool(t as Tool)}><Icon name={ic} size="sm" /></button>
@@ -680,4 +693,6 @@
   .empty-card { padding: 28px; text-align: center; }
   @media (max-width: 1100px) { .dw { grid-template-columns: 1fr; } .dw-pages { position: static; } .dw-body { grid-template-columns: 1fr; height: auto; } .dw-canvas { height: 64vh; } .dw-side { border-left: 0; border-top: 1px solid var(--line); } }
   .save-st { order: 99; margin-left: auto; }
+  .save-st.conflict { font-size: 13px; color: var(--warn, #D97706); }
+  .linkbtn { border: 0; background: none; padding: 0; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; text-decoration: underline; }
 </style>

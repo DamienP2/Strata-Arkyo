@@ -3,8 +3,8 @@ import type { Domain, Level, Me } from './types';
 
 const ORDER: Level[] = ['aucun', 'lecture', 'ecriture', 'admin'];
 
-export const session = $state<{ me: Me | null; ready: boolean; setupNeeded: boolean; error: string | null }>({
-  me: null, ready: false, setupNeeded: false, error: null,
+export const session = $state<{ me: Me | null; ready: boolean; setupNeeded: boolean; error: string | null; expired: boolean }>({
+  me: null, ready: false, setupNeeded: false, error: null, expired: false,
 });
 
 export async function loadSession() {
@@ -26,7 +26,9 @@ export async function loadSession() {
   session.ready = true;
 }
 
-onUnauthenticated(() => { session.me = null; });
+// Session expirée en cours de travail : l'écran reste en place (saisies comprises) et une
+// fenêtre de reconnexion s'affiche par-dessus.
+onUnauthenticated(() => { if (session.me) session.expired = true; else session.me = null; });
 
 /** Le rôle de la personne connectée atteint-il ce niveau sur ce domaine ? */
 export function can(domain: Domain, level: Level): boolean {

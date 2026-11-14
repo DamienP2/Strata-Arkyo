@@ -33,7 +33,14 @@
   async function setStatus(t: Task, status: TaskStatus) {
     try { await api.patch(`/tasks/${t.id}`, { ...t, status, rev: t.rev }); await reload(); } catch (e) { fail(e); await reload(); }
   }
-  async function remove(t: Task) { try { await api.del(`/tasks/${t.id}`); toast('Tâche supprimée.'); await reload(); } catch (e) { fail(e); } }
+  // Suppression immédiate, annulable quelques secondes depuis la notification.
+  async function remove(t: Task) {
+    try {
+      await api.del(`/tasks/${t.id}`); await reload();
+      const { title, description, due, assignee_id, status, priority } = t;
+      toast(`Tâche « ${t.title} » supprimée.`, 'ok', { label: 'Annuler', run: async () => { try { await api.post(`/projects/${view.project.id}/tasks`, { title, description, due, assignee_id, status, priority }); await reload(); } catch (e) { fail(e); } } });
+    } catch (e) { fail(e); }
+  }
   const late = (t: Task) => !!t.due && t.due < view.today && (t.status === 'todo' || t.status === 'in_progress');
 </script>
 

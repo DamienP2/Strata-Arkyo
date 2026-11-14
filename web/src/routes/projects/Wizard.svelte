@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { modal } from '../../lib/modal';
   // Assistant de création (section 7.3) : une question par étape, récapitulatif, puis
   // création du projet, de l'emplacement et de l’élément.
   import Icon from '../../components/Icon.svelte';
@@ -95,14 +96,15 @@
     ['container', 'Élément', `${cname} · ${CONTAINER_KINDS[c.kind].label}${c.rackable ? ` · ${c.height_u} U` : ''}`],
     ['description', 'Description', d.description || '—'],
   ] as [Step, string, string][]);
-  function key(e: KeyboardEvent) { if (e.key === 'Escape') onclose(); }
+  // Dix étapes de saisie : on ne ferme jamais sans le demander.
+  let asking = $state(false);
 </script>
 
-<svelte:window onkeydown={key} />
-<div class="modal" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) onclose(); }}>
+<div class="modal" role="presentation" use:modal={{ close: onclose, ask: () => (asking = true) }}>
   <div class="dialog" role="dialog" aria-modal="true" aria-label="Nouveau projet">
     <div class="wz-head">
-      <div class="row"><span class="eyebrow">Nouveau projet · étape {step + 1} sur {STEPS.length}</span><button class="icon-btn sm" onclick={onclose} aria-label="Fermer"><Icon name="x" /></button></div>
+      <div class="row"><span class="eyebrow">Nouveau projet · étape {step + 1} sur {STEPS.length}</span><button class="icon-btn sm" onclick={() => (asking = true)} aria-label="Fermer"><Icon name="x" /></button></div>
+      {#if asking}<div class="wz-ask" role="alertdialog" aria-label="Abandonner le projet ?"><span>Abandonner la création ? La saisie sera perdue.</span><button type="button" class="btn sm ghost" onclick={() => (asking = false)}>Continuer</button><button type="button" class="btn sm danger-btn" onclick={onclose}>Abandonner</button></div>{/if}
       <div class="bar"><i style="width:{(100 * (step + 1)) / STEPS.length}%"></i></div>
     </div>
     <form class="wz-body" onsubmit={(e) => { e.preventDefault(); if (cur === 'recap') create(); else next(); }}>
@@ -188,3 +190,9 @@
     </div>
   </div>
 </div>
+
+<style>
+  .wz-ask { display: flex; gap: 8px; align-items: center; margin-top: 10px; padding: 8px 10px; border-radius: 10px; background: color-mix(in srgb, var(--err) 12%, transparent); }
+  .wz-ask span { flex: 1; font-size: 13px; }
+  .danger-btn { background: var(--err); color: #fff; }
+</style>

@@ -26,7 +26,25 @@ const unauthenticated: Listener[] = [];
 /** Appelé quand la session a expiré : l'application revient à l'écran de connexion. */
 export function onUnauthenticated(f: Listener) { unauthenticated.push(f); }
 
-async function request<T>(method: string, path: string, body?: unknown, raw?: BodyInit, rawType?: string): Promise<T> {
+// Écritures en cours : une même écriture (méthode, adresse, contenu) déjà partie n'est pas
+// renvoyée — un double-clic ne crée pas deux éléments ; le compteur alimente la barre
+// d'activité en haut de l'écran.
+const inflight = new Map<string, Promise<unknown>>();
+export const activity = { count: 0, listeners: new Set<(n: number) => void>() };
+const bump = (d: number) => { activity.count += d; activity.listeners.forEach((f) => f(activity.count)); };
+
+function request<T>(method: string, path: string, body?: unknown, raw?: BodyInit, rawType?: string): Promise<T> {
+  if (method === 'GET' || raw !== undefined) return send<T>(method, path, body, raw, rawType);
+  const key = `${method} ${path} ${body === undefined ? '' : JSON.stringify(body)}`;
+  const same = inflight.get(key);
+  if (same) return same as Promise<T>;
+  bump(1);
+  const p = send<T>(method, path, body, raw, rawType).finally(() => { inflight.delete(key); bump(-1); });
+  inflight.set(key, p);
+  return p;
+}
+
+async function send<T>(method: string, path: string, body?: unknown, raw?: BodyInit, rawType?: string): Promise<T> {
   const headers: Record<string, string> = {};
   if (method !== 'GET') {
     headers['X-Strata-Request'] = '1';
@@ -52,7 +70,7 @@ async function request<T>(method: string, path: string, body?: unknown, raw?: Bo
   let data: any = null;
   try { data = text ? JSON.parse(text) : null; } catch { data = null; }
   if (!res.ok) {
-    const e = new ApiError(res.status, data?.code ?? 'error', data?.message ?? `Erreur ${res.status}.`, data?.fields ?? []);
+    const e = new ApiError(res.status, data?.code ?? 'error', data?.message ?? (res.status === 502 || res.status === 503 || res.status === 504 ? 'Le serveur redémarre ou est surchargé : réessayez dans quelques secondes.' : `Le serveur a répondu par une erreur (${res.status}).`), data?.fields ?? []);
     if (res.status === 401 && path !== '/auth/login') unauthenticated.forEach((f) => f(e));
     throw e;
   }

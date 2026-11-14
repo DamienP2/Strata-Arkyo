@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { registerLeaveGuard } from '../../lib/router.svelte';
   // Mode tableau des câbles (section 10.9) : tous les câbles du projet, filtrables, avec les
   // deux extrémités et le signal. Saisie en série des numéros, couleurs, notes et longueurs,
   // recopie vers le bas, enregistrement groupé ; écran partagé en direct.
@@ -50,6 +51,8 @@
     if (Object.keys(e).length) edits[r.id] = e; else delete edits[r.id];
   }
   const dirty = $derived(Object.keys(edits).length);
+  // Changer de page avec des saisies non enregistrées : on demande.
+  $effect(() => registerLeaveGuard(() => dirty > 0));
   const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
   const shown = $derived((rows ?? []).filter((r) => {
     if (onlyMissing && val(r, 'number')) return false;

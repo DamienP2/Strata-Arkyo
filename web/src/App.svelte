@@ -1,4 +1,7 @@
 <script lang="ts">
+  import Relogin from './components/Relogin.svelte';
+  import LeaveGuard from './components/LeaveGuard.svelte';
+  import Activity from './components/Activity.svelte';
   import { session, loadSession } from './lib/session.svelte';
   import { route, navigate } from './lib/router.svelte';
   import Toasts from './components/Toasts.svelte';
@@ -22,6 +25,7 @@
   });
 </script>
 
+<Activity />
 {#if !session.ready}
   <div class="gate"><span class="spin" aria-label="Chargement"></span></div>
 {:else if session.error && !session.me}
@@ -31,6 +35,8 @@
 {:else if session.me.must_change_password}
   <PasswordGate />
 {:else}
+  {#if session.expired}<Relogin />{/if}
+  <LeaveGuard />
   <Shell>
     {#if top === ''}<Home />
     {:else if top === 'projets' && route.path.split('/')[2]}{#key route.path.split('/')[2]}<Project id={route.path.split('/')[2]!} />{/key}

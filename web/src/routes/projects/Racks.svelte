@@ -183,7 +183,12 @@
   async function setPduCircuit(v: VPdu, circuit_id: string | null) {
     try { await api.patch(`/articles/${v.article_id}`, { rev: v.rev, quantity: 1, accessory: { ...v.accessory, circuit_id } }); await load(); } catch (e) { fail(e); }
   }
-  async function delCircuit(c: Circuit) { try { await api.del(`/circuits/${c.id}`); await load(); } catch (e) { fail(e); } }
+  async function delCircuit(c: Circuit) {
+    try {
+      await api.del(`/circuits/${c.id}`); await load();
+      toast(`Circuit « ${c.name} » supprimé : ses équipements n’ont plus de circuit.`, 'ok', { label: 'Recréer', run: async () => { try { await api.post(`/containers/${cid}/circuits`, { name: c.name, phase: c.phase, rating_a: c.rating_a }); await load(); } catch (e) { fail(e); } } });
+    } catch (e) { fail(e); }
+  }
 
   // ----- Rendu -----
   const fnColor = (f: string | null) => (f ? (refById('functions', f)?.data?.color ?? 'var(--fg-3)') : 'var(--fg-3)');

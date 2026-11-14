@@ -129,7 +129,7 @@
 
 {#if deleting}
   <Confirm title="Supprimer « {p.name} » ?" eyebrow="Projet" confirmLabel="Supprimer définitivement" danger onconfirm={remove} onclose={() => (deleting = false)}>
-    <p>Les emplacements, éléments, articles, exemplaires et tâches partent avec lui. Seule une sauvegarde du site permet de le retrouver.</p>
+    <p>Les emplacements, éléments, matériel, câbles et tâches partent avec lui. Il reste récupérable pendant un temps depuis Administration › Sauvegardes (projets supprimés), puis seulement depuis une sauvegarde du site.</p>
   </Confirm>
 {/if}
 

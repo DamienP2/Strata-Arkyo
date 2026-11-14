@@ -177,6 +177,7 @@
         const a = r.list[r.list.length - 1]!;
         if (r.list.length === 1) { confirmDel = { kind: 'article', id: a.id, name: a.label }; return; }
         await api.del(`/articles/${a.id}`);
+        toast(`Un exemplaire de « ${a.label} » retiré.`, 'ok', { label: 'Annuler', run: async () => { try { await api.post(`/projects/${view.project.id}/articles`, { container_id: a.container_id, location_id: a.container_id ? null : a.location_id, nature: a.nature, item_id: a.item_id, accessory: a.accessory, quantity: 1 }); await reload(); } catch (e) { fail(e); } } });
       }
       await reload();
     } catch (e) { fail(e); await reload(); }

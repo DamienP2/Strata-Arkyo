@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { copyText } from '../../lib/clipboard';
   import Icon from '../../components/Icon.svelte';
   import Avatar from '../../components/Avatar.svelte';
   import Dialog from '../../components/Dialog.svelte';
@@ -54,7 +55,7 @@
   async function remove() {
     try { await api.del(`/members/${removing!.id}`); toast('Membre retiré.'); removing = null; } catch (e) { fail(e); } finally { load(); }
   }
-  function copy(t: string) { navigator.clipboard?.writeText(t).then(() => toast('Copié.'), () => {}); }
+  async function copy(t: string) { if (await copyText(t)) toast('Mot de passe copié.'); else toast('Copie impossible dans ce navigateur : sélectionnez le mot de passe et copiez-le à la main.', 'warn'); }
 </script>
 
 <div class="toolbar" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
@@ -113,9 +114,9 @@
 {/if}
 
 {#if secret}
-  <Dialog title="Mot de passe temporaire" eyebrow={secret.who} onclose={() => (secret = null)}>
+  <Dialog title="Mot de passe temporaire" eyebrow={secret.who} locked onclose={() => (secret = null)}>
     <p>Transmettez-le de vive voix ou par un canal sûr. Il ne sera plus affiché.</p>
-    <div class="secret">{secret.password}</div>
+    <input class="secret" readonly value={secret.password} data-autofocus aria-label="Mot de passe temporaire" onfocus={(e) => (e.target as HTMLInputElement).select()}>
     {#snippet footer()}<button class="btn" onclick={() => copy(secret!.password)}><Icon name="copy" />Copier</button><button class="btn primary" onclick={() => (secret = null)}>C’est noté</button>{/snippet}
   </Dialog>
 {/if}
