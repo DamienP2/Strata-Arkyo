@@ -190,6 +190,8 @@
     const n = cols(e.placement.width), l = (100 * e.placement.col) / n, w = 100 / n;
     return `--c:${mode === 'schematic' ? catColor(e.category) : fnColor(e.function)};bottom:calc(${e.placement.u_start - 1} * var(--u) + 1px);height:calc(${e.height_u} * var(--u) - 2px);left:calc(${l}% + 2px);width:calc(${w}% - 4px)` + (mode === 'schematic' ? `;--fp-bg:linear-gradient(180deg,color-mix(in srgb,${catColor(e.category)} 72%,#fff),${catColor(e.category)});--fp-ink:#fff` : '');
   }
+  /** Textes : en schématique, les accessoires gardent leur nom (pas de façade dessinée). */
+  const rl = (e: RackEl): [string, string] => (mode === 'schematic' && e.nature === 'accessory' ? [e.label, ''] : rackLines(e));
   const typeOf = (e: RackEl) => (e.nature === 'accessory' ? accFace(e as any) : visualOf(e));
   const dw = (e: RackEl) => !!rack?.warnings.some((w) => w.placement_id === e.placement.id);
   // Vue de côté : corps (profondeur) et réserve de câbles, avant depuis la gauche, arrière depuis la droite.
@@ -313,7 +315,7 @@
                     style={style(e)} role="button" tabindex="0" draggable={mine} title="{e.custom ? `${e.custom} · ` : ''}{e.tag ? `${e.tag} · ` : ''}{e.label} · U{e.placement.u_start}"
                     onclick={() => (sel = e.placement.id)} onkeydown={(k) => { if (k.key === 'Enter') sel = e.placement.id; }}
                     ondragstart={() => (dragging = e)} ondragend={() => (dragging = null)}>
-                    {#if e.nature !== 'accessory'}<i class="led"></i>{/if}<span class="rl" class:two={!!rackLines(e)[1]}>{#if rackLines(e)[0]}<b class="rn" class:id={!!e.tag && rackLines(e)[0] === e.tag}>{rackLines(e)[0]}</b>{/if}{#if rackLines(e)[1]}<small>{rackLines(e)[1]}</small>{/if}</span>{#if isShelf(e) && onShelf(e.placement.id).length}<span class="shelf-load">{#each onShelf(e.placement.id) as x (x.placement.id)}<span class="sh-it" style="--c:{fnColor(x.function)}">{x.label}</span>{/each}</span>{:else if mode === 'real' && panelOf(e)}<span class="pdec"><PanelFace panel={panelOf(e)!} /></span>{:else if mode === 'real'}<span class="dec">{@html decor(typeOf(e))}</span>{:else}<span class="dec"></span>{/if}
+                    {#if e.nature !== 'accessory'}<i class="led"></i>{/if}<span class="rl" class:two={!!rl(e)[1]}>{#if rl(e)[0]}<b class="rn" class:id={!!e.tag && rl(e)[0] === e.tag}>{rl(e)[0]}</b>{/if}{#if rl(e)[1]}<small>{rl(e)[1]}</small>{/if}</span>{#if isShelf(e) && onShelf(e.placement.id).length}<span class="shelf-load">{#each onShelf(e.placement.id) as x (x.placement.id)}<span class="sh-it" style="--c:{fnColor(x.function)}">{x.label}</span>{/each}</span>{:else if mode === 'real' && panelOf(e)}<span class="pdec"><PanelFace panel={panelOf(e)!} /></span>{:else if mode === 'real'}<span class="dec">{@html decor(typeOf(e))}</span>{:else}<span class="dec"></span>{/if}
                   </div>
                 {/each}
                 {#if armed && hoverU}

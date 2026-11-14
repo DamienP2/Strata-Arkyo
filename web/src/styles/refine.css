@@ -375,15 +375,27 @@ kbd{font-size:10.5px;padding:3px 6px}
 /* Onduleur, PDU, générique. */
 .dec .d-brk{width:14px;height:min(70%,20px);border-radius:2px;background:linear-gradient(180deg,#E6E8EA 0 45%,#2A2E33 45%);box-shadow:0 0 0 1px #000}
 .dec .d-sock{flex:1 1 auto;max-width:330px;height:min(76%,24px);background:radial-gradient(ellipse 1.6px 3.5px at 7px 50%,#7A828B 0 1.2px,transparent 1.8px) 0 0/27px 100% repeat-x,radial-gradient(ellipse 1.6px 3.5px at 15px 50%,#7A828B 0 1.2px,transparent 1.8px) 0 0/27px 100% repeat-x,linear-gradient(90deg,#060708 0 22px,transparent 22px) 0 0/27px 100% repeat-x}
-/* Accessoires : plaque, plaque aérée, passe-câble, tiroir, étagère. */
-.dec .d-blank{flex:1 1 auto;height:44%;border-radius:1px;box-shadow:inset 0 1px 0 rgba(255,255,255,.07),inset 0 -1px 0 rgba(0,0,0,.45)}
-.dec .d-hex{flex:1 1 auto;height:80%;background:radial-gradient(circle,#050607 0 1.5px,transparent 2px) 0 0/6px 5px,radial-gradient(circle,#050607 0 1.5px,transparent 2px) 3px 2.5px/6px 5px}
-.dec .d-brush{flex:1 1 auto;height:62%;border-radius:2px;background:repeating-linear-gradient(90deg,#000 0 1px,transparent 1px 2.5px),linear-gradient(180deg,#22262B,#08090A 48% 52%,#22262B);box-shadow:inset 0 0 0 1px #000}
-.dec .d-drawer{display:grid;place-items:center;flex:1 1 auto;height:84%;border-radius:2px;box-shadow:inset 0 0 0 1px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.08)}
-.dec .d-drawer i{display:block;width:min(40%,90px);height:max(4px,16cqh);max-height:8px;border-radius:3px;background:linear-gradient(180deg,#D5D9DD,#7E858E);box-shadow:0 1px 1px rgba(0,0,0,.55)}
+/* Accessoires réalistes, sans texte : la façade occupe toute la largeur entre les oreilles. */
+.ritem.acc{padding:0 4px}
+.ritem.acc .rl:has(.rn:empty),.ritem.acc .rl:not(:has(*)){display:none}
+.ritem.acc .dec{flex:1 1 auto;padding:0;gap:0}
+.ritem.acc .dec>i{flex:1 1 auto}
+/* Obturateur : tôle pliée, deux nervures embouties. */
+.dec .d-blank{height:100%;border-radius:1px;background:linear-gradient(180deg,transparent 18%,rgba(255,255,255,.07) 18% 21%,rgba(0,0,0,.45) 21% 24%,transparent 24% 76%,rgba(255,255,255,.07) 76% 79%,rgba(0,0,0,.45) 79% 82%,transparent 82%),linear-gradient(90deg,rgba(255,255,255,.03),transparent 40%,rgba(255,255,255,.04))}
+/* Obturateur aéré : fentes oblongues en quinconce sur toute la largeur. */
+.dec .d-hex{height:100%;background:radial-gradient(5px 1.6px at 50% 50%,#030404 0 99%,transparent) 0 3px/14px 10px repeat,radial-gradient(5px 1.6px at 50% 50%,#030404 0 99%,transparent) 7px 8px/14px 10px repeat;-webkit-mask:linear-gradient(90deg,transparent 0 10px,#000 10px calc(100% - 10px),transparent calc(100% - 10px)) 0 0/100% 100% no-repeat,linear-gradient(transparent 0 3px,#000 3px calc(100% - 3px),transparent calc(100% - 3px));-webkit-mask-composite:source-in;mask:linear-gradient(90deg,transparent 0 10px,#000 10px calc(100% - 10px),transparent calc(100% - 10px)) 0 0/100% 100% no-repeat,linear-gradient(transparent 0 3px,#000 3px calc(100% - 3px),transparent calc(100% - 3px));mask-composite:intersect}
+/* Passe-câble : lumière centrale garnie de deux rangées de brosses qui se rejoignent. */
+.dec .d-brush{position:relative;height:100%;border-radius:1px}
+.dec .d-brush::before{content:"";position:absolute;left:12px;right:12px;top:20%;bottom:20%;border-radius:2px;background:repeating-linear-gradient(90deg,rgba(150,158,168,.5) 0 1px,transparent 1px 2.4px) 0 0/100% 47% no-repeat,repeating-linear-gradient(90deg,transparent 0 1.2px,rgba(150,158,168,.5) 1.2px 2.2px,transparent 2.2px 2.4px) 0 100%/100% 47% no-repeat,linear-gradient(180deg,#15171A,#050607 46% 54%,#15171A);box-shadow:inset 0 0 0 1px #000,0 1px 0 rgba(255,255,255,.06)}
+/* Tiroir : façade en retrait, poignée centrale et serrure. */
+.dec .d-drawer{display:block;position:relative;height:100%;margin:0 6px;border-radius:2px;box-shadow:inset 0 0 0 1px rgba(0,0,0,.65),inset 0 1px 0 rgba(255,255,255,.1),inset 0 -2px 0 rgba(0,0,0,.25)}
+.dec .d-drawer i{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:block;width:min(34%,110px);height:max(5px,14cqh);max-height:9px;border-radius:4px;background:linear-gradient(180deg,#E2E5E8,#7E858E);box-shadow:0 2px 2px rgba(0,0,0,.6)}
+.dec .d-drawer::after{content:"";position:absolute;right:14px;top:50%;width:9px;height:9px;transform:translateY(-50%);border-radius:50%;background:radial-gradient(circle,#0A0B0C 0 1.4px,#B9C0C7 1.8px 3.2px,#5A6168 3.6px)}
+/* Étagère : rack visible au-dessus, plateau en bas avec rebord et équerres latérales. */
 .ritem.acc:has(.d-shelf){--fp-bg:transparent;background:transparent!important;box-shadow:none!important}
-.dec .d-shelf{flex:1 1 auto;align-self:flex-end;height:30%;max-height:9px;margin-bottom:-3px;border-radius:0 0 2px 2px;background:linear-gradient(180deg,#5A6169,#2A2E33);box-shadow:0 1px 2px rgba(0,0,0,.6)}
-.ritem.acc .dec{justify-content:flex-start}
+.dec .d-shelf{position:relative;align-self:stretch;height:100%;background:linear-gradient(180deg,#4E555D,#24282D) 0 100%/100% 7px no-repeat}
+.dec .d-shelf::before,.dec .d-shelf::after{content:"";position:absolute;bottom:6px;width:10px;height:calc(100% - 8px);background:linear-gradient(to top right,#3A4047 0 50%,transparent 50%)}
+.dec .d-shelf::before{left:0}.dec .d-shelf::after{right:0;transform:scaleX(-1)}
 /* En 1U, le texte laisse la place au décor : il passe sur deux lignes plutôt que de le masquer. */
 .ritem.u1 .rl{max-width:46%}
 /* Façade étroite (1U avec texte, demi-largeur) : on garde l'essentiel du décor, sans le couper. */
