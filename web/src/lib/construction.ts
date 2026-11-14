@@ -25,11 +25,11 @@ async function sections(view: ProjectView, cid: string, kind: CView): Promise<{ 
     const arts = view.articles.filter((a) => a.container_id === cid);
     out.push({ title: 'Matériel', cols: [{ label: 'Désignation', w: 70 }, { label: 'Qté', w: 12, align: 'right' }, { label: 'Repères', w: 60 }, { label: 'Position', w: 30 }], rows: arts.map((a) => { const tags = view.instances.filter((i) => i.article_id === a.id).map((i) => i.tag); return [a.label, String(a.quantity), tags.join(' '), tags.map((tg) => placed[`${a.label} ${tg}`]).filter(Boolean).join(', ') || placed[a.label] || '']; }) });
     const groups = new Map<string, { n: number; len: number }>();
-    for (const r of mine) { const g = groups.get(r.signal || '—') ?? { n: 0, len: 0 }; g.n++; g.len += r.length_m ?? r.estimate_m ?? 0; groups.set(r.signal || '—', g); }
+    for (const r of mine) { const g = groups.get(r.signal || 'Non défini') ?? { n: 0, len: 0 }; g.n++; g.len += r.length_m ?? r.estimate_m ?? 0; groups.set(r.signal || 'Non défini', g); }
     out.push({ title: 'Câbles (par signal)', cols: [{ label: 'Signal', w: 60 }, { label: 'Nombre', w: 20, align: 'right' }, { label: 'Longueur totale (m)', w: 40, align: 'right' }], rows: [...groups].map(([s, g]) => [s, String(g.n), g.len ? g.len.toFixed(1).replace('.', ',') : '']) });
   } else if (kind === 'cabling') {
-    const sig = new Map<string, any[]>(); for (const r of mine) sig.set(r.signal || '—', [...(sig.get(r.signal || '—') ?? []), r]);
-    for (const [s, rs] of sig) out.push({ title: `Câbles ${s}`, cols: [{ label: 'N°', w: 22 }, { label: 'De', w: 70 }, { label: 'Vers', w: 70 }, { label: 'Signal', w: 22 }, { label: 'Long. (m)', w: 18, align: 'right' }], rows: rs.map((r) => [r.number ?? '—', end(r.a), end(r.b), r.signal, String(r.length_m ?? r.estimate_m ?? '')]) });
+    const sig = new Map<string, any[]>(); for (const r of mine) sig.set(r.signal || 'Non défini', [...(sig.get(r.signal || 'Non défini') ?? []), r]);
+    for (const [s, rs] of sig) out.push({ title: s === 'Non défini' ? 'Câbles (signal non défini)' : `Câbles ${s}`, cols: [{ label: 'N°', w: 22 }, { label: 'De', w: 70 }, { label: 'Vers', w: 70 }, { label: 'Signal', w: 22 }, { label: 'Long. (m)', w: 18, align: 'right' }], rows: rs.map((r) => [r.number ?? '—', end(r.a), end(r.b), r.signal || 'Non défini', String(r.length_m ?? r.estimate_m ?? '')]) });
   } else {
     const insts = view.instances.filter((i) => view.articles.find((a) => a.id === i.article_id)?.container_id === cid);
     for (const i of insts) {
@@ -52,7 +52,10 @@ export async function construction(view: ProjectView, cid: string, kind: CView, 
   let blob: Blob;
   if (format === 'pdf') {
     const doc = await newDoc('A4', false);
-    d.sections.forEach((s, i) => { if (i) doc.addPage([210, 297], 'portrait'); drawTable(doc, projectHeader(view.project, `${d.title} · ${label}`), s.cols, s.rows, 'A4', false, { section: s.title }); });
+    // Sections enchaînées sur la même page ; saut de page seulement quand la place manque.
+    const head = projectHeader(view.project, `${d.title} · ${label}`);
+    let y: number | undefined;
+    for (const s of d.sections) y = drawTable(doc, head, s.cols, s.rows, 'A4', false, { section: s.title, y }) + 5;
     paginate(doc, 1, undefined, view.project.name);
     blob = doc.output('blob');
   } else if (format === 'csv') {

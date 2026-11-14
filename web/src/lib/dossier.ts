@@ -4,10 +4,10 @@
 
 import { mount, unmount } from 'svelte';
 import { api } from './api';
-import { fnColor, refList, refName, loadRefs } from './catalog.svelte';
-import { addPage, drawTable, newDoc, paginate, projectHeader, size, svgPage, titleBlock, txt, type Col, type Doc, type PaperKey, type TitleBlock, type Vars } from './pdfkit';
+import { fnColor, refById, refList, refName, loadRefs } from './catalog.svelte';
+import { FONT, INK, MUTE, addPage, bestLandscape, drawLogo, drawTable, familyDash, ink, markFramed, newDoc, newDocMm, paginate, projectHeader, size, svgPage, titleBlock, txt, type Col, type Doc, type LegendItem, type PaperKey, type TitleBlock, type Vars } from './pdfkit';
 import { dataUrl, drawingSvg, mapFloorSvg, synopticSvg, toSvgEl, type Rendered } from './render';
-import { drawPV } from './pv';
+import { drawPV, pvEnds } from './pv';
 import { withLightTheme, standalone } from './svgexport';
 import { STATUS, type ProjectView } from './projects';
 
@@ -68,7 +68,7 @@ async function tableRows(c: Ctx, key: string): Promise<Record<string, string>[]>
     case 'net_2110': {
       const n = await get<{ flows: any[] }>(c, `/projects/${pidOf(c)}/network`);
       const ess: Record<string, string> = { video: 'Vidéo', audio: 'Audio', data: 'Données' };
-      return n.flows.map((f) => ({ element: f.element, equipment: f.equipment, tag: f.tag, flow: f.signal, essence: ess[f.essence] ?? f.essence, address: f.address ?? '', udp: f.udp != null ? String(f.udp) : '' }));
+      return n.flows.map((f) => ({ element: f.element, equipment: f.equipment, tag: f.tag, flow: f.signal || 'Non défini', essence: ess[f.essence] ?? f.essence, address: f.address ?? '', udp: f.udp != null ? String(f.udp) : '' }));
     }
     case 'net_dmx': {
       const ix = await get<{ pages: any[] }>(c, `/projects/${pidOf(c)}/drawings`);
@@ -93,12 +93,13 @@ async function drawingPages(c: Ctx, natures: string[]): Promise<{ id: string; la
   const ix = await get<{ pages: any[] }>(c, `/projects/${pidOf(c)}/drawings`);
   return ix.pages.filter((p) => natures.includes(p.nature) && p.count > 0).map((p) => ({ id: p.id, label: p.name }));
 }
-async function graphics(c: Ctx, key: string, pages: string[] | undefined): Promise<{ title: string; r: Rendered | SVGSVGElement; w: number; h: number }[]> {
+type Graphic = { title: string; r: Rendered | SVGSVGElement; w: number; h: number; own?: boolean };
+async function graphics(c: Ctx, key: string, pages: string[] | undefined): Promise<Graphic[]> {
   const pid = pidOf(c);
   const pick = <T extends { id: string }>(list: T[]) => (pages ? list.filter((x) => pages.includes(x.id)) : list);
   if (key === 'plan_schematic' || key === 'plan_av' || key === 'plan_lighting') {
     const nat = key === 'plan_schematic' ? ['schematic'] : key === 'plan_av' ? ['video', 'audio'] : ['lighting'];
-    const out = [];
+    const out: Graphic[] = [];
     for (const p of pick(await drawingPages(c, nat))) {
       const d = await get<any>(c, `/projects/${pid}/drawings/${p.id}`);
       const images: Record<string, string> = {};
@@ -110,7 +111,7 @@ async function graphics(c: Ctx, key: string, pages: string[] | undefined): Promi
   }
   if (key === 'plan_maps') {
     const ix = await get<{ maps: any[] }>(c, `/projects/${pid}/plans`);
-    const out = [];
+    const out: Graphic[] = [];
     for (const m of ix.maps) {
       const d = await get<any>(c, `/projects/${pid}/plans/${m.id}`);
       for (const f of d.floors) {
@@ -123,7 +124,7 @@ async function graphics(c: Ctx, key: string, pages: string[] | undefined): Promi
     return out;
   }
   if (key === 'plan_synoptic') {
-    const out = [];
+    const out: Graphic[] = [];
     for (const ct of pick(c.view.containers.map((x) => ({ id: x.id, label: x.name })))) {
       const s = await get<any>(c, `/projects/${pid}/synoptic?view=container:${ct.id}`);
       const r = synopticSvg(s, { fnColor });
@@ -143,7 +144,7 @@ async function graphics(c: Ctx, key: string, pages: string[] | undefined): Promi
     const site = await get<{ name: string }>(c, '/site');
     const info = { project: c.view.project.name, client: c.view.project.client ?? 'Projet interne', venue: c.view.project.venue ?? '', site: site.name, date: new Date().toLocaleDateString('fr-FR'), locations: Object.fromEntries(c.view.locations.map((l) => [l.id, { name: l.name, code: l.code }])) };
     const host = document.createElement('div'); host.style.cssText = 'position:absolute;left:-100000px;top:0;width:2000px'; document.body.appendChild(host);
-    const out = [];
+    const out: Graphic[] = [];
     try {
       const sel = (sheet.pages as any[]).map((p, i) => ({ p, i })).filter(({ i }) => !pages || pages.includes(String(i)));
       for (const { p, i } of sel) {
@@ -188,21 +189,23 @@ export async function probe(c: Ctx, key: string): Promise<Probe> {
 // ----- Assemblage -----
 
 export interface Built { blob: Blob; pages: number; skipped: string[] }
-type Section = { title: string; page: number };
+type Section = { title: string; page: number; fmt: string };
 
 function cover(doc: Doc, v: ProjectView, site: { name: string; logo: string | null }, title: string) {
-  const [W, H] = size(doc), m = 20;
-  if (site.logo) { try { const p = doc.getImageProperties(site.logo); const lw = Math.min(60, (p.width / p.height) * 22); doc.addImage(site.logo, site.logo.startsWith('data:image/png') ? 'PNG' : 'JPEG', m, m, lw, (lw * p.height) / p.width); } catch { /* logo illisible */ } }
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(91, 99, 109); doc.text(txt(site.name.toUpperCase()), W - m, m + 6, { align: 'right' });
-  doc.setFontSize(30); doc.setTextColor(21, 23, 26); doc.text(doc.splitTextToSize(txt(v.project.name), W - 2 * m), m, 80);
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(14); doc.text(txt(title), m, 96);
+  const [W] = size(doc), m = 20;
+  drawLogo(doc, site.logo, m, m, 60, 22);
+  doc.setFont(FONT.sans, 'bold'); ink(doc, 10); doc.text(txt(site.name.toUpperCase()), W - m, m + 6, { align: 'right' });
+  ink(doc, 30, false); doc.text(doc.splitTextToSize(txt(v.project.name), W - 2 * m), m, 80);
+  doc.setFont(FONT.sans, 'normal'); doc.setFontSize(14); doc.text(txt(title), m, 96);
   const h = projectHeader(v.project as any, '');
-  doc.setFontSize(11); doc.setTextColor(91, 99, 109);
-  [h.client, h.venue, h.dates, `Édité le ${new Date().toLocaleDateString('fr-FR')}`].filter(Boolean).forEach((l, i) => doc.text(txt(l), m, 108 + i * 6.5));
-  doc.setDrawColor(21, 23, 26); doc.setLineWidth(0.6); doc.line(m, 140, W - m, 140);
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(21, 23, 26); doc.text('Sommaire', m, 152);
-  void H;
+  ink(doc, 11);
+  [h.client, h.venue, h.dates, `Édité le ${new Date().toLocaleDateString('fr-FR')}${h.version ? ` · ${h.version}` : ''}`].filter(Boolean).forEach((l, i) => doc.text(txt(l), m, 108 + i * 6.5));
+  doc.setDrawColor(...INK); doc.setLineWidth(0.6); doc.line(m, 140, W - m, 140);
+  doc.setFont(FONT.sans, 'bold'); ink(doc, 12, false); doc.text('Sommaire', m, 152);
 }
+
+/** Légende des familles de signal d'un synoptique rendu. */
+const legendOf = (fams: string[] | undefined): LegendItem[] => (fams ?? []).slice().sort().map((f) => ({ label: f ? refById('functions', f)?.name ?? f : 'Famille non définie', color: (f && fnColor(f).startsWith('#') ? fnColor(f) : '#8A919B'), dash: familyDash(f || null) }));
 
 export async function build(view: ProjectView, defs: DocDef[], opts: DocOpt[], dossierTitle: string, onStep: (msg: string) => void, only?: string): Promise<Built> {
   await loadRefs();
@@ -215,10 +218,21 @@ export async function build(view: ProjectView, defs: DocDef[], opts: DocOpt[], d
   let doc: Doc | null = null;
   const sections: Section[] = [];
   const skipped: string[] = [];
-  const start = async (paper: PaperKey, landscape: boolean) => { if (!doc) doc = await newDoc(paper, landscape); else addPage(doc, paper, landscape); return doc; };
-  // Page au format propre (feuille d'élévations, avec son cartouche).
-  const startOwn = async (w: number, h: number): Promise<Doc> => { const o = w > h ? 'landscape' : 'portrait'; if (!doc) { await import('svg2pdf.js'); const { jsPDF } = await import('jspdf'); doc = new jsPDF({ unit: 'mm', format: [w, h], orientation: o }); } else doc.addPage([w, h], o); return doc; };
-  const baseVars = async (title: string): Promise<Vars> => ({ title, project: view.project.name, client: view.project.client ?? 'Projet interne', address: view.project.venue ?? '', date: new Date().toLocaleDateString('fr-FR'), site: site.name, logo: site.logo ?? '', version: '', view: title });
+  // Tableaux enchaînés : une section courte suit la précédente sur la même page (même format).
+  let flow: { paper: PaperKey; landscape: boolean; y: number } | null = null;
+  const start = async (paper: PaperKey, landscape: boolean) => { flow = null; if (!doc) doc = await newDoc(paper, landscape); else addPage(doc, paper, landscape); return doc; };
+  // Page au format propre (feuille d'élévations, avec son cadre et son cartouche).
+  const startOwn = async (w: number, h: number): Promise<Doc> => { flow = null; if (!doc) doc = await newDocMm(w, h); else doc.addPage([w, h], w > h ? 'landscape' : 'portrait'); markFramed(doc); return doc; };
+  const fmtLabel = (paper: PaperKey, landscape: boolean) => `${paper} ${landscape ? 'paysage' : 'portrait'}`;
+  const table = async (title: string, paper: PaperKey, landscape: boolean, cols: Col[], rows: string[][]) => {
+    const f = flow as { paper: PaperKey; landscape: boolean; y: number } | null;
+    const chain = f && f.paper === paper && f.landscape === landscape ? f.y : undefined;
+    const d = chain != null ? (doc as unknown as Doc) : await start(paper, landscape);
+    const head = projectHeader(view.project as any, only ? title : dossierTitle);
+    const y = drawTable(d, head, cols, rows, paper, landscape, { section: only ? undefined : title, y: chain, onStart: (page) => sections.push({ title, page, fmt: fmtLabel(paper, landscape) }) });
+    flow = { paper, landscape, y: y + 6 };
+  };
+  const baseVars = async (title: string): Promise<Vars> => ({ title, project: view.project.name, client: view.project.client ?? 'Projet interne', address: view.project.venue ?? '', date: new Date().toLocaleDateString('fr-FR'), site: site.name, logo: site.logo ?? '', version: `rév. ${(view.project as any).rev ?? ''}`, view: title });
   if (withCover) { const d = await start('A4', false); cover(d, view, site, dossierTitle); }
   for (const o of list.filter((x) => x.key !== 'cover')) {
     const def = defs.find((d) => d.key === o.key); if (!def) continue;
@@ -228,38 +242,41 @@ export async function build(view: ProjectView, defs: DocDef[], opts: DocOpt[], d
     if (pr.state !== 'ok') { skipped.push(`${title} : ${pr.state === 'empty' ? 'vide' : 'en échec'}`); continue; }
     const [paper, landscape] = firstFmt(o);
     if (o.key === 'sheet') {
-      const d = await start(paper, landscape); sections.push({ title, page: d.getNumberOfPages() });
       const p = view.project as any, h = projectHeader(p, title);
       const rows: [string, string][] = [['Projet', p.name], ['Client', h.client], ['Lieu', h.venue], ['Type de projet', p.service_type ?? ''], ['Dates', h.dates], ['Statut', STATUS[p.status as keyof typeof STATUS]?.label ?? p.status], ['Description', p.description ?? ''], ['Lieux', view.locations.map((l) => l.name).join(', ')], ['Éléments', view.containers.map((x) => x.name).join(', ')]];
-      drawTable(d, h, [{ label: 'Rubrique', w: 40 }, { label: 'Valeur', w: 140 }], rows.map(([a, b]) => [a, b]), paper, landscape);
+      await table(title, paper, landscape, [{ label: 'Rubrique', w: 30 }, { label: 'Valeur', w: 140 }], rows.map(([a, b]) => [a, b || 'Non renseigné']));
       continue;
     }
     if (o.key === 'recette') {
       const r = await get<any>(c, `/projects/${view.project.id}/recette`);
-      const d = await start(paper, false); sections.push({ title, page: d.getNumberOfPages() });
-      drawPV(d, r, view, site.name, site.logo, paper === 'A3' ? 'A3' : 'A4');
+      const d = await start(paper, false); sections.push({ title, page: d.getNumberOfPages(), fmt: fmtLabel(paper, false) });
+      drawPV(d, r, view, site.name, site.logo, paper === 'A3' ? 'A3' : 'A4', await pvEnds(view.project.id));
       continue;
     }
     if (def.columns.length) {
       const rows = await tableRows(c, o.key);
       const cols = (o.columns.length ? o.columns : def.columns).filter((k) => def.columns.includes(k));
-      const d = await start(paper, landscape); sections.push({ title, page: d.getNumberOfPages() });
-      const head = projectHeader(view.project as any, title);
       const tc: Col[] = cols.map((k) => ({ label: COL_LABEL[k] ?? k, w: COL_W[k] ?? 20, align: ['quantity', 'reserve', 'udp', 'console', 'universe', 'channels'].includes(k) ? 'right' : 'left' }));
-      drawTable(d, head, tc, rows.map((r) => cols.map((k) => r[k] ?? '')), paper, landscape);
+      await table(title, paper, landscape, tc, rows.map((r) => cols.map((k) => r[k] ?? '')));
       continue;
     }
     const gs = await graphics(c, o.key, o.pages);
     if (!gs.length) { skipped.push(`${title} : vide`); continue; }
     let first = true;
     for (const [i, g] of gs.entries()) {
-      const own = (g as any).own as boolean | undefined;
-      const [pw, ph] = own ? [g.w, g.h] : [0, 0];
-      const d = own ? await startOwn(pw, ph) : await start(paper, landscape);
-      if (first) { sections.push({ title, page: d.getNumberOfPages() }); first = false; }
+      const own = !!g.own;
       const el = g.r instanceof SVGSVGElement ? g.r : toSvgEl(g.r as Rendered);
-      if (own) { await import('svg2pdf.js'); await d.svg(el, { x: 0, y: 0, width: pw, height: ph }); }
-      else await svgPage(d, el, g.w, g.h, tpl, { ...(await baseVars(g.title)), sheet: String(i + 1), sheets: String(gs.length), format: `${paper} ${landscape ? 'paysage' : 'portrait'}` });
+      // Synoptiques : découpés en feuilles plutôt qu'écrasés, avec la légende des familles, dans
+      // l'orientation qui demande le moins de feuilles.
+      const syn = o.key === 'plan_synoptic';
+      const gOpts = { tile: syn, legend: syn ? legendOf((g.r as Rendered).families) : [] };
+      const land = own ? landscape : bestLandscape(el, g.w, g.h, paper, landscape, tpl, gOpts);
+      const d = own ? await startOwn(g.w, g.h) : await start(paper, land);
+      if (first) { sections.push({ title, page: d.getNumberOfPages(), fmt: own ? 'format de la planche' : syn ? `${paper}, orientation selon le dessin` : fmtLabel(paper, landscape) }); first = false; }
+      if (own) { await import('svg2pdf.js'); await d.svg(el, { x: 0, y: 0, width: g.w, height: g.h }); }
+      else {
+        await svgPage(d, el, g.w, g.h, tpl, { ...(await baseVars(g.title)), sheet: String(i + 1), sheets: String(gs.length), format: fmtLabel(paper, land) }, gOpts);
+      }
     }
   }
   if (!doc) throw new Error('Aucun document à imprimer : tous sont vides ou en échec.');
@@ -268,18 +285,23 @@ export async function build(view: ProjectView, defs: DocDef[], opts: DocOpt[], d
   if (withCover && !only) {
     addPage(d, 'A4', false);
     const [W, H] = size(d);
-    d.setFont('helvetica', 'normal'); d.setFontSize(10); d.setTextColor(91, 99, 109);
+    d.setFont(FONT.sans, 'normal'); ink(d, 10);
     d.text(txt(`Fin du dossier · ${view.project.name}`), W / 2, H / 2, { align: 'center' });
     d.text(txt(`${site.name} · ${new Date().toLocaleString('fr-FR')}`), W / 2, H / 2 + 6, { align: 'center' });
     d.setPage(1);
     let y = 162;
-    d.setFont('helvetica', 'normal'); d.setFontSize(10.5); d.setTextColor(21, 23, 26);
+    const fmts = new Set(sections.map((s) => s.fmt.split(/[ ,]/)[0]!).filter((f) => /^A\d$/.test(f)));
     for (const s of sections) {
-      if (y > 280) break;
+      if (y > 266) break;
+      d.setFont(FONT.sans, 'normal'); d.setFontSize(10.5); d.setTextColor(...INK);
       d.text(txt(s.title), 20, y); d.text(String(s.page), 190, y, { align: 'right' });
-      d.setDrawColor(210, 214, 220); d.setLineDashPattern([0.5, 1], 0); d.line(22 + d.getTextWidth(txt(s.title)), y, 186 - d.getTextWidth(String(s.page)), y); d.setLineDashPattern([], 0);
+      ink(d, 8.5); const fw = d.getTextWidth(txt(s.fmt)); d.text(txt(s.fmt), 180, y, { align: 'right' });
+      d.setFontSize(10.5); const tw = d.getTextWidth(txt(s.title));
+      d.setDrawColor(190, 195, 201); d.setLineDashPattern([0.5, 1], 0); d.line(22 + tw, y, 178 - fw, y); d.setLineDashPattern([], 0);
       y += 7;
     }
+    // Formats mélangés : annoncé sur la page de garde.
+    if (fmts.size > 1) { d.setFont(FONT.sans, 'normal'); ink(d, 9); d.setTextColor(...MUTE); d.text(txt(`Ce dossier mélange les formats ${[...fmts].sort().join(' et ')} : chaque document est imprimé à son format (colonne de droite du sommaire).`), 20, Math.min(y + 4, 272), { maxWidth: 170 }); }
   }
   paginate(d, 1, undefined, view.project.name);
   return { blob: d.output('blob'), pages: d.getNumberOfPages(), skipped };

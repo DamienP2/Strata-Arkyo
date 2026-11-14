@@ -35,7 +35,9 @@ export interface Sheet {
   titleBlock: boolean; block: TitleBlock; pages: SheetPage[];
 }
 
-export const MARGIN = 10;
+/** Cadre à 10 mm du bord de la feuille ; contenu à 4 mm à l'intérieur du cadre. */
+export const FRAME = 10;
+export const MARGIN = 14;
 export const BLOCK: [number, number] = [180, 44];
 export const U_MM = 44.45;
 /** Encombrement réel d'une baie dessinée : panneau 19″ et montants. */
@@ -156,7 +158,7 @@ export function autoLayout(s: Sheet, ctx: Ctx, racks: Ref[], desks: Ref[], locat
   const pages: SheetPage[] = [];
   let page: SheetPage = { id: uid(), items: [] };
   let x = MARGIN, y = MARGIN, rowH = 0;
-  const block = s.titleBlock ? { x: W - MARGIN - BLOCK[0], y: H - MARGIN - BLOCK[1] } : null;
+  const block = s.titleBlock ? { x: W - FRAME - BLOCK[0], y: H - FRAME - BLOCK[1] } : null;
   const hitsBlock = (x0: number, y0: number, w: number, h: number) => !!block && x0 + w > block.x - 4 && y0 + h > block.y - 4;
   const newPage = () => { if (page.items.length) pages.push(page); page = { id: uid(), items: [] }; x = MARGIN; y = MARGIN; rowH = 0; };
   const newRow = () => { x = MARGIN; y += rowH + gap; rowH = 0; };

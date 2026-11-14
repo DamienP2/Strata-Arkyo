@@ -3,8 +3,11 @@
 // standard (rendu PDF fidèle). Les images sont passées en data URL avant l'appel.
 
 const esc = (s: unknown) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-const F = 'Helvetica, Arial, sans-serif';
-export interface Rendered { svg: string; w: number; h: number }
+import { FONT, SVG_MONO, SVG_SANS, familyDash } from './pdfkit';
+
+const F = SVG_SANS;
+/** `families` : familles de signal des câbles dessinés (légende du PDF). */
+export interface Rendered { svg: string; w: number; h: number; families?: string[] }
 
 export function toSvgEl(r: Rendered): SVGSVGElement {
   const el = new DOMParser().parseFromString(r.svg, 'image/svg+xml').documentElement as unknown as SVGSVGElement;
@@ -160,26 +163,31 @@ export function synopticSvg(syn: { nodes: any[]; cables: any[]; layout: Record<s
   const out: string[] = [];
   const xs: number[] = [], ys: number[] = [];
   for (const n of nodes) { const p = pos[n.key]!; xs.push(p.x - 140, p.x + NW + 140); ys.push(p.y - 30, p.y + nh(n) + 30); }
+  // Famille de signal d'un câble : style de trait propre (lisible en noir et blanc).
+  const famOf = (ref: string) => { for (const n of nodes) { const p = n.ports.find((x: any) => x.ref === ref); if (p) return (p.family as string | null) ?? ''; } return ''; };
+  const fams = new Set<string>();
+  const dash = (f: string) => { const d = familyDash(f || null); return d.length ? ` stroke-dasharray="${d.map((x) => x * 2).join(' ')}"${Math.min(...d) <= 1 ? ' stroke-linecap="round"' : ''}` : ''; };
   for (const c of syn.cables) {
     if (c.fields?.attach) continue;
     const A = portXY(c.a), B = portXY(c.b), col = esc(c.fields?.color ?? '#5B636D');
+    const fam = famOf(c.a) || famOf(c.b); if (A || B) fams.add(fam);
     if (A && B) {
       const ax = A[0] + (A[2] === 'l' ? -24 : 24), bx = B[0] + (B[2] === 'l' ? -24 : 24);
-      out.push(`<path d="M${A[0]} ${A[1]} H${ax} L${bx} ${B[1]} H${B[0]}" fill="none" stroke="${col}" stroke-width="2"/>`);
-      if (c.fields?.number) out.push(`<text x="${(ax + bx) / 2}" y="${(A[1] + B[1]) / 2 - 4}" font-family="Courier, monospace" font-size="11" font-weight="bold" text-anchor="middle" fill="#15171A">${esc(c.fields.number)}</text>`);
+      out.push(`<path d="M${A[0]} ${A[1]} H${ax} L${bx} ${B[1]} H${B[0]}" fill="none" stroke="${col}" stroke-width="2"${dash(fam)}/>`);
+      if (c.fields?.number) out.push(`<text x="${(ax + bx) / 2}" y="${(A[1] + B[1]) / 2 - 4}" font-family="${SVG_MONO}" font-size="11" font-weight="bold" text-anchor="middle" fill="#15171A">${esc(c.fields.number)}</text>`);
     } else if (A || B) {
       const P = (A ?? B)!, far = A ? c.b_info : c.a_info, dx = P[2] === 'l' ? -1 : 1, end = P[0] + dx * 120;
-      out.push(`<path d="M${P[0]} ${P[1]} H${end}" fill="none" stroke="${col}" stroke-width="2" stroke-dasharray="6 4"/><text x="${end + dx * 4}" y="${P[1] + 4}" font-family="${F}" font-size="10" text-anchor="${dx > 0 ? 'start' : 'end'}" fill="#5B636D">${esc(c.fields?.number ? c.fields.number + ' » ' : '» ')}${esc(far ? `${far.label} › ${far.port}` : '')}</text>`);
+      out.push(`<path d="M${P[0]} ${P[1]} H${end}" fill="none" stroke="${col}" stroke-width="2"${dash(fam)}/><text x="${end + dx * 4}" y="${P[1] + 4}" font-family="${F}" font-size="10" text-anchor="${dx > 0 ? 'start' : 'end'}" fill="#333333">${esc(c.fields?.number ? `${c.fields.number} ${FONT.unicode ? '→' : '»'} ` : `${FONT.unicode ? '→' : '»'} `)}${esc(far ? `${far.label} › ${far.port}` : '')}</text>`);
       xs.push(end + dx * 160);
     }
   }
   for (const n of nodes) {
     const p = pos[n.key]!, h = nh(n), col = esc(n.function ? opts.fnColor(n.function) : '#8A919B');
     out.push(`<rect x="${p.x}" y="${p.y}" width="${NW}" height="${h}" rx="10" fill="#ffffff" stroke="#15171A" stroke-width="1.2"/><rect x="${p.x}" y="${p.y}" width="6" height="${h}" fill="${col}"/>`);
-    out.push(`<text x="${p.x + 16}" y="${p.y + 22}" font-family="${F}" font-size="14" font-weight="bold" fill="#15171A">${esc(n.label.length > 30 ? n.label.slice(0, 29) + '…' : n.label)}</text><text x="${p.x + 16}" y="${p.y + 39}" font-family="${F}" font-size="11" fill="#5B636D">${esc(n.sub.length > 42 ? n.sub.slice(0, 41) + '…' : n.sub)}</text>`);
+    out.push(`<text x="${p.x + 16}" y="${p.y + 22}" font-family="${F}" font-size="14" font-weight="bold" fill="#15171A">${esc(n.label.length > 30 ? n.label.slice(0, 29) + '…' : n.label)}</text><text x="${p.x + 16}" y="${p.y + 39}" font-family="${F}" font-size="11" fill="#333333">${esc(n.sub.length > 42 ? n.sub.slice(0, 41) + '…' : n.sub)}</text>`);
     left(n).forEach((q: any, i: number) => out.push(`<circle cx="${p.x}" cy="${p.y + HH + i * PS + PS / 2 + 4}" r="4" fill="#ffffff" stroke="#15171A" stroke-width="1.2"/><text x="${p.x + 10}" y="${p.y + HH + i * PS + PS / 2 + 8}" font-family="${F}" font-size="11" fill="#15171A">${esc(q.label.length > 20 ? q.label.slice(0, 19) + '…' : q.label)}</text>`));
     right(n).forEach((q: any, i: number) => out.push(`<circle cx="${p.x + NW}" cy="${p.y + HH + i * PS + PS / 2 + 4}" r="4" fill="#ffffff" stroke="#15171A" stroke-width="1.2"/><text x="${p.x + NW - 10}" y="${p.y + HH + i * PS + PS / 2 + 8}" font-family="${F}" font-size="11" text-anchor="end" fill="#15171A">${esc(q.label.length > 20 ? q.label.slice(0, 19) + '…' : q.label)}</text>`));
   }
   const x0 = Math.min(...xs), y0 = Math.min(...ys), W = Math.max(...xs) - x0, H = Math.max(...ys) - y0;
-  return { svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${x0} ${y0} ${W} ${H}" width="${W}" height="${H}"><rect x="${x0}" y="${y0}" width="${W}" height="${H}" fill="#ffffff"/>${out.join('')}</svg>`, w: W, h: H };
+  return { svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${x0} ${y0} ${W} ${H}" width="${W}" height="${H}"><rect x="${x0}" y="${y0}" width="${W}" height="${H}" fill="#ffffff"/>${out.join('')}</svg>`, w: W, h: H, families: [...fams] };
 }
