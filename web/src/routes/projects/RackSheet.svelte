@@ -55,7 +55,7 @@
       const [s, st, c] = await Promise.all([api.get<{ data: Sheet | null; rev: number }>(`/projects/${pid}/settings/rack_sheet`), api.get<{ name: string }>('/site'), loadCtx(view)]);
       site = st.name; ctx = c; rev = s.rev;
       if (s.data && s.data.pages) sheet = normalize({ ...blankSheet(), ...s.data, block: { ...blankSheet().block, ...s.data.block } });
-      else { const b = blankSheet(); b.pages = layout(b); sheet = b; }
+      else { const b = blankSheet(); b.pages = [{ id: uid(), items: [] }]; sheet = b; }
       cur = Math.min(cur, sheet.pages.length - 1);
     } catch (e) { fail(e); }
   }
@@ -230,6 +230,7 @@
     <div class="pl-body">
       <div class="pl-desk" role="presentation" onpointerdown={(e) => { if (!(e.target as Element).closest('.it')) selected = null; }}>
         <div class="pl-paper" bind:this={svgHost} style="aspect-ratio:{pageSize(sheet)[0]} / {pageSize(sheet)[1]}">
+          {#if page && !page.items.length}<div class="pl-empty"><b>Feuille vide</b><span>{writable ? 'Ajoutez des baies ou du mobilier depuis le panneau de droite, ou « Disposer » pour tout placer d’un coup.' : 'Aucun élément sur cette feuille.'}</span></div>{/if}
           {#if page}<SheetPage {sheet} {page} {ctx} {info} {shots} index={cur} total={sheet.pages.length} editable={writable} {selected} onpick={pick} />{/if}
         </div>
         <p class="muted small pl-foot">{sheet.paper} {sheet.orientation === 'portrait' ? 'portrait' : 'paysage'} · 1:{sheet.scale} · feuille {cur + 1} / {sheet.pages.length}{writable ? ' · cliquez un élément pour le régler, glissez-le pour le placer' : ''}</p>
@@ -348,6 +349,9 @@
   .pl-body { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 12px; align-items: start; }
   .pl-desk { padding: 28px; border-radius: 14px; background: radial-gradient(90% 70% at 50% 0%, color-mix(in srgb, var(--fg) 6%, var(--surface-2)), var(--surface-2)); overflow: auto; min-height: 60vh; }
   .pl-paper { width: 100%; max-width: 1500px; margin: 0 auto; background: #fff; box-shadow: 0 24px 50px -22px rgba(0, 0, 0, .55), 0 0 0 1px rgba(0, 0, 0, .08); touch-action: none; }
+  .pl-paper { position: relative; }
+  .pl-empty { position: absolute; left: 50%; top: 42%; transform: translate(-50%, -50%); display: grid; gap: 4px; text-align: center; max-width: 340px; color: #5B636D; font-size: 13px; pointer-events: none; }
+  .pl-empty b { color: #15171A; font-size: 15px; }
   .pl-foot { text-align: center; margin: 12px 0 0; }
   .pl-panel { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto; border-radius: 14px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); }
   .pl-ph { display: flex; align-items: center; gap: 10px; padding: 12px 12px 12px 14px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--surface); z-index: 1; }
