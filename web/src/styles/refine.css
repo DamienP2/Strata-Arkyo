@@ -1,39 +1,26 @@
 /* Finition : pleine largeur, échelle typographique et commandes plus fines, barre latérale
    des espaces de travail. Chargée après strates.css et app.css, qu'elle ajuste. */
 
-/* ---------- Échelle ---------- */
-body{font-size:14px;line-height:1.5}
-h1{font-size:clamp(24px,2vw,30px);letter-spacing:-.025em;font-weight:700}
-.display{font-size:clamp(28px,2.6vw,38px);line-height:1.05;letter-spacing:-.03em;font-weight:720}
-h2{font-size:17px;letter-spacing:-.012em}
-h3{font-size:15px}
-.lead{font-size:15.5px;max-width:60ch;line-height:1.5}
-.small{font-size:12.5px}
-.eyebrow,.lbl-t{font-size:10.5px;letter-spacing:.08em}
-.eyebrow{margin-bottom:6px}
+/* ---------- Icônes (l'échelle typographique est dans strates.css) ---------- */
 .ic{width:18px;height:18px}
 .ic.sm{width:16px;height:16px}
 
 /* ---------- Coque ---------- */
-.mast{height:52px;gap:20px;padding-left:max(18px,env(safe-area-inset-left,0px));padding-right:max(14px,env(safe-area-inset-right,0px));background:color-mix(in srgb,var(--surface) 55%,transparent);border-bottom:1px solid var(--line)}
+.mast{height:52px;gap:20px;padding-left:max(18px,env(safe-area-inset-left,0px));padding-right:max(14px,env(safe-area-inset-right,0px));background:var(--mast-bg);border-bottom:1px solid var(--bar-line);box-shadow:var(--mast-sh)}
 .word{font-size:17px;gap:8px}
 .logo{width:24px;height:24px}
 .topnav{padding:3px;background:none;box-shadow:none;gap:2px}
 .topnav :is(a,button){height:30px;padding:0 12px;font-size:13.5px;border-radius:8px}
 .topnav :is(a,button).on{background:var(--surface-3);color:var(--fg);box-shadow:inset 0 0 0 1px var(--line);font-weight:650}
 .topnav :is(a,button).on::before{display:none}
-.icon-btn{width:34px;height:34px;border-radius:8px}
-.icon-btn.sm{width:30px;height:30px}
-.av{width:28px;height:28px;font-size:10.5px}
-.av.sm{width:22px;height:22px;font-size:9px}
+.av{width:28px;height:28px;font-size:11.5px}
+.av.sm{width:24px;height:24px;font-size:11.5px;letter-spacing:0}
 #view{padding:20px 28px 64px;padding-left:max(28px,env(safe-area-inset-left,0px));padding-right:max(28px,env(safe-area-inset-right,0px))}
 .page{max-width:none;gap:20px}
 .page-head{align-items:flex-end}
 .hero{gap:12px;max-width:none}
 
 /* ---------- Commandes ---------- */
-.btn{height:34px;padding:0 13px;border-radius:8px;font-size:13.5px;gap:7px;font-weight:600}
-.btn.sm{height:28px;padding:0 10px;font-size:12.5px;border-radius:7px;gap:5px}
 .btn .ic{width:16px;height:16px}
 .btn.sm .ic{width:14px;height:14px}
 .input{height:34px;border-radius:8px;padding:0 11px;font-size:13.5px}
@@ -43,34 +30,36 @@ select.input{padding-right:30px;background-position:calc(100% - 16px) 52%,calc(1
 .search .ic{left:10px;top:9px;width:16px;height:16px}
 .search .input{padding-left:34px}
 .seg{padding:2px;border-radius:9px}
-.seg button{height:28px;padding:0 11px;font-size:13px;border-radius:7px}
+/* Segments : boutons de 30 px dans un puits de 34 px, alignés sur les champs ; anneau de focus intérieur. */
+.seg button{height:var(--btn-h-sm);padding:0 11px;font-size:var(--fs-ctl-sm);border-radius:var(--btn-r-sm)}
+.seg button:focus-visible{outline-offset:-2px}
+.seg.full{display:flex;width:100%}
+.seg.full button{flex:1}
 .fchip{height:28px;padding:0 11px;font-size:12.5px}
 .chip{height:22px;padding:0 8px;font-size:12px;gap:5px}
-.chip.st{font-size:13.5px}
 .tally{height:22px;font-size:11.5px;padding:0 8px 0 7px;border-radius:6px;gap:6px}
 .tally::before{width:6px;height:6px}
 .mode{height:24px;font-size:12px;padding:0 9px}
 .field{gap:5px}
-.field label,.flabel{font-size:12.5px}
 .field .help{font-size:12.5px}
-.form-grid,.fg3,.fg4{gap:14px 16px}
-.toggle-row{font-size:13.5px}
-.toggle-row input{width:16px;height:16px}
 .stepper{padding:2px;border-radius:9px}
 .stepper button{width:26px;height:26px;border-radius:7px;font-size:15px}
 .stepper span{min-width:26px;font-size:13px}
 .st-select{height:34px;border-radius:8px;padding:0 4px 0 11px;gap:8px}
 .st-select select{font-size:13.5px}
-kbd{font-size:10.5px;padding:3px 6px}
 
 /* ---------- Surfaces ---------- */
-.card{border-radius:12px;padding:16px 18px 18px;box-shadow:0 0 0 1px var(--line),0 1px 2px rgba(0,0,0,.04)}
+.card{border-radius:var(--r-md);padding:16px 18px 18px;background:var(--card-bg);box-shadow:var(--card-sh)}
+/* Variantes de padding (charte § 3.6), et aucune autre */
+.card.tbl-card{padding:6px 18px 10px}
+.card.tbl-card.dense{padding:4px 8px 8px}
+.card.compact{padding:12px 14px}
+.card.flush{padding:0}
 .card-head{padding-bottom:10px;margin-bottom:2px}
-.card-head h2{font-size:16px}
 .card-head .eyebrow{margin-bottom:3px}
 .tbl{font-size:13.5px}
-.tbl th{font-size:10px;padding:8px 12px 8px 0}
-.tbl td{padding:8px 12px 8px 0}
+.tbl td{padding:8px 12px 8px 0;height:44px}
+.tbl.dense td{height:40px;padding:3px 12px 3px 0}
 .kv{font-size:13.5px;gap:6px 14px}
 .alert{font-size:13px;padding:10px 12px;border-radius:9px}
 .alert .ic{width:17px;height:17px}
@@ -84,29 +73,29 @@ kbd{font-size:10.5px;padding:3px 6px}
 .grid-2,.cols{gap:18px}
 
 /* Accueil */
-.fig{min-height:120px;padding:14px 16px;border-radius:12px;box-shadow:0 0 0 1px var(--line),0 1px 2px rgba(0,0,0,.04)}
+.fig{min-height:120px;padding:14px 16px}
 .fig b{font-size:40px;margin-top:6px}
 .fig .fig-s{font-size:12.5px;margin-top:6px}
 .figs{gap:12px}
-.next{border-radius:16px;padding:18px 20px}
+.next{border-radius:var(--r-md);padding:18px 20px}
 .next-name{font-size:26px}
 .r-main b{font-size:15px}
 .r-main span{font-size:12.5px}
 .r-date{width:44px;height:48px;border-radius:9px}
 .r-date b{font-size:19px}
-.urow{grid-template-columns:44px minmax(0,1fr) auto;gap:12px;padding:8px 6px}
 
 /* Barre de sections horizontale (encore utilisée sur mobile et à quelques endroits) */
 .sn-group{border-radius:10px;padding:6px 6px 5px;gap:4px;box-shadow:0 0 0 1px var(--line)}
 .subnav :is(a,button){height:30px;padding:0 10px;font-size:13px;border-radius:7px}
-.snb{height:30px!important;padding:0 10px!important;font-size:13px!important;border-radius:7px!important}
+/* Hors du panneau mobile (entrées de 44 px, cible tactile) */
+.snb:not(.sn-panel .snb){height:30px!important;padding:0 10px!important;font-size:13px!important;border-radius:7px!important}
 
 /* ---------- Espace de travail : barre latérale ---------- */
 #view.wsv{padding:0;overflow:hidden;display:flex;flex-direction:column}
 #view.wsv>.page{padding:20px 28px}
 .ws{flex:1;min-height:0;display:grid;grid-template-columns:232px minmax(0,1fr);transition:grid-template-columns .2s var(--ease)}
 .ws.folded{grid-template-columns:56px minmax(0,1fr)}
-.ws-side{display:flex;flex-direction:column;gap:6px;min-height:0;overflow-y:auto;overflow-x:hidden;padding:14px 10px 10px;border-right:1px solid var(--line);background:color-mix(in srgb,var(--surface) 70%,transparent);scrollbar-width:thin}
+.ws-side{display:flex;flex-direction:column;gap:6px;min-height:0;overflow-y:auto;overflow-x:hidden;padding:14px 10px 10px;border-right:1px solid var(--bar-line);background:var(--side-bg);scrollbar-width:thin}
 .ws-main{min-width:0;min-height:0;overflow:auto;padding:0 28px 64px;display:flex;flex-direction:column}
 .ws-head{display:flex;flex-direction:column;gap:8px;padding:2px 4px 12px;margin-bottom:4px;border-bottom:1px solid var(--line)}
 .ws-back{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:600;color:var(--fg-3);text-decoration:none;width:max-content}
@@ -123,14 +112,14 @@ kbd{font-size:10.5px;padding:3px 6px}
 .ws-label{display:flex;align-items:center;gap:5px;height:22px;padding:0 8px;font:600 10px/1 var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--fg-4)}
 .ws-label .ic{width:11px;height:11px}
 .ws-group.lock .ws-label{color:color-mix(in srgb,var(--lock-ink) 80%,var(--fg-4))}
-.ws-item{position:relative;display:flex;align-items:center;gap:9px;height:30px;padding:0 8px;border-radius:7px;font-size:13.5px;font-weight:500;color:var(--fg-2);text-decoration:none;white-space:nowrap;transition:background .12s,color .12s}
+.ws-item{position:relative;display:flex;align-items:center;gap:9px;height:30px;padding:0 8px;border-radius:7px;font-size:13.5px;font-weight:550;color:var(--fg-2);text-decoration:none;white-space:nowrap;transition:background .12s,color .12s}
 .ws-item .ic{color:var(--fg-3);width:16px;height:16px}
 .ws-item:hover{background:var(--surface-3);color:var(--fg)}
 .ws-item.on{background:var(--surface);color:var(--fg);font-weight:650;box-shadow:0 0 0 1px var(--line),0 1px 2px rgba(0,0,0,.05)}
 .ws-item.on::before{content:"";position:absolute;left:-10px;top:7px;bottom:7px;width:3px;border-radius:0 3px 3px 0;background:var(--accent)}
 .ws-item.on .ic{color:var(--accent)}
 .ws-t{overflow:hidden;text-overflow:ellipsis;min-width:0}
-.ws-badge{margin-left:auto;min-width:18px;height:18px;padding:0 5px;border-radius:9px;display:grid;place-items:center;font:700 10px var(--mono);background:var(--accent-soft);color:var(--accent)}
+.ws-badge{margin-left:auto}
 .ws-fold{margin-top:auto;display:flex;align-items:center;gap:8px;height:30px;padding:0 8px;border:0;border-radius:7px;background:none;color:var(--fg-3);font-size:12.5px}
 .ws-fold:hover{background:var(--surface-3);color:var(--fg)}
 .ws.folded .ws-side{padding-inline:8px;align-items:stretch}
@@ -139,7 +128,7 @@ kbd{font-size:10.5px;padding:3px 6px}
 .ws.folded .ws-label:not(:has(.ic))::after{content:"";width:16px;height:1px;background:var(--line-2)}
 .ws.folded .ws-item{justify-content:center;padding:0}
 .ws.folded .ws-t{display:none}
-.ws.folded .ws-badge{position:absolute;top:1px;right:1px;min-width:14px;height:14px;font-size:8.5px;padding:0 3px}
+.ws.folded .ws-badge{position:absolute;top:-2px;right:-2px;min-width:16px;height:16px;padding:0 3px}
 .ws.folded .ws-item.on::before{left:-8px}
 .ws.folded .ws-fold{justify-content:center;padding:0}
 .ws.folded .ws-fold .ic{transform:scaleX(-1)}
@@ -215,112 +204,52 @@ kbd{font-size:10.5px;padding:3px 6px}
 .ritem.sel{outline:1.5px solid var(--accent);outline-offset:1px;filter:brightness(1.1)}
 .rack-screen .design-body{grid-template-columns:260px minmax(0,1fr) 320px}
 
-/* ===== Thème sombre : plus contrasté, moins plat ===== */
-@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
-  color-scheme:dark;
-  /* Nuit bleutée, comme Strata Graphics et Multiview : trois plans nets (fond, cartes,
-     champs), contours visibles, texte à fort contraste (AA et plus sur chaque surface). */
-  --bg:#0B0D14; --bg-deep:#06070C; --bg-glow:rgba(120,110,255,.16);
-  --surface:#161A26; --surface-2:#1E2333; --surface-3:#282E42; --sunken:#0D1019;
-  --line:#2C3245; --line-2:#434A63; --line-soft:rgba(255,255,255,.10);
-  --fg:#F6F7FB; --fg-2:#D3D7E2; --fg-3:#A9AFC0; --fg-4:#848BA0;
-  --accent:#9DB0FF; --accent-soft:#242C55; --accent-2:#C6D0FF;
-  --primary:#F6F7FB; --primary-fg:#0E1018;
-  --ok:#4FD99B; --ok-soft:#10301F; --warn:#F7B24A; --warn-soft:#352612; --err:#FF7B70; --err-soft:#3B1716; --info:#B3BACA; --info-soft:#20253A;
-  --seg-off:#283046; --wk-c:rgba(255,255,255,.04);
-  --canvas:#0E1119; --dot:#2E3550; --node-bg:#1A1F2E; --node-edge:#3D4560;
-  --stage-a:#262C42; --stage-b:#080A10; --rack-rim:0 0 0 1px rgba(255,255,255,.16),0 0 80px rgba(130,140,255,.12); --vis-a:#222840; --vis-b:#10131E;
-  --inst:#181C2A; --inst-hi:#2B3148; --inst-lo:#11141E; --inst-edge:rgba(255,255,255,.12); --inst-seg:#2A3046;
-  --ill-desk:#1F2434; --ill-desk-top:#323A52; --ill-wall:#1E2333; --ill-unit:#2A3044; --ill-unit-2:#3B4259; --ill-case:#262B3C;
-  --logo-bg:#1A1E2C; --logo-edge:rgba(255,255,255,.18);
-  --e1:0 0 0 1px rgba(255,255,255,.085),0 1px 2px rgba(0,0,0,.55),0 10px 24px -10px rgba(0,0,0,.8),inset 0 1px 0 rgba(255,255,255,.07);
-  --e2:0 0 0 1px rgba(255,255,255,.11),0 2px 4px rgba(0,0,0,.55),0 22px 44px -12px rgba(0,0,0,.9),inset 0 1px 0 rgba(255,255,255,.08);
-  --e3:0 0 0 1px rgba(255,255,255,.12),0 30px 80px -20px rgba(0,0,0,.92);
-  --e-inst:0 0 0 1px rgba(255,255,255,.11),0 24px 50px -16px rgba(0,0,0,.9),inset 0 1px 0 rgba(255,255,255,.09);
-  --well:inset 0 1px 3px rgba(0,0,0,.6),inset 0 0 0 1px rgba(255,255,255,.09),0 1px 0 rgba(255,255,255,.05);
-  --key:inset 0 1px 0 rgba(255,255,255,.11),0 0 0 1px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.06),0 1px 2px rgba(0,0,0,.5),0 4px 10px -3px rgba(0,0,0,.6);
-  --key-bg:linear-gradient(180deg,#2C3248 0%,#222839 100%);
-  --key-bg-h:linear-gradient(180deg,#343B54 0%,#293045 100%);
-  --primary-bg:linear-gradient(180deg,#FFFFFF 0%,#DADDE8 100%);
-  --key-led:#3C55F0;
-  --scrim:rgba(3,4,10,.66);
-}}
-:root[data-theme="dark"]{
-  color-scheme:dark;
-  /* Nuit bleutée, comme Strata Graphics et Multiview : trois plans nets (fond, cartes,
-     champs), contours visibles, texte à fort contraste (AA et plus sur chaque surface). */
-  --bg:#0B0D14; --bg-deep:#06070C; --bg-glow:rgba(120,110,255,.16);
-  --surface:#161A26; --surface-2:#1E2333; --surface-3:#282E42; --sunken:#0D1019;
-  --line:#2C3245; --line-2:#434A63; --line-soft:rgba(255,255,255,.10);
-  --fg:#F6F7FB; --fg-2:#D3D7E2; --fg-3:#A9AFC0; --fg-4:#848BA0;
-  --accent:#9DB0FF; --accent-soft:#242C55; --accent-2:#C6D0FF;
-  --primary:#F6F7FB; --primary-fg:#0E1018;
-  --ok:#4FD99B; --ok-soft:#10301F; --warn:#F7B24A; --warn-soft:#352612; --err:#FF7B70; --err-soft:#3B1716; --info:#B3BACA; --info-soft:#20253A;
-  --seg-off:#283046; --wk-c:rgba(255,255,255,.04);
-  --canvas:#0E1119; --dot:#2E3550; --node-bg:#1A1F2E; --node-edge:#3D4560;
-  --stage-a:#262C42; --stage-b:#080A10; --rack-rim:0 0 0 1px rgba(255,255,255,.16),0 0 80px rgba(130,140,255,.12); --vis-a:#222840; --vis-b:#10131E;
-  --inst:#181C2A; --inst-hi:#2B3148; --inst-lo:#11141E; --inst-edge:rgba(255,255,255,.12); --inst-seg:#2A3046;
-  --ill-desk:#1F2434; --ill-desk-top:#323A52; --ill-wall:#1E2333; --ill-unit:#2A3044; --ill-unit-2:#3B4259; --ill-case:#262B3C;
-  --logo-bg:#1A1E2C; --logo-edge:rgba(255,255,255,.18);
-  --e1:0 0 0 1px rgba(255,255,255,.085),0 1px 2px rgba(0,0,0,.55),0 10px 24px -10px rgba(0,0,0,.8),inset 0 1px 0 rgba(255,255,255,.07);
-  --e2:0 0 0 1px rgba(255,255,255,.11),0 2px 4px rgba(0,0,0,.55),0 22px 44px -12px rgba(0,0,0,.9),inset 0 1px 0 rgba(255,255,255,.08);
-  --e3:0 0 0 1px rgba(255,255,255,.12),0 30px 80px -20px rgba(0,0,0,.92);
-  --e-inst:0 0 0 1px rgba(255,255,255,.11),0 24px 50px -16px rgba(0,0,0,.9),inset 0 1px 0 rgba(255,255,255,.09);
-  --well:inset 0 1px 3px rgba(0,0,0,.6),inset 0 0 0 1px rgba(255,255,255,.09),0 1px 0 rgba(255,255,255,.05);
-  --key:inset 0 1px 0 rgba(255,255,255,.11),0 0 0 1px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.06),0 1px 2px rgba(0,0,0,.5),0 4px 10px -3px rgba(0,0,0,.6);
-  --key-bg:linear-gradient(180deg,#2C3248 0%,#222839 100%);
-  --key-bg-h:linear-gradient(180deg,#343B54 0%,#293045 100%);
-  --primary-bg:linear-gradient(180deg,#FFFFFF 0%,#DADDE8 100%);
-  --key-led:#3C55F0;
-  --scrim:rgba(3,4,10,.66);
-}
-
-/* Bandeaux en relief (sombre) : barre du haut en dégradé nuit, barre latérale surélevée,
-   fond avec un halo violet discret, carte active soulignée. */
-:root[data-theme="dark"] .mast{background:linear-gradient(180deg,#151827,#10121B);border-bottom:1px solid #262B3D;box-shadow:0 1px 0 rgba(0,0,0,.5)}
-:root[data-theme="dark"] .ws-side{background:linear-gradient(180deg,#121522,#0E1019);border-right-color:#262B3D}
-:root[data-theme="dark"] body{background:radial-gradient(90% 60% at 0% 0%,rgba(68,58,150,.20),transparent 60%),var(--bg)}
-:root[data-theme="dark"] .card{background:linear-gradient(180deg,#191D2B,#151925)}
-@media (prefers-color-scheme: dark){
-  :root:not([data-theme="light"]) .mast{background:linear-gradient(180deg,#151827,#10121B);border-bottom:1px solid #262B3D;box-shadow:0 1px 0 rgba(0,0,0,.5)}
-  :root:not([data-theme="light"]) .ws-side{background:linear-gradient(180deg,#121522,#0E1019);border-right-color:#262B3D}
-  :root:not([data-theme="light"]) body{background:radial-gradient(90% 60% at 0% 0%,rgba(68,58,150,.20),transparent 60%),var(--bg)}
-  :root:not([data-theme="light"]) .card{background:linear-gradient(180deg,#191D2B,#151925)}
-}
-
-/* Champs en sombre : fond léger, contour visible, focus bleu. */
-:root[data-theme="dark"] .input{background-color:#111522;box-shadow:inset 0 0 0 1px #30374D,inset 0 1px 2px rgba(0,0,0,.4)} :root[data-theme="dark"] .input:hover{box-shadow:inset 0 0 0 1px #3E4661} :root[data-theme="dark"] .input:focus,:root[data-theme="dark"] .input:focus-visible{box-shadow:inset 0 0 0 1px #9DB0FF,0 0 0 3px rgba(157,176,255,.22)}
-@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .input{background-color:#111522;box-shadow:inset 0 0 0 1px #30374D,inset 0 1px 2px rgba(0,0,0,.4)} :root:not([data-theme="light"]) .input:hover{box-shadow:inset 0 0 0 1px #3E4661} :root:not([data-theme="light"]) .input:focus,:root:not([data-theme="light"]) .input:focus-visible{box-shadow:inset 0 0 0 1px #9DB0FF,0 0 0 3px rgba(157,176,255,.22)} }
-
-/* ===== Boutons : une seule famille, partout =====
-   Secondaire : surface pleine et contour fin. Principal : plein, couleur d'accent, texte blanc
-   (un seul par barre). Discret : sans fond, s'éclaire au survol. Danger : texte rouge. Tous à
-   la même hauteur et au même rayon ; les pastilles d'emplacement s'alignent dessus. */
-:root{--btn-h:34px;--btn-r:8px;--btn-bg:var(--surface);--btn-bg-h:var(--surface-2);--btn-edge:var(--line-2);--btn-pri:#2943E4;--btn-pri-h:#2138CC;--btn-pri-fg:#fff}
-:root[data-theme="dark"]{--btn-bg:#202538;--btn-bg-h:#283048;--btn-edge:#394159;--btn-pri:#5466F0;--btn-pri-h:#6475F5;--btn-pri-fg:#fff}
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--btn-bg:#202538;--btn-bg-h:#283048;--btn-edge:#394159;--btn-pri:#5466F0;--btn-pri-h:#6475F5;--btn-pri-fg:#fff}}
-.btn{height:var(--btn-h);padding:0 13px;border-radius:var(--btn-r);background:var(--btn-bg);box-shadow:inset 0 0 0 1px var(--btn-edge);color:var(--fg);font-weight:600;font-size:13.5px;gap:7px;transition:background .12s,box-shadow .12s,color .12s}
+/* ===== Boutons et commandes : une seule famille, partout (charte § 3.1) =====
+   Secondaire : surface pleine et contour fin. Principal : plein, couleur d'accent (un seul par
+   barre, en dernier). Discret (ghost) : sans fond. Danger : texte rouge ; danger plein
+   (.btn.primary.danger) réservé à la validation d'une confirmation destructive. Jetons dans
+   strates.css. Focus : anneau unique en outline, jamais écrasé par les box-shadow des tons. */
+.btn{height:var(--btn-h);padding:0 13px;border-radius:var(--btn-r);background:var(--btn-bg);box-shadow:inset 0 0 0 1px var(--btn-edge);color:var(--fg);font-weight:600;font-size:var(--fs-md);gap:7px;transition:background .12s,box-shadow .12s,color .12s,transform .12s}
 .btn:hover:not([disabled]){background:var(--btn-bg-h);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--btn-edge) 70%,var(--fg) 30%)}
 .btn:active:not([disabled]){transform:translateY(1px)}
-.btn:focus-visible{outline:none;box-shadow:inset 0 0 0 1px var(--accent),0 0 0 3px color-mix(in srgb,var(--accent) 28%,transparent)}
+.btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .btn.primary,a.btn.primary{background:var(--btn-pri);color:var(--btn-pri-fg);box-shadow:inset 0 1px 0 rgba(255,255,255,.14),0 1px 2px rgba(0,0,0,.25);filter:none}
-.btn.primary:hover:not([disabled]){background:var(--btn-pri-h);box-shadow:inset 0 1px 0 rgba(255,255,255,.16),0 2px 6px -1px rgba(40,60,220,.45)}
+.btn.primary:hover:not([disabled]){background:var(--btn-pri-h);box-shadow:inset 0 1px 0 rgba(255,255,255,.16),0 2px 6px -1px color-mix(in srgb,var(--btn-pri) 45%,transparent)}
 .btn.ghost{background:transparent;box-shadow:none;color:var(--fg-2)}
 .btn.ghost:hover:not([disabled]){background:var(--btn-bg-h);box-shadow:none;color:var(--fg)}
 .btn.danger,.btn.ghost.danger{color:var(--err)}
-.btn.ghost.danger:hover:not([disabled]){background:color-mix(in srgb,var(--err) 12%,transparent);color:var(--err)}
-.btn.sm{height:30px;padding:0 11px;font-size:13px;border-radius:7px;gap:6px}
-.btn[disabled]{opacity:.45}
-.icon-btn{border-radius:var(--btn-r)}
-.icon-btn:hover{background:var(--btn-bg-h);box-shadow:inset 0 0 0 1px var(--btn-edge)}
-/* Pastilles d'emplacement : même hauteur que les boutons, une seule ligne. */
+.btn.danger:hover:not([disabled]),.btn.ghost.danger:hover:not([disabled]){background:color-mix(in srgb,var(--err) 12%,transparent);color:var(--err)}
+.btn.primary.danger{background:var(--btn-danger);color:var(--btn-danger-fg)}
+.btn.primary.danger:hover:not([disabled]){background:var(--btn-danger);color:var(--btn-danger-fg);filter:brightness(1.08);box-shadow:inset 0 1px 0 rgba(255,255,255,.14),0 2px 6px -1px color-mix(in srgb,var(--err) 45%,transparent)}
+.btn.sm{height:var(--btn-h-sm);padding:0 11px;font-size:var(--fs-ctl-sm);border-radius:var(--btn-r-sm);gap:6px}
+/* Désactivé : une seule règle pour tous les boutons, sans survol (:hover:not(:disabled)). */
+button:disabled,.btn[disabled]{opacity:.45;cursor:not-allowed}
+/* Bouton icône seule : M 34, S 30, XS 24 ; variante danger. */
+.icon-btn{width:var(--btn-h);height:var(--btn-h);border-radius:var(--btn-r)}
+.icon-btn.sm{width:var(--btn-h-sm);height:var(--btn-h-sm);border-radius:var(--btn-r-sm)}
+.icon-btn.xs{width:24px;height:24px;border-radius:6px}
+.icon-btn .ic{width:18px;height:18px}
+.icon-btn.sm .ic{width:16px;height:16px}
+.icon-btn.xs .ic{width:14px;height:14px}
+.icon-btn:hover:not(:disabled){background:var(--btn-bg-h);box-shadow:inset 0 0 0 1px var(--btn-edge)}
+.icon-btn.danger{color:var(--err)}
+.icon-btn.danger:hover:not(:disabled){background:color-mix(in srgb,var(--err) 12%,transparent);box-shadow:none;color:var(--err)}
+/* Badge compteur (charte § 3.3) ; .ws-badge et .icon-btn .badge en sont des alias. */
+.badge,.ws-badge{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 5px;border-radius:999px;font:700 var(--fs-2xs)/1 var(--mono);background:var(--accent-soft);color:var(--accent)}
+.badge.urg,.icon-btn .badge{background:var(--err);color:var(--primary-fg)}
+/* Champs S : tableaux éditables, barres en .btn.sm, panneaux latéraux. */
+.input.sm{height:var(--btn-h-sm);border-radius:var(--btn-r-sm);padding:0 9px;font-size:var(--fs-ctl-sm)}
+select.input.sm{padding-right:26px;background-position:calc(100% - 14px) 52%,calc(100% - 9px) 52%}
+.input[type=color]{width:56px;padding:4px;cursor:pointer}
+/* Pastilles d'emplacement : même hauteur que les boutons, une seule ligne ; texte sur fond plein
+   en --btn-pri-fg, sans voile qui réduise le contraste. */
 .loc{height:var(--btn-h);padding:0 12px 0 4px;gap:8px;border-radius:var(--btn-r);background:var(--btn-bg);box-shadow:inset 0 0 0 1px var(--btn-edge)}
 .loc:hover{background:var(--btn-bg-h)}
-.loc.on{background:var(--btn-pri);color:#fff;box-shadow:none}
-.loc .code{padding:3px 7px;border-radius:5px;font-size:11.5px;box-shadow:none;background:var(--surface-3)}
-.loc.on .code{background:rgba(255,255,255,.18)}
+.loc.on{background:var(--btn-pri);color:var(--btn-pri-fg);box-shadow:none}
+.loc .code{padding:3px 7px;border-radius:5px;font-size:var(--fs-2xs);box-shadow:none;background:var(--surface-3)}
+.loc.on .code{background:transparent;color:inherit;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--btn-pri-fg) 55%,transparent)}
 .loc .ln{flex-direction:row;align-items:baseline;gap:8px;line-height:1}
-.loc .small{font-size:12px}
+.loc .small{font-size:var(--fs-xs)}
 .card.loc-list{align-items:center;gap:8px}
 /* ===== Visuels de façade (décors) : silhouettes simples et typiques ===== */
 .ritem .dec{container-type:size;gap:max(5px,6cqh)}

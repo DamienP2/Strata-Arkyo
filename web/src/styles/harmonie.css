@@ -1,17 +1,14 @@
 /* Harmonisation de l'interface, chargée après refine.css : libellés lisibles, en-tête de page
    unique, état vide, tableaux triables, champs du thème clair, accueil et projets. */
 
-/* Jetons : texte tertiaire au contraste AA (≥ 4,5:1) ; champs du thème clair blancs, bord ≥ 3:1. */
-:root{--fg-4:#63676E;--input-bg:#FFFFFF;--input-edge:#8E9199;--input-edge-h:#6B6F77}
+/* Les jetons (dont --fg-4 et --input-*) sont tous dans strates.css. */
 
 /* ---------- Micro-libellés : sans-serif 11,5–12 px, contraste AA ; la mono reste aux valeurs ---------- */
-.eyebrow,.lbl-t{font:600 11.5px/1.3 var(--font);letter-spacing:.05em;text-transform:uppercase;color:var(--fg-3)}
-.tbl th{font:600 12px/1.3 var(--font);letter-spacing:0;text-transform:none;color:var(--fg-3);padding:9px 12px 9px 0}
 .ws-label{font:650 11.5px/1 var(--font);letter-spacing:.05em;color:var(--fg-3)}
 .ws-crumb{font:600 11.5px/1.2 var(--font);letter-spacing:.04em;color:var(--fg-3)}
 .sn-label{font:650 11.5px/1 var(--font);letter-spacing:.05em}
 .perm-grid .h{font:600 12px var(--font);letter-spacing:0;text-transform:none}
-.r-date span{font:600 11px var(--font);letter-spacing:.03em}
+.r-date span{font:600 11.5px var(--font);letter-spacing:.03em}
 .pc-foot .lbl-t,.next-meta .lbl-t{font-size:11.5px}
 .tbl.stack td[data-l]::before{font:600 11.5px var(--font);letter-spacing:.03em}
 .group-h .count{font:600 13px/1 var(--font)}
@@ -46,34 +43,48 @@
 .empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:6px;padding:40px 24px}
 .es-ic{display:grid;place-items:center;width:44px;height:44px;border-radius:12px;background:var(--surface-3);color:var(--fg-3);box-shadow:inset 0 0 0 1px var(--line)}
 .es-ic .ic{width:22px;height:22px}
-.es-msg{margin:6px 0 0;font-size:15px;font-weight:600;color:var(--fg)}
+.es-msg{margin:6px 0 0;font-size:var(--fs-lg);font-weight:600;color:var(--fg)}
 .es-hint{margin:0;font-size:13.5px;color:var(--fg-3);max-width:56ch}
 .es-act{margin-top:10px}
 
 /* ---------- Tableaux : tri, survol, actions de ligne ---------- */
 .th-sort{display:inline-flex;align-items:center;gap:6px;border:0;background:none;padding:2px 0;margin:0;font:inherit;color:inherit;letter-spacing:inherit;text-transform:inherit;cursor:pointer;border-radius:4px;white-space:nowrap}
 .th-sort:hover,.th-sort.on{color:var(--fg)}
-.th-ind{font-size:9.5px;line-height:1;opacity:.6}
+.th-ind{font-size:var(--fs-2xs);line-height:1;opacity:1;color:var(--fg-3)}
 .th-sort.on .th-ind{opacity:1;color:var(--accent)}
 .th-sort:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .tbl tbody tr.click{cursor:pointer}
 .tbl tbody tr.click:hover td{background:color-mix(in srgb,var(--accent) 7%,transparent)}
-/* Actions répétées sur chaque ligne : visibles au survol de la ligne ou au clavier. */
-.row-act,.tbl .row-acts{opacity:0;transition:opacity .12s}
-tr:hover .row-act,tr:focus-within .row-act,tr:hover .row-acts,tr:focus-within .row-acts{opacity:1}
-@media (hover:none){.row-act,.tbl .row-acts{opacity:1}}
+/* Actions de ligne : toujours visibles (charte § 3.5), dernière colonne td.acts. */
+.tbl tr.focus td{background:color-mix(in srgb,var(--accent) 7%,transparent)}
+.tbl tr.sel td{background:color-mix(in srgb,var(--accent) 12%,transparent)}
+.tbl tr.grp th{font:650 14px var(--font);color:var(--fg);padding:16px 8px 6px;border-bottom:1px solid var(--line)}
+th.ck,td.ck{width:32px}
+td.acts{text-align:right;white-space:nowrap}
+.cell-link{font-weight:600;color:var(--fg);text-decoration:none}
+.cell-link:hover{color:var(--accent);text-decoration:underline;text-underline-offset:3px}
+.tbl-more{display:flex;justify-content:center;padding:12px}
+.tbl td,.count,.ph-count,.fig b{font-variant-numeric:tabular-nums}
 /* Action destructive : à l'écart des actions courantes. */
 .dl-actions>.danger:not(:first-child),.act-danger{margin-left:14px}
 .row-actions>.btn.danger:first-child:not(:only-child){margin-right:auto}
 .dl-actions .slot{display:inline-block;width:30px;height:30px;flex:none}
 
-/* ---------- Champs : fond blanc et bord net en clair ; gris plein réservé au désactivé ---------- */
+/* ---------- Champs (charte § 3.2) : jetons --input-* propres à chaque thème ---------- */
 .input{background-color:var(--input-bg);box-shadow:inset 0 0 0 1px var(--input-edge)}
-.input:where(:hover:not(:disabled):not(.err)){box-shadow:inset 0 0 0 1px var(--input-edge-h)}
+.input:where(:hover:not(:disabled):not(.err):not([aria-invalid="true"])){box-shadow:inset 0 0 0 1px var(--input-edge-h)}
 .input:focus,.input:focus-visible{box-shadow:inset 0 0 0 1px var(--accent),0 0 0 3px color-mix(in srgb,var(--accent) 22%,transparent)}
-.input:where(:disabled){background-color:var(--surface-3);box-shadow:none;color:var(--fg-3);opacity:1}
-:root[data-theme="dark"] .input:disabled{background-color:#1B2030;box-shadow:none;color:var(--fg-3)}
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .input:disabled{background-color:#1B2030;box-shadow:none;color:var(--fg-3)}}
+/* Erreur : visible dans les deux thèmes et conservée au focus. */
+.input:is(.err,[aria-invalid="true"]),.input:is(.err,[aria-invalid="true"]):focus{box-shadow:inset 0 0 0 1px var(--err),0 0 0 3px color-mix(in srgb,var(--err) 18%,transparent)}
+.input:disabled{background-color:var(--input-bg-off);box-shadow:none;color:var(--fg-3);opacity:1;cursor:not-allowed}
+/* Cellule modifiable en ligne : transparente au repos, bord au survol, anneau standard au focus. */
+:is(input,select,textarea).cell{height:30px;border:0;border-radius:var(--btn-r-sm);background:transparent;box-shadow:none;padding:0 8px;font:inherit;color:inherit;width:100%;min-width:0}
+:is(input,select,textarea).cell:hover:not(:disabled){box-shadow:inset 0 0 0 1px var(--input-edge)}
+:is(input,select,textarea).cell:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;background:var(--input-bg)}
+:is(input,select,textarea).cell.dirty{background:var(--warn-soft)}
+/* Cases et radios : 16 px, couleur du bouton principal ; curseurs en accent. */
+input:is([type=checkbox],[type=radio]){width:16px;height:16px;margin:0;accent-color:var(--btn-pri)}
+input[type=range]{accent-color:var(--accent)}
 
 /* ---------- Progression : couleur d'accent plutôt que noir ou blanc ---------- */
 .vu{--vu-c:var(--accent)}
@@ -82,11 +93,8 @@ tr:hover .row-act,tr:focus-within .row-act,tr:hover .row-acts,tr:focus-within .r
 /* ---------- Pastilles de filtre actives : neutres, pas de pavé noir ---------- */
 .fchip.on{background:var(--accent-soft);color:var(--accent-2);box-shadow:inset 0 0 0 1.5px var(--accent)}
 .fchip.on .cx{color:var(--accent-2)}
-.fchip.zero:not(.on){opacity:.55}
-.fchip.zero:not(.on):hover{opacity:1}
+.fchip.zero:not(.on){opacity:1;color:var(--fg-3)}
 
-/* ---------- Baie et façades (toujours sombres) : cadrées d'un liseré clair en thème clair ---------- */
-:root{--rack-rim:0 0 0 1px rgba(0,0,0,.55),0 0 0 4px var(--surface),0 0 0 5px var(--line-2)}
 
 /* ---------- Accueil ---------- */
 .home-hero{align-items:start}
@@ -115,3 +123,18 @@ tr:hover .row-act,tr:focus-within .row-act,tr:hover .row-acts,tr:focus-within .r
 
 /* ---------- Pastilles de rôle : une couleur très sombre reste visible sur fond sombre ---------- */
 .role-dot{box-shadow:0 0 0 3px color-mix(in srgb,var(--c) 18%,transparent),0 0 0 1px var(--line-2)}
+
+/* ---------- Cartes (charte § 3.6) : un fond, un contour, un rayon ; survol unique des cartes cliquables ---------- */
+.card,.fig,.cont,.pcard{background:var(--card-bg);box-shadow:var(--card-sh);border-radius:var(--r-md)}
+.card.link,.cont,.pcard{transition:box-shadow .2s,transform .2s var(--ease)}
+.card.link{color:var(--fg);text-decoration:none;text-align:left;border:0}
+.card.link:hover,.cont:hover,.pcard:hover{box-shadow:0 0 0 1px var(--line-2),0 6px 16px -8px rgba(0,0,0,.25);transform:translateY(-2px)}
+.card.link.on,.cont.on,.cont.on:hover{box-shadow:0 0 0 1.5px var(--accent);background:var(--accent-soft)}
+
+/* ---------- Tactile et glisser ---------- */
+.draggable{cursor:grab}
+.dragging,.dragging *{cursor:grabbing}
+@media (pointer:coarse){
+  .btn.sm,.seg button,.icon-btn.sm,.stepper button,.sv{min-height:40px;min-width:40px}
+  input[type=checkbox]{width:20px;height:20px}
+}

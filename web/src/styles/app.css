@@ -1,14 +1,14 @@
 /* Compléments propres à l'application (au-delà de la maquette). */
 a { color: inherit; }
 .topnav a, .menu-links a, a.word, a.btn, a.crumb, a.next, a.fig { text-decoration: none; }
-a.btn { color: var(--fg); }
-a.btn.primary { color: var(--primary-fg); }
 
 /* Écrans d'accueil hors session : connexion, premier compte, mot de passe temporaire */
 .gate { height: 100%; overflow: auto; display: grid; place-items: center; padding: 32px 16px; }
 /* Pages d'accès : même présentation que les autres modules Strata (Graphics, Multiview) —
-   fond nuit, carte sombre, nom et signature centrés, libellés en capitales. Toujours sombre. */
-.gate { --fg: #ffffff; --fg-2: #a3a9b6; --fg-3: #7b8191; --accent: #8fa3ff; --line: rgba(255,255,255,.08); color: var(--fg);
+   fond nuit, carte sombre, nom et signature centrés, libellés en capitales. Toujours sombre :
+   jetons locaux (charte § 6), les règles communes de champ et de bouton s'appliquent. */
+.gate { color-scheme: dark; --fg: #ffffff; --fg-2: #a3a9b6; --fg-3: #7b8191; --accent: #8fa3ff; --line: rgba(255,255,255,.08);
+  --input-bg: #1d2030; --input-edge: #5E6787; --input-edge-h: #8790AE; --input-bg-off: #1B2030; --btn-pri: #5466F0; --btn-pri-h: #6475F5; --btn-pri-fg: #FFFFFF; color: var(--fg);
   background: radial-gradient(120% 80% at 0% 0%, #1d1a3f 0%, rgba(29,26,63,0) 55%), linear-gradient(180deg, #0f1018, #0a0b10); }
 .gate .gate-card { width: min(400px, 100%); gap: 18px; }
 .gate .gate-panel { display: flex; flex-direction: column; gap: 18px; padding: 30px 30px 32px; border-radius: 18px; background: #12141b; box-shadow: 0 0 0 1px rgba(255,255,255,.08), 0 40px 80px -30px rgba(0,0,0,.8); }
@@ -17,20 +17,16 @@ a.btn.primary { color: var(--primary-fg); }
 .gate .gate-panel h1 { font: 700 22px/1.2 var(--display); letter-spacing: -.02em; color: #fff; }
 .gate .gate-panel .muted, .gate .gate-panel .help { color: #A3A9B6; }
 .gate .gate-panel .eyebrow { color: #8fa3ff; }
-.gate label, .gate .flabel { font: 600 11px var(--font); letter-spacing: .07em; text-transform: uppercase; color: #9aa0ae; }
-.gate .input { height: 40px; background: #1d2030; border: 1px solid rgba(255,255,255,.06); color: #e9ebf2; box-shadow: none; }
-.gate .input:focus { border-color: #8fa3ff; box-shadow: 0 0 0 3px rgba(143,163,255,.2); }
-.gate .btn.primary { height: 42px; font-size: 14.5px; font-weight: 600; background: #5466F0; color: #fff; border: 0; box-shadow: inset 0 1px 0 rgba(255,255,255,.14), 0 1px 2px rgba(0,0,0,.25); }
-.gate .btn.primary:hover:not(:disabled) { background: #6475F5; }
-.gate .btn.primary:disabled { opacity: .6; }
+.gate label, .gate .flabel { font: 600 11.5px var(--font); letter-spacing: .05em; text-transform: uppercase; color: var(--fg-2); }
+.gate .input { height: 40px; }
+.gate .btn.primary { height: 42px; font-size: 14.5px; }
 .gate .gate-foot { text-align: center; color: #B4BAC6; font-size: 13px; }
 .gate code { background: rgba(255,255,255,.08); color: #e9ebf2; }
 .gate-card { width: min(460px, 100%); display: flex; flex-direction: column; gap: 26px; }
 .gate-card .word { font-size: 24px; }
-.gate-card h1 { font: 760 clamp(38px, 7vw, 52px)/1.02 var(--display); letter-spacing: -.04em; }
+.gate-card h1 { font: 700 clamp(38px, 7vw, 52px)/1.02 var(--display); letter-spacing: -.04em; }
 .gate-card .lead { font-size: 18px; color: var(--fg-2); }
 .gate-card form { display: flex; flex-direction: column; gap: 14px; }
-.gate-card .btn { width: 100%; height: 50px; font-size: 16px; gap: 8px; }
 .gate-foot { font-size: 13.5px; color: var(--fg-3); }
 
 .stack { display: flex; flex-direction: column; gap: 16px; }
@@ -40,7 +36,7 @@ a.btn.primary { color: var(--primary-fg); }
 .secret { font: 700 22px var(--mono); letter-spacing: .06em; padding: 14px 16px; border-radius: 12px; background: var(--sunken); box-shadow: var(--well); user-select: all; text-align: center; width: 100%; border: 0; color: var(--fg); box-sizing: border-box; }
 .perm-grid { display: grid; grid-template-columns: minmax(120px, 1fr) repeat(4, auto); gap: 6px 10px; align-items: center; font-size: 14.5px; }
 .perm-grid .h { font: 600 10.5px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--fg-3); text-align: center; }
-.perm-grid input { width: 18px; height: 18px; accent-color: var(--fg); justify-self: center; }
+.perm-grid input { justify-self: center; }
 .role-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 18%, transparent); display: inline-block; flex: none; }
 .user-menu { position: absolute; right: 12px; top: calc(100% + 6px); z-index: 60; min-width: 260px; background: var(--surface); border-radius: 16px; box-shadow: var(--e3); padding: 8px; display: flex; flex-direction: column; gap: 2px; animation: pop .2s var(--ease); }
 .user-menu .who { padding: 10px 12px 12px; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
@@ -50,45 +46,45 @@ a.btn.primary { color: var(--primary-fg); }
 .user-menu button:hover, .user-menu a:hover { background: var(--surface-2); }
 .av-btn { border: 0; background: none; padding: 0; border-radius: 50%; }
 .dl-actions { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
-.side-foot .av { color: #fff; font-size: 14px; }
+.side-foot .av { color: #fff; font-size: 13.5px; }
 
 /* Éditeur de fiche du catalogue */
 .editor { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px; }
-.editor .card h2 { font-size: 21px; }
 .editor .card > .form-grid, .editor .card > .stack { margin-top: 16px; }
-.fg3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px 20px; }
-.fg4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px 16px; }
-@media (max-width: 860px) { .form-grid, .fg3, .fg4 { grid-template-columns: minmax(0, 1fr) !important; } }
+/* Barre d'enregistrement collée au vrai bas de la zone de travail : pas de marge basse dessous,
+   et un champ qui reçoit le focus ne passe pas sous la barre. */
+.ws-main:has(.savebar) { padding-bottom: 0; scroll-padding-bottom: 88px; }
 .savebar { position: sticky; bottom: 12px; z-index: 30; display: flex; gap: 10px; align-items: center; padding: 12px 14px 12px 20px; border-radius: 18px; background: var(--surface); box-shadow: var(--e3), 0 -14px 22px -10px var(--bg); outline: 1px solid var(--line); }
 .savebar .grow { flex: 1; min-width: 0; font-size: 14px; color: var(--fg-3); }
 .ports-tbl td, .ports-tbl th { padding-right: 8px; }
-.ports-tbl .input, .ports-tbl select.input { height: 38px; font-size: 14px; padding: 0 10px; }
+.ports-tbl .input, .ports-tbl select.input { height: var(--btn-h-sm); border-radius: var(--btn-r-sm); font-size: 13px; padding: 0 9px; }
+.ports-tbl select.input { padding-right: 26px; background-position: calc(100% - 14px) 52%, calc(100% - 9px) 52%; }
 .ports-tbl .qty { width: 70px; }
 .ports-tbl select[aria-label="Face"] { min-width: 112px; }
 .ports-tbl select[aria-label="Genre"] { min-width: 64px; }
 .ports-tbl select[aria-label="Variante"] { min-width: 90px; }
-.input.err { box-shadow: var(--well), 0 0 0 2px var(--err); }
 .dup-list { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
 .unit-in { position: relative; }
 .unit-in .input { padding-right: 48px; }
 .unit-in .u { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); font: 600 12.5px var(--mono); color: var(--fg-3); pointer-events: none; }
-.toggle-row { display: flex; align-items: center; gap: 10px; font-size: 15px; cursor: pointer; }
-.toggle-row input { width: 18px; height: 18px; accent-color: var(--fg); margin: 0; }
+.toggle-row { display: flex; align-items: center; gap: 10px; font: 400 13.5px/1.4 var(--font); color: var(--fg); cursor: pointer; }
+.toggle-row.small { font-size: 12.5px; }
 .cmp { display: inline-flex; align-items: center; gap: 6px; }
 #app { height: 100%; }
 .show-m { display: none; }
 @media (max-width: 860px) {
-  .hide-m { display: none; }
+  .hide-m { display: none !important; }
   .show-m { display: block; }
 }
 @media (max-width: 560px) { .savebar .grow:not(.has-err) { display: none; } .savebar { justify-content: flex-end; } }
 
 /* Accueil : lignes de projets */
-.urow { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto; gap: 16px; align-items: center; padding: 12px 6px; border-bottom: 1px solid var(--line); text-decoration: none; color: var(--fg); border-radius: 10px; }
+.urow { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 8px; border-bottom: 1px solid var(--line); text-decoration: none; color: var(--fg); border-radius: var(--r-sm); }
 .urow:last-child { border-bottom: 0; }
-.urow:hover { background: var(--surface-2); }
+.urow:hover, .ag-it:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.ag-it { border-radius: var(--r-sm); }
 a.pcard, a.cont { color: var(--fg); }
-.pmeta { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center; color: var(--fg-2); font-size: 17px; }
+.pmeta { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center; color: var(--fg-2); font-size: 13.5px; }
 .sw { width: 10px; height: 10px; border-radius: 3px; background: var(--c); display: inline-block; }
 
 /* Aperçu d'un nœud de synoptique sur la toile pointillée */
