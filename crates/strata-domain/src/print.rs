@@ -525,7 +525,7 @@ pub const DOCS: [(&str, &str, &str, &[&str]); 19] = [
             "fixture", "tag", "page", "console", "universe", "address", "channels", "mode",
         ],
     ),
-    ("plan_racks", "plans", "Élévations", &[]),
+    ("plan_racks", "plans", "Planches (élévations et synoptiques)", &[]),
     ("plan_synoptic", "plans", "Synoptique", &[]),
     ("plan_maps", "plans", "Plans du site", &[]),
     ("plan_schematic", "plans", "Schémas de principe", &[]),
