@@ -1,22 +1,35 @@
-// Planche d'élévations (section 9.8) : composition libre des baies (vues avant, arrière, côté et
-// 3D), du mobilier (face, côté, dessus, 3D, casquettes), de titres de lieux et d'emplacements
-// réservés, sur une ou plusieurs feuilles avec cartouche. Toutes les cotes sont en mm papier.
+// Planches (section 9.8) : composition libre des baies (vues avant, arrière, côté et 3D), du
+// mobilier (face, côté, dessus, 3D, casquettes), des synoptiques, de titres de lieux et
+// d'emplacements réservés, sur une ou plusieurs feuilles avec cartouche. Toutes les cotes sont
+// en mm papier. Chaque dessin a en plus sa propre échelle (`zoom`, 1 = échelle de la feuille).
 
-export type Paper = 'A4' | 'A3' | 'A2' | 'A1' | 'A0' | 'Letter' | 'Legal';
+import type { Rendered } from './render';
+
+export type Paper = 'A4' | 'A3' | 'A2' | 'A1' | 'A0';
 export type Face = 'front' | 'rear' | 'rear_inner';
 export type RackView = 'front' | 'rear' | 'side' | '3d';
 export type DeskView = 'front' | 'side' | 'top' | '3d' | 'casq';
 export const PAPERS: Record<Paper, [number, number]> = {
-  A4: [210, 297], A3: [297, 420], A2: [420, 594], A1: [594, 841], A0: [841, 1189], Letter: [215.9, 279.4], Legal: [215.9, 355.6],
+  A4: [210, 297], A3: [297, 420], A2: [420, 594], A1: [594, 841], A0: [841, 1189],
 };
 export const SCALES = [5, 10, 15, 20, 25, 30, 50];
 export const FACE_LABEL: Record<Face, string> = { front: 'Avant', rear: 'Arrière', rear_inner: 'Arrière intérieure' };
 export const RACK_VIEWS: Record<RackView, string> = { front: 'Avant', rear: 'Arrière', side: 'Côté', '3d': '3D' };
 export const DESK_VIEWS: Record<DeskView, string> = { front: 'Face', side: 'Côté', top: 'Dessus', '3d': '3D', casq: 'Casquettes' };
+/** Rendu des élévations d'une baie, comme sur la page Racks. */
+export type RackRender = 'real' | 'schematic' | '3d';
+export const RACK_RENDERS: Record<RackRender, string> = { real: 'Réel', schematic: 'Schématique', '3d': '3D' };
+/** Synoptique : mm papier par unité du dessin à l'échelle propre 1 ; plus petit facteur
+ *  permis (le plus petit texte du synoptique, 10 unités, reste à 6 pt au moins). */
+export const SYN_MM = 0.25;
+export const SYN_MIN = 0.87;
+export const ZOOM_MIN = 0.25, ZOOM_MAX = 4;
 
 export interface SheetItem {
-  id: string; kind: 'rack' | 'desk' | 'location' | 'reserved'; x: number; y: number;
+  id: string; kind: 'rack' | 'desk' | 'synoptic' | 'location' | 'reserved'; x: number; y: number;
   container_id?: string; views?: string[]; location_id?: string; label?: string; w?: number; h?: number;
+  /** Dessins : échelle propre (1 = échelle de la feuille), titre masqué, rendu des baies. */
+  zoom?: number; hideLabel?: boolean; render?: RackRender;
   /** Ancien format : une seule face par rack. */
   face?: Face;
   /** Vue 3D : angle (caméra et cible), proportion largeur/hauteur du cadre, portes. */
@@ -27,7 +40,8 @@ export interface RackData { name: string; units: number; elements: any[]; depth_
 export interface CasqData { id: string; name: string; offset_mm: number; units: number; depth_mm: number; tilt_deg: number }
 /** Mobilier : dimensions et casquettes. */
 export interface DeskData { name: string; length_mm: number; depth_mm: number; height_mm: number; casq: CasqData[]; c: any }
-export interface Ctx { racks: Record<string, RackData>; desks: Record<string, DeskData> }
+/** `syn` : synoptique rendu de chaque vue (élément), null quand il est vide. */
+export interface Ctx { racks: Record<string, RackData>; desks: Record<string, DeskData>; syn?: Record<string, Rendered | null> }
 export interface SheetPage { id: string; items: SheetItem[] }
 export interface TitleBlock { title: string; reference: string; author: string; checker: string; version: string; standards: string; notes: string }
 export interface Sheet {
@@ -61,6 +75,11 @@ export function pageSize(s: Sheet): [number, number] {
 export const rackGeom = (k: number) => ({ u: U_MM / k, pad: RACK_PAD / k, inner: 482.6 / k, rail: 32 / k });
 /** Hauteur dessinée d'une élévation de `units` U (sans libellés). */
 export const rackBodyH = (units: number, k: number) => (units * U_MM + 2 * RACK_PAD) / k;
+/** Dessins (baie, mobilier, synoptique) : ceux qui ont un titre, une échelle propre. */
+export const isDrawing = (it: SheetItem) => it.kind === 'rack' || it.kind === 'desk' || it.kind === 'synoptic';
+export const zoomOf = (it: SheetItem) => Math.min(ZOOM_MAX, Math.max(it.kind === 'synoptic' ? SYN_MIN : ZOOM_MIN, it.zoom ?? 1));
+/** Échelle effective d'un dessin (1:n) : celle de la feuille divisée par son échelle propre. */
+export const scaleOf = (it: SheetItem, k: number) => k / zoomOf(it);
 
 /** Profil d'une casquette inclinée dans le repère du mobilier (z depuis l'avant, y depuis le sol). */
 export function casqProfile(d: DeskData, c: CasqData): [number, number][] {
@@ -81,9 +100,14 @@ export interface GroupLayout { w: number; h: number; views: ViewBox[] }
 
 /** Disposition d'un groupe (baie ou mobilier) : vues côte à côte, alignées en bas, sur
  *  plusieurs rangées quand elles dépassent `maxW` (largeur utile de la feuille). */
-export function groupLayout(it: SheetItem, k: number, ctx: Ctx, maxW = Infinity): GroupLayout {
+export function groupLayout(it: SheetItem, sheetK: number, ctx: Ctx, maxW = Infinity): GroupLayout {
   const parts: { v: string; w: number; h: number; cid?: string }[] = [];
-  if (it.kind === 'rack') {
+  const k = scaleOf(it, sheetK);
+  if (it.kind === 'synoptic') {
+    const r = ctx.syn?.[it.container_id ?? ''];
+    const s = SYN_MM * zoomOf(it);
+    parts.push(r ? { v: 'syn', w: r.w * s, h: r.h * s } : { v: 'syn', w: 80, h: 40 });
+  } else if (it.kind === 'rack') {
     const r = ctx.racks[it.container_id ?? ''];
     const units = r?.units ?? 42, depth = r?.depth_mm ?? 800, hb = rackBodyH(units, k);
     for (const v of viewsOf(it)) {
@@ -110,12 +134,13 @@ export function groupLayout(it: SheetItem, k: number, ctx: Ctx, maxW = Infinity)
     rows.at(-1)!.push(p); x += p.w + VIEW_GAP;
   }
   const views: ViewBox[] = [];
-  let y = GROUP_HEAD, w = 0;
+  const vh = it.kind === 'synoptic' ? 0 : VIEW_HEAD;
+  let y = it.hideLabel ? 0 : GROUP_HEAD, w = 0;
   for (const row of rows) {
     const rh = Math.max(...row.map((p) => p.h));
     let rx = 0;
-    for (const p of row) { views.push({ ...p, x: rx, y: y + VIEW_HEAD + rh - p.h }); rx += p.w + VIEW_GAP; }
-    w = Math.max(w, rx - VIEW_GAP); y += VIEW_HEAD + rh + VIEW_GAP;
+    for (const p of row) { views.push({ ...p, x: rx, y: y + vh + rh - p.h }); rx += p.w + VIEW_GAP; }
+    w = Math.max(w, rx - VIEW_GAP); y += vh + rh + VIEW_GAP;
   }
   return { w, h: y - VIEW_GAP, views };
 }
@@ -129,21 +154,32 @@ export function viewsOf(it: SheetItem): string[] {
 }
 
 export function itemSize(it: SheetItem, k: number, ctx: Ctx, maxW = Infinity): [number, number] {
-  if (it.kind === 'rack' || it.kind === 'desk') { const g = groupLayout(it, k, ctx, maxW); return [g.w, g.h]; }
+  if (isDrawing(it)) { const g = groupLayout(it, k, ctx, maxW); return [g.w, g.h]; }
   if (it.kind === 'location') return [it.w ?? 120, 10];
   return [it.w ?? 60, it.h ?? 60];
 }
 
-/** Remet une planche enregistrée au format courant (vues multiples). */
+/** Remet une planche enregistrée au format courant : vues multiples, formats A4 à A0 (Letter
+ *  et Legal passent en A4). Les champs récents (échelle propre, titre, rendu) ont leur valeur
+ *  par défaut quand ils manquent. */
 export function normalize(s: Sheet): Sheet {
+  if (!(s.paper in PAPERS)) s.paper = 'A4';
   for (const p of s.pages) for (const it of p.items) if (it.kind === 'rack' && !it.views?.length) { it.views = viewsOf(it); delete it.face; }
   return s;
 }
+/** Vues d'un élément à rendre en 3D hors écran : la vue 3D, et en rendu 3D ses élévations. */
+export function shotViews(it: SheetItem): string[] {
+  if (it.kind !== 'rack' && it.kind !== 'desk') return [];
+  const vs = viewsOf(it);
+  return vs.filter((v) => v === '3d' || (it.kind === 'rack' && it.render === '3d' && (v === 'front' || v === 'rear' || v === 'side')));
+}
+/** Clé d'une image 3D : `id` pour la vue 3D, `id:vue` pour une élévation en rendu 3D. */
+export const shotKey = (id: string, v: string) => (v === '3d' ? id : `${id}:${v}`);
 
 export function blankSheet(): Sheet {
   return {
     paper: 'A3', orientation: 'landscape', scale: 20, format: 'pdf', titleBlock: true,
-    block: { title: 'Élévations', reference: '', author: '', checker: '', version: 'A', standards: '', notes: '' },
+    block: { title: 'Planches', reference: '', author: '', checker: '', version: 'A', standards: '', notes: '' },
     pages: [],
   };
 }
@@ -194,5 +230,5 @@ export function fileName(project: string, ext: string, page?: number): string {
   const p = project.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '');
   const d = new Date();
   const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  return `Elevations_${p}_${day}${page ? `_p${page}` : ''}.${ext}`;
+  return `Planches_${p}_${day}${page ? `_p${page}` : ''}.${ext}`;
 }

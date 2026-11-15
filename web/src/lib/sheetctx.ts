@@ -1,14 +1,28 @@
-// Données d'une planche d'élévations : élévations des baies et casquettes, dimensions du
-// mobilier, et rendus 3D sans fond (hors écran) pour les vues 3D.
+// Données des planches : élévations des baies et casquettes, dimensions du mobilier,
+// synoptiques (rendu vectoriel du dossier) et rendus 3D sans fond (hors écran).
 import { api } from './api';
 import type { ProjectView } from './projects';
 import { boxSpec, deskSpec, toEl3D } from './el3d';
-import { groupLayout, type Ctx, type DeskData, type RackData, type Sheet, type SheetItem } from './sheet';
+import { fnColor } from './catalog.svelte';
+import { synopticSvg, type Rendered } from './render';
+import { groupLayout, shotKey, shotViews, type Ctx, type DeskData, type RackData, type Sheet, type SheetItem } from './sheet';
 import type { RackScene } from './rack3d';
 
 export const isDesk = (c: { kind: string }) => c.kind === 'desk' || c.kind === 'furniture';
 
-export async function loadCtx(view: ProjectView): Promise<Ctx> {
+/** Éléments dont le synoptique peut être posé sur une feuille (comme le choix de vue du synoptique). */
+export const synViews = (view: ProjectView) => view.containers.filter((c) => c.rackable || isDesk(c));
+/** Synoptiques utilisés par une planche. */
+export const synIds = (s: Sheet | null) => [...new Set((s?.pages ?? []).flatMap((p) => p.items.filter((i) => i.kind === 'synoptic' && i.container_id).map((i) => i.container_id!)))];
+
+/** Synoptique d'un élément, dessiné en SVG (null s'il n'a aucun port). */
+export async function loadSyn(pid: string, cid: string): Promise<Rendered | null> {
+  try { return synopticSvg(await api.get<any>(`/projects/${pid}/synoptic?view=${encodeURIComponent(`container:${cid}`)}`), { fnColor }); } catch { return null; }
+}
+
+export async function loadCtx(view: ProjectView, syns: string[] = []): Promise<Ctx> {
+  const syn: Record<string, Rendered | null> = {};
+  const synJob = Promise.all(syns.map(async (id) => { syn[id] = await loadSyn(view.project.id, id); }));
   const racks: Record<string, RackData> = {};
   await Promise.all(view.containers.filter((c) => c.rackable).map(async (c) => {
     let elements: any[] = [], vpdus: any[] = [];
@@ -24,7 +38,8 @@ export async function loadCtx(view: ProjectView): Promise<Ctx> {
         .map((c) => ({ id: c.id, name: c.name, offset_mm: c.offset_mm ?? 0, units: c.height_u ?? 6, depth_mm: c.depth_mm ?? 350, tilt_deg: c.tilt_deg ?? 0 })),
     };
   }
-  return { racks, desks };
+  await synJob;
+  return { racks, desks, syn };
 }
 
 // ----- Rendus 3D hors écran -----
@@ -49,19 +64,20 @@ export async function build3D(sc: RackScene, it: SheetItem, ctx: Ctx) {
   if (it.cam?.length === 6) sc.setPose(it.cam);
 }
 
-function keyOf(it: SheetItem, ctx: Ctx, w: number, h: number) {
+function keyOf(it: SheetItem, ctx: Ctx, w: number, h: number, v: string) {
   const src = it.kind === 'rack' ? ctx.racks[it.container_id ?? ''] : ctx.desks[it.container_id ?? ''];
   const els = it.kind === 'rack' ? (src as RackData | undefined)?.elements : (src as DeskData | undefined)?.casq.map((c) => [c, ctx.racks[c.id]?.elements]);
-  return JSON.stringify([it.kind, it.container_id, it.cam, it.doors, it.sides, w, h, (src as any)?.c?.rev, els]);
+  return JSON.stringify([it.kind, it.container_id, v, v === '3d' ? it.cam : null, it.doors, it.sides, w, h, (src as any)?.c?.rev, els]);
 }
 
-/** Image PNG sans fond de la vue 3D d'un élément, au format du cadre sur la feuille. */
-export function shot3D(it: SheetItem, ctx: Ctx, k: number): Promise<string> {
-  const box = groupLayout(it, k, ctx).views.find((v) => v.v === '3d');
+/** Image PNG sans fond d'une vue d'un élément au format de son cadre sur la feuille : la vue 3D
+ *  (angle enregistré), ou une élévation (avant, arrière, côté) quand la baie est en rendu 3D. */
+export function shot3D(it: SheetItem, ctx: Ctx, k: number, v = '3d'): Promise<string> {
+  const box = groupLayout(it, k, ctx).views.find((b) => b.v === v);
   if (!box) return Promise.resolve('');
   const f = Math.min(PX_MM, MAX_PX / Math.max(box.w, box.h));
   const w = Math.round(box.w * f), h = Math.round(box.h * f);
-  const key = keyOf(it, ctx, w, h);
+  const key = keyOf(it, ctx, w, h, v);
   if (cache.has(key)) return Promise.resolve(cache.get(key)!);
   const job = queue.then(async () => {
     if (!scene) {
@@ -73,7 +89,8 @@ export function shot3D(it: SheetItem, ctx: Ctx, k: number): Promise<string> {
     scene.setSize(w, h);
     const saved = it.cam; it = { ...it, cam: null };
     await build3D(scene, it, ctx);
-    if (saved?.length === 6) scene.setPose(saved);
+    if (v !== '3d') { if (v === 'side') scene.setSides(false); scene.frame(v as 'front' | 'rear' | 'side'); }
+    else if (saved?.length === 6) scene.setPose(saved);
     const url = scene.snapshot();
     cache.set(key, url);
     return url;
@@ -82,11 +99,11 @@ export function shot3D(it: SheetItem, ctx: Ctx, k: number): Promise<string> {
   return job;
 }
 
-/** Rendus 3D de toutes les vues 3D des feuilles données. */
+/** Rendus 3D de toutes les vues 3D (et élévations en rendu 3D) des feuilles données. */
 export async function shotsFor(sheet: Sheet, ctx: Ctx, pages = sheet.pages): Promise<Record<string, string>> {
   const out: Record<string, string> = {};
-  for (const p of pages) for (const it of p.items) if ((it.kind === 'rack' || it.kind === 'desk') && it.views?.includes('3d')) {
-    try { out[it.id] = await shot3D(it, ctx, sheet.scale); } catch { /* WebGL indisponible */ }
+  for (const p of pages) for (const it of p.items) for (const v of shotViews(it)) {
+    try { out[shotKey(it.id, v)] = await shot3D(it, ctx, sheet.scale, v); } catch { /* WebGL indisponible */ }
   }
   return out;
 }
