@@ -1,18 +1,27 @@
 <script lang="ts">
   import { ask } from '../../lib/ask.svelte';
-  import Confirm from '../../components/Confirm.svelte';
   // Cartographie 2D et 3D (section 11.1). Positions en mm réels dans le repère commun de la
   // carte (calibration : premier point = origine, second = axe X). Une main par carte.
   import { untrack, onDestroy } from 'svelte';
   import Icon from '../../components/Icon.svelte';
   import Dialog from '../../components/Dialog.svelte';
+  import EmptyState from '../../components/EmptyState.svelte';
+  import Loading from '../../components/Loading.svelte';
+  import HeadActions from '../../components/HeadActions.svelte';
+  import Seg from '../../components/Seg.svelte';
+  import NumField from '../../components/NumField.svelte';
+  import FieldError from '../../components/FieldError.svelte';
+  import ShortcutsHelp from '../../components/ShortcutsHelp.svelte';
+  import { canvasKeys } from '../../lib/canvaskeys';
+  import { route } from '../../lib/router.svelte';
+  import { pageHead, plural } from '../../lib/pagehead.svelte';
   import { api, ApiError } from '../../lib/api';
   import { can } from '../../lib/session.svelte';
   import { toast, fail } from '../../lib/toast.svelte';
   import { join, sendCursor, sendSelection, type PresenceMember } from '../../lib/live.svelte';
   import RemoteCursors from '../../components/RemoteCursors.svelte';
   import { relative } from '../../lib/format';
-  import { loadRefs, refList, refById, refName } from '../../lib/catalog.svelte';
+  import { loadRefs, refList, refById, refName, familyColor } from '../../lib/catalog.svelte';
   import type { ProjectView } from '../../lib/projects';
 
   type Kind = 'multi_floor' | 'flat' | 'outdoor';
@@ -30,11 +39,15 @@
   const pid = $derived(view.project.id);
   const canDesign = $derived(can('conception', 'ecriture'));
   const KINDS: Record<Kind, string> = { multi_floor: 'Multi-étages', flat: 'Plat', outdoor: 'Extérieur' };
+  const KIND_OPTS = (Object.entries(KINDS) as [Kind, string][]).map(([value, label]) => ({ value, label }));
+  const MODE_OPTS: { value: '2d' | '3d'; label: string }[] = [{ value: '2d', label: 'Plan 2D' }, { value: '3d', label: 'Vue 3D' }];
 
   let idx = $state<Index | null>(null);
+  pageHead(() => ({ count: idx?.maps.length ? plural(idx.maps.length, 'plan') : '' }));
   let mapId = $state<string | null>(null);
   let d = $state<Show | null>(null);
-  let floorId = $state<string | null>(null);
+  // Plan et étage ouverts : dans l'adresse (?plan=&etage=), pour un lien direct ou un rechargement.
+  let floorId = $state<string | null>(route.query.get('etage'));
   let mode = $state<'2d' | '3d'>('2d');
   let side = $state<'place' | 'trace' | 'layers' | 'sel'>('place');
   const mine = $derived(!!d?.lock?.mine);
@@ -49,7 +62,8 @@
       idx = await api.get(`/projects/${pid}/plans`);
       if (!idx) return;
       let saved: string | null = null; try { saved = localStorage.getItem(`${LS}.${pid}`); } catch { /* sans stockage */ }
-      if (!mapId || !idx.maps.some((m) => m.id === mapId)) await openMap(idx.maps.find((m) => m.id === saved)?.id ?? idx.maps[0]?.id ?? null);
+      const wanted = route.query.get('plan');
+      if (!mapId || !idx.maps.some((m) => m.id === mapId)) await openMap(idx.maps.find((m) => m.id === wanted)?.id ?? idx.maps.find((m) => m.id === saved)?.id ?? idx.maps[0]?.id ?? null);
     } catch (e) { fail(e); }
   }
   async function refreshIndex() { try { idx = await api.get(`/projects/${pid}/plans`); } catch { /* prochain chargement */ } }
@@ -69,6 +83,16 @@
     if (id && canDesign) await take();
   }
   $effect(() => { view; untrack(() => { loadRefs(); if (!idx) loadIndex(); else if (!mine) { loadIndex(); load(); } }); });
+  /** Reflète le plan et l'étage dans l'adresse, sans nouvelle entrée d'historique. */
+  function setQuery(p: Record<string, string | null>) {
+    const q = new URLSearchParams(location.search);
+    for (const [kk, v] of Object.entries(p)) { if (v) q.set(kk, v); else q.delete(kk); }
+    const qs = q.toString(), to = location.pathname + (qs ? `?${qs}` : '');
+    if (to === location.pathname + location.search) return;
+    history.replaceState(history.state, '', to);
+    route.query = new URLSearchParams(location.search);
+  }
+  $effect(() => { const m = mapId, f = floor?.id ?? null; if (m) untrack(() => setQuery({ plan: m, etage: f })); });
 
   // ----- Main -----
   let beat: ReturnType<typeof setInterval> | null = null;
@@ -100,6 +124,11 @@
     lastAction = Date.now();
     try { const r = await f(); await Promise.all([load(), refreshIndex()]); return r; } catch (e) { fail(e); await load(); return undefined; }
   }
+  /** Comme write, mais dit si l'écriture a réussi (une boîte ne se ferme qu'en cas de succès). */
+  async function writeOk(f: () => Promise<unknown>): Promise<boolean> {
+    lastAction = Date.now();
+    try { await f(); await Promise.all([load(), refreshIndex()]); return true; } catch (e) { fail(e); await load(); return false; }
+  }
 
   // ----- Assistant de carte -----
   let wiz = $state<{ name: string; kind: Kind; from: number; to: number } | null>(null);
@@ -112,35 +141,46 @@
       wiz = null; await loadIndex(); await openMap(r.id); toast('Plan créé.');
     } catch (e) { if (e instanceof ApiError && e.fields.length) wizErr = e; else fail(e); }
   }
+  function newMap() { wiz = { name: idx?.maps.length ? '' : view.project.venue ?? 'Site', kind: 'multi_floor', from: 0, to: 0 }; wizErr = null; }
   let mapEdit = $state<{ name: string; kind: Kind } | null>(null);
-  async function saveMap() { if (!mapEdit) return; await write(() => api.patch(`/projects/${pid}/plans/${mapId}`, mapEdit)); mapEdit = null; await loadIndex(); }
+  async function saveMap() {
+    if (!mapEdit) return;
+    const body = { ...mapEdit };
+    if (await writeOk(() => api.patch(`/projects/${pid}/plans/${mapId}`, body))) { mapEdit = null; await loadIndex(); toast('Plan enregistré.'); }
+  }
   async function deleteMap() {
-    if (!d || !(await ask({ title: `Supprimer le plan « ${d.map.name} » ?`, text: 'Ses étages, fonds et tracés sont supprimés avec lui.', confirmLabel: 'Supprimer', danger: true }))) return;
-    try { await api.post(`/projects/${pid}/plans/${mapId}/delete`); stopBeat(); mapId = null; d = null; await loadIndex(); } catch (e) { fail(e); }
+    if (!d) return;
+    const name = d.map.name, m = mapId;
+    if (!(await ask({ title: `Supprimer le plan « ${name} » ?`, text: 'Ses étages, fonds et tracés sont supprimés avec lui.', confirmLabel: 'Supprimer', danger: true, run: () => api.post(`/projects/${pid}/plans/${m}/delete`) }))) return;
+    stopBeat(); mapId = null; d = null; await loadIndex();
+    toast(`Plan « ${name} » supprimé.`);
   }
 
   // ----- Étages -----
-  let floorEdit = $state<Floor | null>(null);
+  // Copie éditée dans la boîte « Étage » (hauteurs vides possibles pendant la saisie).
+  let floorEdit = $state<(Omit<Floor, 'height_mm' | 'ceiling_mm'> & { height_mm: number | null; ceiling_mm: number | null }) | null>(null);
   let newLevel = $state<number | null>(null);
   const freeLevels = $derived(Array.from({ length: 13 }, (_, i) => i - 2).filter((l) => !d?.floors.some((f) => f.level === l)));
   async function saveFloor() {
     if (!floorEdit) return;
     const { id, name, height_mm, ceiling_mm, calibration, bg_opacity, level } = floorEdit;
-    await write(() => api.patch(`/projects/${pid}/plans/${mapId}/floors`, { id, level, name, height_mm: Number(height_mm), ceiling_mm: Number(ceiling_mm), calibration, bg_opacity: Number(bg_opacity) }));
-    floorEdit = null;
+    if (!height_mm || height_mm < 1) { toast('Hauteur entre sols : 1 mm au moins.', 'warn'); return; }
+    if (await writeOk(() => api.patch(`/projects/${pid}/plans/${mapId}/floors`, { id, level, name, height_mm: Number(height_mm), ceiling_mm: Number(ceiling_mm ?? 0), calibration, bg_opacity: Number(bg_opacity) }))) { floorEdit = null; toast(`Étage « ${name} » enregistré.`); }
   }
   async function addFloor() {
     if (newLevel == null) return;
     const r = await write(() => api.post<{ id: string }>(`/projects/${pid}/plans/${mapId}/floors`, { level: newLevel }));
     if (r) { floorId = r.id; newLevel = null; await loadIndex(); }
   }
-  async function deleteFloor(f: Floor) {
-    if (!(await ask({ title: `Supprimer l’étage « ${f.name} » ?`, text: 'Tout ce qui y est posé est supprimé avec lui.', confirmLabel: 'Supprimer', danger: true }))) return;
-    await write(() => api.post(`/projects/${pid}/plans/${mapId}/floors/delete`, { id: f.id })); floorEdit = null; await loadIndex();
+  async function deleteFloor(f: Pick<Floor, 'id' | 'name'>) {
+    const m = mapId;
+    if (!(await ask({ title: `Supprimer l’étage « ${f.name} » ?`, text: 'Tout ce qui y est posé est supprimé avec lui.', confirmLabel: 'Supprimer', danger: true, run: () => api.post(`/projects/${pid}/plans/${m}/floors/delete`, { id: f.id }) }))) return;
+    floorEdit = null; await Promise.all([load(), loadIndex()]);
+    toast(`Étage « ${f.name} » supprimé.`);
   }
-  async function uploadBg(f: Floor, file: File) {
-    if (!/^image\/(png|jpeg|svg\+xml)$/.test(file.type)) { toast('Fond de plan : une image PNG, JPG ou SVG.', 'err'); return; }
-    if (file.size > 15 * 1024 * 1024) { toast('Fond de plan de 15 Mo au plus.', 'err'); return; }
+  async function uploadBg(f: Pick<Floor, 'id'>, file: File) {
+    if (!/^image\/(png|jpeg|svg\+xml)$/.test(file.type)) { toast('Fond de plan : une image PNG, JPG ou SVG.', 'warn'); return; }
+    if (file.size > 15 * 1024 * 1024) { toast('Fond de plan de 15 Mo au plus.', 'warn'); return; }
     const url = URL.createObjectURL(file);
     const size = await new Promise<[number, number]>((res, rej) => { const im = new Image(); im.onload = () => res([im.naturalWidth || 1000, im.naturalHeight || 1000]); im.onerror = rej; im.src = url; }).catch(() => [1000, 1000] as [number, number]);
     URL.revokeObjectURL(url);
@@ -149,8 +189,12 @@
     fitted = '';
     toast('Fond de plan posé. Calibrez-le : deux points et leur distance réelle.', 'info');
   }
-  let bgConfirm = $state<Floor | null>(null);
-  async function removeBg(f: Floor) { await write(() => api.del(`/projects/${pid}/plans/${mapId}/floors/${f.id}/background`)); floorEdit = null; }
+  async function removeBg(f: Pick<Floor, 'id' | 'name'>) {
+    const m = mapId;
+    if (!(await ask({ title: 'Retirer le fond de plan ?', text: 'L’image et son calibrage sont supprimés pour cet étage. Il faudra la reposer et la recalibrer.', confirmLabel: 'Retirer le fond', danger: true, run: () => api.del(`/projects/${pid}/plans/${m}/floors/${f.id}/background`) }))) return;
+    floorEdit = null; fitted = ''; await load();
+    toast(`Fond de plan de « ${f.name} » retiré.`);
+  }
 
   // ----- Repère : image → monde -----
   function bgMatrix(f: Floor): string {
@@ -353,17 +397,43 @@
     await write(() => api.post(`/projects/${pid}/plans/${mapId}/routes/delete`, { key: l.key }));
     if (pts) toast('Tracé effacé.', 'ok', { label: 'Annuler', run: () => write(() => api.put(`/projects/${pid}/plans/${mapId}/routes`, { key: l.key, waypoints: pts })) });
   }
-  function key(e: KeyboardEvent) {
-    if ((e.target as HTMLElement)?.closest('input,textarea,select')) return;
-    if (e.key === 'Escape') { setTool('select'); sel = null; }
-    if (e.key === 'Enter') { if (tool === 'measure') finishMeasure(); if (tool === 'route') finishTrace(); }
-    if ((e.key === 'Delete' || e.key === 'Backspace') && sel && mine) removeSel();
-    if (e.key === 'Backspace' && tool === 'route' && trace) trace = { ...trace, pts: trace.pts.slice(0, -1) };
-  }
+  // Raccourcis du canevas (lib/canvaskeys) : rien quand une boîte est ouverte ni pendant une saisie.
+  let help = $state(false);
+  $effect(() => canvasKeys({
+    onEscape: () => { setTool('select'); sel = null; },
+    onDelete: () => { if (tool === 'route' && trace) trace = { ...trace, pts: trace.pts.slice(0, -1) }; else if (sel && mine) removeSel(); },
+    onKey: (e) => {
+      if (e.key === 'Enter' && (tool === 'measure' || tool === 'route')) { if (tool === 'measure') finishMeasure(); else finishTrace(); return true; }
+      if (e.key === '?') { help = true; return true; }
+      return false;
+    },
+  }));
+  const SHORTCUTS: [string, [string, string][]][] = [
+    ['Plan 2D', [['Molette', 'Zoomer'], ['Glisser le fond', 'Déplacer la vue'], ['Glisser un objet', 'Le déplacer'], ['Échap', 'Désélectionner, revenir à la sélection']]],
+    ['Édition', [['Suppr', 'Supprimer l’objet choisi'], ['Entrée, double-clic', 'Terminer la mesure ou le tracé'], ['Retour arrière', 'Retirer le dernier point du tracé'], ['?', 'Afficher cette aide']]],
+  ];
+  /** Suppression immédiate avec Annuler ; un élément du projet (conteneur) n'est retiré qu'après confirmation. */
   async function removeSel() {
-    if (!selected) return;
-    if (!(await ask(selected.kind === 'container' ? { title: `Retirer « ${selected.name} » du plan ?`, confirmLabel: 'Retirer', danger: true } : { title: 'Supprimer cet objet ?', confirmLabel: 'Supprimer', danger: true }))) return;
-    await write(() => api.post(`/projects/${pid}/plans/${mapId}/objects/delete`, { ids: [selected!.id] })); sel = null;
+    const o = selected;
+    if (!o || !mine) return;
+    const m = mapId;
+    if (o.kind === 'container' && !(await ask({ title: `Retirer « ${o.name} » du plan ?`, text: 'L’élément reste dans le projet et revient dans la liste des éléments à placer.', confirmLabel: 'Retirer', danger: true }))) return;
+    const body = clean($state.snapshot(o) as Obj), links = (d?.links ?? []).filter((l) => l.point_id === o.id || l.target_id === o.id).map((l) => ({ ...l }));
+    if (!(await writeOk(() => api.post(`/projects/${pid}/plans/${m}/objects/delete`, { ids: [o.id] })))) return;
+    if (sel === o.id) sel = null;
+    const msg = o.kind === 'container' ? `« ${o.name} » retiré du plan.` : o.kind === 'point' ? `Point « ${o.label} » supprimé.` : o.kind === 'text' ? 'Texte supprimé.' : 'Mesure supprimée.';
+    toast(msg, 'ok', { run: () => restoreObj(m, body, o.id, links) });
+  }
+  /** Annulation d'une suppression : l'objet est recréé, puis ses liens. */
+  async function restoreObj(m: string | null, body: Record<string, unknown>, oldId: string, links: Link[]) {
+    if (!m || m !== mapId) return false;
+    lastAction = Date.now();
+    try {
+      const r = await api.post<{ id: string }>(`/projects/${pid}/plans/${m}/objects`, body);
+      for (const l of links) await api.post(`/projects/${pid}/plans/${m}/links`, { point_id: l.point_id === oldId ? r.id : l.point_id, target_id: l.target_id === oldId ? r.id : l.target_id, label: l.label });
+      await Promise.all([load(), refreshIndex()]);
+      sel = r.id; side = 'sel';
+    } catch (e) { fail(e); await load(); return false; }
   }
   async function saveSel(patch: Record<string, unknown>) {
     if (!selected) return;
@@ -371,7 +441,14 @@
   }
   let linkTarget = $state('');
   async function addLink() { if (!selected || !linkTarget) return; await write(() => api.post(`/projects/${pid}/plans/${mapId}/links`, { point_id: selected!.id, target_id: linkTarget })); linkTarget = ''; }
-  async function delLink(l: Link) { await write(() => api.post(`/projects/${pid}/plans/${mapId}/links/delete`, { id: l.id })); }
+  async function delLink(l: Link) {
+    const m = mapId;
+    if (!(await writeOk(() => api.post(`/projects/${pid}/plans/${m}/links/delete`, { id: l.id })))) return;
+    toast('Lien retiré.', 'ok', { run: async () => {
+      try { await api.post(`/projects/${pid}/plans/${m}/links`, { point_id: l.point_id, target_id: l.target_id, label: l.label }); await load(); }
+      catch (e) { fail(e); return false; }
+    } });
+  }
 
   // Tracés sur l'étage courant : segments, et montées aux changements de niveau.
   function routeSegs(l: Liaison, pts: WP[]): { segs: [number, number, number, number][]; risers: [number, number, string][] } {
@@ -386,11 +463,14 @@
     }
     return { segs, risers };
   }
-  const lcolor = (l: Liaison) => l.color ?? '#5B636D';
+  // Couleur = famille de signal seulement (charte § 4), jamais la couleur propre d'un signal ; sans famille, FAMILY_NONE.
+  const lcolor = (l: Liaison) => familyColor(l.family, { screen: true });
+  const sigFamily = (id: string | null | undefined): string | null => (id ? ((refById('signals', id)?.data?.function as string | undefined) ?? null) : null);
+  const pcolor = (o: Obj) => (o.signal_id ? familyColor(sigFamily(o.signal_id), { screen: true }) : 'var(--fg-2)');
   const legend = $derived.by(() => {
     const m = new Map<string, string>();
     for (const l of d?.liaisons ?? []) if (l.waypoints && l.family) m.set(refName('functions', l.family) || l.family, lcolor(l));
-    for (const o of d?.objects ?? []) if (o.kind === 'point' && o.signal_id) m.set(refName('signals', o.signal_id), o.color ?? '#5B636D');
+    for (const o of d?.objects ?? []) { const f = o.kind === 'point' ? sigFamily(o.signal_id) : null; if (f) m.set(refName('functions', f) || f, pcolor(o)); }
     return [...m.entries()];
   });
   const dimsOf = (o: Obj): [number, number] => { const [w, p] = (o.dims ?? [600, 600, 1000]) as number[]; return o.rot === 90 || o.rot === 270 ? [p!, w!] : [w!, p!]; };
@@ -418,7 +498,7 @@
       const [w, p] = dimsOf(o), h = (o.dims?.[2] ?? 1000) as number, z0 = base(o.floor_id) + (o.z ?? 0), z1 = z0 + h;
       const c = [[o.x - w / 2, o.y - p / 2], [o.x + w / 2, o.y - p / 2], [o.x + w / 2, o.y + p / 2], [o.x - w / 2, o.y + p / 2]];
       const faces = [c.map(([x, y]) => [x, y, z1]), ...[0, 1, 2, 3].map((i) => [[...c[i]!, z0], [...c[(i + 1) % 4]!, z0], [...c[(i + 1) % 4]!, z1], [...c[i]!, z1]])];
-      faces.forEach((fc, i) => raw.push({ p: fc.map((q) => proj(q as [number, number, number])), fill: i === 0 ? 'var(--accent, #4F6BFF)' : 'var(--fg-2)', stroke: 'var(--fg)', op: i === 0 ? 0.55 : 0.28, label: i === 0 ? o.name : undefined }));
+      faces.forEach((fc, i) => raw.push({ p: fc.map((q) => proj(q as [number, number, number])), fill: i === 0 ? 'var(--accent)' : 'var(--fg-2)', stroke: 'var(--fg)', op: i === 0 ? 0.55 : 0.28, label: i === 0 ? o.name : undefined }));
     }
     const all = raw.flatMap((r) => r.p);
     for (const l of d.liaisons) if (l.points3d && !hidden.has(l.key)) all.push(...l.points3d.map(proj));
@@ -443,31 +523,34 @@
   const nf1 = (n: number | null) => (n == null ? '—' : `${n.toLocaleString('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} m`);
 </script>
 
-<svelte:window onkeydown={key} />
+{#snippet createAct()}<button class="btn primary" onclick={newMap}><Icon name="plus" size="sm" />Créer un plan</button>{/snippet}
+<!-- Champ numérique avec unité en suffixe (enregistré au change, comme le reste du panneau). -->
+{#snippet num(id: string, label: string, value: number | null | undefined, unit: string, ro: boolean, set: (v: number) => void, min?: number, max?: number)}
+  <div class="field"><label for={id}>{label}</label><div class="unit-in"><input class="input sm mono" {id} type="number" {min} {max} value={value ?? ''} disabled={ro} onchange={(e) => set(Number((e.target as HTMLInputElement).value))}>{#if unit}<span class="u">{unit}</span>{/if}</div></div>
+{/snippet}
+{#snippet floorDelete()}<button type="button" class="btn ghost danger" style="margin-right:auto" onclick={() => deleteFloor(floorEdit!)}>Supprimer l’étage</button>{/snippet}
+{#snippet floorClose()}<span></span><button type="button" class="btn ghost" onclick={() => (floorEdit = null)}>Fermer</button>{/snippet}
 
-{#if !idx}<span class="spin"></span>
+{#if canDesign}<HeadActions><button class="btn primary" onclick={newMap}><Icon name="plus" />Nouveau plan</button></HeadActions>{/if}
+
+{#if !idx}<Loading label="Chargement des plans" />
 {:else if !idx.maps.length}
-  <section class="card empty-card">
-    <h3>Aucun plan</h3>
-    <p class="muted">Un plan situe les éléments du projet sur le site (bâtiment multi-étages, plateau, extérieur), trace les liaisons entre eux et en donne la longueur réelle.</p>
-    {#if canDesign}<button class="btn primary" onclick={() => { wiz = { name: view.project.venue ?? 'Site', kind: 'multi_floor', from: 0, to: 0 }; wizErr = null; }}><Icon name="plus" size="sm" />Créer un plan</button>{/if}
-  </section>
+  <EmptyState icon="map" message="Aucun plan" hint="Choisissez le type de site (bâtiment multi-étages, plateau, extérieur), puis posez-y les éléments du projet : chaque liaison tracée donne sa longueur réelle." action={canDesign ? createAct : undefined} />
 {:else}
-  <section class="card pl-head">
+  <section class="card compact pl-head">
     <div class="pl-maps">
       <select class="input" aria-label="Plan" value={mapId} onchange={(e) => openMap((e.target as HTMLSelectElement).value)}>{#each idx.maps as m}<option value={m.id}>{m.name} · {KINDS[m.kind]}</option>{/each}</select>
-      {#if canDesign}<button class="btn sm" onclick={() => { wiz = { name: '', kind: 'multi_floor', from: 0, to: 0 }; wizErr = null; }}><Icon name="plus" size="sm" />Nouveau plan</button>{/if}
-      {#if mine && d}<button class="icon-btn sm" aria-label="Renommer le plan" title="Renommer le plan" onclick={() => (mapEdit = { name: d!.map.name, kind: d!.map.kind })}><Icon name="pen" size="sm" /></button><button class="icon-btn sm" aria-label="Supprimer le plan" title="Supprimer le plan" onclick={deleteMap}><Icon name="trash" size="sm" /></button>{/if}
+      {#if mine && d}<button class="icon-btn sm" aria-label="Modifier le plan" title="Modifier le plan" onclick={() => (mapEdit = { name: d!.map.name, kind: d!.map.kind })}><Icon name="pen" size="sm" /></button><button class="icon-btn sm danger" aria-label="Supprimer le plan" title="Supprimer le plan" onclick={deleteMap}><Icon name="trash" size="sm" /></button>{/if}
     </div>
     <div class="pl-stats small">
       <span><b>{idx.stats.placed}</b>/{idx.stats.containers} éléments posés</span>
       <span><b>{idx.stats.traced}</b>/{idx.stats.liaisons} liaisons tracées</span>
     </div>
-    <div class="seg" role="tablist" aria-label="Vue"><button class:on={mode === '2d'} onclick={() => (mode = '2d')}>Plan 2D</button><button class:on={mode === '3d'} onclick={() => (mode = '3d')}>Vue 3D</button></div>
+    <Seg label="Vue" mode="tabs" bind:value={mode} options={MODE_OPTS} />
   </section>
 
   {#if d}
-    <div class="card pl" style="padding:0;overflow:hidden">
+    <div class="card flush pl">
       {#if !mine || requested}<div class="lockbar" class:mine class:other={!mine}>
         {#if mine}
         <span class="lk"><span class="key-i"><Icon name="lock" /></span><span><b>{requested}</b> demande la main.</span></span>
@@ -486,31 +569,35 @@
         </div>
         {#if floor}<button class="btn sm ghost" onclick={() => (floorEdit = { ...floor! })}><Icon name="sliders" size="sm" />Étage</button>{/if}
         {#if mine && d.map.kind === 'multi_floor' && freeLevels.length}
-          <select class="input sm" aria-label="Ajouter un étage" value={newLevel ?? ''} onchange={(e) => { const v = (e.target as HTMLSelectElement).value; newLevel = v === '' ? null : Number(v); addFloor(); }}><option value="">+ Étage…</option>{#each freeLevels as l}<option value={l}>Niveau {l > 0 ? `+${l}` : l}</option>{/each}</select>
+          <select class="input sm" aria-label="Ajouter un étage" value={newLevel ?? ''} onchange={(e) => { const v = (e.target as HTMLSelectElement).value; newLevel = v === '' ? null : Number(v); addFloor(); }}><option value="">Ajouter un étage</option>{#each freeLevels as l}<option value={l}>Niveau {l > 0 ? `+${l}` : l}</option>{/each}</select>
         {/if}
         <span style="flex:1"></span>
         {#if mode === '2d' && mine}
           <div class="seg tools" role="toolbar" aria-label="Outils">
             {#each [['select', 'Sélection', 'hand'], ['point', 'Point de connexion', 'pin'], ['text', 'Texte', 'pen'], ['measure', 'Mesure', 'hash'], ['calib', 'Calibrer', 'scan']] as [t, l, ic]}
-              <button class:on={tool === t} title={l} aria-label={l} onclick={() => setTool(t as Tool)}><Icon name={ic} size="sm" /><span class="tl">{l}</span></button>
+              <button class:on={tool === t} aria-pressed={tool === t} title={l} aria-label={l} onclick={() => setTool(t as Tool)}><Icon name={ic} size="sm" /><span class="tl">{l}</span></button>
             {/each}
           </div>
         {/if}
-        {#if mode === '2d'}<button class="icon-btn sm" aria-label="Recadrer" onclick={fit}><Icon name="fit" /></button>{/if}
+        {#if mode === '2d'}<button class="icon-btn sm" aria-label="Recadrer" title="Recadrer" onclick={fit}><Icon name="fit" /></button>{/if}
+        <button class="icon-btn sm" aria-label="Raccourcis clavier (?)" title="Raccourcis clavier (?)" onclick={() => (help = true)}><Icon name="keys" /></button>
       </div>
       {#if tool === 'route' && trace}
         {@const l = d.liaisons.find((x) => x.key === trace!.key)}
-        <div class="hint">Tracé <b>{l?.a.name} ↔ {l?.b.name}</b> · {trace.pts.length} point{trace.pts.length > 1 ? 's' : ''} · aimantation orthogonale · changez d’étage pour monter ou descendre. <button class="btn sm primary" onclick={finishTrace}>Terminer</button><button class="btn sm" disabled={!trace.pts.length} onclick={() => (trace = { ...trace!, pts: trace!.pts.slice(0, -1) })}>Retirer le dernier</button><button class="btn sm ghost" onclick={() => setTool('select')}>Annuler</button></div>
+        <div class="hint"><span>Tracé <b>{l?.a.name} ↔ {l?.b.name}</b> · {trace.pts.length} point{trace.pts.length > 1 ? 's' : ''} · aimantation orthogonale · changez d’étage pour monter ou descendre.</span><span class="acts"><button class="btn sm" disabled={!trace.pts.length} onclick={() => (trace = { ...trace!, pts: trace!.pts.slice(0, -1) })}>Retirer le dernier</button><button class="btn sm ghost" onclick={() => setTool('select')}>Annuler</button><button class="btn sm primary" onclick={finishTrace}>Terminer</button></span></div>
       {:else if tool === 'measure'}
-        <div class="hint">Mesure : cliquez les points ; <b>{fmtM(draft.reduce((a, p, i) => (i ? a + Math.hypot(p[0] - draft[i - 1]![0], p[1] - draft[i - 1]![1]) : 0), 0))}</b>. <button class="btn sm primary" disabled={draft.length < 2} onclick={finishMeasure}>Terminer</button><button class="btn sm ghost" onclick={() => setTool('select')}>Annuler</button></div>
+        <div class="hint"><span>Mesure : cliquez les points ; <b class="mono">{fmtM(draft.reduce((a, p, i) => (i ? a + Math.hypot(p[0] - draft[i - 1]![0], p[1] - draft[i - 1]![1]) : 0), 0))}</b>.</span><span class="acts"><button class="btn sm ghost" onclick={() => setTool('select')}>Annuler</button><button class="btn sm primary" disabled={draft.length < 2} onclick={finishMeasure}>Terminer</button></span></div>
       {:else if tool === 'calib'}
-        <div class="hint">Calibration : cliquez deux points du fond ({calibPts.length}/2), puis donnez leur distance réelle. Les mêmes deux points physiques servent de repère commun à tous les étages.
-          {#if calibPts.length === 2}<label class="inl">Distance <input class="input sm mono" type="number" min="1" bind:value={calibDist} placeholder="mm" aria-label="Distance réelle en mm"> mm</label><button class="btn sm primary" disabled={!calibDist} onclick={finishCalib}>Calibrer</button>{/if}
-          <button class="btn sm ghost" onclick={() => setTool('select')}>Annuler</button></div>
+        <div class="hint"><span>Calibration : cliquez deux points du fond ({calibPts.length}/2), puis donnez leur distance réelle. Les mêmes deux points physiques servent de repère commun à tous les étages.</span>
+          <span class="acts">
+            {#if calibPts.length === 2}<label class="inl" for="calib-d">Distance</label><span class="unit-in"><input class="input sm mono" id="calib-d" type="number" min="1" bind:value={calibDist} onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); finishCalib(); } }}><span class="u">mm</span></span>{/if}
+            <button class="btn sm ghost" onclick={() => setTool('select')}>Annuler</button>
+            {#if calibPts.length === 2}<button class="btn sm primary" disabled={!calibDist} onclick={finishCalib}>Calibrer</button>{/if}
+          </span></div>
       {:else if tool === 'place' && placing}
-        <div class="hint">Cliquez sur le plan pour poser <b>{d.unplaced.find((c) => c.id === placing)?.name}</b>. <button class="btn sm ghost" onclick={() => setTool('select')}>Annuler</button></div>
+        <div class="hint"><span>Cliquez sur le plan pour poser <b>{d.unplaced.find((c) => c.id === placing)?.name}</b>.</span><span class="acts"><button class="btn sm ghost" onclick={() => setTool('select')}>Annuler</button></span></div>
       {:else if floor && floor.background && !floor.calibration}
-        <div class="hint warn">Fond non calibré : l’échelle est approximative. {#if mine}<button class="btn sm" onclick={() => setTool('calib')}>Calibrer</button>{/if}</div>
+        <div class="hint warn"><span>Fond non calibré : l’échelle est approximative.</span>{#if mine}<span class="acts"><button class="btn sm" onclick={() => setTool('calib')}>Calibrer</button></span>{/if}</div>
       {/if}
 
       <div class="pl-body">
@@ -554,7 +641,7 @@
                 {#if layers.points}
                   {#each d.links as ln (ln.id)}
                     {@const a = byId.get(ln.point_id)}{@const b = byId.get(ln.target_id)}
-                    {#if a && b && a.floor_id === floor?.id && b.floor_id === floor?.id}<line x1={posOf(a).x} y1={posOf(a).y} x2={posOf(b).x} y2={posOf(b).y} stroke={a.color ?? 'var(--fg-2)'} stroke-width={2 / k} stroke-dasharray="{6 / k} {4 / k}" />{/if}
+                    {#if a && b && a.floor_id === floor?.id && b.floor_id === floor?.id}<line x1={posOf(a).x} y1={posOf(a).y} x2={posOf(b).x} y2={posOf(b).y} stroke={pcolor(a)} stroke-width={2 / k} stroke-dasharray="{6 / k} {4 / k}" />{/if}
                   {/each}
                 {/if}
                 {#if layers.containers}
@@ -570,7 +657,7 @@
                   {#each objs.filter((o) => o.kind === 'point' && !hidden.has(o.id)) as o (o.id)}
                     {@const p = posOf(o)}
                     <g class="obj" class:sel={sel === o.id} transform="translate({p.x} {p.y})" role="button" tabindex="-1" onpointerdown={(e) => objDown(e, o)}>
-                      <rect x={-7 / k} y={-7 / k} width={14 / k} height={14 / k} rx={3 / k} fill={o.color ?? 'var(--fg-2)'} stroke="var(--surface)" stroke-width={2 / k} />
+                      <rect x={-7 / k} y={-7 / k} width={14 / k} height={14 / k} rx={3 / k} fill={pcolor(o)} stroke="var(--surface)" stroke-width={2 / k} />
                       <text x={10 / k} y={4 / k} font-size={11 / k} class="pt-t">{o.label} <tspan class="muted">{o.free}/{o.ports}</tspan></text>
                     </g>
                   {/each}
@@ -594,7 +681,7 @@
             <svg class="ruler top" aria-hidden="true"><rect width="100%" height="18" class="rbg" />{#each ticksX as x}<line x1={tx + x * k} x2={tx + x * k} y1="10" y2="18" class="rt" /><text x={tx + x * k + 3} y="11" class="rl">{fmtM(x)}</text>{/each}</svg>
             <svg class="ruler left" aria-hidden="true"><rect width="18" height="100%" class="rbg" />{#each ticksY as y}<line y1={ty + y * k} y2={ty + y * k} x1="10" x2="18" class="rt" /><text transform="translate(11 {ty + y * k - 3}) rotate(-90)" class="rl">{fmtM(y)}</text>{/each}</svg>
             <div class="scalebar"><i style="width:{scaleBar * k}px"></i><span>{fmtM(scaleBar)}</span></div>
-            {#if legend.length}<div class="legend">{#each legend as [n, c]}<span><i style="background:{c}"></i>{n}</span>{/each}</div>{/if}
+            {#if legend.length}<div class="legend" aria-label="Familles de signal">{#each legend as [n, c]}<span><i style="background:{c}"></i>{n}</span>{/each}</div>{/if}
           </div>
         {:else}
           <div class="pl-canvas">
@@ -604,21 +691,20 @@
                 {#each scene.tubes as t (t.key)}<polyline points={t.pts} fill="none" stroke={t.color} stroke-width="5" stroke-linecap="round" stroke-linejoin="round" opacity=".9"><title>{t.name} · {nf1(t.len)}</title></polyline>{/each}
               </svg>
               <div class="hint3 small muted">Glissez pour tourner · lecture seule</div>
-            {:else}<p class="muted" style="padding:24px">Rien à montrer : posez des éléments et vérifiez que les étages se suivent.</p>{/if}
+            {:else}<EmptyState card={false} icon="box" message="Rien à montrer en 3D" hint="Posez des éléments sur le plan et vérifiez que les étages se suivent." />{/if}
           </div>
         {/if}
 
         <aside class="pl-side">
-          <div class="seg side-tabs" role="tablist" aria-label="Panneau">
-            {#each [['place', `À placer ${d.unplaced.length}`], ['trace', `À tracer ${traceable.filter((l) => !l.waypoints).length}`], ['layers', 'Calques'], ['sel', 'Sélection']] as [s, l]}<button role="tab" aria-selected={side === s} class:on={side === s} onclick={() => (side = s as typeof side)}>{l}</button>{/each}
-          </div>
+          <Seg label="Panneau" mode="tabs" full controls="pl-side" bind:value={side} options={[{ value: 'place', label: 'Placer', title: 'Éléments à placer', count: d.unplaced.length }, { value: 'trace', label: 'Tracer', title: 'Liaisons à tracer', count: traceable.filter((l) => !l.waypoints).length }, { value: 'layers', label: 'Calques' }, { value: 'sel', label: 'Sélection' }]} />
+          <div class="side-panel" id="pl-side-{side}" role="tabpanel">
           {#if side === 'place'}
             {#if !d.unplaced.length}<p class="muted small">Tous les éléments du projet sont posés.</p>{/if}
             {#each d.unplaced as c (c.id)}
-              <button class="li" class:on={placing === c.id} disabled={!mine || mode === '3d'} onclick={() => { setTool('place'); placing = c.id; }}><b>{c.name}</b><span class="muted small">{Math.round(c.dims[0])} × {Math.round(c.dims[1])} × {Math.round(c.dims[2])} mm</span></button>
+              <button class="li" class:on={placing === c.id} disabled={!mine || mode === '3d'} onclick={() => { setTool('place'); placing = c.id; }}><b>{c.name}</b><span class="muted small mono">{Math.round(c.dims[0])} × {Math.round(c.dims[1])} × {Math.round(c.dims[2])} mm</span></button>
             {/each}
             {#if d.objects.some((o) => o.kind === 'container')}
-              <h4>Posés sur ce plan</h4>
+              <h4 class="eyebrow">Posés sur ce plan</h4>
               {#each d.objects.filter((o) => o.kind === 'container') as o (o.id)}
                 <button class="li" onclick={() => { floorId = o.floor_id; sel = o.id; side = 'sel'; }}><b>{o.name}</b><span class="muted small">{d.floors.find((f) => f.id === o.floor_id)?.name}</span></button>
               {/each}
@@ -628,7 +714,7 @@
             {#each d.liaisons as l (l.key)}
               <div class="li tr">
                 <span class="nm"><i class="dot" style="--c:{lcolor(l)}"></i><b>{l.a.name ?? '?'} ↔ {l.b.name ?? '?'}</b></span>
-                <span class="muted small">{l.count} câble{l.count > 1 ? 's' : ''}{l.numbers.length ? ` · ${l.numbers.slice(0, 3).join(', ')}${l.numbers.length > 3 ? '…' : ''}` : ''}</span>
+                <span class="muted small">{l.count} câble{l.count > 1 ? 's' : ''}{l.numbers.length ? ` · ${l.numbers.slice(0, 3).join(', ')}${l.numbers.length > 3 ? ` et ${l.numbers.length - 3} autre${l.numbers.length > 4 ? 's' : ''}` : ''}` : ''}</span>
                 {#if l.state === 'ready'}
                   <span class="small">{l.waypoints ? `Tracé · ${nf1(l.length_m)}` : 'À tracer'}</span>
                   {#if mine && mode === '2d'}<span class="ra"><button class="btn sm" onclick={() => startTrace(l)}>{l.waypoints ? 'Retracer' : 'Tracer'}</button>{#if l.waypoints}<button class="btn sm ghost" onclick={() => clearRoute(l)}>Effacer</button>{/if}</span>{/if}
@@ -639,51 +725,52 @@
             {/each}
           {:else if side === 'layers'}
             {#each [['bg', 'Fond de plan'], ['grid', 'Grille'], ['containers', 'Éléments'], ['points', 'Points de connexion et liens'], ['routes', 'Tracés'], ['texts', 'Textes'], ['measures', 'Mesures']] as [kk, l]}
-              <label class="toggle-row small"><input type="checkbox" bind:checked={(layers as any)[kk]}>{l}</label>
+              <label class="toggle-row"><input type="checkbox" bind:checked={(layers as any)[kk]}>{l}</label>
             {/each}
-            {#if floor?.background}<label class="field small">Plan estompé<input type="range" min="0.05" max="1" step="0.05" value={floor.bg_opacity} disabled={!mine} onchange={(e) => write(() => api.patch(`/projects/${pid}/plans/${mapId}/floors`, { ...floor, bg_opacity: Number((e.target as HTMLInputElement).value) }))}></label>{/if}
-            <h4>Par élément</h4>
-            {#each d.objects.filter((o) => o.kind === 'container') as o (o.id)}<label class="toggle-row small"><input type="checkbox" checked={!hidden.has(o.container_id)} onchange={() => toggleHidden(o.container_id)}>{o.name}</label>{/each}
-            <h4>Par liaison</h4>
-            {#each d.liaisons.filter((l) => l.waypoints) as l (l.key)}<label class="toggle-row small"><input type="checkbox" checked={!hidden.has(l.key)} onchange={() => toggleHidden(l.key)}><i class="dot" style="--c:{lcolor(l)}"></i>{l.a.name} ↔ {l.b.name}</label>{/each}
+            {#if floor?.background}<div class="field"><label for="bg-op">Fond estompé</label><input id="bg-op" type="range" min="0.05" max="1" step="0.05" value={floor.bg_opacity} disabled={!mine} onchange={(e) => write(() => api.patch(`/projects/${pid}/plans/${mapId}/floors`, { ...floor, bg_opacity: Number((e.target as HTMLInputElement).value) }))}></div>{/if}
+            <h4 class="eyebrow">Par élément</h4>
+            {#each d.objects.filter((o) => o.kind === 'container') as o (o.id)}<label class="toggle-row"><input type="checkbox" checked={!hidden.has(o.container_id)} onchange={() => toggleHidden(o.container_id)}>{o.name}</label>{/each}
+            <h4 class="eyebrow">Par liaison</h4>
+            {#each d.liaisons.filter((l) => l.waypoints) as l (l.key)}<label class="toggle-row"><input type="checkbox" checked={!hidden.has(l.key)} onchange={() => toggleHidden(l.key)}><i class="dot" style="--c:{lcolor(l)}"></i>{l.a.name} ↔ {l.b.name}</label>{/each}
           {:else}
             {#if !selected}<p class="muted small">Choisissez un objet sur le plan.</p>
             {:else}
               {@const ro = !mine}
+              <div class="sel-h"><h4 class="eyebrow">{selected.kind === 'container' ? selected.name : selected.kind === 'point' ? 'Point de connexion' : selected.kind === 'text' ? 'Texte' : 'Mesure'}</h4><button class="icon-btn sm" aria-label="Désélectionner (Échap)" title="Désélectionner (Échap)" onclick={() => (sel = null)}><Icon name="x" size="sm" /></button></div>
               {#if selected.kind === 'container'}
-                <h4>{selected.name}</h4>
                 <div class="fg2">
-                  <label class="field">X (mm)<input class="input sm mono" type="number" value={Math.round(selected.x)} disabled={ro} onchange={(e) => saveSel({ x: Number((e.target as HTMLInputElement).value) })}></label>
-                  <label class="field">Y (mm)<input class="input sm mono" type="number" value={Math.round(selected.y)} disabled={ro} onchange={(e) => saveSel({ y: Number((e.target as HTMLInputElement).value) })}></label>
-                  <label class="field">Hauteur au sol (mm)<input class="input sm mono" type="number" min="0" value={selected.z} disabled={ro} onchange={(e) => saveSel({ z: Number((e.target as HTMLInputElement).value) })}></label>
-                  <label class="field">Rotation<select class="input sm" value={selected.rot} disabled={ro} onchange={(e) => saveSel({ rot: Number((e.target as HTMLSelectElement).value) })}>{#each [0, 90, 180, 270] as r}<option value={r}>{r}°</option>{/each}</select></label>
+                  {@render num('o-x', 'X', Math.round(selected.x), 'mm', ro, (v) => saveSel({ x: v }))}
+                  {@render num('o-y', 'Y', Math.round(selected.y), 'mm', ro, (v) => saveSel({ y: v }))}
+                  {@render num('o-z', 'Hauteur au sol', selected.z, 'mm', ro, (v) => saveSel({ z: v }), 0)}
+                  <div class="field"><label for="o-rot">Rotation</label><select class="input sm" id="o-rot" value={selected.rot} disabled={ro} onchange={(e) => saveSel({ rot: Number((e.target as HTMLSelectElement).value) })}>{#each [0, 90, 180, 270] as r}<option value={r}>{r}°</option>{/each}</select></div>
                 </div>
-                <label class="field">Étage<select class="input sm" value={selected.floor_id} disabled={ro} onchange={(e) => { const f = (e.target as HTMLSelectElement).value; saveSel({ floor_id: f }); floorId = f; }}>{#each d.floors as f}<option value={f.id}>{f.name}</option>{/each}</select></label>
+                <div class="field"><label for="o-floor">Étage</label><select class="input sm" id="o-floor" value={selected.floor_id} disabled={ro} onchange={(e) => { const f = (e.target as HTMLSelectElement).value; saveSel({ floor_id: f }); floorId = f; }}>{#each d.floors as f}<option value={f.id}>{f.name}</option>{/each}</select></div>
               {:else if selected.kind === 'point'}
-                <label class="field">Libellé<input class="input sm" value={selected.label} disabled={ro} maxlength="60" onchange={(e) => saveSel({ label: (e.target as HTMLInputElement).value })}></label>
-                <label class="field">Signal (verrouille les liens)<select class="input sm" value={selected.signal_id ?? ''} disabled={ro} onchange={(e) => saveSel({ signal_id: (e.target as HTMLSelectElement).value || null })}><option value="">—</option>{#each refList('signals', true) as s}<option value={s.id}>{s.name}</option>{/each}</select></label>
-                <label class="field">Connecteur<select class="input sm" value={selected.connector_id ?? ''} disabled={ro} onchange={(e) => saveSel({ connector_id: (e.target as HTMLSelectElement).value || null })}><option value="">—</option>{#each refList('connectors', true).filter((c) => !selected!.signal_id || (refById('signals', selected!.signal_id)?.data?.connectors ?? []).includes(c.id)) as c}<option value={c.id}>{c.name}</option>{/each}</select></label>
+                <div class="field"><label for="o-label">Libellé</label><input class="input sm" id="o-label" value={selected.label} disabled={ro} maxlength="60" onchange={(e) => saveSel({ label: (e.target as HTMLInputElement).value })}></div>
+                <div class="field"><label for="o-sig">Signal (verrouille les liens)</label><select class="input sm" id="o-sig" value={selected.signal_id ?? ''} disabled={ro} onchange={(e) => saveSel({ signal_id: (e.target as HTMLSelectElement).value || null })}><option value="">—</option>{#each refList('signals', true) as s}<option value={s.id}>{s.name}</option>{/each}</select></div>
+                <div class="field"><label for="o-conn">Connecteur</label><select class="input sm" id="o-conn" value={selected.connector_id ?? ''} disabled={ro} onchange={(e) => saveSel({ connector_id: (e.target as HTMLSelectElement).value || null })}><option value="">—</option>{#each refList('connectors', true).filter((c) => !selected!.signal_id || (refById('signals', selected!.signal_id)?.data?.connectors ?? []).includes(c.id)) as c}<option value={c.id}>{c.name}</option>{/each}</select></div>
                 <div class="fg2">
-                  <label class="field">Ports<input class="input sm mono" type="number" min="1" max="256" value={selected.ports} disabled={ro} onchange={(e) => saveSel({ ports: Number((e.target as HTMLInputElement).value) })}></label>
-                  <label class="field">Hauteur (mm)<input class="input sm mono" type="number" min="0" value={selected.z} disabled={ro} onchange={(e) => saveSel({ z: Number((e.target as HTMLInputElement).value) })}></label>
+                  {@render num('o-ports', 'Ports', selected.ports, '', ro, (v) => saveSel({ ports: v }), 1, 256)}
+                  {@render num('o-pz', 'Hauteur', selected.z, 'mm', ro, (v) => saveSel({ z: v }), 0)}
                 </div>
                 <p class="small">Capacité libre : <b>{selected.free}</b> sur {selected.ports}</p>
                 {#each d.links.filter((l) => l.point_id === selected!.id) as ln (ln.id)}
                   {@const t = byId.get(ln.target_id)}
-                  <div class="lnk small"><span>→ {t?.kind === 'container' ? t.name : t?.label}</span>{#if !ro}<button class="icon-btn sm" aria-label="Retirer le lien" onclick={() => delLink(ln)}><Icon name="x" size="sm" /></button>{/if}</div>
+                  <div class="lnk small"><span>→ {t?.kind === 'container' ? t.name : t?.label}</span>{#if !ro}<button class="icon-btn sm" aria-label="Retirer le lien" title="Retirer le lien" onclick={() => delLink(ln)}><Icon name="x" size="sm" /></button>{/if}</div>
                 {/each}
                 {#if !ro && selected.free > 0}
-                  <div class="lnk"><select class="input sm" bind:value={linkTarget} aria-label="Cible du lien"><option value="">Lier à…</option>{#each d.objects.filter((o) => (o.kind === 'container' || o.kind === 'point') && o.id !== selected!.id) as o}<option value={o.id}>{o.kind === 'container' ? o.name : `Point ${o.label}`}</option>{/each}</select><button class="btn sm" disabled={!linkTarget} onclick={addLink}>Lier</button></div>
+                  <div class="lnk"><select class="input sm" bind:value={linkTarget} aria-label="Cible du lien"><option value="">Choisir la cible du lien</option>{#each d.objects.filter((o) => (o.kind === 'container' || o.kind === 'point') && o.id !== selected!.id) as o}<option value={o.id}>{o.kind === 'container' ? o.name : `Point ${o.label}`}</option>{/each}</select><button class="btn sm" disabled={!linkTarget} onclick={addLink}>Lier</button></div>
                 {/if}
               {:else if selected.kind === 'text'}
-                <label class="field">Texte<textarea class="input" rows="3" disabled={ro} onchange={(e) => saveSel({ text: (e.target as HTMLTextAreaElement).value })}>{selected.text}</textarea></label>
-                <label class="field">Taille (mm)<input class="input sm mono" type="number" min="20" value={selected.size} disabled={ro} onchange={(e) => saveSel({ size: Number((e.target as HTMLInputElement).value) })}></label>
+                <div class="field"><label for="o-text">Texte</label><textarea class="input" id="o-text" rows="3" disabled={ro} onchange={(e) => saveSel({ text: (e.target as HTMLTextAreaElement).value })}>{selected.text}</textarea></div>
+                {@render num('o-size', 'Taille', selected.size, 'mm', ro, (v) => saveSel({ size: v }), 20)}
               {:else}
-                <h4>Mesure</h4><p><b>{fmtM(selected.length_mm)}</b> · {selected.points.length} points</p>
+                <p><b class="mono">{fmtM(selected.length_mm)}</b> · {selected.points.length} points</p>
               {/if}
-              {#if !ro}<button class="btn sm ghost danger" onclick={removeSel}><Icon name="trash" size="sm" />{selected.kind === 'container' ? 'Retirer du plan' : 'Supprimer'}</button>{/if}
+              {#if !ro}<div class="row-btns"><button class="btn sm ghost danger" onclick={removeSel}><Icon name="trash" size="sm" />{selected.kind === 'container' ? 'Retirer du plan' : 'Supprimer'}</button></div>{/if}
             {/if}
           {/if}
+          </div>
         </aside>
       </div>
     </div>
@@ -691,132 +778,131 @@
 {/if}
 
 {#if wiz}
-  <Dialog title="Nouveau plan" eyebrow="Plans" onclose={() => (wiz = null)}>
-    <div class="field"><label for="w-name">Nom</label><input class="input" id="w-name" bind:value={wiz.name} maxlength="80" placeholder="Stade, bâtiment A, parvis…">{#if wizErr?.field('name')}<span class="ferr">{wizErr.field('name')}</span>{/if}</div>
-    <div class="field"><span class="flabel">Type</span><div class="seg">{#each Object.entries(KINDS) as [kk, l]}<button type="button" class:on={wiz.kind === kk} onclick={() => (wiz!.kind = kk as Kind)}>{l}</button>{/each}</div></div>
+  <Dialog title="Nouveau plan" eyebrow="Plans" onclose={() => (wiz = null)} onsubmit={createMap} submitLabel="Créer le plan" submitDisabled={!wiz.name.trim()}>
+    <div class="field"><label for="w-name">Nom</label><input class="input" id="w-name" bind:value={wiz.name} maxlength="80" placeholder="Stade, bâtiment A, parvis" aria-invalid={wizErr?.field('name') ? 'true' : undefined} aria-describedby={wizErr?.field('name') ? 'w-name-err' : undefined}><FieldError message={wizErr?.field('name')} for="w-name" /></div>
+    <div class="field"><span class="flabel">Type</span><Seg label="Type de plan" bind:value={wiz.kind} options={KIND_OPTS} /></div>
     {#if wiz.kind === 'multi_floor'}
-      <div class="fg2">
-        <label class="field">Du niveau<select class="input" bind:value={wiz.from}>{#each Array.from({ length: 13 }, (_, i) => i - 2) as l}<option value={l}>{l > 0 ? `+${l}` : l}</option>{/each}</select></label>
-        <label class="field">Au niveau<select class="input" bind:value={wiz.to}>{#each Array.from({ length: 13 }, (_, i) => i - 2) as l}<option value={l}>{l > 0 ? `+${l}` : l}</option>{/each}</select></label>
+      <div class="form-grid">
+        <div class="field"><label for="w-from">Du niveau</label><select class="input" id="w-from" bind:value={wiz.from}>{#each Array.from({ length: 13 }, (_, i) => i - 2) as l}<option value={l}>{l > 0 ? `+${l}` : l}</option>{/each}</select></div>
+        <div class="field"><label for="w-to">Au niveau</label><select class="input" id="w-to" bind:value={wiz.to}>{#each Array.from({ length: 13 }, (_, i) => i - 2) as l}<option value={l}>{l > 0 ? `+${l}` : l}</option>{/each}</select></div>
       </div>
-      <p class="muted small">{Math.abs(wiz.to - wiz.from) + 1} étage{wiz.to !== wiz.from ? 's' : ''}, 3 m entre sols et faux-plafond à 2,5 m par défaut. Le niveau d’un étage ne change plus ensuite.</p>
-    {:else}<p class="muted small">Un seul niveau ({wiz.kind === 'outdoor' ? 'extérieur' : 'plan unique'}).</p>{/if}
-    {#snippet footer()}<button class="btn" onclick={() => (wiz = null)}>Annuler</button><button class="btn primary" disabled={!wiz?.name.trim()} onclick={createMap}>Créer le plan</button>{/snippet}
+      <p class="help">{Math.abs(wiz.to - wiz.from) + 1} étage{wiz.to !== wiz.from ? 's' : ''}, 3 m entre sols et faux-plafond à 2,5 m par défaut. Le niveau d’un étage ne change plus ensuite.</p>
+    {:else}<p class="help">Un seul niveau ({wiz.kind === 'outdoor' ? 'extérieur' : 'plan unique'}).</p>{/if}
   </Dialog>
 {/if}
 
 {#if mapEdit}
-  <Dialog title="Plan" eyebrow="Plans" onclose={() => (mapEdit = null)}>
+  <Dialog title="Modifier le plan" eyebrow="Plans" onclose={() => (mapEdit = null)} onsubmit={saveMap} submitLabel="Enregistrer" submitDisabled={!mapEdit.name.trim()}>
     <div class="field"><label for="m-name">Nom</label><input class="input" id="m-name" bind:value={mapEdit.name} maxlength="80"></div>
-    <div class="field"><span class="flabel">Type</span><div class="seg">{#each Object.entries(KINDS) as [kk, l]}<button type="button" class:on={mapEdit.kind === kk} onclick={() => (mapEdit!.kind = kk as Kind)}>{l}</button>{/each}</div></div>
-    {#snippet footer()}<button class="btn" onclick={() => (mapEdit = null)}>Annuler</button><button class="btn primary" onclick={saveMap}>Enregistrer</button>{/snippet}
+    <div class="field"><span class="flabel">Type</span><Seg label="Type de plan" bind:value={mapEdit.kind} options={KIND_OPTS} /></div>
   </Dialog>
 {/if}
 
 {#if floorEdit}
   {@const ro = !mine}
-  <Dialog title={floorEdit.name} eyebrow="Étage · niveau {floorEdit.level > 0 ? `+${floorEdit.level}` : floorEdit.level}" onclose={() => (floorEdit = null)}>
-    <div class="field"><label for="f-name">Nom</label><input class="input" id="f-name" bind:value={floorEdit.name} maxlength="80" disabled={ro}></div>
-    <div class="fg2">
-      <label class="field">Hauteur entre sols (mm)<input class="input mono" type="number" min="1" max="20000" bind:value={floorEdit.height_mm} disabled={ro}></label>
-      <label class="field">Faux-plafond ou chemin de câbles (mm)<input class="input mono" type="number" min="0" bind:value={floorEdit.ceiling_mm} disabled={ro}></label>
-    </div>
+  <Dialog title={floorEdit.name || 'Étage'} eyebrow="Étage · niveau {floorEdit.level > 0 ? `+${floorEdit.level}` : floorEdit.level}" onclose={() => (floorEdit = null)} onsubmit={ro ? undefined : saveFloor} submitLabel="Enregistrer" submitDisabled={!floorEdit.name.trim()} footer={ro ? floorClose : (d?.floors.length ?? 0) > 1 ? floorDelete : undefined}>
+    <fieldset class="plain" disabled={ro}>
+      <div class="field"><label for="f-name">Nom</label><input class="input" id="f-name" bind:value={floorEdit.name} maxlength="80"></div>
+      <div class="form-grid">
+        <NumField id="f-height" label="Hauteur entre sols" unit="mm" bind:value={floorEdit.height_mm} min={1} max={20000} step={1} />
+        <NumField id="f-ceiling" label="Faux-plafond ou chemin de câbles" unit="mm" bind:value={floorEdit.ceiling_mm} min={0} step={1} />
+      </div>
+    </fieldset>
     <div class="field">
       <span class="flabel">Fond de plan</span>
       {#if floorEdit.background}
-        <p class="small">{floorEdit.bg_type?.replace('image/', '').toUpperCase()} · {floorEdit.bg_w} × {floorEdit.bg_h} px · {floorEdit.calibration ? `calibré (${(floorEdit.calibration.dist_mm / Math.hypot(floorEdit.calibration.b[0] - floorEdit.calibration.a[0], floorEdit.calibration.b[1] - floorEdit.calibration.a[1])).toFixed(1).replace('.', ',')} mm par pixel)` : 'non calibré'}</p>
-      {:else}<p class="muted small">Aucun. PNG, JPG ou SVG, 15 Mo au plus.</p>{/if}
+        <p class="small">{floorEdit.bg_type?.replace('image/', '').toUpperCase()} · <span class="mono">{floorEdit.bg_w} × {floorEdit.bg_h} px</span> · {floorEdit.calibration ? `calibré (${(floorEdit.calibration.dist_mm / Math.hypot(floorEdit.calibration.b[0] - floorEdit.calibration.a[0], floorEdit.calibration.b[1] - floorEdit.calibration.a[1])).toFixed(1).replace('.', ',')} mm par pixel)` : 'non calibré'}</p>
+      {:else}<p class="help">Aucun. PNG, JPG ou SVG, 15 Mo au plus.</p>{/if}
       {#if !ro}
         <div class="row-btns">
-          <button type="button" class="btn sm" onclick={(e) => (e.currentTarget.nextElementSibling as HTMLInputElement).click()}><Icon name="upload" size="sm" />{floorEdit.background ? 'Remplacer' : 'Choisir un fichier'}</button><input type="file" accept="image/png,image/jpeg,image/svg+xml" hidden onchange={(e) => { const f = (e.target as HTMLInputElement).files?.[0]; (e.target as HTMLInputElement).value = ''; if (f) uploadBg(floorEdit!, f); }}>
-          {#if floorEdit.background}<button class="btn sm" onclick={() => { const f = floorEdit!; floorEdit = null; floorId = f.id; mode = '2d'; setTool('calib'); }}>Calibrer</button><button class="btn sm ghost danger" onclick={() => (bgConfirm = floorEdit)}>Retirer</button>{/if}
+          <button type="button" class="btn sm" onclick={(e) => (e.currentTarget.nextElementSibling as HTMLInputElement).click()}><Icon name="upload" size="sm" />{floorEdit.background ? 'Remplacer' : 'Choisir un fichier'}</button><input type="file" accept="image/png,image/jpeg,image/svg+xml" hidden data-no-dirty onchange={(e) => { const f = (e.target as HTMLInputElement).files?.[0]; (e.target as HTMLInputElement).value = ''; if (f) uploadBg(floorEdit!, f); }}>
+          {#if floorEdit.background}<button type="button" class="btn sm" onclick={() => { const f = floorEdit!; floorEdit = null; floorId = f.id; mode = '2d'; setTool('calib'); }}>Calibrer</button><button type="button" class="btn sm ghost danger" onclick={() => removeBg(floorEdit!)}>Retirer</button>{/if}
         </div>
       {/if}
     </div>
-    {#snippet footer()}
-      {#if !ro && (d?.floors.length ?? 0) > 1}<button class="btn ghost danger" style="margin-right:auto" onclick={() => deleteFloor(floorEdit!)}>Supprimer l’étage</button>{/if}
-      <button class="btn" onclick={() => (floorEdit = null)}>Fermer</button>{#if !ro}<button class="btn primary" onclick={saveFloor}>Enregistrer</button>{/if}
-    {/snippet}
   </Dialog>
 {/if}
 
-{#if bgConfirm}
-  <Confirm title="Retirer le fond de plan ?" confirmLabel="Retirer le fond" danger onconfirm={async () => { const f = bgConfirm!; bgConfirm = null; await removeBg(f); }} onclose={() => (bgConfirm = null)}>
-    <p>L’image et son calibrage sont supprimés pour cet étage. Il faudra la reposer et la recalibrer.</p>
-  </Confirm>
-{/if}
+{#if help}<ShortcutsHelp title="Raccourcis du plan" groups={SHORTCUTS} onclose={() => (help = false)} />{/if}
 
 <style>
-  .pl-head { padding: 12px 16px; display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+  .pl-head { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
   .pl-maps { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; max-width: 100%; }
+  .pl-maps select { width: auto; min-width: 220px; }
   @media (max-width: 600px) { .pl-maps select { min-width: 0; flex: 1 1 100%; } }
-  .pl-maps select { width: auto; min-width: 220px; height: 40px; }
   .pl-stats { display: flex; gap: 16px; flex: 1; flex-wrap: wrap; color: var(--fg-2); }
   .pl-stats b { color: var(--fg); }
+  .pl { overflow: hidden; }
   .dtool { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 10px 16px; border-top: 1px solid var(--line); }
-  .dtool select.sm { width: auto; height: 34px; }
+  .dtool select.input.sm { width: auto; }
   .floors { max-width: 100%; overflow-x: auto; }
   .floors button { white-space: nowrap; }
-  .lv { font-size: 11px; opacity: .7; margin-right: 6px; }
+  .lv { font-size: var(--fs-2xs); color: var(--fg-3); margin-right: 6px; }
   .tools button { display: inline-flex; gap: 6px; align-items: center; }
   @media (max-width: 1300px) { .tl { display: none; } }
-  .hint { padding: 8px 16px; background: color-mix(in srgb, var(--accent, #4F6BFF) 8%, var(--surface)); border-top: 1px solid var(--line); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 14px; }
-  .hint.warn { background: color-mix(in srgb, var(--warn, #B78400) 12%, var(--surface)); }
-  .hint .inl { display: inline-flex; gap: 6px; align-items: center; }
-  .hint .input.sm { width: 110px; height: 32px; }
-  .pl-body { display: grid; grid-template-columns: minmax(0, 1fr) 300px; border-top: 1px solid var(--line); height: calc(100vh - 260px); min-height: 520px; }
+  .hint { padding: 8px 16px; background: color-mix(in srgb, var(--accent) 8%, var(--surface)); border-top: 1px solid var(--line); display: flex; gap: 8px 10px; align-items: center; flex-wrap: wrap; font-size: var(--fs-md); }
+  .hint.warn { background: color-mix(in srgb, var(--warn) 12%, var(--surface)); }
+  .hint .acts { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .hint .unit-in { width: 130px; }
+  .hint .inl { font: 600 var(--fs-sm)/1.4 var(--font); color: var(--fg-2); }
+  /* Hauteur utile : 100vh moins barre du haut (52), en-tête de projet (112), carte des plans (70),
+     barre d'outils (55) et marge basse de .ws-main (64). */
+  .pl-body { display: grid; grid-template-columns: minmax(0, 1fr) 320px; border-top: 1px solid var(--line); height: calc(100vh - 354px); min-height: 520px; }
   .pl-canvas { position: relative; overflow: hidden; background: var(--surface-2); }
   .pl-svg { width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; user-select: none; }
+  .pl-svg:active { cursor: grabbing; }
   .pl-svg.crosshair { cursor: crosshair; }
   .grid { stroke: var(--line); stroke-width: 1; }
   .grid.axis { stroke: var(--fg-3); }
   .obj { cursor: pointer; }
-  .ctr { fill: color-mix(in srgb, var(--accent, #4F6BFF) 16%, var(--surface)); stroke: var(--fg); stroke-width: 1.5; }
+  .ctr { fill: color-mix(in srgb, var(--accent) 16%, var(--surface)); stroke: var(--fg); stroke-width: 1.5; }
   .obj.rsel .ctr { stroke: var(--rs); stroke-width: 3; }
-  .obj.sel .ctr { stroke: var(--accent, #4F6BFF); stroke-width: 1.6; }
+  .obj.sel .ctr { stroke: var(--accent); stroke-width: 1.6; }
   .ct-t, .pt-t { font-family: var(--font); font-weight: 600; fill: var(--fg); paint-order: stroke; stroke: var(--surface); stroke-width: 3px; stroke-linejoin: round; }
-  .pt-t .muted { fill: var(--fg-2); font-weight: 500; }
-  .obj.sel .pt-t { fill: var(--accent, #4F6BFF); }
+  .pt-t .muted { fill: var(--fg-2); font-weight: 400; }
+  .obj.sel .pt-t { fill: var(--accent); }
   .tx { font-family: var(--font); fill: var(--fg); }
-  .tx.sel { fill: var(--accent, #4F6BFF); }
-  .meas { fill: none; stroke: #CF3A2F; stroke-width: 1.5; stroke-dasharray: 6 3; }
+  .tx.sel { fill: var(--accent); }
+  /* Couleurs d'outil (mesure, calibration) : --accent à l'écran, jamais une couleur de famille. */
+  .meas { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 6 3; }
   .meas.draft { stroke-dasharray: 3 3; }
-  .meas-pt { fill: #CF3A2F; }
-  .meas-t { fill: #CF3A2F; font-family: var(--font); font-weight: 700; paint-order: stroke; stroke: var(--surface); stroke-width: 3px; }
-  .calib { fill: none; stroke: #CF3A2F; stroke-width: 2; vector-effect: non-scaling-stroke; }
+  .meas-pt { fill: var(--accent); }
+  .meas-t { fill: var(--accent); font-family: var(--mono); font-weight: 700; paint-order: stroke; stroke: var(--surface); stroke-width: 3px; }
+  .calib { fill: none; stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; }
   .ruler { position: absolute; pointer-events: none; overflow: hidden; }
   .ruler.top { left: 0; top: 0; width: 100%; height: 18px; }
   .ruler.left { left: 0; top: 0; width: 18px; height: 100%; }
   .rbg { fill: color-mix(in srgb, var(--surface) 88%, transparent); }
   .rt { stroke: var(--fg-2); stroke-width: 1; }
-  .rl { font: 600 9.5px var(--font-mono, monospace); fill: var(--fg-2); }
-  .scalebar { position: absolute; left: 30px; bottom: 14px; display: flex; flex-direction: column; gap: 3px; font: 600 11px var(--font-mono, monospace); color: var(--fg-2); pointer-events: none; }
+  .rl { font: 600 9.5px var(--mono); fill: var(--fg-2); }
+  .scalebar { position: absolute; left: 30px; bottom: 14px; display: flex; flex-direction: column; gap: 3px; font: 600 var(--fs-2xs) var(--mono); color: var(--fg-2); pointer-events: none; }
   .scalebar i { display: block; height: 6px; border: 2px solid var(--fg); border-top: 0; }
-  .legend { position: absolute; right: 12px; bottom: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; display: grid; gap: 4px; font-size: 12.5px; }
+  .legend { position: absolute; right: 12px; bottom: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 8px 10px; display: grid; gap: 4px; font-size: var(--fs-sm); }
   .legend span { display: flex; gap: 8px; align-items: center; }
   .legend i { width: 18px; height: 4px; border-radius: 2px; }
   .pl-3d { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+  .pl-3d:active { cursor: grabbing; }
   .l3.fl { font-size: 13px; fill: var(--fg-2); }
   .l3 { font: 600 11px var(--font); fill: var(--fg); paint-order: stroke; stroke: var(--surface); stroke-width: 3px; }
   .hint3 { position: absolute; left: 14px; bottom: 10px; }
   .pl-side { border-left: 1px solid var(--line); padding: 12px; overflow: auto; display: flex; flex-direction: column; gap: 6px; background: var(--surface); }
-  .side-tabs { flex-wrap: wrap; margin-bottom: 6px; }
-  .side-tabs button { font-size: 12.5px; padding: 6px 8px; }
-  .pl-side h4 { margin: 12px 0 2px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--fg-2); }
-  .li { display: flex; flex-direction: column; gap: 2px; text-align: left; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); font: inherit; color: inherit; cursor: pointer; }
-  .li:hover:not(:disabled) { border-color: var(--fg-3); }
-  .li.on { border-color: var(--accent, #4F6BFF); box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--accent, #4F6BFF) 25%, transparent); }
+  .side-panel { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+  .pl-side .eyebrow { margin: 12px 0 2px; }
+  .sel-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .sel-h .eyebrow { margin: 0; }
+  .li { display: flex; flex-direction: column; gap: 2px; text-align: left; padding: 8px 10px; border-radius: var(--r-sm); border: 1px solid var(--line); background: var(--surface); font: inherit; color: inherit; cursor: pointer; }
+  .li:hover:not(:disabled) { border-color: var(--line-2); }
+  .li:disabled { cursor: not-allowed; }
+  .li.on { border-color: var(--accent); box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--accent) 25%, transparent); }
   .li.tr { cursor: default; }
   .li .nm { display: flex; gap: 6px; align-items: center; }
   .ra { display: flex; gap: 6px; margin-top: 4px; }
-  .warn-t { color: var(--warn, #B78400); }
-  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--c); flex: none; }
+  .warn-t { color: var(--warn); }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--c); flex: none; }
   .lnk { display: flex; gap: 6px; align-items: center; justify-content: space-between; }
   .lnk select { flex: 1; }
-  .field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
-  .input.sm { height: 34px; }
   .row-btns { display: flex; gap: 8px; flex-wrap: wrap; }
-  .ferr { color: var(--err); font-size: 13px; }
-  .empty-card { padding: 28px; text-align: center; display: grid; gap: 10px; justify-items: center; }
+  .side-panel .row-btns { margin-top: 8px; }
+  .plain { border: 0; padding: 0; margin: 0; min-width: 0; display: grid; gap: 14px; }
   @media (max-width: 1000px) { .pl-body { grid-template-columns: 1fr; height: auto; } .pl-canvas { height: 64vh; } .pl-side { border-left: 0; border-top: 1px solid var(--line); } }
 </style>

@@ -5,13 +5,24 @@
   // exemplaire une fois par nature) ; liens ; adressage DMX. Enregistrement automatique.
   import { untrack, onDestroy } from 'svelte';
   import Icon from '../../components/Icon.svelte';
-  import { api, ApiError } from '../../lib/api';
+  import EmptyState from '../../components/EmptyState.svelte';
+  import HeadActions from '../../components/HeadActions.svelte';
+  import Loading from '../../components/Loading.svelte';
+  import Menu from '../../components/Menu.svelte';
+  import Seg from '../../components/Seg.svelte';
+  import SaveState from '../../components/SaveState.svelte';
+  import ShortcutsHelp from '../../components/ShortcutsHelp.svelte';
+  import { autosave } from '../../lib/autosave';
+  import { canvasKeys } from '../../lib/canvaskeys';
+  import { route } from '../../lib/router.svelte';
+  import { pageHead, plural } from '../../lib/pagehead.svelte';
+  import { api } from '../../lib/api';
   import { can } from '../../lib/session.svelte';
   import { toast, fail } from '../../lib/toast.svelte';
   import { join, sendCursor, sendSelection, type PresenceMember } from '../../lib/live.svelte';
   import RemoteCursors from '../../components/RemoteCursors.svelte';
   import { relative } from '../../lib/format';
-  import { loadRefs, refList, refName, fnColor } from '../../lib/catalog.svelte';
+  import { loadRefs, refList, refName, refById, familyColor } from '../../lib/catalog.svelte';
   import { withLightTheme, standalone, pdf as toPdf, save as saveFile } from '../../lib/svgexport';
   import type { Paper } from '../../lib/sheet';
   import type { ProjectView } from '../../lib/projects';
@@ -31,16 +42,29 @@
   const pid = $derived(view.project.id);
   const canDesign = $derived(can('conception', 'ecriture'));
   const NATURES: [Nature, string, string][] = [['schematic', 'Schémas de principe', 'Schéma'], ['video', 'Implantations vidéo', 'Vidéo'], ['audio', 'Implantations audio', 'Audio'], ['lighting', 'Plans de feu', 'Plan de feu']];
+  /** Libellé d'une nouvelle page, par nature (menu « Nouvelle page »). */
+  const NEW_LABEL: Record<Nature, string> = { schematic: 'Schéma de principe', video: 'Implantation vidéo', audio: 'Implantation audio', lighting: 'Plan de feu' };
+  // Couleurs fixes du papier (la page est toujours blanche, à l'écran comme en PDF).
+  const INK = '#15171A', ZONE = '#3A7BD5';
   const NFUN: Record<Nature, string[]> = { schematic: [], video: ['V'], audio: ['A'], lighting: ['L'] };
   const SIZES: Record<string, [number, number]> = { A4: [210, 297], A3: [297, 420], A2: [420, 594], A1: [594, 841], A0: [841, 1189] };
 
   let idx = $state<Index | null>(null);
+  pageHead(() => ({ count: idx?.pages.length ? plural(idx.pages.length, 'page') : '' }));
   let pageId = $state<string | null>(null);
   let pg = $state<Page | null>(null);
   const mine = $derived(!!pg?.lock?.mine);
 
-  async function loadIndex() { try { idx = await api.get(`/projects/${pid}/drawings`); if (idx && (!pageId || !idx.pages.some((p) => p.id === pageId)) && idx.pages[0]) await openPage(idx.pages[0].id); } catch (e) { fail(e); } }
-  async function loadPage() { if (!pageId) { pg = null; return; } try { pg = await api.get(`/projects/${pid}/drawings/${pageId}`); dirty = false; } catch (e) { fail(e); } }
+  async function loadIndex() {
+    try {
+      idx = await api.get(`/projects/${pid}/drawings`);
+      // Page ouverte : celle de l'adresse (?page=) si elle existe encore, sinon la première.
+      const wanted = route.query.get('page');
+      const first = idx?.pages.find((p) => p.id === wanted) ?? idx?.pages[0];
+      if (idx && (!pageId || !idx.pages.some((p) => p.id === pageId)) && first) await openPage(first.id);
+    } catch (e) { fail(e); }
+  }
+  async function loadPage() { if (!pageId) { pg = null; return; } try { pg = await api.get(`/projects/${pid}/drawings/${pageId}`); saver.reset(); } catch (e) { fail(e); } }
   async function openPage(id: string) {
     if (pageId === id) return;
     await flush(); await release();
@@ -49,6 +73,16 @@
     if (canDesign) await take();
   }
   $effect(() => { view; untrack(() => { loadRefs(); if (!idx) loadIndex(); }); });
+  /** Reflète la page ouverte dans l'adresse, sans nouvelle entrée d'historique. */
+  function setQuery(p: Record<string, string | null>) {
+    const q = new URLSearchParams(location.search);
+    for (const [kk, v] of Object.entries(p)) { if (v) q.set(kk, v); else q.delete(kk); }
+    const qs = q.toString(), to = location.pathname + (qs ? `?${qs}` : '');
+    if (to === location.pathname + location.search) return;
+    history.replaceState(history.state, '', to);
+    route.query = new URLSearchParams(location.search);
+  }
+  $effect(() => { const p = pageId; if (p) untrack(() => setQuery({ page: p })); });
 
   // ----- Main -----
   let beat: ReturnType<typeof setInterval> | null = null;
@@ -70,11 +104,25 @@
     }
     if (c.kind === 'drawing') { if (!mine || c.id !== pageId) { loadIndex(); if (c.id === pageId || c.id === 'dmx') loadPage(); } }
   }));
-  onDestroy(() => { stopBeat(); if (saveT) { clearTimeout(saveT); } if (dirty && pg && mine) { void persist(); } if (pageId && pg?.lock?.mine) fetch(`/api/projects/${pid}/drawings/${pageId}/lock`, { method: 'DELETE', headers: { 'X-Strata-Request': '1' }, keepalive: true }); });
 
-  // ----- Enregistrement automatique -----
-  let dirty = $state(false), saving = $state(false);
-  let saveT: ReturnType<typeof setTimeout> | null = null;
+  // ----- Enregistrement automatique (lib/autosave) -----
+  // Écriture 700 ms après la dernière modification ; en cas d'échec réseau, le dessin local est
+  // gardé et on réessaie ; en cas de conflit avec une autre modification, on laisse choisir.
+  const saver = autosave({
+    save: async () => {
+      if (!pg) return;
+      const { id, nature, rev, lock, ...data } = pg; void nature; void lock;
+      const r = await api.put<{ rev: number }>(`/projects/${pid}/drawings/${id}`, { rev, ...data });
+      if (pg && pg.id === id) pg.rev = r.rev;
+      refreshIndex();
+    },
+    /** Conflit, « garder ma version » : on reprend la révision du serveur, puis on réécrit. */
+    keepMine: async () => { if (!pg) return; const cur = await api.get<{ rev: number }>(`/projects/${pid}/drawings/${pg.id}`); pg.rev = cur.rev; },
+    reload: () => loadPage(),
+  });
+  const flush = () => saver.flush();
+  // Après le vidage de l'enregistrement automatique (créé plus haut) : on rend la main.
+  onDestroy(() => { stopBeat(); if (pageId && pg?.lock?.mine) fetch(`/api/projects/${pid}/drawings/${pageId}/lock`, { method: 'DELETE', headers: { 'X-Strata-Request': '1' }, keepalive: true }); });
   // Annuler / rétablir sur 50 états : on garde l'état validé avant chaque modification.
   let committed = '';
   let undoStack = $state<string[]>([]), redoStack = $state<string[]>([]);
@@ -84,7 +132,7 @@
     const now = JSON.stringify($state.snapshot(pg.elements));
     if (record && now !== committed) { undoStack = [...undoStack.slice(-49), committed]; redoStack = []; }
     committed = now;
-    dirty = true; lastAction = Date.now(); if (saveT) clearTimeout(saveT); saveT = setTimeout(persist, 700);
+    lastAction = Date.now(); saver.changed();
   }
   function undo() { if (!pg || !undoStack.length) return; redoStack = [...redoStack, JSON.stringify($state.snapshot(pg.elements))]; pg.elements = JSON.parse(undoStack.at(-1)!); undoStack = undoStack.slice(0, -1); sel = new Set(); changed(false); }
   function redo() { if (!pg || !redoStack.length) return; undoStack = [...undoStack, JSON.stringify($state.snapshot(pg.elements))]; pg.elements = JSON.parse(redoStack.at(-1)!); redoStack = redoStack.slice(0, -1); sel = new Set(); changed(false); }
@@ -97,33 +145,17 @@
     clip = copies.map((c) => structuredClone(c));
     pg.elements = [...pg.elements, ...copies]; sel = new Set(copies.map((c) => c.id)); changed();
   }
-  // Enregistrement : en cas d'échec, le dessin local est gardé (rien n'est effacé) et on
-  // réessaie ; en cas de conflit avec une autre modification, on laisse choisir.
-  let failed = $state(false), conflict = $state(false);
-  let retryT: ReturnType<typeof setTimeout> | null = null;
-  async function persist() {
-    if (!pg || !dirty) return;
-    saveT = null; saving = true; dirty = false;
-    const { id, nature, rev, lock, ...data } = pg; void nature; void lock;
-    try { const r = await api.put<{ rev: number }>(`/projects/${pid}/drawings/${id}`, { rev, ...data }); if (pg && pg.id === id) pg.rev = r.rev; failed = false; refreshIndex(); }
-    catch (e) {
-      dirty = true;
-      if (e instanceof ApiError && e.code === 'stale') conflict = true;
-      else { failed = true; if (retryT) clearTimeout(retryT); retryT = setTimeout(() => { retryT = null; if (failed && dirty) persist(); }, 5000); }
-    } finally { saving = false; }
-  }
-  /** Conflit : garder ma version (écrase l'autre) ou reprendre la version enregistrée. */
-  async function keepMine() {
-    if (!pg) return;
-    try { const cur = await api.get<{ rev: number }>(`/projects/${pid}/drawings/${pg.id}`); pg.rev = cur.rev; conflict = false; dirty = true; await persist(); } catch (e) { fail(e); }
-  }
-  async function takeTheirs() { conflict = false; dirty = false; failed = false; await loadPage(); }
-  async function flush() { if (saveT) { clearTimeout(saveT); saveT = null; } if (dirty) await persist(); }
   async function refreshIndex() { try { idx = await api.get(`/projects/${pid}/drawings`); } catch { /* plus tard */ } }
 
   // ----- Pages -----
   async function addPage(n: Nature) { try { const r = await api.post<{ id: string }>(`/projects/${pid}/drawings`, { nature: n }); await refreshIndex(); await openPage(r.id); } catch (e) { fail(e); } }
-  async function delPage() { if (!pg || !(await ask({ title: `Supprimer la page « ${pg.name} » ?`, confirmLabel: 'Supprimer', danger: true }))) return; try { await api.post(`/projects/${pid}/drawings/${pg.id}/delete`); stopBeat(); pageId = null; pg = null; await loadIndex(); } catch (e) { fail(e); } }
+  async function delPage() {
+    if (!pg) return;
+    const { id, name } = pg;
+    if (!(await ask({ title: `Supprimer la page « ${name} » ?`, text: 'Tout ce qui est dessiné sur cette page est supprimé avec elle.', confirmLabel: 'Supprimer', danger: true, run: () => api.post(`/projects/${pid}/drawings/${id}/delete`) }))) return;
+    saver.reset(); stopBeat(); pageId = null; pg = null; await loadIndex();
+    toast(`Page « ${name} » supprimée.`);
+  }
   async function movePage(p: PageSum, d: number) {
     const list = idx!.pages.filter((x) => x.nature === p.nature).map((x) => x.id); const i = list.indexOf(p.id), j = i + d; if (j < 0 || j >= list.length) return;
     [list[i], list[j]] = [list[j]!, list[i]!];
@@ -179,8 +211,11 @@
     if (l.style === 'curve') return { s: [x1 + g.dx, y1, x1, y1], e: [x2 - g.dx, y2, x2, y2] };
     return { s: [x2, y2, x1, y1], e: [x1, y1, x2, y2] };
   }
-  const linkColor = (l: El) => l.color ?? (l.signal_id ? sigColor(l.signal_id) : '#15171A');
-  function sigColor(id: string) { const s = refList('signals').find((x) => x.id === id) as any; return s?.data?.color || fnColor(s?.data?.function) || '#15171A'; }
+  // Couleur d'un lien qui porte un signal = famille du signal, non modifiable (charte § 4) ;
+  // jamais la couleur propre du signal. Papier : hexadécimal du référentiel (screen: false).
+  const sigFamily = (id: string | null | undefined): string | null => (id ? ((refById('signals', id)?.data?.function as string | undefined) ?? null) : null);
+  const linkColor = (l: El) => (l.signal_id ? familyColor(sigFamily(l.signal_id), { screen: false }) : l.color ?? INK);
+  const famName = (f: string | null) => (f ? refName('functions', f) || f : 'Sans famille');
 
   // DMX
   const conflictKeys = $derived(new Set((idx?.dmx.conflicts ?? []).flat()));
@@ -319,24 +354,36 @@
     const copies = selList.filter((e) => e.type !== 'equipment' && e.type !== 'link').map((e) => { const c = structuredClone($state.snapshot(e)) as El; c.id = uid(); if (c.type === 'line') c.points = c.points.map((q: number[]) => [q[0]! + 5, q[1]! + 5]); else { c.x += 5; c.y += 5; } return c; });
     if (!copies.length) return; pg.elements = [...pg.elements, ...copies]; sel = new Set(copies.map((c) => c.id)); changed();
   }
-  function key(e: KeyboardEvent) {
-    if ((e.target as HTMLElement)?.closest('input,textarea,select')) return;
-    if (e.key === 'Escape') { setTool('select'); sel = new Set(); }
-    if (e.key === 'Enter' && tool === 'line') finishLine();
-    if (!mine) return;
-    if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); removeSel(); }
-    if ((e.ctrlKey || e.metaKey) && e.key === 'd') { e.preventDefault(); duplicateSel(); }
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); }
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') { copySel(); }
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'x') { copySel(); removeSel(); }
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') { e.preventDefault(); paste(); }
-    if (e.key.startsWith('Arrow') && sel.size) {
-      e.preventDefault(); const st = e.shiftKey ? 10 : (pg?.grid_mm || 1), dx = e.key === 'ArrowLeft' ? -st : e.key === 'ArrowRight' ? st : 0, dy = e.key === 'ArrowUp' ? -st : e.key === 'ArrowDown' ? st : 0;
-      pg!.elements = pg!.elements.map((el) => (!sel.has(el.id) ? el : el.type === 'line' ? { ...el, points: el.points.map((q: number[]) => [q[0]! + dx, q[1]! + dy]) } : el.type === 'link' ? el : { ...el, x: el.x + dx, y: el.y + dy }));
-      changed();
-    }
+  function nudge(e: KeyboardEvent) {
+    const st = e.shiftKey ? 10 : (pg?.grid_mm || 1), dx = e.key === 'ArrowLeft' ? -st : e.key === 'ArrowRight' ? st : 0, dy = e.key === 'ArrowUp' ? -st : e.key === 'ArrowDown' ? st : 0;
+    pg!.elements = pg!.elements.map((el) => (!sel.has(el.id) ? el : el.type === 'line' ? { ...el, points: el.points.map((q: number[]) => [q[0]! + dx, q[1]! + dy]) } : el.type === 'link' ? el : { ...el, x: el.x + dx, y: el.y + dy }));
+    changed();
   }
+  // Raccourcis du canevas (lib/canvaskeys) : rien quand une boîte est ouverte ni pendant une saisie.
+  let help = $state(false);
+  $effect(() => canvasKeys({
+    onEscape: () => { setTool('select'); sel = new Set(); },
+    onDelete: () => { if (mine) removeSel(); },
+    onUndo: () => { if (mine) undo(); },
+    onRedo: () => { if (mine) redo(); },
+    onSelectAll: () => { if (pg) sel = new Set(pg.elements.map((x) => x.id)); },
+    onKey: (e) => {
+      const mod = e.ctrlKey || e.metaKey, kk = e.key.toLowerCase();
+      if (e.key === 'Enter' && tool === 'line') { finishLine(); return true; }
+      if (e.key === '?') { help = true; return true; }
+      if (!mine) return false;
+      if (mod && kk === 'd') { duplicateSel(); return true; }
+      if (mod && kk === 'c' && sel.size) { copySel(); return true; }
+      if (mod && kk === 'x' && sel.size) { copySel(); removeSel(); return true; }
+      if (mod && kk === 'v') { paste(); return true; }
+      if (e.key.startsWith('Arrow') && sel.size && !mod) { nudge(e); return true; }
+      return false;
+    },
+  }));
+  const SHORTCUTS: [string, [string, string][]][] = [
+    ['Sélection', [['Clic', 'Choisir un élément'], ['Maj + clic', 'Ajouter ou retirer de la sélection'], ['Ctrl + A', 'Tout choisir'], ['Échap', 'Désélectionner, revenir à la sélection'], ['Molette', 'Zoomer'], ['Glisser le fond', 'Déplacer la vue']]],
+    ['Édition', [['Suppr', 'Supprimer la sélection'], ['Flèches', 'Déplacer d’un pas de grille'], ['Maj + flèches', 'Déplacer de 10 mm'], ['Ctrl + D', 'Dupliquer'], ['Ctrl + C, X, V', 'Copier, couper, coller'], ['Ctrl + Z', 'Annuler'], ['Ctrl + Y', 'Rétablir'], ['Entrée', 'Terminer la ligne'], ['?', 'Afficher cette aide']]],
+  ];
 
   // ----- Équipements -----
   let side = $state<'place' | 'props' | 'page' | 'dmx'>('place');
@@ -382,19 +429,24 @@
   }
   async function suggestFor(e: El) { try { const p = await api.post<Patch>(`/projects/${pid}/drawings/dmx/suggest`, { instance_id: e.instance_id, mode: e.dmx?.mode ?? null }); patchSel({ dmx: { ...p, mode: e.dmx?.mode ?? null } }); } catch (x) { fail(x); } }
 
-  // ----- Légende -----
-  const legend = $derived.by(() => {
-    if (!pg) return [] as [string, string][];
-    const m = new Map<string, string>();
-    for (const e of pg.elements) if (e.type === 'link' && e.signal_id) m.set(refName('signals', e.signal_id), linkColor(e));
-    for (const e of pg.elements) if (e.type === 'zone' && e.label) m.set(e.label, e.color ?? '#3A7BD5');
-    if (pg.nature === 'lighting') {
-      const c = new Map<string, number>();
-      for (const e of pg.elements) if (e.type === 'equipment') c.set(e.snapshot.name, (c.get(e.snapshot.name) ?? 0) + 1);
-      for (const [n, v] of c) m.set(`${v} × ${n}`, '');
+  // ----- Légende (charte § 4) : « Familles de signal », puis un bloc « Zones », puis les projecteurs -----
+  type LegRow = { kind: 'h' | 'line' | 'zone' | 'txt'; text: string; color?: string };
+  const legend = $derived.by((): LegRow[] => {
+    if (!pg) return [];
+    const fam = new Map<string, string>(), zones = new Map<string, string>(), counts = new Map<string, number>();
+    for (const e of pg.elements) {
+      if (e.type === 'link' && e.signal_id) fam.set(famName(sigFamily(e.signal_id)), linkColor(e));
+      if (e.type === 'zone' && e.label) zones.set(e.label, e.color ?? ZONE);
+      if (pg.nature === 'lighting' && e.type === 'equipment') counts.set(e.snapshot.name, (counts.get(e.snapshot.name) ?? 0) + 1);
     }
-    return [...m.entries()];
+    const o: LegRow[] = [];
+    if (fam.size) { o.push({ kind: 'h', text: 'FAMILLES DE SIGNAL' }); for (const [t, c] of fam) o.push({ kind: 'line', text: t, color: c }); }
+    if (zones.size) { o.push({ kind: 'h', text: 'ZONES' }); for (const [t, c] of zones) o.push({ kind: 'zone', text: t, color: c }); }
+    if (counts.size) { o.push({ kind: 'h', text: 'PROJECTEURS' }); for (const [n, v] of counts) o.push({ kind: 'txt', text: `${v} × ${n}` }); }
+    return o;
   });
+  const cut = (t: string, n: number) => (t.length > n ? t.slice(0, n - 1) + '…' : t);
+  const SIDE_TABS = $derived([{ value: 'place' as const, label: 'À placer', title: 'Équipements à placer', count: toPlace.length }, { value: 'props' as const, label: 'Sélection' }, { value: 'page' as const, label: 'Page' }, ...(pg?.nature === 'lighting' ? [{ value: 'dmx' as const, label: 'DMX' }] : [])]);
 
   // ----- Export PDF -----
   let exporting = $state(false);
@@ -418,30 +470,41 @@
   const pageName = (id: string) => idx?.pages.find((p) => p.id === id)?.name ?? '';
 </script>
 
-<svelte:window onkeydown={key} onbeforeunload={(e) => { if (dirty || saving) { e.preventDefault(); void persist(); } }} />
-<input type="file" accept="image/png,image/jpeg,image/svg+xml" hidden bind:this={imgInput} onchange={(e) => { onImage((e.target as HTMLInputElement).files?.[0]); (e.target as HTMLInputElement).value = ''; }}>
+{#snippet newPage()}
+  <Menu label="Nouvelle page" icon="plus" btnClass="btn primary" menuLabel="Nature de la nouvelle page">
+    {#snippet children()}{#each NATURES as [n]}<button role="menuitem" onclick={() => addPage(n)}>{NEW_LABEL[n]}</button>{/each}{/snippet}
+  </Menu>
+{/snippet}
+<!-- Champ numérique avec unité en suffixe (enregistré au change, comme le reste du panneau). -->
+{#snippet num(id: string, label: string, value: number | null | undefined, unit: string, ro: boolean, set: (v: number) => void, min?: number, max?: number, step?: number, mono = false)}
+  <div class="field"><label for={id}>{label}</label><div class:unit-in={!!unit}><input class="input sm" class:mono {id} type="number" {min} {max} {step} value={value ?? ''} disabled={ro} onchange={(e) => set(Number((e.target as HTMLInputElement).value))}>{#if unit}<span class="u">{unit}</span>{/if}</div></div>
+{/snippet}
 
-{#if !idx}<span class="spin"></span>
+<input type="file" accept="image/png,image/jpeg,image/svg+xml" hidden bind:this={imgInput} onchange={(e) => { onImage((e.target as HTMLInputElement).files?.[0]); (e.target as HTMLInputElement).value = ''; }}>
+{#if canDesign}<HeadActions>{@render newPage()}</HeadActions>{/if}
+
+{#if !idx}<Loading label="Chargement des dessins" />
 {:else}
   <div class="dw">
-    <nav class="card dw-pages" aria-label="Pages">
+    <nav class="card compact dw-pages" aria-label="Pages">
       {#each NATURES as [n, title]}
         <div class="nat">
-          <div class="nat-h"><span>{title}</span>{#if canDesign}<button class="icon-btn sm" aria-label="Nouvelle page : {title}" onclick={() => addPage(n)}><Icon name="plus" size="sm" /></button>{/if}</div>
+          <div class="nat-h"><span class="eyebrow">{title}</span>{#if canDesign}<button class="icon-btn sm" aria-label="Nouvelle page : {NEW_LABEL[n]}" title="Nouvelle page : {NEW_LABEL[n]}" onclick={() => addPage(n)}><Icon name="plus" size="sm" /></button>{/if}</div>
           {#each idx.pages.filter((p) => p.nature === n) as p, i (p.id)}
             <div class="pg" class:on={p.id === pageId}>
-              <button class="pg-b" onclick={() => openPage(p.id)}><span>{p.name}</span><span class="muted small">{p.count} élément{p.count > 1 ? 's' : ''}</span></button>
-              {#if canDesign}<span class="pg-m"><button class="icon-btn xs" aria-label="Monter" disabled={i === 0} onclick={() => movePage(p, -1)}>↑</button><button class="icon-btn xs" aria-label="Descendre" disabled={i === idx.pages.filter((x) => x.nature === n).length - 1} onclick={() => movePage(p, 1)}>↓</button></span>{/if}
+              <button class="pg-b" aria-current={p.id === pageId ? 'page' : undefined} onclick={() => openPage(p.id)}><span>{p.name}</span><span class="muted small">{p.count} élément{p.count > 1 ? 's' : ''}</span></button>
+              {#if canDesign}<span class="pg-m"><button class="icon-btn xs" aria-label="Monter « {p.name} »" title="Monter" disabled={i === 0} onclick={() => movePage(p, -1)}>↑</button><button class="icon-btn xs" aria-label="Descendre « {p.name} »" title="Descendre" disabled={i === idx.pages.filter((x) => x.nature === n).length - 1} onclick={() => movePage(p, 1)}>↓</button></span>{/if}
             </div>
           {:else}<span class="muted small none">Aucune page</span>{/each}
         </div>
       {/each}
     </nav>
 
-    {#if !pg}
-      <section class="card empty-card"><h3>Dessins et plan de feu</h3><p class="muted">Schémas de principe, implantations vidéo et audio, plans de feu avec adressage DMX. Créez une page avec le bouton + de sa nature.</p></section>
+    {#if !idx.pages.length}
+      <EmptyState icon="pen" message="Aucune page de dessin" hint="Choisissez la nature de la première page : schéma de principe, implantation vidéo ou audio, plan de feu avec adressage DMX." action={canDesign ? newPage : undefined} />
+    {:else if !pg}<Loading label="Chargement de la page" />
     {:else}
-      <div class="card dw-main" style="padding:0;overflow:hidden">
+      <div class="card flush dw-main">
         {#if !mine || requested}<div class="lockbar" class:mine class:other={!mine}>
           {#if mine}
         <span class="lk"><span class="key-i"><Icon name="lock" /></span><span><b>{requested}</b> demande la main.</span></span>
@@ -456,27 +519,26 @@
         </div>{/if}
         <div class="dtool">
           {#if mine}
-            {#if conflict}<span class="save-st conflict" role="alert">Modifiée ailleurs entre-temps · <button class="linkbtn" onclick={keepMine}>Garder ma version</button> · <button class="linkbtn" onclick={takeTheirs}>Reprendre l’autre</button></span>
-            {:else if failed}<span class="save-st conflict" role="alert">Non enregistré (réseau) · <button class="linkbtn" onclick={() => persist()}>Réessayer</button></span>
-            {:else}<span class="save-st muted small" aria-live="polite">{saving ? 'Enregistrement…' : dirty ? 'Modifié' : 'Enregistré'}</span>{/if}
             <div class="seg" role="toolbar" aria-label="Outils">
               {#each [['select', 'Sélection', 'hand'], ['text', 'Texte', 'pen'], ['rect', 'Rectangle', 'box'], ['ellipse', 'Ellipse', 'radio'], ['line', 'Ligne', 'arrowr'], ['zone', 'Zone', 'grid'], ['link', 'Lien', 'syn'], ['image', 'Image', 'file']] as [t, l, ic]}
-                <button class:on={tool === t && !placing} title={l} aria-label={l} onclick={() => setTool(t as Tool)}><Icon name={ic} size="sm" /></button>
+                <button class:on={tool === t && !placing} aria-pressed={tool === t && !placing} title={l} aria-label={l} onclick={() => setTool(t as Tool)}><Icon name={ic} size="sm" /></button>
               {/each}
             </div>
             <button class="icon-btn sm" aria-label="Annuler (Ctrl+Z)" title="Annuler (Ctrl+Z)" disabled={!undoStack.length} onclick={undo}><Icon name="undo" size="sm" /></button>
-            <button class="icon-btn sm" aria-label="Rétablir (Ctrl+Maj+Z)" title="Rétablir (Ctrl+Maj+Z)" disabled={!redoStack.length} onclick={redo}><span style="display:inline-flex;transform:scaleX(-1)"><Icon name="undo" size="sm" /></span></button>
+            <button class="icon-btn sm" aria-label="Rétablir (Ctrl+Y)" title="Rétablir (Ctrl+Y)" disabled={!redoStack.length} onclick={redo}><span class="flip"><Icon name="undo" size="sm" /></span></button>
             <button class="btn sm ghost" onclick={sync} title="Met à jour les blocs depuis la nomenclature et retire les orphelins"><Icon name="refresh" size="sm" />Synchroniser</button>
           {/if}
           <span style="flex:1"></span>
-          <span class="muted small">{Math.round(zoom * 100)} %</span>
-          <button class="icon-btn sm" aria-label="Recadrer" onclick={() => { zoom = 1; panX = 0; panY = 0; }}><Icon name="fit" /></button>
-          <button class="btn sm ghost" disabled={exporting} onclick={exportPdf}><Icon name="download" size="sm" />PDF</button>
-          {#if mine}<button class="icon-btn sm" aria-label="Supprimer la page" onclick={delPage}><Icon name="trash" size="sm" /></button>{/if}
+          {#if mine}<SaveState status={$saver} onretry={() => saver.flush()} />{/if}
+          <span class="muted small mono">{Math.round(zoom * 100)} %</span>
+          <button class="icon-btn sm" aria-label="Recadrer" title="Recadrer" onclick={() => { zoom = 1; panX = 0; panY = 0; }}><Icon name="fit" /></button>
+          <button class="icon-btn sm" aria-label="Raccourcis clavier (?)" title="Raccourcis clavier (?)" onclick={() => (help = true)}><Icon name="keys" /></button>
+          <button class="btn sm ghost" disabled={exporting} onclick={exportPdf}>{#if exporting}<span class="spin" aria-hidden="true"></span>{:else}<Icon name="download" size="sm" />{/if}Exporter le PDF</button>
+          {#if mine}<button class="icon-btn sm danger" aria-label="Supprimer la page" title="Supprimer la page" onclick={delPage}><Icon name="trash" size="sm" /></button>{/if}
         </div>
-        {#if tool === 'line'}<div class="hint">Ligne : cliquez les points ; double-clic ou Entrée pour terminer. <button class="btn sm primary" disabled={lineDraft.length < 2} onclick={finishLine}>Terminer</button></div>
-        {:else if tool === 'link'}<div class="hint">Lien : cliquez l’origine puis la cible (un élément ou un point libre). {#if linkFrom}<b>Origine choisie.</b>{/if}</div>
-        {:else if placing}<div class="hint">Cliquez sur la page pour poser <b>{idx.bom.find((b) => b.instance_id === placing)?.snapshot.name}</b>. <button class="btn sm ghost" onclick={() => (placing = null)}>Annuler</button></div>{/if}
+        {#if tool === 'line'}<div class="hint"><span>Ligne : cliquez les points ; double-clic ou Entrée pour terminer.</span><span class="acts"><button class="btn sm ghost" onclick={() => setTool('select')}>Annuler</button><button class="btn sm primary" disabled={lineDraft.length < 2} onclick={finishLine}>Terminer</button></span></div>
+        {:else if tool === 'link'}<div class="hint"><span>Lien : cliquez l’origine puis la cible (un élément ou un point libre). {#if linkFrom}<b>Origine choisie.</b>{/if}</span><span class="acts"><button class="btn sm ghost" onclick={() => setTool('select')}>Annuler</button></span></div>
+        {:else if placing}<div class="hint"><span>Cliquez sur la page pour poser <b>{idx.bom.find((b) => b.instance_id === placing)?.snapshot.name}</b>.</span><span class="acts"><button class="btn sm ghost" onclick={() => (placing = null)}>Annuler</button></span></div>{/if}
 
         <div class="dw-body">
           <div class="dw-canvas" bind:clientWidth={wrapW} bind:clientHeight={wrapH}>
@@ -487,33 +549,33 @@
                 {#if pg.grid_mm > 0}<rect width={size[0]} height={size[1]} fill="url(#dw-grid)" class="ui-only" pointer-events="none" />{/if}
                 {#each pg.elements.filter((e) => e.type === 'zone') as e (e.id)}
                   <g data-el={e.id} class="el" class:sel={isSel(e.id)}>
-                    <rect x={e.x} y={e.y} width={e.w} height={e.h} rx="2" fill={e.color ?? '#3A7BD5'} fill-opacity=".1" stroke={e.color ?? '#3A7BD5'} stroke-width=".4" stroke-dasharray="2 1.2" />
-                    <text x={e.x + 2} y={e.y + 4.5} font-size="3.4" font-weight="700" fill={e.color ?? '#3A7BD5'}>{e.label}</text>
+                    <rect x={e.x} y={e.y} width={e.w} height={e.h} rx="2" fill={e.color ?? ZONE} fill-opacity=".1" stroke={e.color ?? ZONE} stroke-width=".4" stroke-dasharray="2 1.2" />
+                    <text x={e.x + 2} y={e.y + 4.5} font-size="3.4" font-weight="700" fill={e.color ?? ZONE}>{e.label}</text>
                   </g>
                 {/each}
                 {#each pg.elements.filter((e) => e.type !== 'zone' && e.type !== 'link') as e (e.id)}
                   <g data-el={e.id} class="el" class:sel={isSel(e.id)} class:rsel={rsel.has(e.id)} style="--rs:{rsel.get(e.id) ?? 'transparent'}" class:bad={e.type === 'equipment' && conflictKeys.has(`${pg.id}:${e.id}`)}>
                     {#if e.type === 'text'}
-                      <text x={e.x} y={e.y} font-size={e.size} font-weight={e.bold ? 700 : 400} fill={e.color ?? '#15171A'}>{#each String(e.text).split('\n') as ln, i}<tspan x={e.x} dy={i ? e.size * 1.25 : 0}>{ln}</tspan>{/each}</text>
+                      <text x={e.x} y={e.y} font-size={e.size} font-weight={e.bold ? 700 : 400} fill={e.color ?? INK}>{#each String(e.text).split('\n') as ln, i}<tspan x={e.x} dy={i ? e.size * 1.25 : 0}>{ln}</tspan>{/each}</text>
                     {:else if e.type === 'rect'}
-                      <rect x={e.x} y={e.y} width={e.w} height={e.h} rx={e.radius} fill={e.fill ?? 'none'} stroke={e.stroke ?? '#15171A'} stroke-width={e.width} pointer-events="all" />
+                      <rect x={e.x} y={e.y} width={e.w} height={e.h} rx={e.radius} fill={e.fill ?? 'none'} stroke={e.stroke ?? INK} stroke-width={e.width} pointer-events="all" />
                     {:else if e.type === 'ellipse'}
-                      <ellipse cx={e.x + e.w / 2} cy={e.y + e.h / 2} rx={e.w / 2} ry={e.h / 2} fill={e.fill ?? 'none'} stroke={e.stroke ?? '#15171A'} stroke-width={e.width} pointer-events="all" />
+                      <ellipse cx={e.x + e.w / 2} cy={e.y + e.h / 2} rx={e.w / 2} ry={e.h / 2} fill={e.fill ?? 'none'} stroke={e.stroke ?? INK} stroke-width={e.width} pointer-events="all" />
                     {:else if e.type === 'line'}
-                      <polyline points={e.points.map((p: number[]) => p.join(',')).join(' ')} fill="none" stroke={e.stroke ?? '#15171A'} stroke-width={e.width} stroke-dasharray={e.dash ? '2 1.2' : undefined} />
+                      <polyline points={e.points.map((p: number[]) => p.join(',')).join(' ')} fill="none" stroke={e.stroke ?? INK} stroke-width={e.width} stroke-dasharray={e.dash ? '2 1.2' : undefined} />
                       <polyline points={e.points.map((p: number[]) => p.join(',')).join(' ')} fill="none" stroke="transparent" stroke-width="3" class="ui-only" />
-                      {#if e.arrow_end}{@const n = e.points.length}<polygon points={arrow(e.points[n - 2][0], e.points[n - 2][1], e.points[n - 1][0], e.points[n - 1][1], e.width)} fill={e.stroke ?? '#15171A'} />{/if}
-                      {#if e.arrow_start}<polygon points={arrow(e.points[1][0], e.points[1][1], e.points[0][0], e.points[0][1], e.width)} fill={e.stroke ?? '#15171A'} />{/if}
+                      {#if e.arrow_end}{@const n = e.points.length}<polygon points={arrow(e.points[n - 2][0], e.points[n - 2][1], e.points[n - 1][0], e.points[n - 1][1], e.width)} fill={e.stroke ?? INK} />{/if}
+                      {#if e.arrow_start}<polygon points={arrow(e.points[1][0], e.points[1][1], e.points[0][0], e.points[0][1], e.width)} fill={e.stroke ?? INK} />{/if}
                     {:else if e.type === 'image'}
                       <image href="/api/projects/{pid}/plans/files/{e.file}" x={e.x} y={e.y} width={e.w} height={e.h} preserveAspectRatio="xMidYMid meet" />
                       <rect x={e.x} y={e.y} width={e.w} height={e.h} fill="transparent" class="ui-only" />
                     {:else if e.type === 'equipment'}
-                      {@const fc = e.frame ?? (e.snapshot.function ? fnColor(e.snapshot.function) : '#15171A')}
+                      {@const fc = e.frame ?? familyColor(e.snapshot.function, { screen: false })}
                       {@const ls = lines(e)}
                       <rect x={e.x} y={e.y} width={e.w} height={e.h} rx="1.5" fill="#ffffff" stroke={fc} stroke-width=".5" />
                       {#if e.image === 'pictogram'}<circle cx={e.x + 4.5} cy={e.y + 4.5} r="2.6" fill={fc} /><text x={e.x + 4.5} y={e.y + 5.6} font-size="3" text-anchor="middle" font-weight="700" fill="#ffffff">{e.snapshot.function ?? '·'}</text>
                       {:else if e.image?.startsWith('photo') && e.snapshot.images[0]}<image href={e.snapshot.images[0]} x={e.x + 1} y={e.y + 1} width={Math.min(e.w, e.h) - 2} height={Math.min(e.w, e.h) - 2} preserveAspectRatio="xMidYMid meet" />{/if}
-                      {#each ls as t, i}<text x={e.x + (e.image && e.image !== 'none' ? 8.5 : 2)} y={e.y + 4.6 + i * 3.6} font-size={i ? 2.6 : 3} font-weight={i ? 400 : 700} fill={i ? '#5B636D' : '#15171A'} class:mono={t.startsWith('U') || t.startsWith('Ch ') || t.startsWith('#')}>{t.length > Math.max(6, (e.w - 8) / 1.6) ? t.slice(0, Math.max(5, Math.floor((e.w - 8) / 1.6))) + '…' : t}</text>{/each}
+                      {#each ls as t, i}<text x={e.x + (e.image && e.image !== 'none' ? 8.5 : 2)} y={e.y + 4.6 + i * 3.6} font-size={i ? 2.6 : 3} font-weight={i ? 400 : 700} fill={i ? '#5B636D' : INK} class:mono={t.startsWith('U') || t.startsWith('Ch ') || t.startsWith('#')}>{t.length > Math.max(6, (e.w - 8) / 1.6) ? t.slice(0, Math.max(5, Math.floor((e.w - 8) / 1.6))) + '…' : t}</text>{/each}
                     {/if}
                     {#if isSel(e.id) && mine && 'w' in e && e.type !== 'text'}<rect class="rz ui-only" x={e.x + e.w - 1.5} y={e.y + e.h - 1.5} width="3" height="3" />{/if}
                   </g>
@@ -525,15 +587,22 @@
                     <path d={linkPath(e)} fill="none" stroke={c} stroke-width={e.width} />
                     {#if e.arrow_end}<polygon points={arrow(...en.e, e.width)} fill={c} />{/if}
                     {#if e.arrow_start}<polygon points={arrow(...en.s, e.width)} fill={c} />{/if}
-                    {#if e.label}{@const a = anchorPt(e.from)}{@const b = anchorPt(e.to)}<text x={(a[0] + b[0]) / 2} y={(a[1] + b[1]) / 2 - 1.2} font-size="2.8" text-anchor="middle" fill={c} class="halo">{e.label}</text>{/if}
+                    {#if e.label}{@const a = anchorPt(e.from)}{@const b = anchorPt(e.to)}<text x={(a[0] + b[0]) / 2} y={(a[1] + b[1]) / 2 - 1.2} font-size="2.8" text-anchor="middle" fill={INK} class="halo">{e.label}</text>{/if}
                   </g>
                 {/each}
                 {#if pg.legend && legend.length}
-                  {@const lh = 6 + legend.length * 4}
+                  {@const lh = 4 + legend.length * 4}
                   <g transform="translate({size[0] - 72} {size[1] - lh - 8})">
-                    <rect width="64" height={lh} fill="#ffffff" stroke="#15171A" stroke-width=".3" />
-                    <text x="3" y="4.4" font-size="2.8" font-weight="700" fill="#15171A">LÉGENDE</text>
-                    {#each legend as [n, col], i}{#if col}<rect x="3" y={6.6 + i * 4} width="6" height="1.4" fill={col} />{/if}<text x={col ? 11 : 3} y={7.9 + i * 4} font-size="2.6" fill="#15171A">{n.length > 34 ? n.slice(0, 33) + '…' : n}</text>{/each}
+                    <rect width="64" height={lh} fill="#ffffff" stroke={INK} stroke-width=".3" />
+                    {#each legend as r, i}
+                      {@const y = 5 + i * 4}
+                      {#if r.kind === 'h'}<text x="3" {y} font-size="2.4" font-weight="700" fill={INK}>{r.text}</text>
+                      {:else}
+                        {#if r.kind === 'line'}<rect x="3" y={y - 1.5} width="12" height="1.2" fill={r.color} />
+                        {:else if r.kind === 'zone'}<rect x="3" y={y - 2.4} width="12" height="2.8" fill={r.color} fill-opacity=".1" stroke={r.color} stroke-width=".3" stroke-dasharray="1 .6" />{/if}
+                        <text x={r.kind === 'txt' ? 3 : 17} {y} font-size="2.6" fill={INK}>{cut(r.text, r.kind === 'txt' ? 34 : 27)}</text>
+                      {/if}
+                    {/each}
                   </g>
                 {/if}
                 {#if pg.scale}<text x="8" y={size[1] - 6} font-size="3" fill="#5B636D">Échelle 1:{pg.scale}</text>{/if}
@@ -546,97 +615,101 @@
           </div>
 
           <aside class="dw-side">
-            <div class="seg side-tabs" role="tablist" aria-label="Panneau">
-              {#each [['place', `À placer ${toPlace.length}`], ['props', 'Propriétés'], ['page', 'Document'], ...(pg.nature === 'lighting' ? [['dmx', 'DMX']] : [])] as [s, l]}<button role="tab" aria-selected={side === s} class:on={side === s} onclick={() => (side = s as typeof side)}>{l}</button>{/each}
-            </div>
+            <Seg label="Panneau" mode="tabs" full controls="dw-side" bind:value={side} options={SIDE_TABS} />
+            <div class="side-panel" id="dw-side-{side}" role="tabpanel">
             {#if side === 'place'}
-              <label class="search"><Icon name="search" /><input class="input sm" bind:value={q} placeholder="Équipement, ID…" aria-label="Filtrer la nomenclature"></label>
+              <label class="search"><Icon name="search" /><input class="input sm" type="search" bind:value={q} placeholder="Équipement, ID" aria-label="Filtrer la nomenclature"></label>
               {#if !toPlace.length}<p class="muted small">Rien à placer pour cette nature de page.</p>{/if}
               {#each toPlace as b (b.instance_id)}
-                <button class="li" class:on={placing === b.instance_id} disabled={!mine} onclick={() => { setTool('select'); placing = b.instance_id; }}><span class="nm"><i class="dot" style="--c:{fnColor(b.snapshot.function)}"></i><b>{b.snapshot.name}</b> <span class="mono muted">{b.snapshot.tag}</span></span>{#if b.snapshot.dmx_channels}<span class="muted small">{b.snapshot.dmx_channels} canaux DMX</span>{/if}</button>
+                <button class="li" class:on={placing === b.instance_id} disabled={!mine} onclick={() => { setTool('select'); placing = b.instance_id; }}><span class="nm"><i class="dot" style="--c:{familyColor(b.snapshot.function, { screen: true })}"></i><b>{b.snapshot.name}</b> <span class="mono muted">{b.snapshot.tag}</span></span>{#if b.snapshot.dmx_channels}<span class="muted small">{b.snapshot.dmx_channels} canaux DMX</span>{/if}</button>
               {/each}
-              <h4>Placés sur cette page · {placedHere.length}</h4>
+              <h4 class="eyebrow">Placés sur cette page · <span class="mono">{placedHere.length}</span></h4>
               {#each placedHere as e (e.id)}<button class="li" onclick={() => { sel = new Set([e.id]); side = 'props'; }}><span class="nm"><b>{e.label ?? e.snapshot.name}</b> <span class="mono muted">{e.snapshot.tag}</span></span>{#if pg.nature === 'lighting'}<span class="small mono" class:warn-t={conflictKeys.has(`${pg.id}:${e.id}`)}>{dmxText(e)}</span>{/if}</button>{/each}
-              {#if placedElsewhere.length}<h4>Sur d’autres pages</h4>{#each placedElsewhere as b (b.instance_id)}<span class="small muted">{b.snapshot.name} {b.snapshot.tag} · {pageName(b.placed.find((p) => p.nature === pg!.nature)!.page)}</span>{/each}{/if}
+              {#if placedElsewhere.length}<h4 class="eyebrow">Sur d’autres pages</h4>{#each placedElsewhere as b (b.instance_id)}<span class="small muted">{b.snapshot.name} <span class="mono">{b.snapshot.tag}</span> · {pageName(b.placed.find((p) => p.nature === pg!.nature)!.page)}</span>{/each}{/if}
             {:else if side === 'props'}
               {@const ro = !mine}
               {#if !selList.length}<p class="muted small">Choisissez un élément (Maj + clic pour en choisir plusieurs).</p>
-              {:else if selList.length > 1 && selList.every((e) => e.type === 'link')}
-                <h4>{selList.length} liens</h4>
-                <label class="field">Tracé<select class="input sm" disabled={ro} onchange={(e) => patchSel({ style: (e.target as HTMLSelectElement).value })}><option value="">—</option><option value="straight">Droit</option><option value="orthogonal">Orthogonal</option><option value="curve">Courbe</option></select></label>
-                <label class="field">Signal<select class="input sm" disabled={ro} onchange={(e) => patchSel({ signal_id: (e.target as HTMLSelectElement).value || null })}><option value="">—</option>{#each refList('signals', true) as s}<option value={s.id}>{s.name}</option>{/each}</select></label>
-                <div class="fg2"><label class="field">Couleur<input type="color" disabled={ro} onchange={(e) => patchSel({ color: (e.target as HTMLInputElement).value })}></label><label class="field">Épaisseur<input class="input sm" type="number" step="0.1" min="0.1" disabled={ro} onchange={(e) => patchSel({ width: Number((e.target as HTMLInputElement).value) })}></label></div>
-                <label class="toggle-row small"><input type="checkbox" disabled={ro} onchange={(e) => patchSel({ arrow_end: (e.target as HTMLInputElement).checked })}>Flèche à l’arrivée</label>
-                <button class="btn sm ghost danger" disabled={ro} onclick={removeSel}><Icon name="trash" size="sm" />Supprimer</button>
+              {:else}
+              <div class="sel-h"><h4 class="eyebrow">{selList.length > 1 ? `${selList.length} ${selList.every((x) => x.type === 'link') ? 'liens' : 'éléments'}` : selList[0]!.type === 'equipment' ? selList[0]!.snapshot.name : ({ text: 'Texte', rect: 'Rectangle', ellipse: 'Ellipse', line: 'Ligne', image: 'Image', zone: 'Zone', link: 'Lien', equipment: 'Équipement' } as Record<string, string>)[selList[0]!.type]}{#if selList.length === 1 && selList[0]!.type === 'equipment'} <span class="mono">{selList[0]!.snapshot.tag}</span>{/if}</h4><button class="icon-btn sm" aria-label="Désélectionner (Échap)" title="Désélectionner (Échap)" onclick={() => (sel = new Set())}><Icon name="x" size="sm" /></button></div>
+              {#if selList.length > 1 && selList.every((e) => e.type === 'link')}
+                <div class="field"><label for="d-ls">Tracé</label><select class="input sm" id="d-ls" disabled={ro} onchange={(e) => patchSel({ style: (e.target as HTMLSelectElement).value })}><option value="">—</option><option value="straight">Droit</option><option value="orthogonal">Orthogonal</option><option value="curve">Courbe</option></select></div>
+                <div class="field"><label for="d-lsig">Signal</label><select class="input sm" id="d-lsig" disabled={ro} onchange={(e) => patchSel({ signal_id: (e.target as HTMLSelectElement).value || null })}><option value="">—</option>{#each refList('signals', true) as s}<option value={s.id}>{s.name}</option>{/each}</select></div>
+                <div class="fg2"><div class="field"><label for="d-lc">Couleur sans signal</label><input class="input" id="d-lc" type="color" disabled={ro} onchange={(e) => patchSel({ color: (e.target as HTMLInputElement).value })}></div>{@render num('d-lw', 'Épaisseur', null, 'mm', ro, (v) => patchSel({ width: v }), 0.1, 20, 0.1)}</div>
+                <label class="toggle-row"><input type="checkbox" disabled={ro} onchange={(e) => patchSel({ arrow_end: (e.target as HTMLInputElement).checked })}>Flèche à l’arrivée</label>
+                {#if !ro}<div class="row-btns"><button class="btn sm ghost danger" onclick={removeSel}><Icon name="trash" size="sm" />Supprimer</button></div>{/if}
               {:else if selList.length > 1}
-                <p class="small">{selList.length} éléments choisis.</p>
-                <div class="row-btns"><button class="btn sm" disabled={ro} onclick={duplicateSel}>Dupliquer</button><button class="btn sm ghost danger" disabled={ro} onclick={removeSel}>Supprimer</button></div>
+                {#if !ro}<div class="row-btns"><button class="btn sm" onclick={duplicateSel}>Dupliquer</button><button class="btn sm ghost danger" onclick={removeSel}><Icon name="trash" size="sm" />Supprimer</button></div>{/if}
               {:else}
                 {@const e = selList[0]!}
                 {#if e.type === 'equipment'}
-                  <h4>{e.snapshot.name} <span class="mono">{e.snapshot.tag}</span></h4>
                   <p class="small muted">{[e.snapshot.reference, e.snapshot.category].filter(Boolean).join(' · ')}</p>
-                  <label class="field">Libellé propre<input class="input sm" value={e.label ?? ''} placeholder={e.snapshot.name} maxlength="80" disabled={ro} onchange={(x) => patchSel({ label: (x.target as HTMLInputElement).value.trim() || null })}></label>
-                  <label class="field">Image<select class="input sm" value={e.image ?? 'none'} disabled={ro} onchange={(x) => patchSel({ image: (x.target as HTMLSelectElement).value })}><option value="pictogram">Pictogramme</option>{#if e.snapshot.images.length}<option value="photo">Image du catalogue</option>{/if}<option value="none">Aucune</option></select></label>
+                  <div class="field"><label for="d-elabel">Libellé propre</label><input class="input sm" id="d-elabel" value={e.label ?? ''} placeholder={e.snapshot.name} maxlength="80" disabled={ro} onchange={(x) => patchSel({ label: (x.target as HTMLInputElement).value.trim() || null })}></div>
+                  <div class="field"><label for="d-eimg">Image</label><select class="input sm" id="d-eimg" value={e.image ?? 'none'} disabled={ro} onchange={(x) => patchSel({ image: (x.target as HTMLSelectElement).value })}><option value="pictogram">Pictogramme</option>{#if e.snapshot.images.length}<option value="photo">Image du catalogue</option>{/if}<option value="none">Aucune</option></select></div>
                   <span class="flabel">Afficher (au moins un)</span>
                   <div class="chips">{#each [['label', 'Libellé'], ['name', 'Nom'], ['reference', 'Référence'], ['tag', 'ID'], ['category', 'Catégorie'], ...(pg.nature === 'lighting' ? [['dmx', 'DMX']] : [])] as [kk, l]}<label class="chk"><input type="checkbox" checked={e.show.includes(kk)} disabled={ro || (e.show.length === 1 && e.show.includes(kk))} onchange={(x) => patchSel({ show: (x.target as HTMLInputElement).checked ? [...e.show, kk] : e.show.filter((s: string) => s !== kk) })}>{l}</label>{/each}</div>
-                  <div class="fg2"><label class="field">Cadre<input type="color" value={e.frame ?? fnColor(e.snapshot.function)} disabled={ro} onchange={(x) => patchSel({ frame: (x.target as HTMLInputElement).value })}></label><label class="field">Rotation<select class="input sm" value={e.rot} disabled={ro} onchange={(x) => patchSel({ rot: Number((x.target as HTMLSelectElement).value) })}>{#each [0, 90, 180, 270] as r}<option value={r}>{r}°</option>{/each}</select></label></div>
+                  <div class="fg2"><div class="field"><label for="d-eframe">Cadre</label><input class="input" id="d-eframe" type="color" value={e.frame ?? familyColor(e.snapshot.function, { screen: false })} disabled={ro} onchange={(x) => patchSel({ frame: (x.target as HTMLInputElement).value })}></div><div class="field"><label for="d-erot">Rotation</label><select class="input sm" id="d-erot" value={e.rot} disabled={ro} onchange={(x) => patchSel({ rot: Number((x.target as HTMLSelectElement).value) })}>{#each [0, 90, 180, 270] as r}<option value={r}>{r}°</option>{/each}</select></div></div>
                   {#if pg.nature === 'lighting'}
-                    <h4>DMX</h4>
+                    <h4 class="eyebrow">DMX</h4>
                     {@const d = e.dmx ?? { console: 0, universe: 0, address: 0, mode: null }}
                     <div class="fg2">
-                      <label class="field">N° console<input class="input sm mono" type="number" min="1" value={d.console || ''} disabled={ro} onchange={(x) => patchSel({ dmx: { ...d, console: Number((x.target as HTMLInputElement).value) } })}></label>
-                      <label class="field">Univers<input class="input sm mono" type="number" min="1" max="65535" value={d.universe || ''} disabled={ro} onchange={(x) => patchSel({ dmx: { ...d, universe: Number((x.target as HTMLInputElement).value) } })}></label>
-                      <label class="field">Adresse<input class="input sm mono" type="number" min="1" max="512" value={d.address || ''} disabled={ro} onchange={(x) => patchSel({ dmx: { ...d, address: Number((x.target as HTMLInputElement).value) } })}></label>
-                      <label class="field">Mode<select class="input sm" value={d.mode ?? ''} disabled={ro} onchange={(x) => patchSel({ dmx: { ...d, mode: (x.target as HTMLSelectElement).value || null } })}><option value="">Défaut ({e.snapshot.dmx_channels ?? '?'} c.)</option>{#each e.snapshot.dmx_modes as [n, c]}<option value={n}>{n} ({c} c.)</option>{/each}</select></label>
+                      {@render num('d-dcons', 'N° console', d.console || null, '', ro, (v) => patchSel({ dmx: { ...d, console: v } }), 1, undefined, undefined, true)}
+                      {@render num('d-duni', 'Univers', d.universe || null, '', ro, (v) => patchSel({ dmx: { ...d, universe: v } }), 1, 65535, undefined, true)}
+                      {@render num('d-dadr', 'Adresse', d.address || null, '', ro, (v) => patchSel({ dmx: { ...d, address: v } }), 1, 512, undefined, true)}
+                      <div class="field"><label for="d-dmode">Mode</label><select class="input sm" id="d-dmode" value={d.mode ?? ''} disabled={ro} onchange={(x) => patchSel({ dmx: { ...d, mode: (x.target as HTMLSelectElement).value || null } })}><option value="">Défaut ({e.snapshot.dmx_channels ?? '?'} c.)</option>{#each e.snapshot.dmx_modes as [n, c]}<option value={n}>{n} ({c} c.)</option>{/each}</select></div>
                     </div>
-                    <p class="small">{chans(e)} canaux{d.address ? ` · ${d.address}–${d.address + chans(e) - 1}` : ''}{#if conflictKeys.has(`${pg.id}:${e.id}`)} · <b class="warn-t">chevauchement</b>{/if}</p>
+                    <p class="small">{chans(e)} canaux{#if d.address} · <span class="mono">{d.address}–{d.address + chans(e) - 1}</span>{/if}{#if conflictKeys.has(`${pg.id}:${e.id}`)} · <b class="warn-t">chevauchement</b>{/if}</p>
                     {#if !ro}<button class="btn sm" onclick={() => suggestFor(e)}>Proposer une adresse</button>{/if}
                   {/if}
                 {:else if e.type === 'link'}
-                  <label class="field">Tracé<select class="input sm" value={e.style} disabled={ro} onchange={(x) => patchSel({ style: (x.target as HTMLSelectElement).value })}><option value="straight">Droit</option><option value="orthogonal">Orthogonal</option><option value="curve">Courbe</option></select></label>
-                  <label class="field">Signal<select class="input sm" value={e.signal_id ?? ''} disabled={ro} onchange={(x) => patchSel({ signal_id: (x.target as HTMLSelectElement).value || null })}><option value="">—</option>{#each refList('signals', true) as s}<option value={s.id}>{s.name}</option>{/each}</select></label>
-                  <label class="field">Libellé<input class="input sm" value={e.label ?? ''} maxlength="80" disabled={ro} onchange={(x) => patchSel({ label: (x.target as HTMLInputElement).value.trim() || null })}></label>
-                  <div class="fg2"><label class="field">Couleur<input type="color" value={linkColor(e)} disabled={ro} onchange={(x) => patchSel({ color: (x.target as HTMLInputElement).value })}></label><label class="field">Épaisseur<input class="input sm" type="number" step="0.1" min="0.1" max="20" value={e.width} disabled={ro} onchange={(x) => patchSel({ width: Number((x.target as HTMLInputElement).value) })}></label></div>
-                  <label class="toggle-row small"><input type="checkbox" checked={e.arrow_start} disabled={ro} onchange={(x) => patchSel({ arrow_start: (x.target as HTMLInputElement).checked })}>Flèche au départ</label>
-                  <label class="toggle-row small"><input type="checkbox" checked={e.arrow_end} disabled={ro} onchange={(x) => patchSel({ arrow_end: (x.target as HTMLInputElement).checked })}>Flèche à l’arrivée</label>
+                  <div class="field"><label for="d-lstyle">Tracé</label><select class="input sm" id="d-lstyle" value={e.style} disabled={ro} onchange={(x) => patchSel({ style: (x.target as HTMLSelectElement).value })}><option value="straight">Droit</option><option value="orthogonal">Orthogonal</option><option value="curve">Courbe</option></select></div>
+                  <div class="field"><label for="d-lsignal">Signal</label><select class="input sm" id="d-lsignal" value={e.signal_id ?? ''} disabled={ro} onchange={(x) => patchSel({ signal_id: (x.target as HTMLSelectElement).value || null })}><option value="">—</option>{#each refList('signals', true) as s}<option value={s.id}>{s.name}</option>{/each}</select></div>
+                  <div class="field"><label for="d-llabel">Libellé</label><input class="input sm" id="d-llabel" value={e.label ?? ''} maxlength="80" disabled={ro} onchange={(x) => patchSel({ label: (x.target as HTMLInputElement).value.trim() || null })}></div>
+                  <div class="fg2">
+                    {#if e.signal_id}<div class="field"><span class="flabel">Couleur</span><span class="chip fn" title="Couleur de la famille du signal, non modifiable"><i class="dot" style="--c:{familyColor(sigFamily(e.signal_id), { screen: true })}"></i>{famName(sigFamily(e.signal_id))}</span></div>
+                    {:else}<div class="field"><label for="d-lcolor">Couleur</label><input class="input" id="d-lcolor" type="color" value={linkColor(e)} disabled={ro} onchange={(x) => patchSel({ color: (x.target as HTMLInputElement).value })}></div>{/if}
+                    {@render num('d-lwidth', 'Épaisseur', e.width, 'mm', ro, (v) => patchSel({ width: v }), 0.1, 20, 0.1)}
+                  </div>
+                  <label class="toggle-row"><input type="checkbox" checked={e.arrow_start} disabled={ro} onchange={(x) => patchSel({ arrow_start: (x.target as HTMLInputElement).checked })}>Flèche au départ</label>
+                  <label class="toggle-row"><input type="checkbox" checked={e.arrow_end} disabled={ro} onchange={(x) => patchSel({ arrow_end: (x.target as HTMLInputElement).checked })}>Flèche à l’arrivée</label>
                 {:else if e.type === 'text'}
-                  <label class="field">Texte<textarea class="input" rows="3" disabled={ro} onchange={(x) => patchSel({ text: (x.target as HTMLTextAreaElement).value })}>{e.text}</textarea></label>
-                  <div class="fg2"><label class="field">Taille (mm)<input class="input sm" type="number" min="1" max="200" step="0.5" value={e.size} disabled={ro} onchange={(x) => patchSel({ size: Number((x.target as HTMLInputElement).value) })}></label><label class="field">Couleur<input type="color" value={e.color ?? '#15171A'} disabled={ro} onchange={(x) => patchSel({ color: (x.target as HTMLInputElement).value })}></label></div>
-                  <label class="toggle-row small"><input type="checkbox" checked={e.bold} disabled={ro} onchange={(x) => patchSel({ bold: (x.target as HTMLInputElement).checked })}>Gras</label>
+                  <div class="field"><label for="d-ttext">Texte</label><textarea class="input" id="d-ttext" rows="3" disabled={ro} onchange={(x) => patchSel({ text: (x.target as HTMLTextAreaElement).value })}>{e.text}</textarea></div>
+                  <div class="fg2">{@render num('d-tsize', 'Taille', e.size, 'mm', ro, (v) => patchSel({ size: v }), 1, 200, 0.5)}<div class="field"><label for="d-tcolor">Couleur</label><input class="input" id="d-tcolor" type="color" value={e.color ?? INK} disabled={ro} onchange={(x) => patchSel({ color: (x.target as HTMLInputElement).value })}></div></div>
+                  <label class="toggle-row"><input type="checkbox" checked={e.bold} disabled={ro} onchange={(x) => patchSel({ bold: (x.target as HTMLInputElement).checked })}>Gras</label>
                 {:else if e.type === 'zone'}
-                  <label class="field">Nom<input class="input sm" value={e.label} maxlength="80" disabled={ro} onchange={(x) => patchSel({ label: (x.target as HTMLInputElement).value })}></label>
-                  <label class="field">Couleur<input type="color" value={e.color ?? '#3A7BD5'} disabled={ro} onchange={(x) => patchSel({ color: (x.target as HTMLInputElement).value })}></label>
+                  <div class="field"><label for="d-zname">Nom</label><input class="input sm" id="d-zname" value={e.label} maxlength="80" disabled={ro} onchange={(x) => patchSel({ label: (x.target as HTMLInputElement).value })}></div>
+                  <div class="field"><label for="d-zcolor">Couleur</label><input class="input" id="d-zcolor" type="color" value={e.color ?? ZONE} disabled={ro} onchange={(x) => patchSel({ color: (x.target as HTMLInputElement).value })}></div>
                 {:else if e.type === 'rect' || e.type === 'ellipse' || e.type === 'line'}
-                  <div class="fg2"><label class="field">Trait<input type="color" value={e.stroke ?? '#15171A'} disabled={ro} onchange={(x) => patchSel({ stroke: (x.target as HTMLInputElement).value })}></label><label class="field">Épaisseur<input class="input sm" type="number" step="0.1" min="0" max="20" value={e.width} disabled={ro} onchange={(x) => patchSel({ width: Number((x.target as HTMLInputElement).value) })}></label></div>
-                  {#if e.type !== 'line'}<label class="toggle-row small"><input type="checkbox" checked={!!e.fill} disabled={ro} onchange={(x) => patchSel({ fill: (x.target as HTMLInputElement).checked ? '#E8ECF2' : null })}>Remplissage</label>{#if e.fill}<input type="color" value={e.fill} disabled={ro} onchange={(x) => patchSel({ fill: (x.target as HTMLInputElement).value })}>{/if}{/if}
-                  {#if e.type === 'line'}<label class="toggle-row small"><input type="checkbox" checked={e.dash} disabled={ro} onchange={(x) => patchSel({ dash: (x.target as HTMLInputElement).checked })}>Pointillés</label><label class="toggle-row small"><input type="checkbox" checked={e.arrow_end} disabled={ro} onchange={(x) => patchSel({ arrow_end: (x.target as HTMLInputElement).checked })}>Flèche</label>{/if}
+                  <div class="fg2"><div class="field"><label for="d-sstroke">Trait</label><input class="input" id="d-sstroke" type="color" value={e.stroke ?? INK} disabled={ro} onchange={(x) => patchSel({ stroke: (x.target as HTMLInputElement).value })}></div>{@render num('d-swidth', 'Épaisseur', e.width, 'mm', ro, (v) => patchSel({ width: v }), 0, 20, 0.1)}</div>
+                  {#if e.type !== 'line'}<label class="toggle-row"><input type="checkbox" checked={!!e.fill} disabled={ro} onchange={(x) => patchSel({ fill: (x.target as HTMLInputElement).checked ? '#E8ECF2' : null })}>Remplissage</label>{#if e.fill}<div class="field"><label for="d-sfill">Couleur de remplissage</label><input class="input" id="d-sfill" type="color" value={e.fill} disabled={ro} onchange={(x) => patchSel({ fill: (x.target as HTMLInputElement).value })}></div>{/if}{/if}
+                  {#if e.type === 'line'}<label class="toggle-row"><input type="checkbox" checked={e.dash} disabled={ro} onchange={(x) => patchSel({ dash: (x.target as HTMLInputElement).checked })}>Pointillés</label><label class="toggle-row"><input type="checkbox" checked={e.arrow_end} disabled={ro} onchange={(x) => patchSel({ arrow_end: (x.target as HTMLInputElement).checked })}>Flèche</label>{/if}
                 {/if}
-                {#if !ro}<div class="row-btns" style="margin-top:8px">{#if e.type !== 'equipment' && e.type !== 'link'}<button class="btn sm" onclick={duplicateSel}>Dupliquer</button>{/if}<button class="btn sm ghost danger" onclick={removeSel}><Icon name="trash" size="sm" />{e.type === 'equipment' ? 'Retirer de la page' : 'Supprimer'}</button></div>{/if}
+                {#if !ro}<div class="row-btns">{#if e.type !== 'equipment' && e.type !== 'link'}<button class="btn sm" onclick={duplicateSel}>Dupliquer</button>{/if}<button class="btn sm ghost danger" onclick={removeSel}><Icon name="trash" size="sm" />{e.type === 'equipment' ? 'Retirer de la page' : 'Supprimer'}</button></div>{/if}
+              {/if}
               {/if}
             {:else if side === 'page'}
               {@const ro = !mine}
-              <label class="field">Nom<input class="input sm" value={pg.name} maxlength="80" disabled={ro} onchange={(x) => { pg!.name = (x.target as HTMLInputElement).value; changed(); }}></label>
+              <div class="field"><label for="d-pname">Nom</label><input class="input sm" id="d-pname" value={pg.name} maxlength="80" disabled={ro} onchange={(x) => { pg!.name = (x.target as HTMLInputElement).value; changed(); }}></div>
               <div class="fg2">
-                <label class="field">Format<select class="input sm" value={pg.paper} disabled={ro} onchange={(x) => { pg!.paper = (x.target as HTMLSelectElement).value as Paper; changed(); }}>{#each Object.keys(SIZES) as p}<option value={p}>{p}</option>{/each}</select></label>
-                <label class="field">Orientation<select class="input sm" value={pg.landscape ? 'l' : 'p'} disabled={ro} onchange={(x) => { pg!.landscape = (x.target as HTMLSelectElement).value === 'l'; changed(); }}><option value="l">Paysage</option><option value="p">Portrait</option></select></label>
-                <label class="field">Grille (mm)<input class="input sm" type="number" min="0" max="50" value={pg.grid_mm} disabled={ro} onchange={(x) => { pg!.grid_mm = Number((x.target as HTMLInputElement).value); changed(); }}></label>
-                <label class="field">Échelle 1:<input class="input sm" type="number" min="1" value={pg.scale ?? ''} placeholder="—" disabled={ro} onchange={(x) => { const v = Number((x.target as HTMLInputElement).value); pg!.scale = v > 0 ? v : null; changed(); }}></label>
+                <div class="field"><label for="d-ppaper">Format</label><select class="input sm" id="d-ppaper" value={pg.paper} disabled={ro} onchange={(x) => { pg!.paper = (x.target as HTMLSelectElement).value as Paper; changed(); }}>{#each Object.keys(SIZES) as p}<option value={p}>{p}</option>{/each}</select></div>
+                <div class="field"><label for="d-porient">Orientation</label><select class="input sm" id="d-porient" value={pg.landscape ? 'l' : 'p'} disabled={ro} onchange={(x) => { pg!.landscape = (x.target as HTMLSelectElement).value === 'l'; changed(); }}><option value="l">Paysage</option><option value="p">Portrait</option></select></div>
+                {@render num('d-pgrid', 'Grille', pg.grid_mm, 'mm', ro, (v) => { pg!.grid_mm = v; changed(); }, 0, 50)}
+                {@render num('d-pscale', 'Échelle (1:n)', pg.scale, '', ro, (v) => { pg!.scale = v > 0 ? v : null; changed(); }, 1, undefined, undefined, true)}
               </div>
-              <label class="toggle-row small"><input type="checkbox" checked={pg.snap} disabled={ro} onchange={(x) => { pg!.snap = (x.target as HTMLInputElement).checked; changed(); }}>Aimantation à la grille</label>
-              <label class="toggle-row small"><input type="checkbox" checked={pg.legend} disabled={ro} onchange={(x) => { pg!.legend = (x.target as HTMLInputElement).checked; changed(); }}>Légende imprimée</label>
-              <label class="field">Fond<input type="color" value={pg.background ?? '#ffffff'} disabled={ro} onchange={(x) => { pg!.background = (x.target as HTMLInputElement).value; changed(); }}></label>
-              {#if pg.nature === 'lighting'}<label class="field">Afficher sur les blocs<select class="input sm" value={pg.dmx_display} disabled={ro} onchange={(x) => { pg!.dmx_display = (x.target as HTMLSelectElement).value as PageData['dmx_display']; changed(); }}><option value="address">Univers et adresse</option><option value="channel">Canal absolu</option><option value="number">N° console</option></select></label>{/if}
+              <label class="toggle-row"><input type="checkbox" checked={pg.snap} disabled={ro} onchange={(x) => { pg!.snap = (x.target as HTMLInputElement).checked; changed(); }}>Aimantation à la grille</label>
+              <label class="toggle-row"><input type="checkbox" checked={pg.legend} disabled={ro} onchange={(x) => { pg!.legend = (x.target as HTMLInputElement).checked; changed(); }}>Légende imprimée</label>
+              <div class="field"><label for="d-pbg">Fond</label><input class="input" id="d-pbg" type="color" value={pg.background ?? '#ffffff'} disabled={ro} onchange={(x) => { pg!.background = (x.target as HTMLInputElement).value; changed(); }}></div>
+              {#if pg.nature === 'lighting'}<div class="field"><label for="d-pdmx">Afficher sur les blocs</label><select class="input sm" id="d-pdmx" value={pg.dmx_display} disabled={ro} onchange={(x) => { pg!.dmx_display = (x.target as HTMLSelectElement).value as PageData['dmx_display']; changed(); }}><option value="address">Univers et adresse</option><option value="channel">Canal absolu</option><option value="number">N° console</option></select></div>{/if}
             {:else}
               <p class="small">{idx.dmx.fixtures.length} projecteur{idx.dmx.fixtures.length > 1 ? 's' : ''} sur les plans de feu · {idx.dmx.fixtures.filter((f) => f.patch?.address).length} adressé{idx.dmx.fixtures.filter((f) => f.patch?.address).length > 1 ? 's' : ''}</p>
               {#if idx.dmx.conflicts.length}<p class="small warn-t"><b>{idx.dmx.conflicts.length} chevauchement{idx.dmx.conflicts.length > 1 ? 's' : ''}</b> dans un même univers.</p>{/if}
-              {#if canDesign}<div class="row-btns"><button class="btn sm primary" onclick={() => dmxAuto('missing')}>Adresser les manquants</button><button class="btn sm" onclick={() => dmxAuto('all')}>Tout réadresser</button></div>{/if}
-              <table class="tbl dmx-t"><thead><tr><th>Appareil</th><th>#</th><th>U</th><th>Adr.</th><th>Can.</th></tr></thead><tbody>
+              {#if canDesign}<div class="row-btns"><button class="btn sm" onclick={() => dmxAuto('all')}>Tout réadresser</button><button class="btn sm primary" onclick={() => dmxAuto('missing')}>Adresser les manquants</button></div>{/if}
+              <table class="tbl dmx-t"><thead><tr><th>Appareil</th><th class="num">#</th><th class="num">U</th><th class="num">Adr.</th><th class="num">Can.</th></tr></thead><tbody>
                 {#each placedHere.slice().sort((a, b) => (a.dmx?.universe ?? 99999) - (b.dmx?.universe ?? 99999) || (a.dmx?.address ?? 0) - (b.dmx?.address ?? 0)) as e (e.id)}
-                  <tr class:bad={conflictKeys.has(`${pg.id}:${e.id}`)} onclick={() => { sel = new Set([e.id]); side = 'props'; }}><td><button type="button" class="rowlink" onclick={(ev) => { ev.stopPropagation(); sel = new Set([e.id]); side = 'props'; }}>{e.label ?? e.snapshot.name}</button> <span class="mono muted">{e.snapshot.tag}</span></td><td class="mono">{e.dmx?.console || '—'}</td><td class="mono">{e.dmx?.universe || '—'}</td><td class="mono">{e.dmx?.address || '—'}</td><td class="mono">{chans(e)}</td></tr>
+                  <tr class:bad={conflictKeys.has(`${pg.id}:${e.id}`)} onclick={() => { sel = new Set([e.id]); side = 'props'; }}><td><button type="button" class="rowlink" onclick={(ev) => { ev.stopPropagation(); sel = new Set([e.id]); side = 'props'; }}>{e.label ?? e.snapshot.name}</button> <span class="mono muted">{e.snapshot.tag}</span></td><td class="num mono">{e.dmx?.console || '—'}</td><td class="num mono">{e.dmx?.universe || '—'}</td><td class="num mono">{e.dmx?.address || '—'}</td><td class="num mono">{chans(e)}</td></tr>
                 {/each}
               </tbody></table>
             {/if}
+            </div>
           </aside>
         </div>
       </div>
@@ -644,56 +717,62 @@
   </div>
 {/if}
 
+{#if help}<ShortcutsHelp title="Raccourcis des dessins" groups={SHORTCUTS} onclose={() => (help = false)} />{/if}
+
 <style>
   .dw { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 12px; align-items: start; }
-  .dw-pages { padding: 10px; display: grid; gap: 10px; position: sticky; top: 80px; }
-  .nat-h { display: flex; justify-content: space-between; align-items: center; font: 650 12px var(--font); text-transform: uppercase; letter-spacing: .04em; color: var(--fg-2); }
-  .pg { display: flex; align-items: center; border-radius: 10px; }
-  .pg.on { background: var(--primary-bg); color: var(--primary-fg); }
-  .pg.on .muted { color: inherit; opacity: .7; }
-  .pg-b { flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 0; background: none; border: 0; font: inherit; color: inherit; padding: 6px 8px; cursor: pointer; text-align: left; min-width: 0; }
-  .pg-b span:first-child { font-weight: 600; font-size: 14px; }
+  .dw-pages { display: grid; gap: 10px; position: sticky; top: 80px; }
+  .nat-h { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .nat-h .eyebrow { margin: 0; }
+  .pg { display: flex; align-items: center; border-radius: var(--r-sm); }
+  /* Page ouverte : même sélection que .fchip.on (accent doux et liseré), lisible dans les deux thèmes. */
+  .pg.on { background: var(--accent-soft); color: var(--accent-2); box-shadow: inset 0 0 0 1.5px var(--accent); }
+  .pg-b { flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 0; background: none; border: 0; font: inherit; color: inherit; padding: 6px 8px; cursor: pointer; text-align: left; min-width: 0; border-radius: var(--r-sm); }
+  .pg-b:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .pg-b span:first-child { font-weight: 600; font-size: var(--fs-md); }
   .pg-m { display: flex; flex-direction: column; }
-  .icon-btn.xs { width: 20px; height: 18px; font-size: 11px; color: inherit; }
   .none { padding-left: 8px; }
+  .dw-main { overflow: hidden; }
   .dtool { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 8px 14px; border-top: 1px solid var(--line); }
-  .hint { padding: 8px 16px; background: color-mix(in srgb, var(--accent, #4F6BFF) 8%, var(--surface)); border-top: 1px solid var(--line); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 14px; }
-  .dw-body { display: grid; grid-template-columns: minmax(0, 1fr) 290px; border-top: 1px solid var(--line); height: calc(100vh - 240px); min-height: 520px; }
+  .flip { display: inline-flex; transform: scaleX(-1); }
+  .hint { padding: 8px 16px; background: color-mix(in srgb, var(--accent) 8%, var(--surface)); border-top: 1px solid var(--line); display: flex; gap: 8px 10px; align-items: center; flex-wrap: wrap; font-size: var(--fs-md); }
+  .hint .acts { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  /* Hauteur utile : 100vh moins barre du haut (52), en-tête de projet (112), barre d'outils (52)
+     et marge basse de .ws-main (64). */
+  .dw-body { display: grid; grid-template-columns: minmax(0, 1fr) 310px; border-top: 1px solid var(--line); height: calc(100vh - 280px); min-height: 520px; }
   .dw-canvas { position: relative; overflow: hidden; background: var(--surface-2); }
   .dw-svg { width: 100%; height: 100%; display: block; touch-action: none; user-select: none; cursor: default; }
   .dw-svg.cross { cursor: crosshair; }
   .sheet { filter: drop-shadow(0 2px 6px rgba(0, 0, 0, .18)); }
   .gl { stroke: #E3E6EA; stroke-width: .15; }
   .el { cursor: pointer; }
-  .el.sel > :first-child, .el.sel rect:first-of-type { filter: drop-shadow(0 0 1.2px #4F6BFF) drop-shadow(0 0 1.2px #4F6BFF); }
+  /* Sélection, poignée et tracés en cours : couleur d'outil (--accent), hors export. */
+  .el.sel > :first-child, .el.sel rect:first-of-type { filter: drop-shadow(0 0 1.2px var(--accent)) drop-shadow(0 0 1.2px var(--accent)); }
   .el.rsel > :first-child { filter: drop-shadow(0 0 1px var(--rs)) drop-shadow(0 0 1.5px var(--rs)); }
-  .el.bad rect:first-of-type { stroke: #CF3A2F; stroke-width: .9; }
-  .rz { fill: #4F6BFF; cursor: nwse-resize; }
-  .draft { stroke: #4F6BFF; stroke-width: .4; stroke-dasharray: 1.5 1; fill: rgba(79, 107, 255, .06); }
+  .el.bad rect:first-of-type { stroke: var(--err); stroke-width: .9; }
+  .rz { fill: var(--accent); cursor: nwse-resize; }
+  .draft { stroke: var(--accent); stroke-width: .4; stroke-dasharray: 1.5 1; fill: color-mix(in srgb, var(--accent) 6%, transparent); }
   .halo { paint-order: stroke; stroke: #ffffff; stroke-width: .8px; }
-  .mono { font-family: var(--font-mono, monospace); }
+  .mono { font-family: var(--mono); }
   .dw-side { border-left: 1px solid var(--line); padding: 12px; overflow: auto; display: flex; flex-direction: column; gap: 6px; background: var(--surface); }
-  .side-tabs { flex-wrap: wrap; margin-bottom: 6px; }
-  .side-tabs button { font-size: 12.5px; padding: 6px 8px; }
-  .dw-side h4 { margin: 12px 0 2px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--fg-2); }
-  .li { display: flex; flex-direction: column; gap: 2px; text-align: left; padding: 7px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); font: inherit; color: inherit; cursor: pointer; }
-  .li:hover:not(:disabled) { border-color: var(--fg-3); }
-  .li.on { border-color: var(--accent, #4F6BFF); box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--accent, #4F6BFF) 25%, transparent); }
+  .side-panel { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+  .dw-side .eyebrow { margin: 12px 0 2px; }
+  .sel-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .sel-h .eyebrow { margin: 0; }
+  .li { display: flex; flex-direction: column; gap: 2px; text-align: left; padding: 7px 10px; border-radius: var(--r-sm); border: 1px solid var(--line); background: var(--surface); font: inherit; color: inherit; cursor: pointer; }
+  .li:hover:not(:disabled) { border-color: var(--line-2); }
+  .li:disabled { cursor: not-allowed; }
+  .li.on { border-color: var(--accent); box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--accent) 25%, transparent); }
   .nm { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--c); flex: none; }
-  .field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
-  .input.sm { height: 34px; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--c); flex: none; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }
-  .chk { display: inline-flex; gap: 4px; align-items: center; font-size: 13px; padding: 3px 8px; border: 1px solid var(--line); border-radius: 99px; }
+  .chk { display: inline-flex; gap: 6px; align-items: center; font-size: var(--fs-sm); padding: 3px 8px; border: 1px solid var(--line); border-radius: 999px; }
   .row-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+  .side-panel .row-btns { margin-top: 8px; }
   .warn-t { color: var(--err); }
-  .dmx-t { font-size: 13px; margin-top: 8px; }
+  .dmx-t { margin-top: 8px; }
   .dmx-t tr { cursor: pointer; }
   .dmx-t tr.bad td { color: var(--err); font-weight: 600; }
   .search { display: flex; align-items: center; gap: 6px; }
-  .empty-card { padding: 28px; text-align: center; }
   @media (max-width: 1100px) { .dw { grid-template-columns: 1fr; } .dw-pages { position: static; } .dw-body { grid-template-columns: 1fr; height: auto; } .dw-canvas { height: 64vh; } .dw-side { border-left: 0; border-top: 1px solid var(--line); } }
-  .save-st { order: 99; margin-left: auto; }
-  .save-st.conflict { font-size: 13px; color: var(--warn, #D97706); }
-  .linkbtn { border: 0; background: none; padding: 0; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; text-decoration: underline; }
 </style>
