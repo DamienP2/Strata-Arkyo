@@ -133,7 +133,7 @@ async fn todo(
         missing.push("période de planification");
     }
     if !missing.is_empty() {
-        items.push(json!({ "kind": "sheet", "severity": "info", "message": format!("Fiche à compléter : {}.", missing.join(", ")), "href": base }));
+        items.push(json!({ "kind": "sheet", "severity": "info", "message": format!("Informations à compléter : {}.", missing.join(", ")), "href": base }));
     }
     let fiche = completion(
         d,
@@ -189,7 +189,7 @@ async fn todo(
         ),
         line(
             "cabling",
-            "Câblage",
+            "Numérotation",
             numbered as u64,
             real.len() as u64,
             format!("{base}/cables"),
@@ -224,12 +224,12 @@ async fn todo(
         ),
         line(
             "sheet",
-            "Fiche",
+            "Informations",
             fiche as u64,
             100,
             base.clone(),
-            format!("Fiche remplie à {fiche} %"),
-            "Champs de la fiche renseignés, plus au moins un emplacement, un élément et du matériel.".into(),
+            format!("Informations renseignées à {fiche} %"),
+            "Informations du projet renseignées, plus au moins un emplacement, un élément et du matériel.".into(),
         ),
     ];
     let rank = |v: &Value| match v["severity"].as_str() {

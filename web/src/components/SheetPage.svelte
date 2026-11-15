@@ -3,10 +3,13 @@
   // (PDF vectoriel, PNG, JPG). Polices Inter et JetBrains Mono incorporées au PDF.
   // Impression : cadre à 10 mm du bord, aucun texte sous 6 pt (2,15 mm), petits textes en #333.
   // Baies : vues avant, arrière, côté et 3D, en rendu réel (façades simplifiées), schématique
-  // (blocs par catégorie) ou 3D ; mobilier : face, côté, dessus, 3D et casquettes ; synoptiques
-  // (SVG du dossier, mis à l'échelle). Chaque dessin a sa propre échelle (`zoom`).
-  import { fnColor } from '../lib/catalog.svelte';
+  // (aplats à la couleur de la famille de signal, catégorie en texte) ou 3D ; mobilier : face,
+  // côté, dessus, 3D et casquettes ; synoptiques (même rendu que l'écran et le dossier, mis à
+  // l'échelle). Chaque dessin a sa propre échelle (`zoom`). Couleurs et traits de pdfkit.
+  import { FAMILY_NONE, familyColor, refList } from '../lib/catalog.svelte';
   import { rackLines } from '../lib/racktext.svelte';
+  import { HEX } from '../lib/pdfkit';
+  import { inkOn } from '../lib/color';
   import { accFace, screensOf, visualOf } from '../lib/faceplate';
   import {
     BLOCK, CASQ_W, CASQ_EXTRA, FRAME, RACK_NUM, RACK_VIEWS, DESK_VIEWS, SYN_MM, U_MM,
@@ -14,34 +17,44 @@
     type Ctx, type DeskData, type RackData, type RackRender, type Sheet, type SheetItem, type SheetPage, type ViewBox,
   } from '../lib/sheet';
 
-  interface Info { project: string; client: string; venue: string; site: string; date: string; locations: Record<string, { name: string; code: string }> }
-  let { sheet, page, ctx, info, index, total, shots = {}, editable = false, selected = null, onpick, onresize }: {
+  /** `revision` : révision du projet, affichée quand la planche n'a pas de version propre. */
+  interface Info { project: string; client: string; venue: string; site: string; date: string; revision?: string; locations: Record<string, { name: string; code: string }> }
+  let { sheet, page, ctx, info, index, total, shots = {}, editable = false, selected = null, onpick, onresize, onselect, nameOf }: {
     sheet: Sheet; page: SheetPage; ctx: Ctx; info: Info; index: number; total: number; shots?: Record<string, string>;
     editable?: boolean; selected?: string | null; onpick?: (it: SheetItem, e: PointerEvent) => void; onresize?: (it: SheetItem, e: PointerEvent) => void;
+    /** Sélection au clavier (focus, Entrée ou Espace) ; `nameOf` : nom lu par les lecteurs d'écran. */
+    onselect?: (it: SheetItem) => void; nameOf?: (it: SheetItem) => string;
   } = $props();
 
   const F = 'Inter, Helvetica, Arial, sans-serif', MONO = 'JetBrainsMono, Courier, monospace';
-  const INK = '#15171A', MUTE = '#333333', LINE = '#3A4048';
+  /** Encre et gris foncé des petits textes, ceux des PDF (pdfkit) ; LINE : contour des appareils. */
+  const INK = HEX.ink, DARK = HEX.dark, LINE = '#3A4048';
   /** Plus petit corps imprimé : 6 pt ≈ 2,15 mm. Un libellé qui ne tient pas à ce corps n'est pas dessiné. */
   const MIN = 2.15;
   const fsU = (eh: number, max: number) => Math.max(MIN, Math.min(max, eh * 0.42));
   const size = $derived(pageSize(sheet));
   const k = $derived(sheet.scale);
   const maxW = $derived(usableW(sheet));
-  // Textes : jamais de points de suspension tant que c'est possible. Un texte un peu trop long
-  // est resserré à la largeur disponible (textLength) ; seul un texte vraiment trop long est
-  // raccourci, au dernier mot entier.
+  // Textes : jamais de points de suspension ni de texte écrasé. Un texte trop long est
+  // raccourci au dernier mot entier qui tient dans la largeur disponible.
   const est = (s: string, fs: number) => s.length * fs * 0.56;
   const fit = (s: string, width: number, fs: number) => {
-    const max = Math.max(1, Math.floor((width * 1.6) / (fs * 0.56)));
+    const max = Math.max(1, Math.floor(width / (fs * 0.56)));
     if (s.length <= max) return s;
     const cut = s.slice(0, max), sp = cut.lastIndexOf(' ');
     return (sp > max * 0.6 ? cut.slice(0, sp) : cut).trimEnd();
   };
-  // Pas de resserrement d'un seul caractère : svg2pdf divise par (n − 1) et abandonne le rendu.
-  const sq = (s: string, width: number, fs: number) => { const t = fit(s, width, fs); return t.length > 1 && est(t, fs) > width ? Math.max(1, width) : undefined; };
   const COLS: Record<string, number> = { full: 1, half: 2, third: 3, quarter: 4 };
-  const color = (e: any) => (e.function ? fnColor(e.function) : '#8A919B');
+  /** Couleur d'un appareil : sa famille de signal (papier), FAMILY_NONE sans famille. */
+  const color = (e: any) => familyColor(e.function, { screen: false });
+  /** Emplacement de panel : famille de l'emplacement, sinon celle de son groupe (couleur de la palette des familles). */
+  const slotColor = (panel: any, s: any) => {
+    if (s.function) return familyColor(s.function, { screen: false });
+    const per = panel.per_u, row = Math.floor((s.index - 1) / per) + 1, col = ((s.index - 1) % per) + 1;
+    const g = (panel.groups ?? []).find((x: any) => x.row === row && col >= x.start && col < x.start + x.len);
+    const f = g ? g.function || refList('functions').find((x) => x.data?.color?.toLowerCase() === g.color?.toLowerCase())?.id : null;
+    return f ? familyColor(f, { screen: false }) : FAMILY_NONE;
+  };
   const block = $derived({ x: size[0] - FRAME - BLOCK[0], y: size[1] - FRAME - BLOCK[1] });
   const cells = $derived.by(() => {
     const b = sheet.block;
@@ -49,7 +62,7 @@
     return [
       [{ l: 'Site', v: info.site, w: 60 }, { l: 'Titre', v: b.title, w: 120, big: true }],
       [{ l: 'Projet', v: info.project, w: 60 }, { l: 'Client', v: info.client, w: 60 }, { l: 'Lieu', v: info.venue, w: 60 }],
-      [{ l: 'Référence', v: b.reference, w: 30 }, { l: 'Date', v: info.date, w: 30 }, { l: 'Planche', v: `${index + 1} / ${total}`, w: 30 }, { l: 'Version', v: b.version, w: 30 }, { l: 'Échelle', v: `1:${k}`, w: 30 }, { l: 'Format', v: sheet.paper, w: 30 }],
+      [{ l: 'Référence', v: b.reference, w: 30 }, { l: 'Date', v: info.date, w: 30 }, { l: 'Planche', v: `${index + 1} / ${total}`, w: 30 }, { l: 'Version', v: b.version || info.revision || '', w: 30 }, { l: 'Échelle', v: `1:${k}`, w: 30 }, { l: 'Format', v: sheet.paper, w: 30 }],
       [{ l: 'Auteur', v: b.author, w: 60 }, { l: 'Vérificateur', v: b.checker, w: 30 }, { l: 'Normes / notes', v: [b.standards, b.notes].filter(Boolean).join(' · '), w: 90 }],
     ];
   });
@@ -63,9 +76,6 @@
     const d = ctx.desks[it.container_id ?? '']; return [name(d?.name), d ? [`${d.length_mm} × ${d.depth_mm} mm${d.casq.length ? ` · ${d.casq.length} casquette${d.casq.length > 1 ? 's' : ''}` : ''}`, own(it)].filter(Boolean).join(' · ') : ''];
   };
   const viewLabel = (it: SheetItem, b: ViewBox) => b.v === 'syn' ? '' : b.v === 'casq' ? (ctx.racks[b.cid ?? '']?.name ?? 'Casquette') : (it.kind === 'rack' ? RACK_VIEWS : DESK_VIEWS)[b.v as never] ?? '';
-  // Rendu schématique : couleur par catégorie, comme la page Racks.
-  const CAT_COLORS = ['#2459E0', '#0E8550', '#B78400', '#7A44C9', '#CF3A2F', '#0A8797', '#BD3489', '#D06006', '#69788C'];
-  const catColor = (c: string | null | undefined) => { if (!c) return '#69788C'; let h = 0; for (const ch of c) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return CAT_COLORS[h % CAT_COLORS.length]!; };
   /** Hachures à 45° dans un rectangle (segments calculés : rendu identique à l'écran et au PDF). */
   const hatch = (x: number, y: number, w: number, h: number, step: number): [number, number, number, number][] => {
     const out: [number, number, number, number][] = [];
@@ -100,7 +110,7 @@
   <rect x={x0} y={y} width={g.rail} height={h} fill="#D9DDE2" stroke={INK} stroke-width="0.25" />
   <rect x={x1 + g.inner} y={y} width={g.rail} height={h} fill="#D9DDE2" stroke={INK} stroke-width="0.25" />
   {#if g.u >= 0.8}{#each Array(n + 1) as _, i}<line x1={x1} x2={x1 + g.inner} y1={y1 + i * g.u} y2={y1 + i * g.u} stroke="#E3E6EA" stroke-width="0.12" />{/each}{/if}
-  {#each Array(n) as _, i}{#if (n - i) % step === 0 || n - i === 1}<text x={x0 - 1.2} y={y1 + i * g.u + g.u / 2 + 0.7} font-family={F} font-size={MIN} fill={MUTE} text-anchor="end">{n - i}</text>{/if}{/each}
+  {#each Array(n) as _, i}{#if (n - i) % step === 0 || n - i === 1}<text x={x0 - 1.2} y={y1 + i * g.u + g.u / 2 + 0.7} font-family={F} font-size={MIN} fill={DARK} text-anchor="end">{n - i}</text>{/if}{/each}
   {#each els as e (e.placement.id)}
     {@const cols = COLS[e.placement.width] ?? 1}
     {@const ew = g.inner / cols}
@@ -112,9 +122,12 @@
     {@const acc = e.nature === 'accessory' && !panel}
     {@const inner = e.placement.face === 'rear_inner'}
     {@const schem = mode === 'schematic'}
-    {@const cc = catColor(e.category)}
+    {@const cc = color(e)}
     {@const carried = (r?.elements ?? []).filter((x) => x.placement.shelf_id === e.placement.id).map((x) => x.custom?.trim() || x.tag || x.label)}
-    {@const lines = acc ? [carried.length ? `${schem ? `${e.label} · ` : ''}${carried.join(', ')}` : schem ? e.label : '', ''] : rackLines(e, 'both')}
+    {@const rl = rackLines(e, 'both')}
+    <!-- Schématique : aplat de la famille de signal ; la catégorie passe en texte, en petit. -->
+    {@const lines = acc ? [carried.length ? `${schem ? `${e.label} · ` : ''}${carried.join(', ')}` : schem ? e.label : '', ''] : schem ? [rl[0], [e.category, rl[1]].filter(Boolean).join(' · ')] : rl}
+    {@const idFont = !acc && !e.custom?.trim() && !!e.tag && lines[0] === e.tag ? MONO : F}
     {@const t = acc ? accFace(e) : visualOf(e)}
     {@const fs1 = Math.max(MIN, Math.min(2.8, eh * 0.3))}
     {@const fs2 = Math.max(MIN, fs1 * 0.82)}
@@ -133,20 +146,21 @@
       {#each panel.slots as s}
         {@const row = Math.floor((s.index - 1) / per)}
         {@const col = (s.index - 1) % per}
-        <circle cx={ex + ew * 0.36 + (col + s.width / 2) * pw} cy={ey + (row + 0.5) * (eh / panel.height_u)} r={Math.min(pw * 0.36, (eh / panel.height_u) * 0.3)} fill="#FFFFFF" stroke={s.function ? fnColor(s.function) : '#2459E0'} stroke-width="0.25" />
+        <circle cx={ex + ew * 0.36 + (col + s.width / 2) * pw} cy={ey + (row + 0.5) * (eh / panel.height_u)} r={Math.min(pw * 0.36, (eh / panel.height_u) * 0.3)} fill="#FFFFFF" stroke={slotColor(panel, s)} stroke-width="0.25" />
       {/each}
-      {#if eh >= 1.6}<text x={ex + 2} y={ey + eh / 2 + fs * 0.35} font-family={F} font-size={fs} fill={INK} textLength={sq(e.label, ew * 0.33, fs)} lengthAdjust="spacingAndGlyphs">{fit(e.label, ew * 0.33, fs)}</text>{/if}
+      {@const pl = rackLines(e, 'label')[0] || e.label}
+      {#if eh >= 1.6}<text x={ex + 2} y={ey + eh / 2 + fs * 0.35} font-family={F} font-size={fs} fill={INK}>{fit(pl, ew * 0.33, fs)}</text>{/if}
     {:else if eh >= 1.6 && lines[0]}
-      {@const ink = schem && !acc ? '#FFFFFF' : acc ? MUTE : INK}
-      {@const sub = schem && !acc ? '#FFFFFF' : MUTE}
+      {@const ink = schem && !acc ? inkOn(cc) : acc ? DARK : INK}
+      {@const sub = schem && !acc ? inkOn(cc) : DARK}
       {@const tx = ex + (acc ? 1.2 : 2.2)}
       {#if two}
         {@const top = ey + (eh - fs1 - fs2 - 0.5) / 2}
-        <text x={tx} y={top + fs1 * 0.82} font-family={F} font-size={fs1} fill={ink} font-weight="bold" textLength={sq(lines[0], tw, fs1)} lengthAdjust="spacingAndGlyphs">{fit(lines[0], tw, fs1)}</text>
-        <text x={tx} y={top + fs1 + 0.5 + fs2 * 0.8} font-family={F} font-size={fs2} fill={sub} textLength={sq(lines[1], tw, fs2)} lengthAdjust="spacingAndGlyphs">{fit(lines[1], tw, fs2)}</text>
+        <text x={tx} y={top + fs1 * 0.82} font-family={idFont} font-size={fs1} fill={ink} font-weight="bold">{fit(lines[0], tw, fs1)}</text>
+        <text x={tx} y={top + fs1 + 0.5 + fs2 * 0.8} font-family={F} font-size={fs2} fill={sub}>{fit(lines[1], tw, fs2)}</text>
       {:else}
         {@const both = !!lines[1] && (est(lines[0], fs) * 1.1 + est(lines[1], MIN) + 3 < tw)}
-        <text x={tx} y={ey + eh / 2 + fs * 0.35} font-family={F} font-size={fs} fill={ink} font-weight={acc ? 'normal' : 'bold'} textLength={sq(lines[0], tw, fs)} lengthAdjust="spacingAndGlyphs">{fit(lines[0], tw, fs)}</text>
+        <text x={tx} y={ey + eh / 2 + fs * 0.35} font-family={idFont} font-size={fs} fill={ink} font-weight={acc ? 'normal' : 'bold'}>{fit(lines[0], tw, fs)}</text>
         {#if both}<text x={tx + tw} y={ey + eh / 2 + MIN * 0.35} font-family={F} font-size={MIN} fill={sub} text-anchor="end">{lines[1]}</text>{/if}
       {/if}
     {/if}
@@ -203,14 +217,14 @@
       {@const cw = est(cote, MIN) + 1.6}
       {@const label = named ? rackLines(e, 'both')[0] : ''}
       {@const lw = ed - cw - 2.4}
-      {#if label && lw > 6}<text x={ex + (front ? 1.2 : cw + 1.2)} y={ey + eh / 2 + fs * 0.35} font-family={F} font-size={fs} fill={INK} textLength={sq(label, lw, fs)} lengthAdjust="spacingAndGlyphs">{fit(label, lw, fs)}</text>{/if}
-      {#if ed > cw}<text x={front ? ex + ed - 0.8 : ex + 0.8} y={ey + eh / 2 + MIN * 0.35} font-family={MONO} font-size={MIN} fill={MUTE} text-anchor={front ? 'end' : 'start'}>{cote}</text>{/if}
-      {#if rw > est(String(Math.round(resmm)), MIN) + 1}<text x={rx + rw / 2} y={ey + eh / 2 + MIN * 0.35} font-family={MONO} font-size={MIN} fill={MUTE} text-anchor="middle">{Math.round(resmm)}</text>{/if}
+      {#if label && lw > 6}<text x={ex + (front ? 1.2 : cw + 1.2)} y={ey + eh / 2 + fs * 0.35} font-family={F} font-size={fs} fill={INK}>{fit(label, lw, fs)}</text>{/if}
+      {#if ed > cw}<text x={front ? ex + ed - 0.8 : ex + 0.8} y={ey + eh / 2 + MIN * 0.35} font-family={MONO} font-size={MIN} fill={DARK} text-anchor={front ? 'end' : 'start'}>{cote}</text>{/if}
+      {#if rw > est(String(Math.round(resmm)), MIN) + 1}<text x={rx + rw / 2} y={ey + eh / 2 + MIN * 0.35} font-family={MONO} font-size={MIN} fill={DARK} text-anchor="middle">{Math.round(resmm)}</text>{/if}
     {/if}
   {/each}
-  <text x={x0 + 1} y={y + b.h + 3} font-family={F} font-size={MIN} fill={MUTE}>AVANT</text>
-  {#if D > 34}<text x={x0 + D / 2} y={y + b.h + 3} font-family={MONO} font-size={MIN} fill={MUTE} text-anchor="middle">P {r?.depth_mm ?? 800}</text>{/if}
-  <text x={x0 + D - 1} y={y + b.h + 3} font-family={F} font-size={MIN} fill={MUTE} text-anchor="end">ARRIÈRE</text>
+  <text x={x0 + 1} y={y + b.h + 3} font-family={F} font-size={MIN} fill={DARK}>AVANT</text>
+  {#if D > 34}<text x={x0 + D / 2} y={y + b.h + 3} font-family={MONO} font-size={MIN} fill={DARK} text-anchor="middle">P {r?.depth_mm ?? 800}</text>{/if}
+  <text x={x0 + D - 1} y={y + b.h + 3} font-family={F} font-size={MIN} fill={DARK} text-anchor="end">ARRIÈRE</text>
 {/snippet}
 
 <!-- Façade simplifiée (rendu réel) : silhouette typique de la famille d'appareils, sans image. -->
@@ -294,9 +308,9 @@
           <rect x={ex + 0.1} y={ey + 0.08} width={ew - 0.2} height={Math.max(0.2, eh - 0.16)} fill="#F6F7F9" stroke={LINE} stroke-width="0.16" />
           <rect x={ex + 0.1} y={ey + 0.08} width={Math.min(0.8, ew * 0.08)} height={Math.max(0.2, eh - 0.16)} fill={color(e)} />
           {@const lab = rackLines(e, 'label')[0]}
-          {#if eh >= 1.6 && lab}<text x={ex + 1.3} y={ey + eh / 2 + fs * 0.35} font-family={F} font-size={fs} fill={INK} textLength={sq(lab, ew - 2, fs)} lengthAdjust="spacingAndGlyphs">{fit(lab, ew - 2, fs)}</text>{/if}
+          {#if eh >= 1.6 && lab}<text x={ex + 1.3} y={ey + eh / 2 + fs * 0.35} font-family={F} font-size={fs} fill={INK}>{fit(lab, ew - 2, fs)}</text>{/if}
         {/each}
-        {#if cw > 14 && !(ctx.racks[c.id]?.elements ?? []).some((x) => x.placement.face === 'front')}<text x={cx + cw / 2} y={top - Hc / 2 + 1} font-family={F} font-size={Math.max(MIN, Math.min(2.4, cw / 12))} fill={MUTE} text-anchor="middle" textLength={sq(c.name, cw - 3, Math.max(MIN, Math.min(2.4, cw / 12)))} lengthAdjust="spacingAndGlyphs">{fit(c.name, cw - 3, Math.max(MIN, Math.min(2.4, cw / 12)))}</text>{/if}
+        {#if cw > 14 && !(ctx.racks[c.id]?.elements ?? []).some((x) => x.placement.face === 'front')}<text x={cx + cw / 2} y={top - Hc / 2 + 1} font-family={F} font-size={Math.max(MIN, Math.min(2.4, cw / 12))} fill={DARK} text-anchor="middle">{fit(c.name, cw - 3, Math.max(MIN, Math.min(2.4, cw / 12)))}</text>{/if}
       {/each}
       <rect x={x} y={top} width={e.L * s} height={T} fill="#2B2D31" stroke={INK} stroke-width="0.3" />
       <rect x={x} y={top + T} width={J} height={fy - top - T} fill="#C9CDD3" stroke={INK} stroke-width="0.3" />
@@ -309,7 +323,7 @@
       {/each}
       <rect x={x} y={fy - d.height_mm * s} width={d.depth_mm * s} height={T} fill="#2B2D31" stroke={INK} stroke-width="0.3" />
       <rect x={x + 20 * s} y={fy - d.height_mm * s + T} width={(d.depth_mm - 40) * s} height={d.height_mm * s - T} fill="#C9CDD3" fill-opacity="0.55" stroke={INK} stroke-width="0.3" />
-      <text x={x + 1} y={fy + 3} font-family={F} font-size={MIN} fill={MUTE}>OPÉRATEUR</text>
+      <text x={x + 1} y={fy + 3} font-family={F} font-size={MIN} fill={DARK}>OPÉRATEUR</text>
     {:else if b.v === 'top'}
       <rect x={x} y={y} width={e.L * s} height={d.depth_mm * s} fill="#FFFFFF" stroke={INK} stroke-width="0.5" />
       <rect x={x} y={y + (d.depth_mm - 110) * s} width={e.L * s} height={110 * s} fill="#E7E9EC" stroke={LINE} stroke-width="0.2" />
@@ -319,9 +333,9 @@
         {@const z1 = Math.max(...p.map((q) => q[0]))}
         {@const cx = x + Math.max(0, Math.min(d.length_mm - CASQ_W, c.offset_mm)) * s}
         <rect x={cx} y={y + (d.depth_mm - z1) * s} width={CASQ_W * s} height={(z1 - z0) * s} fill="#F6F7F9" stroke={INK} stroke-width="0.35" />
-        {#if CASQ_W * s > 14}<text x={cx + (CASQ_W * s) / 2} y={y + (d.depth_mm - (z0 + z1) / 2) * s + 1} font-family={F} font-size="2.2" fill={INK} text-anchor="middle" textLength={sq(c.name, CASQ_W * s - 3, 2.2)} lengthAdjust="spacingAndGlyphs">{fit(c.name, CASQ_W * s - 3, 2.2)}</text>{/if}
+        {#if CASQ_W * s > 14}<text x={cx + (CASQ_W * s) / 2} y={y + (d.depth_mm - (z0 + z1) / 2) * s + 1} font-family={F} font-size="2.2" fill={INK} text-anchor="middle">{fit(c.name, CASQ_W * s - 3, 2.2)}</text>{/if}
       {/each}
-      <text x={x + 1} y={y + d.depth_mm * s + 3} font-family={F} font-size={MIN} fill={MUTE}>CÔTÉ OPÉRATEUR</text>
+      <text x={x + 1} y={y + d.depth_mm * s + 3} font-family={F} font-size={MIN} fill={DARK}>CÔTÉ OPÉRATEUR</text>
     {/if}
   {/if}
 {/snippet}
@@ -333,14 +347,14 @@
   {@const vs = viewsOf(it)}
   {@const named = it.kind === 'rack' && !vs.includes('front') && !vs.includes('rear')}
   {#if !it.hideLabel}
-    <text x={it.x} y={it.y + 4} font-family={F} font-size="3.6" font-weight="bold" fill={INK} textLength={sq(name, Math.max(30, L.w - (sub ? 40 : 0)), 3.6)} lengthAdjust="spacingAndGlyphs">{fit(name, Math.max(30, L.w - (sub ? 40 : 0)), 3.6)}</text>
-    {#if sub}<text x={it.x + L.w} y={it.y + 4} font-family={F} font-size="2.4" fill={MUTE} text-anchor="end">{L.w > 60 ? sub : ''}</text>{/if}
+    <text x={it.x} y={it.y + 4} font-family={F} font-size="3.6" font-weight="bold" fill={INK}>{fit(name, Math.max(30, L.w - (sub ? 40 : 0)), 3.6)}</text>
+    {#if sub}<text x={it.x + L.w} y={it.y + 4} font-family={F} font-size="2.4" fill={DARK} text-anchor="end">{L.w > 60 ? sub : ''}</text>{/if}
   {/if}
   {#each L.views as b, i (i)}
     {@const bx = it.x + b.x}
     {@const by = it.y + b.y}
     {@const lbl = viewLabel(it, b)}
-    {#if lbl}<text x={bx + (b.v === 'front' || b.v === 'rear' || b.v === 'casq' ? RACK_NUM : 0)} y={by - 1.4} font-family={F} font-size="2.3" fill={MUTE} letter-spacing=".2" textLength={sq(lbl.toUpperCase(), b.w, 2.3)} lengthAdjust="spacingAndGlyphs">{fit(lbl.toUpperCase(), b.w, 2.3)}</text>{/if}
+    {#if lbl}<text x={bx + (b.v === 'front' || b.v === 'rear' || b.v === 'casq' ? RACK_NUM : 0)} y={by - 1.4} font-family={F} font-size="2.3" fill={DARK} letter-spacing=".2">{fit(lbl.toUpperCase(), b.w, 2.3)}</text>{/if}
     {#if b.v === 'syn'}
       {@const r = ctx.syn?.[it.container_id ?? '']}
       {@const sp = r ? synParts(r.svg) : null}
@@ -349,13 +363,13 @@
         <rect x={bx} y={by} width={b.w} height={b.h} fill="none" stroke="#C9CDD3" stroke-width="0.25" />
       {:else}
         <rect x={bx} y={by} width={b.w} height={b.h} fill="#F6F7F9" stroke="#C9CDD3" stroke-width="0.3" stroke-dasharray="2 1" />
-        <text x={bx + b.w / 2} y={by + b.h / 2 + 1} font-family={F} font-size="2.6" fill={MUTE} text-anchor="middle">{r === null ? 'Synoptique vide' : 'Synoptique…'}</text>
+        <text x={bx + b.w / 2} y={by + b.h / 2 + 1} font-family={F} font-size="2.6" fill={DARK} text-anchor="middle">{r === null ? 'Synoptique vide' : 'Synoptique…'}</text>
       {/if}
     {:else if b.v === '3d' || (it.kind === 'rack' && it.render === '3d' && b.v !== 'none')}
       {@const src = shots[shotKey(it.id, b.v)]}
       {@const ox = b.v === 'front' || b.v === 'rear' ? RACK_NUM : 0}
       {#if src}<image href={src} x={bx + ox} y={by} width={b.w - ox} height={b.h} preserveAspectRatio="xMidYMid meet" />
-      {:else}<rect x={bx + ox} y={by} width={b.w - ox} height={b.h} fill="#F6F7F9" stroke="#C9CDD3" stroke-width="0.3" stroke-dasharray="2 1" /><text x={bx + ox + (b.w - ox) / 2} y={by + b.h / 2} font-family={F} font-size="2.6" fill={MUTE} text-anchor="middle">Vue 3D…</text>{/if}
+      {:else}<rect x={bx + ox} y={by} width={b.w - ox} height={b.h} fill="#F6F7F9" stroke="#C9CDD3" stroke-width="0.3" stroke-dasharray="2 1" /><text x={bx + ox + (b.w - ox) / 2} y={by + b.h / 2} font-family={F} font-size="2.6" fill={DARK} text-anchor="middle">Vue 3D…</text>{/if}
     {:else if it.kind === 'rack'}
       {#if b.v === 'side'}{@render side(bx, by, b, ctx.racks[it.container_id ?? ''], kk, named)}
       {:else}{@render elevation(bx, by, ctx.racks[it.container_id ?? ''], b.v === 'rear' ? 'rear' : 'front', kk, it.render ?? 'real')}{/if}
@@ -370,18 +384,22 @@
   <defs><clipPath id="clip-{page.id}"><rect x={FRAME} y={FRAME} width={size[0] - 2 * FRAME} height={size[1] - 2 * FRAME} /></clipPath></defs>
   {#each page.items as it (it.id)}
     {@const [w, h] = itemSize(it, k, ctx, maxW)}
-    <g class="it" class:edit={editable} onpointerdown={(e) => onpick?.(it, e)} role={editable ? 'button' : undefined} aria-label={editable ? 'Sélectionner' : undefined}>
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+    <g class="it" class:edit={editable} onpointerdown={(e) => onpick?.(it, e)} role={editable ? 'button' : undefined} tabindex={editable ? 0 : undefined}
+      aria-label={editable ? (nameOf?.(it) ?? title(it)[0] ?? 'Dessin') : undefined} aria-pressed={editable ? selected === it.id : undefined}
+      onfocus={() => { if (editable) onselect?.(it); }}
+      onkeydown={(e) => { if (editable && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onselect?.(it); } }}>
       {#if editable}<rect x={it.x - 1.5} y={it.y - 1.5} width={w + 3} height={h + 3} rx="1" fill={selected === it.id ? 'rgba(79,107,255,.05)' : 'transparent'} stroke={selected === it.id ? '#4F6BFF' : 'transparent'} stroke-width="0.4" />{/if}
       {#if isDrawing(it)}{@render group(it)}
       {:else if it.kind === 'location'}
         {@const l = info.locations[it.location_id ?? '']}
-        <text x={it.x} y={it.y + 6} font-family={F} font-size="5.2" font-weight="bold" fill={INK} textLength={sq(l?.name ?? it.label ?? 'Emplacement', w - 20, 5.2)} lengthAdjust="spacingAndGlyphs">{fit(l?.name ?? it.label ?? 'Emplacement', w - 20, 5.2)}</text>
-        {#if l?.code}<text x={it.x + w} y={it.y + 6} font-family={MONO} font-size="3" fill={MUTE} text-anchor="end">{l.code}</text>{/if}
+        <text x={it.x} y={it.y + 6} font-family={F} font-size="5.2" font-weight="bold" fill={INK}>{fit(l?.name ?? it.label ?? 'Emplacement', w - 20, 5.2)}</text>
+        {#if l?.code}<text x={it.x + w} y={it.y + 6} font-family={MONO} font-size="3" fill={DARK} text-anchor="end">{l.code}</text>{/if}
         <line x1={it.x} x2={it.x + w} y1={it.y + 8.6} y2={it.y + 8.6} stroke={INK} stroke-width="0.5" />
       {:else}
         <rect x={it.x} y={it.y} width={w} height={h} fill="#FAFBFC" stroke="#8A919B" stroke-width="0.35" stroke-dasharray="2.5 1.5" />
-        <text x={it.x + w / 2} y={it.y + h / 2} font-family={F} font-size="3.4" fill={MUTE} text-anchor="middle" textLength={sq(it.label || 'Emplacement réservé', w - 4, 3.4)} lengthAdjust="spacingAndGlyphs">{fit(it.label || 'Emplacement réservé', w - 4, 3.4)}</text>
-        <text x={it.x + w / 2} y={it.y + h / 2 + 4.4} font-family={F} font-size="2.4" fill={MUTE} text-anchor="middle">RÉSERVÉ</text>
+        <text x={it.x + w / 2} y={it.y + h / 2} font-family={F} font-size="3.4" fill={DARK} text-anchor="middle">{fit(it.label || 'Emplacement réservé', w - 4, 3.4)}</text>
+        <text x={it.x + w / 2} y={it.y + h / 2 + 4.4} font-family={F} font-size="2.4" fill={DARK} text-anchor="middle">RÉSERVÉ</text>
       {/if}
     </g>
   {/each}
@@ -403,8 +421,8 @@
         {#each row as c, ci}
           {@const cx = block.x + row.slice(0, ci).reduce((a, b) => a + b.w, 0)}
           {#if ci > 0}<line x1={cx} x2={cx} y1={ry} y2={ry + ROWH[ri]!} stroke={INK} stroke-width="0.25" />{/if}
-          <text x={cx + 1.4} y={ry + 3.1} font-family={F} font-size="2.4" fill={MUTE} letter-spacing=".1">{c.l.toUpperCase()}</text>
-          <text x={cx + 1.4} y={ry + ROWH[ri]! - 2.2} font-family={F} font-size={'big' in c ? 4.4 : 3} font-weight={'big' in c || ri === 1 && ci === 0 ? 'bold' : 'normal'} fill={INK} textLength={sq(c.v || '—', c.w - 3, 'big' in c ? 4.4 : 3)} lengthAdjust="spacingAndGlyphs">{fit(c.v || '—', c.w - 3, 'big' in c ? 4.4 : 3)}</text>
+          <text x={cx + 1.4} y={ry + 3.1} font-family={F} font-size="2.4" fill={DARK} letter-spacing=".1">{c.l.toUpperCase()}</text>
+          <text x={cx + 1.4} y={ry + ROWH[ri]! - 2.2} font-family={F} font-size={'big' in c ? 4.4 : 3} font-weight={'big' in c || ri === 1 && ci === 0 ? 'bold' : 'normal'} fill={INK}>{fit(c.v || '—', c.w - 3, 'big' in c ? 4.4 : 3)}</text>
         {/each}
       {/each}
     </g>
@@ -413,7 +431,8 @@
 
 <style>
   .sheet-page { display: block; width: 100%; height: auto; background: #fff; }
-  .it.edit { cursor: grab; }
+  .it.edit { cursor: grab; outline: none; }
+  .it.edit:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .it.edit:active { cursor: grabbing; }
   .rz { cursor: nwse-resize; }
 </style>

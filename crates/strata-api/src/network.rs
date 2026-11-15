@@ -108,8 +108,9 @@ struct View {
     flows: Vec<FlowRow>,
 }
 
-fn split_sub(n: &Node) -> String {
-    n.sub.rsplit(" · ").next().unwrap_or("").to_string()
+/// ID de l'exemplaire d'un nœud (vide pour un panel ou un adaptateur).
+fn tag_of(n: &Node) -> String {
+    n.tag.clone().unwrap_or_default()
 }
 
 async fn compute(store: &Store, pid: &str) -> ApiResult<View> {
@@ -135,12 +136,9 @@ async fn compute(store: &Store, pid: &str) -> ApiResult<View> {
     let label_of: HashMap<&str, String> = all_nodes
         .iter()
         .flat_map(|n| {
-            n.ports.iter().map(move |p| {
-                (
-                    p.r.as_str(),
-                    format!("{} {} › {}", n.label, split_sub(n), p.label),
-                )
-            })
+            n.ports
+                .iter()
+                .map(move |p| (p.r.as_str(), format!("{} › {}", n.text_name(), p.label)))
         })
         .collect();
     let mut peer: HashMap<String, (String, Option<String>)> = HashMap::new();
@@ -179,8 +177,8 @@ async fn compute(store: &Store, pid: &str) -> ApiResult<View> {
             ports.push(PortRow {
                 r: p.r.clone(),
                 node: n.key.clone(),
-                equipment: n.label.clone(),
-                tag: split_sub(n),
+                equipment: n.model.clone(),
+                tag: tag_of(n),
                 element: element(n),
                 port: p.label.clone(),
                 connector: p.connector.clone(),

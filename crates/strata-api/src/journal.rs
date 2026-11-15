@@ -206,6 +206,8 @@ struct Ctx {
     projects: HashMap<String, String>,
     items: HashMap<String, String>,
     articles: HashMap<String, String>,
+    /// Extrémités de câble lisibles (« équipement › port ») des projets cités, par référence de port.
+    ports: HashMap<String, String>,
 }
 
 fn s<'a>(v: &'a Value, k: &str) -> Option<&'a str> {
@@ -240,7 +242,18 @@ fn subject(e: &AuditEntry, c: &Ctx) -> String {
             Some(n) => n.to_string(),
             None if e.object_id == "table" => "Saisie en tableau".into(),
             None if v.is_null() => String::new(),
-            None => "non numéroté".into(),
+            // Sans numéro : le trajet du câble, pour le reconnaître.
+            None => {
+                let end = |k: &str| s(v, k).and_then(|r| c.ports.get(r)).cloned();
+                match (end("a"), end("b")) {
+                    (None, None) => "non numéroté".into(),
+                    (a, b) => format!(
+                        "{} → {}",
+                        a.unwrap_or_else(|| "extrémité manquante".into()),
+                        b.unwrap_or_else(|| "extrémité manquante".into())
+                    ),
+                }
+            }
         },
         "article" => article_name(v, &c.items).unwrap_or_default(),
         "placement" => {
@@ -369,10 +382,33 @@ pub(crate) async fn describe(store: &Store, entries: Vec<AuditEntry>) -> ApiResu
         .iter()
         .filter_map(|(k, v)| article_name(v, &items).map(|n| (k.clone(), n)))
         .collect();
+    // Câbles sans numéro : extrémités nommées d'après les nœuds actuels de leur projet.
+    let mut ports: HashMap<String, String> = HashMap::new();
+    let cable_projects: HashSet<String> = entries
+        .iter()
+        .filter(|e| e.object_type == "cable")
+        .filter(|e| {
+            e.after
+                .as_ref()
+                .or(e.before.as_ref())
+                .is_some_and(|v| v.get("number").and_then(Value::as_str).is_none())
+        })
+        .filter_map(|e| e.project_id.clone())
+        .collect();
+    for pid in &cable_projects {
+        if let Ok(nodes) = crate::synoptic::project_nodes(store, pid).await {
+            for n in &nodes {
+                for p in &n.ports {
+                    ports.insert(p.r.clone(), format!("{} › {}", n.text_name(), p.label));
+                }
+            }
+        }
+    }
     let c = Ctx {
         projects,
         items,
         articles,
+        ports,
     };
     Ok(entries
         .iter()

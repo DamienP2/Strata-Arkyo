@@ -3,8 +3,8 @@
   // colorés, connecteurs et libellés par port. En compact (élévation de la baie) : les
   // connecteurs seuls, à l'échelle de l'élément.
   import ConnGlyph from './ConnGlyph.svelte';
-  import { family, slotColor, groupAt, colOf, rowOf, type PanelData, type PanelGroup, type PanelSlot } from '../lib/panel';
-  import { refById } from '../lib/catalog.svelte';
+  import { family, groupAt, colOf, rowOf, type PanelData, type PanelGroup, type PanelSlot } from '../lib/panel';
+  import { FAMILY_NONE, familyColor, refById, refList } from '../lib/catalog.svelte';
 
   let {
     panel, detail = false, selected = [], target = null, onslot, ongroup,
@@ -25,6 +25,19 @@
   const sx = (index: number) => x0 + (colOf(panel, index) - 1) * pitch;
   const sy = (index: number) => (rowOf(panel, index) - 1) * ROW;
   const sel = $derived(new Set(selected));
+  // Couleurs : la famille de signal (familyColor, suit le thème), jamais une couleur libre.
+  // Un groupe porte sa famille (`function`) ; un groupe plus ancien n'a qu'une couleur prise
+  // dans la palette des familles : on retrouve la famille d'après cette couleur.
+  const groupFamily = (g: PanelGroup | undefined): string | null => {
+    if (!g) return null;
+    const f = (g as PanelGroup & { function?: string | null }).function;
+    return f || (refList('functions').find((x) => x.data?.color?.toLowerCase() === g.color?.toLowerCase())?.id ?? null);
+  };
+  const groupColor = (g: PanelGroup) => { const f = groupFamily(g); return f ? familyColor(f, { screen: true }) : g.color || FAMILY_NONE; };
+  const slotColor = (s: PanelSlot) => {
+    const f = s.function ?? groupFamily(groupAt(panel, rowOf(panel, s.index), colOf(panel, s.index)));
+    return f ? familyColor(f, { screen: true }) : (refById('connectors', s.connector)?.data?.color as string | undefined) ?? FAMILY_NONE;
+  };
   const name = (s: PanelSlot) => `${refById('connectors', s.connector)?.name ?? s.connector}${s.variant ? ` ${s.variant}` : ''}${s.d_format ? ' · format D' : ''}`;
   const empties = $derived.by(() => {
     const out: number[] = [];
@@ -77,7 +90,7 @@
       {#each panel.groups as g}
         {@const gx = x0 + (g.start - 1) * pitch}
         <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-        <g class="grp" style="--g:{g.color}" role={ongroup ? 'button' : undefined} tabindex={ongroup ? 0 : undefined}
+        <g class="grp" style="--g:{groupColor(g)}" role={ongroup ? 'button' : undefined} tabindex={ongroup ? 0 : undefined}
           onclick={(e) => ongroup?.(g, e)} onkeydown={(e) => { if (e.key === 'Enter') ongroup?.(g, e as unknown as MouseEvent); }}>
           <title>Groupe {g.label || 'sans nom'} · ports {g.start} à {g.start + g.len - 1}</title>
           <rect class="gbox" x={gx + 2} y={(g.row - 1) * ROW + 3} width={g.len * pitch - 4} height={ROW - 6} rx="6" />
@@ -87,7 +100,7 @@
       {/each}
     {:else}
       {#each panel.groups as g}
-        <rect class="gline" style="--g:{g.color}" x={(g.start - 1) * pitch + 1} y={(g.row - 1) * ROW} width={g.len * pitch - 2} height={Math.max(1.5, ROW * 0.08)} />
+        <rect class="gline" style="--g:{groupColor(g)}" x={(g.start - 1) * pitch + 1} y={(g.row - 1) * ROW} width={g.len * pitch - 2} height={Math.max(1.5, ROW * 0.08)} />
       {/each}
     {/if}
     {#each empties as i}{@render cell(i, 1, null)}{/each}

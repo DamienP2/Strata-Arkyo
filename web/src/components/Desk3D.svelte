@@ -34,9 +34,10 @@
 
 <div class="d3">
   <div class="d3-bar">
-    <div class="seg" role="group" aria-label="Outil"><button class:on={!pan} title="Tourner autour (glisser)" onclick={() => (pan = false)}>Tourner</button><button class:on={pan} title="Se déplacer dans la vue (glisser)" onclick={() => (pan = true)}><Icon name="hand" size="sm" />Main</button></div>
-    <div class="seg" role="group" aria-label="Cadrage">{#each [['quarter', '3/4'], ['front', 'Opérateur'], ['rear', 'Arrière'], ['side', 'Côté'], ['top', 'Dessus']] as [k, l]}<button onclick={() => scene?.frame(k as any)}>{l}</button>{/each}</div>
-    <span class="d3-l">Joues</span><div class="seg" role="group" aria-label="Joues"><button class:on={sides} onclick={() => (sides = true)}>Avec</button><button class:on={!sides} onclick={() => (sides = false)}>Sans</button></div>
+    <div class="seg" role="group" aria-label="Outil"><button class:on={!pan} aria-pressed={!pan} title="Tourner autour (glisser)" onclick={() => (pan = false)}>Tourner</button><button class:on={pan} aria-pressed={pan} title="Se déplacer dans la vue (glisser)" onclick={() => (pan = true)}><Icon name="hand" size="sm" />Main</button></div>
+    <!-- Chaque libellé reste collé à ses boutons ; la face du mobilier s'appelle « Face » partout. -->
+    <span class="d3-g"><span class="d3-l">Cadrage</span><div class="seg" role="group" aria-label="Cadrage">{#each [['quarter', '3/4'], ['front', 'Face'], ['rear', 'Arrière'], ['side', 'Côté'], ['top', 'Dessus']] as [k, l]}<button onclick={() => scene?.frame(k as any)}>{l}</button>{/each}</div></span>
+    <span class="d3-g"><span class="d3-l">Joues</span><div class="seg" role="group" aria-label="Joues"><button class:on={sides} aria-pressed={sides} onclick={() => (sides = true)}>Avec</button><button class:on={!sides} aria-pressed={!sides} onclick={() => (sides = false)}>Sans</button></div></span>
     <span style="flex:1"></span>
     <span class="muted small">{pan ? 'Glisser : se déplacer · molette : zoom · clic droit : tourner' : 'Glisser : tourner · molette : zoom · clic droit : se déplacer'}</span>
     <button class="btn sm ghost" onclick={shot}><Icon name="download" size="sm" />PNG</button>
@@ -51,7 +52,8 @@
 <style>
   .d3 { display: flex; flex-direction: column; height: 100%; }
   .d3-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 8px 12px; border-bottom: 1px solid var(--line); }
-  .d3-view { position: relative; flex: 1; min-height: 520px; background: #d6dae0; overflow: hidden; }
+  .d3-view { position: relative; flex: 1; min-height: 520px; background: var(--canvas); overflow: hidden; }
+  .d3-g { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; flex: none; }
   .d3-view :global(canvas) { position: absolute; inset: 0; display: block; width: 100% !important; height: 100% !important; cursor: grab; }
   .d3-spin { position: absolute; left: 50%; top: 50%; }
   .d3-err { position: absolute; inset: 0; display: grid; place-items: center; color: #23262b; }

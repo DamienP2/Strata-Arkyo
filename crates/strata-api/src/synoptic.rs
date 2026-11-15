@@ -84,8 +84,21 @@ pub(crate) struct Port {
 pub(crate) struct Node {
     pub key: String,
     pub kind: &'static str,
+    /// Nom affiché (écran, PDF, textes des extrémités) : le libellé de l'exemplaire, à défaut son
+    /// ID ; pour un panel ou un adaptateur, son nom. Même règle que `rackLines` côté web.
     pub label: String,
+    /// En petit sous le nom : marque et modèle (puis l'ID quand le nom est le libellé), puis l'élément.
     pub sub: String,
+    /// Nom de la fiche du catalogue (modèle, sans la marque), du panel ou de l'adaptateur.
+    pub model: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub custom: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub brand: Option<String>,
+    /// Élément (rack, mobilier) où se trouve le nœud, « Équipement libre » sinon.
+    pub place: String,
     pub function: Option<String>,
     pub container_id: Option<String>,
     pub location_id: String,
@@ -93,6 +106,26 @@ pub(crate) struct Node {
     /// Position dans le rack (centre en mm depuis le bas, face avant), pour les longueurs.
     #[serde(skip)]
     pub spot: Option<RackSpot>,
+}
+
+impl Node {
+    /// Nom d'un nœud dans un texte d'une ligne (« équipement › port ») : le libellé de
+    /// l'exemplaire s'il en a un, sinon le modèle suivi de son ID ; panels et adaptateurs : leur nom.
+    pub fn text_name(&self) -> String {
+        match (&self.custom, &self.tag) {
+            (Some(c), _) => c.clone(),
+            (None, Some(t)) if !t.is_empty() => format!("{} {t}", self.model),
+            _ => self.label.clone(),
+        }
+    }
+}
+
+/// Marque et modèle, sans répéter la marque quand le nom la contient déjà (comme `modelOf` côté web).
+fn model_of(brand: Option<&str>, name: &str) -> String {
+    match brand.map(str::trim).filter(|b| !b.is_empty()) {
+        Some(b) if !name.to_lowercase().starts_with(&b.to_lowercase()) => format!("{b} {name}"),
+        _ => name.to_string(),
+    }
 }
 
 impl Port {
@@ -128,6 +161,11 @@ pub(crate) async fn project_nodes(store: &Store, pid: &str) -> ApiResult<Vec<Nod
             )
         })
         .collect();
+    let brand_name = |id: &str| {
+        refs.iter()
+            .find(|r| r.kind == RefKind::Brand && r.id == id)
+            .map(|r| r.name.clone())
+    };
     let conn_name = |id: &str| {
         refs.iter()
             .find(|r| r.kind == RefKind::Connector && r.id == id)
@@ -287,11 +325,28 @@ pub(crate) async fn project_nodes(store: &Store, pid: &str) -> ApiResult<Vec<Nod
                             }
                         }
                     }
+                    let custom = inst
+                        .label
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|l| !l.is_empty())
+                        .map(str::to_string);
+                    let brand = it.brand_id.as_deref().and_then(brand_name);
+                    let model = model_of(brand.as_deref(), &it.name);
                     out.push(Node {
                         key: format!("i:{}", inst.id),
                         kind: "equipment",
-                        label: it.name.clone(),
-                        sub: format!("{where_} · {}", inst.tag),
+                        label: custom.clone().unwrap_or_else(|| inst.tag.clone()),
+                        sub: if custom.is_some() {
+                            format!("{model} · {} · {where_}", inst.tag)
+                        } else {
+                            format!("{model} · {where_}")
+                        },
+                        model: it.name.clone(),
+                        custom,
+                        tag: Some(inst.tag.clone()),
+                        brand,
+                        place: where_.clone(),
                         function: function.clone(),
                         container_id: a.container_id.clone(),
                         location_id: a.location_id.clone(),
@@ -348,7 +403,12 @@ pub(crate) async fn project_nodes(store: &Store, pid: &str) -> ApiResult<Vec<Nod
                         } else {
                             panel.name.clone()
                         },
-                        sub: format!("{where_} · arrière ← → avant"),
+                        sub: where_.clone(),
+                        model: panel.name.clone(),
+                        custom: None,
+                        tag: None,
+                        brand: None,
+                        place: where_.clone(),
                         function: None,
                         container_id: a.container_id.clone(),
                         location_id: a.location_id.clone(),
@@ -421,6 +481,11 @@ pub(crate) async fn project_nodes(store: &Store, pid: &str) -> ApiResult<Vec<Nod
                         kind: "adapter",
                         label: it.name.clone(),
                         sub: format!("{where_} · unité {unit}"),
+                        model: it.name.clone(),
+                        custom: None,
+                        tag: None,
+                        brand: None,
+                        place: where_.clone(),
                         function: ad.function.clone(),
                         container_id: a.container_id.clone(),
                         location_id: a.location_id.clone(),

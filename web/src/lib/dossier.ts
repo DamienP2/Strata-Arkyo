@@ -4,8 +4,8 @@
 
 import { mount, unmount } from 'svelte';
 import { api } from './api';
-import { fnColor, refById, refList, refName, loadRefs } from './catalog.svelte';
-import { FONT, INK, MUTE, addPage, bestLandscape, drawLogo, drawTable, familyDash, ink, markFramed, newDoc, newDocMm, paginate, projectHeader, size, svgPage, titleBlock, txt, type Col, type Doc, type LegendItem, type PaperKey, type TitleBlock, type Vars } from './pdfkit';
+import { familyColor, refById, loadRefs } from './catalog.svelte';
+import { FONT, INK, LW, MUTE, RULE, addPage, bestLandscape, drawLogo, drawTable, familyDash, ink, markFramed, newDoc, newDocMm, paginate, projectHeader, revision, sheetCount, size, svgPage, titleBlock, txt, type Col, type Doc, type LegendItem, type PaperKey, type TitleBlock, type Vars } from './pdfkit';
 import { dataUrl, drawingSvg, mapFloorSvg, synopticSvg, toSvgEl, type Rendered } from './render';
 import { drawPV, pvEnds } from './pv';
 import { withLightTheme, standalone } from './svgexport';
@@ -13,8 +13,10 @@ import { STATUS, type ProjectView } from './projects';
 
 export interface DocDef { key: string; group: 'project' | 'prep' | 'network' | 'plans' | 'recette'; title: string; columns: string[] }
 export interface DocOpt { key: string; include: boolean; paper: 'A4' | 'A3' | null; landscape: boolean | null; columns: string[]; hidden: string[]; title: string | null; pages?: string[] }
-export interface Probe { state: 'ok' | 'empty' | 'error'; message: string; choices?: { id: string; label: string }[] }
-export const GROUPS: Record<DocDef['group'], string> = { project: 'Projet', prep: 'Préparation', network: 'Réseau', plans: 'Plans', recette: 'Recette' };
+/** `sheets` : feuilles réellement imprimées par choix (synoptiques : découpage et orientation
+ *  calculés comme à l'export), pour un récapitulatif exact. */
+export interface Probe { state: 'ok' | 'empty' | 'error'; message: string; choices?: { id: string; label: string }[]; sheets?: Record<string, { count: number; landscape: boolean }> }
+export const GROUPS: Record<DocDef['group'], string> = { project: 'Projet', prep: 'Préparation', network: 'Réseau', plans: 'Dessins et synoptiques', recette: 'Recette' };
 /** La fiche et l'inventaire ont un format imposé. */
 export const FIXED: Record<string, [PaperKey, boolean]> = { sheet: ['A4', false], inventory: ['A4', false], cover: ['A4', false] };
 export const DEFAULT_FMT: Record<string, [PaperKey, boolean]> = {
@@ -49,10 +51,17 @@ async function tableRows(c: Ctx, key: string): Promise<Record<string, string>[]>
     case 'inventory': {
       const cname = (id: string | null) => v.containers.find((x) => x.id === id)?.name ?? 'Équipements libres';
       const nat: Record<string, string> = { equipment: 'Équipement', adapter: 'Adaptateur', accessory: 'Accessoire' };
-      return v.articles.slice().sort((a, b) => cname(a.container_id).localeCompare(cname(b.container_id), 'fr')).map((a) => ({
-        element: cname(a.container_id), nature: nat[a.nature] ?? a.nature, label: a.label, quantity: String(a.quantity),
-        tags: v.instances.filter((i) => i.article_id === a.id).map((i) => i.tag).join(' '),
-      }));
+      // Articles identiques d'un même élément regroupés (« 5 × 24x BNC12G ») ; un panel est
+      // de nature « Panel », comme dans la préparation.
+      const rows = new Map<string, { element: string; nature: string; label: string; n: number; t: string[] }>();
+      for (const a of v.articles.slice().sort((a, b) => cname(a.container_id).localeCompare(cname(b.container_id), 'fr'))) {
+        const nature = a.accessory?.kind === 'panel' ? 'Panel' : nat[a.nature] ?? a.nature;
+        const key = `${a.container_id}|${nature}|${a.label}`;
+        const r = rows.get(key) ?? { element: cname(a.container_id), nature, label: a.label, n: 0, t: [] as string[] };
+        r.n += a.quantity; r.t.push(...v.instances.filter((i) => i.article_id === a.id).map((i) => i.tag));
+        rows.set(key, r);
+      }
+      return [...rows.values()].map(({ n, t, ...r }) => ({ ...r, quantity: String(n), tags: t.join(' ') }));
     }
     case 'prep_cables': return prepRows(c, 'cables', null);
     case 'prep_equipment': return prepRows(c, 'equipment', null);
@@ -88,7 +97,6 @@ async function tableRows(c: Ctx, key: string): Promise<Record<string, string>[]>
 
 // ----- Vues graphiques -----
 
-const sigColor = (id: string) => { const s = refList('signals').find((x) => x.id === id) as any; return s?.data?.color || fnColor(s?.data?.function) || '#15171A'; };
 async function drawingPages(c: Ctx, natures: string[]): Promise<{ id: string; label: string }[]> {
   const ix = await get<{ pages: any[] }>(c, `/projects/${pidOf(c)}/drawings`);
   return ix.pages.filter((p) => natures.includes(p.nature) && p.count > 0).map((p) => ({ id: p.id, label: p.name }));
@@ -104,7 +112,7 @@ async function graphics(c: Ctx, key: string, pages: string[] | undefined): Promi
       const d = await get<any>(c, `/projects/${pid}/drawings/${p.id}`);
       const images: Record<string, string> = {};
       for (const e of d.elements.filter((x: any) => x.type === 'image')) { const u = await dataUrl(`/api/projects/${pid}/plans/files/${e.file}`); if (u) images[e.file] = u; }
-      const r = drawingSvg(d, { images, fnColor, sigColor, sigName: (id) => refName('signals', id) });
+      const r = drawingSvg(d, { images });
       out.push({ title: d.name, r, w: r.w, h: r.h });
     }
     return out;
@@ -117,7 +125,7 @@ async function graphics(c: Ctx, key: string, pages: string[] | undefined): Promi
       for (const f of d.floors) {
         if (pages && !pages.includes(`${m.id}:${f.id}`)) continue;
         const bg = f.background ? await dataUrl(`/api/projects/${pid}/plans/files/${f.background}`) : null;
-        const r = mapFloorSvg(d, f, { bg, sigName: (id) => refName('signals', id) });
+        const r = mapFloorSvg(d, f, { bg });
         if (r) out.push({ title: `${m.name} · ${f.name}`, r, w: r.w, h: r.h });
       }
     }
@@ -127,7 +135,7 @@ async function graphics(c: Ctx, key: string, pages: string[] | undefined): Promi
     const out: Graphic[] = [];
     for (const ct of pick(c.view.containers.map((x) => ({ id: x.id, label: x.name })))) {
       const s = await get<any>(c, `/projects/${pid}/synoptic?view=container:${ct.id}`);
-      const r = synopticSvg(s, { fnColor });
+      const r = synopticSvg(s);
       if (r) out.push({ title: `Synoptique · ${ct.label}`, r, w: r.w, h: r.h });
     }
     return out;
@@ -142,7 +150,7 @@ async function graphics(c: Ctx, key: string, pages: string[] | undefined): Promi
     normalize(sheet);
     const ctx = await loadCtx(c.view, synIds(sheet));
     const site = await get<{ name: string }>(c, '/site');
-    const info = { project: c.view.project.name, client: c.view.project.client ?? 'Projet interne', venue: c.view.project.venue ?? '', site: site.name, date: new Date().toLocaleDateString('fr-FR'), locations: Object.fromEntries(c.view.locations.map((l) => [l.id, { name: l.name, code: l.code }])) };
+    const info = { project: c.view.project.name, client: c.view.project.client ?? 'Projet interne', venue: c.view.project.venue ?? '', site: site.name, date: new Date().toLocaleDateString('fr-FR'), revision: revision(c.view.project as any), locations: Object.fromEntries(c.view.locations.map((l) => [l.id, { name: l.name, code: l.code }])) };
     const host = document.createElement('div'); host.style.cssText = 'position:absolute;left:-100000px;top:0;width:2000px'; document.body.appendChild(host);
     const out: Graphic[] = [];
     try {
@@ -174,11 +182,36 @@ export async function choices(c: Ctx, key: string): Promise<{ id: string; label:
   return undefined;
 }
 
-/** Disponibilité d'un document : « vide » et « en échec » sont distingués. */
-export async function probe(c: Ctx, key: string): Promise<Probe> {
+/** Feuilles d'un synoptique à l'export : même rendu, même découpage, même orientation (la
+ *  plus économe) que dans le dossier. */
+export async function synSheets(c: Ctx, cid: string, paper: PaperKey, landscape: boolean, tpl: TitleBlock | null): Promise<{ count: number; landscape: boolean } | null> {
+  const s = await get<any>(c, `/projects/${pidOf(c)}/synoptic?view=container:${cid}`);
+  const r = synopticSvg(s); if (!r) return null;
+  const el = toSvgEl(r), o = synOpts(r);
+  const land = bestLandscape(el, r.w, r.h, paper, landscape, tpl, o);
+  return { count: sheetCount(el, r.w, r.h, paper, land, tpl, o), landscape: land };
+}
+const synOpts = (r: Rendered) => ({ tile: true, minPt: 6, legend: legendOf(r.families), blocks: r.blocks });
+
+/** Disponibilité d'un document : « vide » et « en échec » sont distingués. Synoptiques : nombre
+ *  réel de feuilles et orientation, au format choisi (`opt`), sinon au format par défaut. */
+export async function probe(c: Ctx, key: string, opt?: DocOpt): Promise<Probe> {
   try {
     if (key === 'cover' || key === 'sheet') return { state: 'ok', message: '' };
     if (key === 'recette') { const r = await get<{ total: number }>(c, `/projects/${pidOf(c)}/recette`); return r.total ? { state: 'ok', message: `${r.total} points` } : { state: 'empty', message: 'Aucun point de recette.' }; }
+    if (key === 'plan_synoptic') {
+      const ch = await choices(c, key) ?? [];
+      if (!ch.length) return { state: 'empty', message: 'Rien à dessiner.' };
+      await loadRefs();
+      const paper = (opt?.paper ?? DEFAULT_FMT[key]![0]) as PaperKey, land = opt?.landscape ?? DEFAULT_FMT[key]![1];
+      const tpl = await titleBlock();
+      const sheets: Record<string, { count: number; landscape: boolean }> = {};
+      for (const x of ch) { const s = await synSheets(c, x.id, paper, land, tpl); if (s) sheets[x.id] = s; }
+      const pick = opt?.pages ? ch.filter((x) => opt.pages!.includes(x.id)) : ch;
+      const n = pick.reduce((a, x) => a + (sheets[x.id]?.count ?? 0), 0), ls = new Set(pick.map((x) => sheets[x.id]?.landscape));
+      const or = ls.size > 1 ? 'portrait et paysage' : ls.has(true) ? 'paysage' : 'portrait';
+      return { state: 'ok', message: `${pick.length} synoptique${pick.length > 1 ? 's' : ''} · ${n} feuille${n > 1 ? 's' : ''} ${paper} ${or}`, choices: ch.map((x) => ({ ...x, label: sheets[x.id] ? `${x.label} · ${sheets[x.id]!.count} feuille${sheets[x.id]!.count > 1 ? 's' : ''} ${sheets[x.id]!.landscape ? 'paysage' : 'portrait'}` : x.label })), sheets };
+    }
     const ch = await choices(c, key);
     if (ch) return ch.length ? { state: 'ok', message: `${ch.length} page${ch.length > 1 ? 's' : ''}`, choices: ch } : { state: 'empty', message: 'Rien à dessiner.' };
     const rows = await tableRows(c, key);
@@ -200,12 +233,12 @@ function cover(doc: Doc, v: ProjectView, site: { name: string; logo: string | nu
   const h = projectHeader(v.project as any, '');
   ink(doc, 11);
   [h.client, h.venue, h.dates, `Édité le ${new Date().toLocaleDateString('fr-FR')}${h.version ? ` · ${h.version}` : ''}`].filter(Boolean).forEach((l, i) => doc.text(txt(l), m, 108 + i * 6.5));
-  doc.setDrawColor(...INK); doc.setLineWidth(0.6); doc.line(m, 140, W - m, 140);
+  doc.setDrawColor(...INK); doc.setLineWidth(LW.strong); doc.line(m, 140, W - m, 140);
   doc.setFont(FONT.sans, 'bold'); ink(doc, 12, false); doc.text('Sommaire', m, 152);
 }
 
-/** Légende des familles de signal d'un synoptique rendu. */
-const legendOf = (fams: string[] | undefined): LegendItem[] => (fams ?? []).slice().sort().map((f) => ({ label: f ? refById('functions', f)?.name ?? f : 'Famille non définie', color: (f && fnColor(f).startsWith('#') ? fnColor(f) : '#8A919B'), dash: familyDash(f || null) }));
+/** Légende des familles de signal d'un synoptique rendu (câbles et ports dessinés). */
+const legendOf = (fams: string[] | undefined): LegendItem[] => [...new Set(fams ?? [])].map((f) => ({ label: f ? refById('functions', f)?.name ?? f : 'Famille non définie', color: familyColor(f || null, { screen: false }), dash: familyDash(f || null) })).sort((a, b) => a.label.localeCompare(b.label, 'fr'));
 
 export async function build(view: ProjectView, defs: DocDef[], opts: DocOpt[], dossierTitle: string, onStep: (msg: string) => void, only?: string): Promise<Built> {
   await loadRefs();
@@ -224,15 +257,15 @@ export async function build(view: ProjectView, defs: DocDef[], opts: DocOpt[], d
   // Page au format propre (feuille des planches, avec son cadre et son cartouche).
   const startOwn = async (w: number, h: number): Promise<Doc> => { flow = null; if (!doc) doc = await newDocMm(w, h); else doc.addPage([w, h], w > h ? 'landscape' : 'portrait'); markFramed(doc); return doc; };
   const fmtLabel = (paper: PaperKey, landscape: boolean) => `${paper} ${landscape ? 'paysage' : 'portrait'}`;
-  const table = async (title: string, paper: PaperKey, landscape: boolean, cols: Col[], rows: string[][]) => {
+  const table = async (title: string, paper: PaperKey, landscape: boolean, cols: Col[], rows: string[][], fixed = false) => {
     const f = flow as { paper: PaperKey; landscape: boolean; y: number } | null;
     const chain = f && f.paper === paper && f.landscape === landscape ? f.y : undefined;
     const d = chain != null ? (doc as unknown as Doc) : await start(paper, landscape);
     const head = projectHeader(view.project as any, only ? title : dossierTitle);
-    const y = drawTable(d, head, cols, rows, paper, landscape, { section: only ? undefined : title, y: chain, onStart: (page) => sections.push({ title, page, fmt: fmtLabel(paper, landscape) }) });
+    const y = drawTable(d, head, cols, rows, paper, landscape, { section: only ? undefined : title, y: chain, fixed, onStart: (page) => sections.push({ title, page, fmt: fmtLabel(paper, landscape) }) });
     flow = { paper, landscape, y: y + 6 };
   };
-  const baseVars = async (title: string): Promise<Vars> => ({ title, project: view.project.name, client: view.project.client ?? 'Projet interne', address: view.project.venue ?? '', date: new Date().toLocaleDateString('fr-FR'), site: site.name, logo: site.logo ?? '', version: `rév. ${(view.project as any).rev ?? ''}`, view: title });
+  const baseVars = async (title: string): Promise<Vars> => ({ title, project: view.project.name, client: view.project.client ?? 'Projet interne', address: view.project.venue ?? '', date: new Date().toLocaleDateString('fr-FR'), site: site.name, logo: site.logo ?? '', version: revision(view.project as any), view: title });
   if (withCover) { const d = await start('A4', false); cover(d, view, site, dossierTitle); }
   for (const o of list.filter((x) => x.key !== 'cover')) {
     const def = defs.find((d) => d.key === o.key); if (!def) continue;
@@ -257,27 +290,32 @@ export async function build(view: ProjectView, defs: DocDef[], opts: DocOpt[], d
       const rows = await tableRows(c, o.key);
       const cols = (o.columns.length ? o.columns : def.columns).filter((k) => def.columns.includes(k));
       const tc: Col[] = cols.map((k) => ({ label: COL_LABEL[k] ?? k, w: COL_W[k] ?? 20, align: ['quantity', 'reserve', 'udp', 'console', 'universe', 'channels'].includes(k) ? 'right' : 'left' }));
-      await table(title, paper, landscape, tc, rows.map((r) => cols.map((k) => r[k] ?? '')));
+      // Tableaux de la préparation : colonnes alignées d'une section à l'autre.
+      await table(title, paper, landscape, tc, rows.map((r) => cols.map((k) => r[k] ?? '')), o.key.startsWith('prep_'));
       continue;
     }
     const gs = await graphics(c, o.key, o.pages);
     if (!gs.length) { skipped.push(`${title} : vide`); continue; }
-    let first = true;
+    let first = true, sheetsDone = 0;
+    const orients = new Set<boolean>();
     for (const [i, g] of gs.entries()) {
       const own = !!g.own;
       const el = g.r instanceof SVGSVGElement ? g.r : toSvgEl(g.r as Rendered);
       // Synoptiques : découpés en feuilles plutôt qu'écrasés, avec la légende des familles, dans
       // l'orientation qui demande le moins de feuilles.
       const syn = o.key === 'plan_synoptic';
-      const gOpts = { tile: syn, legend: syn ? legendOf((g.r as Rendered).families) : [] };
+      const gOpts = syn ? synOpts(g.r as Rendered) : { tile: false, legend: [] };
       const land = own ? landscape : bestLandscape(el, g.w, g.h, paper, landscape, tpl, gOpts);
       const d = own ? await startOwn(g.w, g.h) : await start(paper, land);
-      if (first) { sections.push({ title, page: d.getNumberOfPages(), fmt: own ? 'format de la planche' : syn ? `${paper}, orientation selon le dessin` : fmtLabel(paper, landscape) }); first = false; }
+      if (first) { sections.push({ title, page: d.getNumberOfPages(), fmt: own ? 'format de la planche' : fmtLabel(paper, landscape) }); first = false; }
       if (own) { await import('svg2pdf.js'); await d.svg(el, { x: 0, y: 0, width: g.w, height: g.h }); }
       else {
-        await svgPage(d, el, g.w, g.h, tpl, { ...(await baseVars(g.title)), sheet: String(i + 1), sheets: String(gs.length), format: fmtLabel(paper, land) }, gOpts);
+        sheetsDone += await svgPage(d, el, g.w, g.h, tpl, { ...(await baseVars(g.title)), sheet: String(i + 1), sheets: String(gs.length), format: fmtLabel(paper, land) }, gOpts);
+        orients.add(land);
       }
     }
+    // Sommaire des synoptiques : format, orientation réelle et nombre de feuilles imprimées.
+    if (o.key === 'plan_synoptic') { const s = sections.find((x) => x.title === title); if (s) s.fmt = `${paper} ${orients.size > 1 ? 'portrait et paysage' : orients.has(true) ? 'paysage' : 'portrait'} · ${sheetsDone} feuille${sheetsDone > 1 ? 's' : ''}`; }
   }
   if (!doc) throw new Error('Aucun document à imprimer : tous sont vides ou en échec.');
   const d = doc as Doc;
@@ -297,7 +335,7 @@ export async function build(view: ProjectView, defs: DocDef[], opts: DocOpt[], d
       d.text(txt(s.title), 20, y); d.text(String(s.page), 190, y, { align: 'right' });
       ink(d, 8.5); const fw = d.getTextWidth(txt(s.fmt)); d.text(txt(s.fmt), 180, y, { align: 'right' });
       d.setFontSize(10.5); const tw = d.getTextWidth(txt(s.title));
-      d.setDrawColor(190, 195, 201); d.setLineDashPattern([0.5, 1], 0); d.line(22 + tw, y, 178 - fw, y); d.setLineDashPattern([], 0);
+      d.setDrawColor(...RULE); d.setLineWidth(LW.rule); d.setLineDashPattern([0.5, 1], 0); d.line(22 + tw, y, 178 - fw, y); d.setLineDashPattern([], 0);
       y += 7;
     }
     // Formats mélangés : annoncé sur la page de garde.

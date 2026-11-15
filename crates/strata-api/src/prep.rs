@@ -195,12 +195,16 @@ async fn lines(store: &Store, pid: &str) -> ApiResult<(Vec<Line>, Value)> {
             ends[1].1,
             len_s
         );
+        // Genre inconnu (extrémité disparue) : écrit en clair, jamais un « ? » brut.
+        let side = |e: &(String, String)| match e.1.as_str() {
+            "?" => format!("{} (genre à préciser)", cname(&e.0)),
+            "" => cname(&e.0),
+            g => format!("{} {g}", cname(&e.0)),
+        };
         let detail = format!(
-            "{} {} ↔ {} {} · {}",
-            cname(&ends[0].0),
-            ends[0].1,
-            cname(&ends[1].0),
-            ends[1].1,
+            "{} ↔ {} · {}",
+            side(&ends[0]),
+            side(&ends[1]),
             if len_s == "?" {
                 "longueur à définir".to_string()
             } else {

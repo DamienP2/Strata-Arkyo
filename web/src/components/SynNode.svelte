@@ -1,21 +1,23 @@
 <script lang="ts">
-  // Nœud du synoptique, dessiné comme dans le synoptique : en-tête à la couleur de la
-  // fonction, entrées à gauche, sorties et E/S à droite, un point par port à la couleur
-  // du signal, le connecteur et son genre (M/F). Aperçu de la fiche équipement.
-  import { refById } from '../lib/catalog.svelte';
+  // Nœud du synoptique, dessiné comme dans le synoptique et ses exports (géométrie et
+  // abréviations communes, lib/render.ts) : en-tête à la couleur de la famille de l'équipement,
+  // entrées à gauche, sorties et E/S à droite, un point par port à la couleur de la famille de
+  // son signal, le connecteur et son genre (M/F). Aperçu de la fiche équipement.
+  import { FAMILY_NONE, familyColor, refById } from '../lib/catalog.svelte';
   import { fitText, shareRow, textWidth } from '../lib/fit';
+  import { SYN, connShort } from '../lib/render';
 
   interface Port { connector_id: string; signal_id: string | null; direction: string; gender: string; quantity: number; label: string | null; variant: string | null }
   let { name, subtitle = '', fn = null, ports, maxPerSide = 48, hl = null }: { name: string; subtitle?: string; fn?: string | null; ports: Port[]; maxPerSide?: number; hl?: number | null } = $props();
 
-  const NW = 270, HH = 52, PS = 28;
+  const { NW, HH, PS } = SYN;
   const uid = $props.id();
-  const color = (p: Port) => refById('signals', p.signal_id)?.data?.color ?? refById('connectors', p.connector_id)?.data?.color ?? 'var(--fg-3)';
-  const short = (c: string) => {
-    const n = refById('connectors', c)?.name ?? c;
-    const s = n.replace(/\s*\/.*$/, '').replace(/ monophasé| triphasé/, '');
-    return s.length > 9 ? s.split(/\s+/)[0]!.slice(0, 9) : s;
+  /** Couleur d'un port : la famille de son signal ; sans signal, celle du connecteur ; sinon FAMILY_NONE. */
+  const color = (p: Port) => {
+    const fam = refById('signals', p.signal_id)?.data?.function as string | undefined;
+    return fam ? familyColor(fam, { screen: true }) : (refById('connectors', p.connector_id)?.data?.color as string | undefined) ?? FAMILY_NONE;
   };
+  const short = (c: string) => connShort(c);
   /** Un port par exemplaire : « SDI IN 1 », « SDI IN 2 »… */
   function expand(list: Port[]) {
     const out: { label: string; p: Port; g: number }[] = [];
@@ -33,7 +35,7 @@
   const shownOut = $derived(outs.slice(0, maxPerSide));
   const rows = $derived(Math.max(shownIn.length + (ins.length > maxPerSide ? 1 : 0), shownOut.length + (outs.length > maxPerSide ? 1 : 0), 1));
   const H = $derived(HH + rows * PS + 12);
-  const fnColor = $derived(refById('functions', fn)?.data?.color ?? 'var(--fg-3)');
+  const headColor = $derived(familyColor(fn, { screen: true }));
   const y = (i: number) => HH + i * PS + PS / 2 + 4;
   const chipW = (s: string) => s.length * 6.3 + 12;
   const chipOf = (p: Port) => short(p.connector_id) + (p.gender === 'M' ? ' M' : p.gender === 'F' ? ' F' : '');
@@ -70,7 +72,7 @@
 {/snippet}
 
 <svg class="syn-node" viewBox="-24 -16 {NW + 48} {H + 32}" width={NW + 48} role="img" aria-label="Aperçu de {name || 'l’équipement'} dans le synoptique">
-  <g class="node" style="--c:{fnColor}">
+  <g class="node" style="--c:{headColor}">
     <rect class="box" width={NW} height={H} rx="10" />
     <path class="hdr" d="M0 10a10 10 0 0 1 10-10h{NW - 20}a10 10 0 0 1 10 10v{HH - 10}H0z" />
     <clipPath id={uid}><rect width={NW} height={H} rx="10" /></clipPath>

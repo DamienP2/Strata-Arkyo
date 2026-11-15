@@ -818,6 +818,7 @@ async fn audit(
         until: some(q.until).map(|d| format!("{d}T99")),
     };
     let entries = st.store.audit_filtered(&f, q.limit.unwrap_or(150)).await?;
+    let total = st.store.audit_count(&f).await?;
     let (actions, pids) = st.store.audit_facets().await?;
     let mut projects: Vec<Value> = Vec::new();
     for p in pids {
@@ -827,6 +828,8 @@ async fn audit(
     projects.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
     Ok(Json(json!({
         "entries": journal::describe(&st.store, entries).await?,
+        // Entrées qui correspondent aux filtres (la liste en montre au plus `limit`).
+        "total": total,
         "actions": actions.iter().map(|a| json!({ "key": a, "label": journal::action_label(a) })).collect::<Vec<_>>(),
         "projects": projects,
     })))

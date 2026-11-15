@@ -55,13 +55,8 @@ async fn externals(store: &Store, pid: &str) -> ApiResult<Vec<Ext>> {
             Ext {
                 label: format!(
                     "{}{}",
-                    np.map(|(n, p)| format!(
-                        "{} {} › {}",
-                        n.label,
-                        n.sub.rsplit(" · ").next().unwrap_or(""),
-                        p.label
-                    ))
-                    .unwrap_or_else(|| "Port introuvable".into()),
+                    np.map(|(n, p)| format!("{} › {}", n.text_name(), p.label))
+                        .unwrap_or_else(|| "Port introuvable".into()),
                     dest.map(|d| format!(" (vers {d})")).unwrap_or_default()
                 ),
                 connector: np.map(|(_, p)| p.connector.clone()),
