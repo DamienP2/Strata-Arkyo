@@ -3,7 +3,12 @@
   // en direct. On coche une ligne d'un clic, ou plusieurs en glissant sur la colonne des cases.
   import { untrack } from 'svelte';
   import Icon from '../../components/Icon.svelte';
-  import Confirm from '../../components/Confirm.svelte';
+  import Menu from '../../components/Menu.svelte';
+  import Seg from '../../components/Seg.svelte';
+  import Loading from '../../components/Loading.svelte';
+  import EmptyState from '../../components/EmptyState.svelte';
+  import { ask } from '../../lib/ask.svelte';
+  import { route } from '../../lib/router.svelte';
   import { api } from '../../lib/api';
   import { can } from '../../lib/session.svelte';
   import { toast, fail } from '../../lib/toast.svelte';
@@ -17,19 +22,24 @@
 
   let { view }: { view: ProjectView } = $props();
   let sums = $state<Sum[] | null>(null);
-  let cur = $state<string | null>(null);
+  // L'élément affiché est dans l'adresse (?element=) : un lien ou un rechargement y ramène.
+  let cur = $state<string | null>(route.query.get('element'));
+  $effect(() => { const e = route.query.get('element'); if (e && e !== untrack(() => cur)) cur = e; });
+  function pick(id: string) {
+    cur = id;
+    const qs = new URLSearchParams(location.search); qs.set('element', id);
+    history.replaceState(null, '', `${location.pathname}?${qs}`);
+    route.query = qs;
+  }
   let sheet = $state<Sheet | null>(null);
   let filter = $state<'all' | 'todo' | 'done'>('all');
-  let clearing = $state(false);
   const writable = $derived(can('projets', 'ecriture'));
   const pid = $derived(view.project.id);
   let cview = $state<'inventory' | 'cabling' | 'equipment'>('inventory');
-  // Exports du dossier de construction : un menu, et « Génération… » tant que le fichier se prépare.
+  // Exports du dossier de construction : un menu, et « Génération » tant que le fichier se prépare.
   let exporting = $state<string | null>(null);
-  let expOpen = $state(false);
   const EXPORTS: [f: 'pdf' | 'csv' | 'doc', label: string, hint: string][] = [['pdf', 'PDF', 'Document à imprimer'], ['csv', 'Tableur', 'Fichier CSV pour Excel ou LibreOffice'], ['doc', 'Word', 'Document modifiable']];
   async function consExport(f: 'pdf' | 'csv' | 'doc') {
-    expOpen = false;
     if (!cur || exporting) return;
     exporting = f;
     try { const { construction } = await import('../../lib/construction'); await construction(view, cur, cview, f); } catch (e) { fail(e); } finally { exporting = null; }
@@ -95,14 +105,21 @@
     send([it.key], on);
   }
   async function clearAll() {
-    try { const s = await api.del<Sheet>(`/containers/${cur}/checks`); sheet = s; syncSum(s); clearing = false; toast('Coches effacées.'); } catch (e) { fail(e); }
+    if (!sheet || !cur) return;
+    const id = cur, n = sheet.progress.done, name = sheet.container.name;
+    const ok = await ask({
+      title: 'Effacer toutes les coches ?', confirmLabel: 'Tout effacer', danger: true,
+      text: `Les ${n} ligne${n > 1 ? 's' : ''} cochée${n > 1 ? 's' : ''} de ${name} repasse${n > 1 ? 'nt' : ''} à faire, pour tout le monde.`,
+      run: async () => { const s = await api.del<Sheet>(`/containers/${id}/checks`); if (id === cur) sheet = s; syncSum(s); },
+    });
+    if (ok) toast(`Coches de ${name} effacées.`);
   }
 
   const shown = $derived(sheet ? sheet.items.filter((i) => filter === 'all' || (filter === 'done') === !!i.checked) : []);
   const pct = (d: number, t: number) => (t ? Math.round((d / t) * 100) : 0);
   const KIND: Record<string, { label: string; icon: string }> = {
-    rack: { label: 'Élément', icon: 'server' }, equipment: { label: 'Équipements', icon: 'cpu' }, panel: { label: 'Panel', icon: 'grid' },
-    accessory: { label: 'Accessoire', icon: 'layers' }, adapter: { label: 'Adaptateurs', icon: 'zap' },
+    rack: { label: 'Élément', icon: 'server' }, equipment: { label: 'Équipement', icon: 'cpu' }, panel: { label: 'Panel', icon: 'grid' },
+    accessory: { label: 'Accessoire', icon: 'layers' }, adapter: { label: 'Adaptateur', icon: 'zap' },
   };
   // Ce que compte chaque famille de la liste à cocher.
   const conns = (sh: Sheet) => sh.families.find((f) => f.key === 'connexions')?.total ?? 0;
@@ -115,21 +132,19 @@
   const total = $derived(sums?.reduce((a, s) => ({ d: a.d + s.done, t: a.t + s.total }), { d: 0, t: 0 }) ?? { d: 0, t: 0 });
 </script>
 
-<svelte:window onclick={(e) => { if (expOpen && !(e.target as Element).closest('.exp-wrap')) expOpen = false; }} onkeydown={(e) => { if (e.key === 'Escape') expOpen = false; }} />
+{#snippet addEl()}<a class="btn primary" href="/projets/{pid}/inventaire"><Icon name="plus" size="sm" />Ajouter un élément</a>{/snippet}
+{#snippet busyTrig()}<span class="spin" aria-hidden="true"></span>Génération{/snippet}
 
-{#if sums === null}<span class="spin"></span>
+{#if sums === null}<Loading label="Chargement des contrôles" />
 {:else if !sums.length}
-  <section class="card" style="padding:28px;display:grid;gap:12px;justify-items:start">
-    <p class="lead" style="margin:0">Aucun élément à préparer pour l’instant.</p>
-    <a class="btn primary" href="/projets/{pid}/inventaire"><Icon name="box" size="sm" />Ajouter un élément</a>
-  </section>
+  <EmptyState icon="check" message="Aucun élément à contrôler" hint="Les contrôles de construction suivent les racks et les meubles de l’inventaire." action={writable ? addEl : undefined} />
 {:else}
   <div class="ws">
     <aside class="ws-side card">
       <div class="ws-all" title="Somme des listes à cocher de tous les éléments : l’élément lui-même, son matériel, ses lots de câbles et ses connexions. Un câble qui relie deux éléments se coche dans chacun des deux."><span class="flabel">Projet · lignes cochées</span><b class="mono">{total.d} / {total.t}</b><span class="muted small">dans {sums.length} élément{sums.length > 1 ? 's' : ''}</span><span class="bar"><i style="width:{pct(total.d, total.t)}%"></i></span></div>
       <nav aria-label="Éléments">
         {#each sums as s (s.id)}
-          <button class="ws-c" class:on={s.id === cur} onclick={() => (cur = s.id)} aria-current={s.id === cur ? 'true' : undefined}>
+          <button class="ws-c" class:on={s.id === cur} onclick={() => pick(s.id)} aria-current={s.id === cur ? 'true' : undefined}>
             <span class="ring" style="--p:{pct(s.done, s.total)}" class:full={s.total > 0 && s.done === s.total}>{#if s.total > 0 && s.done === s.total}<Icon name="ok" size="sm" />{:else}<span class="mono">{pct(s.done, s.total)}</span>{/if}</span>
             <span class="ws-ct"><b>{s.name}</b><span class="muted small" title="{s.done} ligne{s.done > 1 ? 's' : ''} cochée{s.done > 1 ? 's' : ''} sur {s.total}">{locName(s.location_id)} · {s.done}/{s.total} ligne{s.total > 1 ? 's' : ''}</span></span>
           </button>
@@ -144,10 +159,11 @@
           <div class="ws-big">
             <span class="eyebrow">Contrôles de construction</span>
             <h2>{sheet.container.name}</h2>
-            <div class="cons"><select class="input sm" bind:value={cview} aria-label="Vue du dossier de construction"><option value="inventory">Inventaire</option><option value="cabling">Câblage</option><option value="equipment">Par équipement</option></select><div class="exp-wrap">
-                <button class="btn sm" aria-haspopup="menu" aria-expanded={expOpen} disabled={!!exporting} onclick={() => (expOpen = !expOpen)}>{#if exporting}<span class="spin"></span>Génération…{:else}<Icon name="download" size="sm" />Exporter<Icon name="chevd" size="sm" />{/if}</button>
-                {#if expOpen}<div class="exp-menu" role="menu" aria-label="Exporter le dossier de construction">{#each EXPORTS as [f, l, h]}<button role="menuitem" onclick={() => consExport(f)}><b>{l}</b><small>{h}</small></button>{/each}</div>{/if}
-              </div></div>
+            <div class="cons"><select class="input sm" bind:value={cview} aria-label="Vue du dossier de construction"><option value="inventory">Inventaire</option><option value="cabling">Câblage</option><option value="equipment">Par équipement</option></select>
+              <Menu label="Exporter" icon="download" btnClass="btn sm" align="left" menuLabel="Exporter le dossier de construction" disabled={!!exporting} trigger={exporting ? busyTrig : undefined}>
+                {#snippet children()}{#each EXPORTS as [f, l, h]}<button role="menuitem" class="exp-it" onclick={() => consExport(f)}><span><b>{l}</b><small>{h}</small></span></button>{/each}{/snippet}
+              </Menu>
+            </div>
             <div class="ws-num" title="Lignes cochées sur les lignes à contrôler de cet élément"><b class="mono">{p.done}</b><span class="mono">/ {p.total}</span><span class="muted small">lignes cochées</span><span class="chip {p.total && p.done === p.total ? 'ok' : ''}">{pct(p.done, p.total)} %</span></div>
             <span class="bar big"><i style="width:{pct(p.done, p.total)}%"></i></span>
           </div>
@@ -163,9 +179,9 @@
         </div>
 
         <div class="toolbar ws-tools">
-          <div class="seg" role="group" aria-label="Filtre">{#each [['all', 'Tous'], ['todo', 'À faire'], ['done', 'Fait']] as [k, l]}<button class:on={filter === k} onclick={() => (filter = k as typeof filter)}>{l} <span class="muted mono">{k === 'all' ? p.total : k === 'done' ? p.done : p.total - p.done}</span></button>{/each}</div>
-          <span style="flex:1"></span>
-          {#if writable}<span class="muted small hide-m">Cliquez une case, ou glissez sur plusieurs</span><button class="btn sm ghost danger" disabled={!p.done} onclick={() => (clearing = true)}><Icon name="undo" size="sm" />Tout effacer</button>{/if}
+          <Seg label="Lignes affichées" bind:value={filter} options={[{ value: 'all', label: 'Tous', count: p.total }, { value: 'todo', label: 'À faire', count: p.total - p.done }, { value: 'done', label: 'Fait', count: p.done }]} />
+          <span class="grow"></span>
+          {#if writable}<span class="muted small hide-m">Cliquez une case, ou glissez sur plusieurs</span><button class="btn sm ghost danger" disabled={!p.done} onclick={clearAll}><Icon name="undo" size="sm" />Tout effacer</button>{/if}
         </div>
 
         <ul class="ws-list card" class:ro={!writable}>
@@ -175,30 +191,22 @@
                 onpointerdown={(e) => down(e, it)} onkeydown={(e) => key(e, it)}>{#if it.checked}<Icon name="ok" size="sm" />{/if}</span>
               <span class="ws-ico"><Icon name={KIND[it.kind]?.icon ?? 'box'} size="sm" /></span>
               <span class="ws-t"><b>{it.label}</b><span class="muted small">{KIND[it.kind]?.label} · {it.detail}</span></span>
-              <span class="ws-who muted small">{#if it.checked}{it.checked.name ?? '—'} · {relative(it.checked.at)}{/if}</span>
+              <span class="ws-who muted small">{#if it.checked}{it.checked.name ?? 'Inconnu'} · {relative(it.checked.at)}{/if}</span>
             </li>
-          {:else}<li class="ws-empty muted">{filter === 'done' ? 'Rien n’est encore coché.' : 'Tout est coché.'}</li>{/each}
+          {:else}<li><EmptyState card={false} icon={filter === 'done' ? 'box' : 'check'} message={filter === 'done' ? 'Rien n’est encore coché' : 'Tout est coché'} /></li>{/each}
         </ul>
-      {:else}<span class="spin"></span>{/if}
+      {:else}<Loading label="Chargement de la liste" />{/if}
     </section>
   </div>
 {/if}
 
-{#if clearing && sheet}
-  <Confirm title="Effacer toutes les coches ?" confirmLabel="Tout effacer" danger onconfirm={clearAll} onclose={() => (clearing = false)}>
-    <p>Les {sheet.progress.done} éléments cochés de {sheet.container.name} repassent à faire, pour tout le monde.</p>
-  </Confirm>
-{/if}
-
 <style>
   .cons { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 6px 0; }
-  .cons select { width: auto; height: 32px; }
-  .exp-wrap { position: relative; }
-  .exp-menu { position: absolute; left: 0; top: calc(100% + 6px); z-index: 40; min-width: 240px; display: flex; flex-direction: column; gap: 2px; padding: 6px; border-radius: 12px; background: var(--surface); box-shadow: var(--e3); }
-  .exp-menu button { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 8px 10px; border: 0; border-radius: 8px; background: none; text-align: left; color: var(--fg); font: inherit; cursor: pointer; }
-  .exp-menu button:hover, .exp-menu button:focus-visible { background: var(--surface-2); outline: none; }
-  .exp-menu b { font-size: 13.5px; font-weight: 600; }
-  .exp-menu small { font-size: 12px; color: var(--fg-3); }
+  .cons select { width: auto; }
+  .exp-it span { display: flex; flex-direction: column; gap: 1px; }
+  .exp-it b { font-size: 13.5px; font-weight: 600; }
+  .exp-it small { font-size: 12px; color: var(--fg-3); }
+  .grow { flex: 1; }
   .ws { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 18px; align-items: start; }
   .ws-side { padding: 14px; display: grid; gap: 12px; position: sticky; top: 12px; }
   .ws-all { display: grid; gap: 4px; padding: 4px 6px 10px; border-bottom: 1px solid var(--line); }
@@ -206,20 +214,21 @@
   .ws-side nav { display: grid; gap: 4px; }
   .ws-c { display: flex; gap: 10px; align-items: center; padding: 8px; border: 0; border-radius: 12px; background: none; cursor: pointer; text-align: left; font: inherit; color: inherit; }
   .ws-c:hover { background: var(--surface-2); }
+  .ws-c:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   /* Sélection habituelle : fond teinté et liseré à gauche. */
-  .ws-c.on { background: color-mix(in srgb, var(--accent, #4F6BFF) 12%, transparent); box-shadow: inset 3px 0 0 var(--accent, #4F6BFF); color: var(--fg); }
+  .ws-c.on { background: color-mix(in srgb, var(--accent) 12%, transparent); box-shadow: inset 3px 0 0 var(--accent); color: var(--fg); }
   .ws-c.on .ws-ct b { font-weight: 700; }
   .ws-ct { display: flex; flex-direction: column; min-width: 0; }
   .ws-ct b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .ring { --p: 0; width: 36px; height: 36px; flex: none; border-radius: 50%; display: grid; place-items: center; font-size: 10.5px;
-    background: radial-gradient(closest-side, var(--surface) 72%, transparent 74%), conic-gradient(var(--ok, #22A06B) calc(var(--p) * 1%), color-mix(in srgb, var(--fg) 12%, transparent) 0); color: var(--fg); }
-  .ring.full { background: var(--ok, #22A06B); color: #fff; }
+  .ring { --p: 0; width: 36px; height: 36px; flex: none; border-radius: 50%; display: grid; place-items: center; font-size: 11px;
+    background: radial-gradient(closest-side, var(--surface) 72%, transparent 74%), conic-gradient(var(--ok) calc(var(--p) * 1%), color-mix(in srgb, var(--fg) 12%, transparent) 0); color: var(--fg); }
+  .ring.full { background: var(--ok); color: var(--primary-fg); }
   .ws-main { display: grid; gap: 14px; min-width: 0; }
   .ws-head { padding: 20px 22px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 24px; align-items: end; }
-  .ws-big h2 { font-size: 30px; margin: 4px 0 6px; }
+  .ws-big h2 { font-size: 20px; margin: 4px 0 6px; }
   .ws-num { display: flex; gap: 8px; align-items: baseline; margin-bottom: 8px; }
   .ws-num .small { align-self: center; margin-left: 4px; }
-  .ws-num b { font-size: 44px; line-height: 1; letter-spacing: -.02em; }
+  .ws-num b { font-size: 40px; line-height: 1; letter-spacing: -.02em; }
   .ws-num > .mono:not(b) { font-size: 20px; color: var(--fg-3); }
   .ws-fams { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
   .fam { display: grid; gap: 4px; padding: 12px; border-radius: 14px; background: var(--surface-2); }
@@ -227,7 +236,7 @@
   .fam b { font-size: 18px; }
   .bar { display: block; height: 6px; border-radius: 99px; background: color-mix(in srgb, var(--fg) 10%, transparent); overflow: hidden; }
   .bar.big { height: 10px; }
-  .bar i { display: block; height: 100%; background: var(--ok, #22A06B); border-radius: inherit; transition: width .3s; }
+  .bar i { display: block; height: 100%; background: var(--ok); border-radius: inherit; transition: width .3s; }
   .ws-tools { align-items: center; }
   .ws-list { list-style: none; margin: 0; padding: 6px; display: grid; }
   .ws-row { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 10px 12px; border-radius: 12px; }
@@ -235,13 +244,13 @@
   .ws-row.done .ws-t b { color: var(--fg-3); text-decoration: line-through; text-decoration-thickness: 1.5px; }
   .ws-box { width: 30px; height: 30px; border-radius: 9px; border: 2px solid color-mix(in srgb, var(--fg) 30%, transparent); display: grid; place-items: center; cursor: pointer; touch-action: none; user-select: none; transition: background .12s, border-color .12s; }
   .ws-box:hover { border-color: var(--fg); }
-  .ws-row.done .ws-box { background: var(--ok, #22A06B); border-color: var(--ok, #22A06B); color: #fff; }
+  .ws-box:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .ws-row.done .ws-box { background: var(--ok); border-color: var(--ok); color: var(--primary-fg); }
   .ws-list.ro .ws-box { cursor: default; }
   .ws-ico { width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; background: var(--surface-2); color: var(--fg-2); }
   .ws-t { display: flex; flex-direction: column; min-width: 0; }
   .ws-t .small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ws-who { white-space: nowrap; }
-  .ws-empty { padding: 18px; }
   @media (max-width: 980px) { .ws { grid-template-columns: 1fr; } .ws-side { position: static; } .ws-side nav { grid-auto-flow: column; grid-auto-columns: minmax(200px, 1fr); overflow-x: auto; } .ws-head { grid-template-columns: 1fr; } }
   @media (max-width: 560px) { .ws-fams { grid-template-columns: 1fr; } .ws-row { grid-template-columns: auto minmax(0, 1fr); } .ws-ico, .ws-who { display: none; } }
 </style>
