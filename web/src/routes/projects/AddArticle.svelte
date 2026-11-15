@@ -1,26 +1,29 @@
 <script lang="ts">
-  // Ajouter du matériel : deux volets. À gauche, le genre (équipements, câbles, adaptateurs,
-  // accessoires) puis les fonctions et catégories du catalogue, avec leurs compteurs ; à droite,
+  // Ajouter du matériel : deux volets. À gauche, le genre (équipements, adaptateurs, accessoires)
+  // puis les fonctions et catégories du catalogue, avec leurs compteurs ; à droite,
   // la recherche (toujours visible) et les résultats, chacun avec sa quantité et « Ajouter ».
   // En bas, le panier de la session : ce qui vient d'être ajouté, avec « Annuler le dernier ».
   // Clavier : la recherche a le focus, ↑ ↓ parcourent les résultats, Entrée ajoute.
+  // Les câbles ne s'ajoutent pas ici (ils se tirent entre deux ports) : un lien mène à la liste des câbles.
   import { tick, untrack } from 'svelte';
   import Icon from '../../components/Icon.svelte';
+  import Loading from '../../components/Loading.svelte';
+  import EmptyState from '../../components/EmptyState.svelte';
   import PanelFace from '../../components/PanelFace.svelte';
   import { blankPanel, PER_U, type PanelData } from '../../lib/panel';
   import { api } from '../../lib/api';
   import { fail } from '../../lib/toast.svelte';
   import { modal } from '../../lib/modal';
-  import { loadRefs, refList, refName, refById, fnColor, summary, type CatalogItem, type RefItem } from '../../lib/catalog.svelte';
+  import { loadRefs, refList, refName, refById, familyColor, summary, pathOf, type CatalogItem, type RefItem } from '../../lib/catalog.svelte';
   import { CONTAINER_KINDS, type Article, type Container, type ProjectView } from '../../lib/projects';
 
   let { view, container, locationId, onclose, ondone }: { view: ProjectView; container: Container | null; locationId: string; onclose: () => void; ondone: () => void | Promise<void> } = $props();
 
-  type Genre = 'equipment' | 'cable' | 'adapter' | 'accessory';
+  type Genre = 'equipment' | 'adapter' | 'accessory';
+  type PoolGenre = Exclude<Genre, 'accessory'>;
   type AccKind = 'plate' | 'shelf' | 'drawer' | 'lacing_bar' | 'vertical_pdu' | 'panel';
   const GENRES: { k: Genre; label: string; icon: string }[] = [
     { k: 'equipment', label: 'Équipements', icon: 'server' },
-    { k: 'cable', label: 'Câbles', icon: 'cable' },
     { k: 'adapter', label: 'Adaptateurs', icon: 'plug' },
     { k: 'accessory', label: 'Accessoires', icon: 'panel' },
   ];
@@ -45,15 +48,16 @@
   let genre = $state<Genre>('equipment');
   let q = $state('');
   let facet = $state<string>(''); // '' | 'fn:<clé>' | 'cat:<id>'
-  let pools = $state<Partial<Record<Exclude<Genre, 'accessory'>, CatalogItem[]>>>({});
-  let loading = $state(false);
+  let pools = $state<Partial<Record<PoolGenre, CatalogItem[]>>>({});
+  let loadingG = $state<Partial<Record<PoolGenre, boolean>>>({});
+  const loading = $derived(genre !== 'accessory' && !!loadingG[genre]);
   loadRefs();
-  async function loadPool(g: Exclude<Genre, 'accessory'>) {
-    if (pools[g]) return;
-    loading = true;
-    const path = { equipment: 'equipment', cable: 'cables', adapter: 'adapters' }[g];
+  async function loadPool(g: PoolGenre) {
+    if (pools[g] || loadingG[g]) return;
+    loadingG[g] = true;
+    const path = { equipment: 'equipment', adapter: 'adapters' }[g];
     try { pools[g] = (await api.get<{ items: CatalogItem[] }>(`/catalog/items?kind=${path}&active=true&limit=1000`)).items; }
-    catch (e) { fail(e); pools[g] = []; } finally { loading = false; }
+    catch (e) { fail(e); pools[g] = []; } finally { loadingG[g] = false; }
   }
   $effect(() => { if (genre !== 'accessory') loadPool(genre); });
   $effect(() => { if (genre === 'accessory' && !accOk) genre = 'equipment'; });
@@ -77,10 +81,18 @@
     return out;
   }
   const hay = (i: CatalogItem) => norm([i.name, i.reference, refName('brands', i.brand_id), refName('types', i.data.type_id), ...fnsOf(i).map((f) => refName('functions', f))].filter(Boolean).join(' '));
-  const pool = $derived(genre === 'accessory' ? [] : (pools[genre] ?? []));
-  const indexed = $derived(pool.map((i) => ({ i, h: hay(i), fns: fnsOf(i), cats: chain(cats, i.data.category_id), types: chain(types, i.data.type_id) })));
+  const idx = (list: CatalogItem[] | undefined) => (list ?? []).map((i) => ({ i, h: hay(i), fns: fnsOf(i), cats: chain(cats, i.data.category_id), types: chain(types, i.data.type_id) }));
+  const allIndexed = $derived({ equipment: idx(pools.equipment), adapter: idx(pools.adapter) });
+  const indexed = $derived(genre === 'accessory' ? [] : allIndexed[genre]);
   const words = $derived(norm(q).split(/\s+/).filter(Boolean));
-  const matched = $derived(words.length ? indexed.filter((x) => words.every((w) => x.h.includes(w))) : indexed);
+  const hit = (h: string) => words.every((w) => h.includes(w));
+  const matched = $derived(words.length ? indexed.filter((x) => hit(x.h)) : indexed);
+  // Pendant une recherche, chaque genre affiche son nombre de résultats : les deux catalogues
+  // sont chargés pour que rien ne reste caché derrière un onglet.
+  $effect(() => { if (words.length) { loadPool('equipment'); loadPool('adapter'); } });
+  const hitsOf = (g: PoolGenre) => (pools[g] ? (words.length ? allIndexed[g].filter((x) => hit(x.h)).length : pools[g]!.length) : null);
+  /** Autres genres qui ont des résultats pour la recherche en cours (état vide). */
+  const elsewhere = $derived(words.length ? GENRES.filter((g) => g.k !== 'accessory' && g.k !== genre).map((g) => ({ g, n: hitsOf(g.k as PoolGenre) ?? 0 })).filter((x) => x.n > 0) : []);
   const counts = $derived.by(() => {
     const fn = new Map<string, number>(), cat = new Map<string, number>(), type = new Map<string, number>();
     const inc = (m: Map<string, number>, k: string) => m.set(k, (m.get(k) ?? 0) + 1);
@@ -128,7 +140,7 @@
   $effect(() => { results; active = 0; });
   async function reveal() { await tick(); listEl?.querySelector<HTMLElement>(`[data-row="${active}"]`)?.scrollIntoView({ block: 'nearest' }); }
   function onSearchKey(e: KeyboardEvent) {
-    if (genre === 'accessory' || genre === 'cable') return;
+    if (genre === 'accessory') return;
     if (e.key === 'ArrowDown' && shown.length) { e.preventDefault(); active = Math.min(shown.length - 1, active + 1); reveal(); }
     else if (e.key === 'ArrowUp' && shown.length) { e.preventDefault(); active = Math.max(0, active - 1); reveal(); }
     else if (e.key === 'Enter' && shown[active]) { e.preventDefault(); if (!busy) addItem(shown[active]!); }
@@ -186,7 +198,14 @@
   function pickGenre(g: Genre) { genre = g; searchEl?.focus(); }
   function pickFacet(f: string) { facet = facet === f ? '' : f; searchEl?.focus(); }
   const hText = (i: CatalogItem) => (i.kind === 'equipment' ? (i.data.format?.kind === 'rack' ? `${String(i.data.format.height_u).replace('.', ',')} U` : 'Hors rack') : '');
-  const genreCount = (g: Genre) => (g === 'accessory' ? null : pools[g]?.length ?? null);
+  const genreCount = (g: Genre) => (g === 'accessory' ? null : hitsOf(g));
+  /** Fiches homonymes dans la liste : on affiche de quoi les distinguer. */
+  const homonyms = $derived.by(() => {
+    const n = new Map<string, number>();
+    for (const i of shown) { const k = norm(i.name); n.set(k, (n.get(k) ?? 0) + 1); }
+    return new Set([...n].filter(([, c]) => c > 1).map(([k]) => k));
+  });
+  const created = (i: CatalogItem) => new Date(i.created_at).toLocaleDateString('fr-FR');
 </script>
 
 <div class="modal addm" role="presentation" use:modal={{ close: onclose, ask: onclose }}>
@@ -213,28 +232,31 @@
         <div class="genres" role="group" aria-label="Genre">
           {#each GENRES as g (g.k)}
             {@const n = genreCount(g.k)}
-            <button class="gen" class:on={genre === g.k} disabled={g.k === 'accessory' && !accOk} title={g.k === 'accessory' && !accOk ? 'Les accessoires se posent dans un élément rackable (rack, flight-case, casquette).' : ''} onclick={() => pickGenre(g.k)}>
+            <button class="gen" class:on={genre === g.k} aria-pressed={genre === g.k} disabled={g.k === 'accessory' && !accOk} title={g.k === 'accessory' && !accOk ? 'Les accessoires se posent dans un élément rackable (rack, flight-case, casquette).' : ''} onclick={() => pickGenre(g.k)}>
               <Icon name={g.icon} size="sm" /><span>{g.label}</span>{#if n !== null}<em>{n}</em>{/if}
             </button>
           {/each}
+          <a class="gen gen-link" href="/projets/{view.project.id}/cables" onclick={onclose} title="Les câbles se tirent entre deux ports, dans la liste des câbles du projet.">
+            <Icon name="cable" size="sm" /><span>Câbles : liste des câbles</span><Icon name="arrowr" size="sm" />
+          </a>
         </div>
 
         <div class="facets">
           {#if genre === 'accessory'}
-            <span class="f-t">Accessoires</span>
+            <span class="eyebrow f-t">Accessoires</span>
             {#each ACC as a (a.k)}<button class="fac" class:on={accKind === a.k} onclick={() => pickAcc(a.k)}><span class="fl">{a.label}</span></button>{/each}
           {:else}
             <button class="fac" class:on={facet === ''} onclick={() => pickFacet('')}><span class="fl">Tout</span><em>{matched.length}</em></button>
             {#if fnList.length}
-              <span class="f-t">Fonctions</span>
-              {#each fnList as f (f.id)}<button class="fac" class:on={facet === `fn:${f.id}`} onclick={() => pickFacet(`fn:${f.id}`)}><i class="dot" style="--c:{fnColor(f.id)}"></i><span class="fl">{f.name}</span><em>{counts.fn.get(f.id) ?? 0}</em></button>{/each}
+              <span class="eyebrow f-t">Fonctions</span>
+              {#each fnList as f (f.id)}<button class="fac" class:on={facet === `fn:${f.id}`} onclick={() => pickFacet(`fn:${f.id}`)}><i class="dot" style="--c:{familyColor(f.id, { screen: true })}"></i><span class="fl">{f.name}</span><em>{counts.fn.get(f.id) ?? 0}</em></button>{/each}
             {/if}
             {#if catTree.length}
-              <span class="f-t">Catégories</span>
+              <span class="eyebrow f-t">Catégories</span>
               {#each catTree as { c, depth } (c.id)}<button class="fac" class:on={facet === `cat:${c.id}`} style="--d:{depth}" onclick={() => pickFacet(`cat:${c.id}`)}><span class="fl">{c.name}</span><em>{counts.cat.get(c.id) ?? 0}</em></button>{/each}
             {/if}
             {#if typeTree.length}
-              <span class="f-t">Types</span>
+              <span class="eyebrow f-t">Types</span>
               {#each typeTree as { c, depth } (c.id)}<button class="fac" class:on={facet === `type:${c.id}`} style="--d:{depth}" onclick={() => pickFacet(`type:${c.id}`)}><span class="fl">{c.name}</span>{#if depth === 0 && hasKids(c.id)}<span class="tw" class:open={typeOpen(c.id)}>›</span>{/if}<em>{counts.type.get(c.id) ?? 0}</em></button>{/each}
             {/if}
           {/if}
@@ -257,7 +279,7 @@
       <section class="am-main">
         <label class="am-search"><Icon name="search" />
           <input class="input" bind:this={searchEl} bind:value={q} onkeydown={onSearchKey} data-autofocus autocomplete="off" spellcheck="false"
-            placeholder={genre === 'accessory' ? (accKind === 'panel' ? 'Rechercher un panel de la bibliothèque…' : 'Recherche : choisissez « Panel de brassage » pour la bibliothèque') : 'Nom, marque, référence, fonction…'}
+            placeholder={genre === 'accessory' ? (accKind === 'panel' ? 'Rechercher un panel de la bibliothèque' : 'Recherche : choisissez « Panel de brassage » pour la bibliothèque') : 'Nom, marque, référence ou fonction'}
             aria-label="Rechercher dans le catalogue" role="combobox" aria-expanded="true" aria-controls="am-list" aria-activedescendant={genre !== 'accessory' && shown[active] ? `am-r-${shown[active]!.id}` : undefined}>
           {#if q}<button class="clr" onclick={() => { q = ''; searchEl?.focus(); }} aria-label="Effacer la recherche"><Icon name="x" size="sm" /></button>{/if}
         </label>
@@ -268,30 +290,34 @@
             {#if facet}<button class="ilink" onclick={() => pickFacet('')}>Retirer le filtre</button>{/if}
             <span class="kbd-h"><kbd>↑</kbd><kbd>↓</kbd> parcourir · <kbd>Entrée</kbd> ajouter</span>
           </div>
-          {#if genre === 'cable'}
-            <div class="alert info am-note"><Icon name="info" /><span>Les câbles ne sont pas du matériel d’inventaire : ils se tirent entre deux ports dans la <a class="ilink" href="/projets/{view.project.id}/cables" onclick={onclose}>liste des câbles</a> du projet. Le catalogue est affiché ici pour référence.</span></div>
-          {/if}
           <div class="am-list" id="am-list" role="listbox" aria-label="Résultats" bind:this={listEl}>
             {#each shown as i, k (i.id)}
               {@const fns = fnsOf(i)}
               {@const brand = refName('brands', i.brand_id)}
+              {@const twin = homonyms.has(norm(i.name))}
               <div class="res" class:act={k === active} id="am-r-{i.id}" data-row={k} role="option" aria-selected={k === active} tabindex="-1" onpointerenter={() => (active = k)}>
-                <span class="r-name"><b>{i.name}</b><span class="r-sub">{#if brand}<span>{brand}</span>{/if}{#if i.reference}<span class="mono">{i.reference}</span>{/if}{#if i.kind !== 'equipment'}<span>{summary(i)}</span>{/if}</span></span>
+                <span class="r-name"><b>{i.name}</b><span class="r-sub">{#if brand}<span>{brand}</span>{/if}{#if i.reference}<span class="mono">{i.reference}</span>{/if}{#if i.kind !== 'equipment' || twin}<span>{summary(i)}</span>{/if}{#if twin}<span>fiche du {created(i)}</span><a class="ilink r-see" href="/catalogue/{pathOf(i.kind)}/{i.id}" target="_blank" rel="noopener" tabindex="-1">Voir la fiche</a>{/if}</span></span>
                 <span class="r-u mono">{hText(i)}</span>
-                <span class="r-fn">{#each fns.slice(0, 2) as f}<span class="fchip" style="--c:{fnColor(f)}">{refName('functions', f)}</span>{/each}</span>
-                {#if genre !== 'cable'}
+                <span class="r-fn">{#each fns.slice(0, 2) as f}<span class="chip fn"><i class="dot" style="--c:{familyColor(f, { screen: true })}"></i>{refName('functions', f)}</span>{/each}</span>
                   <span class="r-act">
                     <span class="stepper qty" title="Quantité"><button tabindex="-1" onclick={() => setQ(i.id, (qty[i.id] ?? 1) - 1)} aria-label="Moins">−</button><input class="mono" type="number" min="1" max="999" value={qty[i.id] ?? 1} oninput={(e) => setQ(i.id, Number((e.target as HTMLInputElement).value))} onkeydown={(e) => { if (e.key === 'Enter') addItem(i); }} aria-label="Quantité de {i.name}"><button tabindex="-1" onclick={() => setQ(i.id, (qty[i.id] ?? 1) + 1)} aria-label="Plus">+</button></span>
-                    <button class="btn sm" class:primary={k === active} onclick={() => { addItem(i); searchEl?.focus(); }} disabled={!!busy}>{#if busy === i.id}<span class="spin"></span>{:else}<Icon name="plus" size="sm" />{/if}<span class="add-l">Ajouter</span></button>
+                    <button class="btn sm" class:primary={k === active} onclick={() => { addItem(i); searchEl?.focus(); }} disabled={!!busy}>{#if busy === i.id}<span class="spin" aria-hidden="true"></span>{:else}<Icon name="plus" size="sm" />{/if}<span class="add-l">Ajouter</span></button>
                   </span>
-                {/if}
               </div>
             {:else}
-              <div class="empty am-empty">
-                {#if loading}<span class="spin"></span>
-                {:else if q.trim() || facet}Aucune fiche ne correspond. <button class="ilink" onclick={() => { q = ''; facet = ''; searchEl?.focus(); }}>Tout afficher</button>
-                {:else}Le catalogue est vide pour ce genre. <a class="ilink" href="/catalogue/{genre === 'equipment' ? 'equipment' : genre === 'cable' ? 'cables' : 'adapters'}/nouveau">Créer une fiche</a>{/if}
-              </div>
+              {#if loading}<Loading label="Chargement du catalogue" />
+              {:else if q.trim() || facet}
+                <EmptyState card={false} icon="search" message="Aucune fiche ne correspond" hint={elsewhere.length ? `Résultats ailleurs : ${elsewhere.map((x) => `${x.n} dans ${x.g.label}`).join(', ')}.` : ''}>
+                  {#snippet action()}
+                    {#if elsewhere.length}{#each elsewhere as x (x.g.k)}<button class="btn sm" onclick={() => pickGenre(x.g.k)}>Voir les {x.g.label.toLowerCase()} ({x.n})</button>{/each}
+                    {:else}<button class="btn sm" onclick={() => { q = ''; facet = ''; searchEl?.focus(); }}>Tout afficher</button>{/if}
+                  {/snippet}
+                </EmptyState>
+              {:else}
+                <EmptyState card={false} icon="box" message="Le catalogue est vide pour ce genre">
+                  {#snippet action()}<a class="btn sm" href="/catalogue/{genre === 'equipment' ? 'equipment' : 'adapters'}/nouveau">Créer une fiche</a>{/snippet}
+                </EmptyState>
+              {/if}
             {/each}
             {#if results.length > MAXROWS}<p class="muted small am-more">{results.length - MAXROWS} autres fiches : affinez la recherche ou choisissez une catégorie.</p>{/if}
           </div>
@@ -301,7 +327,7 @@
             {#if accKind === 'panel'}
               <p class="muted small">Le panel est recopié dans le projet : vous pourrez le modifier ensuite sans toucher la bibliothèque.</p>
               <div class="plib">
-                {#if lib === null}<span class="spin"></span>{:else}
+                {#if lib === null}<Loading label="Chargement des panels" />{:else}
                   {#each libShown as l (l.id)}
                     <div class="plrow">
                       <span class="plface" style="--h:{l.panel.height_u}"><PanelFace panel={l.panel} /></span>
@@ -376,35 +402,37 @@
   .genres { display: grid; gap: 4px; padding: 14px 12px; border-bottom: 1px solid var(--line); }
   .gen { display: flex; align-items: center; gap: 9px; height: 38px; padding: 0 12px; border: 0; border-radius: 10px; background: var(--surface); color: var(--fg-2); font-size: 13.5px; font-weight: 600; box-shadow: inset 0 0 0 1px var(--line); text-align: left; min-width: 0; }
   .gen span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .gen em { font: 600 11px var(--mono); font-style: normal; color: var(--fg-4); }
+  .gen em { font: 600 11px var(--mono); font-style: normal; color: var(--fg-3); }
   .gen:hover:not(:disabled):not(.on) { color: var(--fg); box-shadow: inset 0 0 0 1px var(--line-2); }
-  .gen.on { background: var(--primary-bg); color: var(--primary-fg); box-shadow: var(--key-ink); }
-  .gen.on em { color: inherit; opacity: .75; }
+  /* Genre choisi : même sélection que .fac.on et .fchip.on (fond accent doux, liseré), pas de pavé sombre. */
+  .gen.on { background: var(--accent-soft); color: var(--fg); box-shadow: inset 0 0 0 1.5px var(--accent); }
+  .gen.on em { color: var(--accent-2); }
+  .gen:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .gen-link { margin-top: 4px; text-decoration: none; font-weight: 550; color: var(--fg-3); background: none; box-shadow: inset 0 0 0 1px var(--line-soft); }
+  .gen-link:hover { color: var(--fg); background: var(--surface); }
   .gen:disabled { opacity: .45; cursor: not-allowed; }
   .facets { flex: 1; overflow: auto; padding: 10px 10px 16px; display: flex; flex-direction: column; gap: 1px; }
-  .f-t { font: 600 10.5px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--fg-3); padding: 14px 10px 6px; }
+  .f-t { margin: 0; padding: 14px 10px 6px; }
   .fac { display: flex; align-items: center; gap: 9px; min-height: 34px; padding: 0 10px 0 calc(10px + var(--d, 0) * 16px); border: 0; border-radius: 9px; background: none; color: var(--fg-2); font-size: 14px; text-align: left; }
   .fac:hover { background: var(--surface-3); color: var(--fg); }
   .fac.on { background: var(--accent-soft); color: var(--fg); font-weight: 650; box-shadow: inset 3px 0 0 var(--accent); }
   .fac .fl { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .tw { color: var(--fg-4); font-size: 15px; transition: transform .15s; }
+  .tw { color: var(--fg-3); font-size: 15px; transition: transform .15s; }
   .tw.open { transform: rotate(90deg); }
-  .fac em { font: 600 11.5px var(--mono); font-style: normal; color: var(--fg-4); }
+  .fac em { font: 600 11.5px var(--mono); font-style: normal; color: var(--fg-3); }
   .fac.on em { color: var(--accent); }
-  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--c); flex: none; }
+  .fac .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--c); flex: none; }
   .m-facet { display: none; }
 
   .am-main { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
   .am-search { position: relative; display: block; padding: 16px 20px 10px; }
   .am-search > :global(.ic) { position: absolute; left: 36px; top: 31px; color: var(--fg-3); pointer-events: none; }
   .am-search .input { height: 52px; font-size: 17px; padding-left: 48px; padding-right: 44px; border-radius: 14px; }
-  .am-search .input:focus { box-shadow: var(--well), 0 0 0 2px var(--accent); }
   .clr { position: absolute; right: 30px; top: 28px; width: 28px; height: 28px; border: 0; border-radius: 8px; background: var(--surface-3); color: var(--fg-2); display: grid; place-items: center; }
   .am-meta { display: flex; align-items: center; gap: 12px; padding: 0 22px 8px; font-size: 13.5px; color: var(--fg-3); flex-wrap: wrap; }
   .am-meta b { color: var(--fg); }
   .kbd-h { margin-left: auto; font-size: 12.5px; }
-  kbd { font: 600 11px var(--mono); padding: 1px 5px; border-radius: 5px; background: var(--surface-3); box-shadow: inset 0 -1px 0 var(--line-2); margin-right: 3px; color: var(--fg-2); }
-  .am-note { margin: 0 20px 8px; }
+  .kbd-h kbd { margin-right: 3px; }
   .am-list { flex: 1; overflow: auto; padding: 0 12px 12px; min-height: 0; }
   .res { display: grid; grid-template-columns: minmax(0, 1fr) 76px minmax(0, 180px) auto; align-items: center; gap: 12px; min-height: 58px; padding: 7px 10px; border-radius: 12px; border-bottom: 1px solid var(--line-soft); }
   .res.act { background: var(--accent-soft); border-color: transparent; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent); }
@@ -414,18 +442,17 @@
   .r-sub > span { overflow: hidden; text-overflow: ellipsis; }
   .r-u { font-size: 13px; color: var(--fg-2); text-align: right; white-space: nowrap; }
   .r-fn { display: flex; gap: 5px; flex-wrap: wrap; justify-content: flex-start; min-width: 0; }
-  .fchip { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 999px; font-size: 12px; font-weight: 600; color: var(--c); background: color-mix(in srgb, var(--c) 14%, transparent); white-space: nowrap; }
+  .r-see { font-weight: 550; text-underline-offset: 3px; }
   .r-act { display: flex; align-items: center; gap: 8px; }
   .qty { padding: 2px; }
   .qty button { width: 28px; height: 28px; font-size: 16px; }
   .qty input { width: 40px; height: 28px; border: 0; background: none; text-align: center; font-size: 14px; color: var(--fg); -moz-appearance: textfield; appearance: textfield; }
   .qty input::-webkit-inner-spin-button, .qty input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-  .am-empty { padding: 40px 12px; }
   .am-more { text-align: center; padding: 10px; }
 
   .acc-pane { padding: 4px 22px 18px; display: flex; flex-direction: column; gap: 14px; }
   .acc-head { display: flex; flex-direction: column; gap: 2px; }
-  .acc-head b { font: 680 19px var(--display); }
+  .acc-head b { font: 650 var(--fs-lg) var(--display); }
   .plib { display: grid; gap: 8px; max-height: 40vh; overflow: auto; }
   .plrow { display: flex; gap: 12px; align-items: center; padding: 8px; border-radius: 12px; background: var(--surface-2); }
   .plface { width: 200px; height: calc(var(--h) * 18px); flex: none; background: linear-gradient(180deg, #363B42, #1D2025); border-radius: 4px; padding: 2px 4px; }
@@ -459,7 +486,6 @@
     .clr { right: 24px; top: 20px; }
     .am-search .input { height: 48px; font-size: 16px; }
     .am-meta { padding: 0 16px 6px; }
-    .am-note { margin: 0 16px 8px; }
     .am-list { padding: 0 8px 10px; }
     .res { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'n a' 'f a'; row-gap: 4px; column-gap: 10px; }
     .r-name { grid-area: n; }
