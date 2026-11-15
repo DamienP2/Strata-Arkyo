@@ -19,6 +19,7 @@
   import Rack3D from '../../components/Rack3D.svelte';
   import AllRacks from './AllRacks.svelte';
   import RackPicker from '../../components/RackPicker.svelte';
+  import AddArticle from './AddArticle.svelte';
 
   // `fixed` : éditeur d'un seul élément, intégré à une autre page (casquette d'un mobilier).
   let { view, fixed = null }: { view: ProjectView; fixed?: string | null } = $props();
@@ -54,6 +55,10 @@
   let newer = $state(false);
   let requested = $state<string | null>(null);
   let confirmClear = $state(false);
+  // « Ajouter du matériel » : la boîte de l'inventaire, réglée sur l'élément affiché.
+  let adding = $state(false);
+  const canAdd = $derived(can('projets', 'ecriture'));
+  const shownC = $derived(view.containers.find((c) => c.id === cid) ?? null);
   const canDesign = $derived(can('conception', 'ecriture'));
   const mine = $derived(!!rack?.lock?.mine);
   // Proportions réelles d'un 19" : façade 482,6 mm pour 44,45 mm par U (≈ 10,86).
@@ -296,6 +301,7 @@
         <section>
           <h2 class="sheet-t">À placer <span class="muted">· {wanted.length}</span></h2>
           {#if mine}<p class="small muted">Choisissez un élément, puis une position dans le rack. Échap pour annuler.</p>{/if}
+          {#if canAdd && shownC}<button class="btn sm add-mat" onclick={() => (adding = true)}><Icon name="plus" size="sm" />Ajouter du matériel</button>{/if}
           {#each wantedGroups as g (g.key)}
             <div class="pcat"><i style="--c:{g.color}"></i><span>{g.label}</span><b>{g.list.length}</b></div>
           {#each g.list as p (p.instance_id ?? p.article_id)}
@@ -470,11 +476,14 @@
   </Confirm>
 {/if}
 
+{#if adding && shownC}<AddArticle {view} container={shownC} locationId={shownC.location_id} onclose={() => (adding = false)} ondone={load} />{/if}
+
 {#if editPanel}
   <ProjectPanel article={{ id: editPanel.placement.article_id, rev: editPanel.article_rev, accessory: editPanel.accessory, label: editPanel.label } as Article} readonly={!mine} eyebrow="Panel du rack" onclose={() => (editPanel = null)} ondone={load} />
 {/if}
 
 <style>
+  .add-mat { align-self: stretch; justify-content: center; margin: 2px 0 6px; }
   .rack-screen :global(.rack-body) { width: var(--bw, 370px); }
   .sel-h { justify-content: space-between; align-items: center; }
   .sel-h span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
