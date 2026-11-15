@@ -29,7 +29,7 @@ a { color: inherit; }
 .gate-card form { display: flex; flex-direction: column; gap: 14px; }
 .gate-foot { font-size: 13.5px; color: var(--fg-3); }
 
-.stack { display: flex; flex-direction: column; gap: 16px; }
+.stack:not(table) { display: flex; flex-direction: column; gap: 16px; }
 .row-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .spin { width: 18px; height: 18px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: spin .8s linear infinite; display: inline-block; }
 @keyframes spin { to { transform: rotate(360deg); } }

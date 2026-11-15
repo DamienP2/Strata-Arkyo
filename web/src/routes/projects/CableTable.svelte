@@ -383,6 +383,7 @@
     .ct-tbl.stack td { height: auto; padding: 0; min-width: 0; }
     .ct-tbl.stack td.ck { grid-area: ck; }
     .ct-tbl.stack td.c-num { grid-area: num; min-width: 0; }
+    .ct-tbl.stack td.c-num .cell { width: 100%; min-width: 0; }
     .ct-tbl.stack td.c-sig { grid-area: sig; }
     .ct-tbl.stack td.c-warn { grid-area: warn; }
     .ct-tbl.stack td.c-a { grid-area: a; }
