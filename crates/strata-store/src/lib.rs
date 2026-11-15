@@ -718,6 +718,17 @@ impl Store {
     }
 
     /// Entrées du journal filtrées, de la plus récente à la plus ancienne.
+    /// Nombre d'entrées du journal qui correspondent aux filtres (toutes, sans limite).
+    pub async fn audit_count(&self, f: &AuditFilter) -> Result<i64> {
+        let (clauses, binds) = audit_where(f);
+        let sql = format!("SELECT COUNT(*) FROM audit WHERE 1 = 1{clauses}");
+        let mut q = sqlx::query_scalar::<_, i64>(&sql);
+        for b in &binds {
+            q = q.bind(b);
+        }
+        Ok(q.fetch_one(&self.pool).await?)
+    }
+
     pub async fn audit_filtered(&self, f: &AuditFilter, limit: i64) -> Result<Vec<AuditEntry>> {
         let mut sql = String::from("SELECT * FROM audit WHERE 1 = 1");
         let mut binds: Vec<String> = Vec::new();
@@ -754,6 +765,25 @@ impl Store {
         .await?;
         Ok((actions, projects))
     }
+}
+
+/// Clauses SQL et valeurs des filtres du journal.
+fn audit_where(f: &AuditFilter) -> (String, Vec<String>) {
+    let mut sql = String::new();
+    let mut binds = Vec::new();
+    for (v, clause) in [
+        (&f.actor_id, " AND actor_id = ?"),
+        (&f.action, " AND action = ?"),
+        (&f.project_id, " AND project_id = ?"),
+        (&f.since, " AND at >= ?"),
+        (&f.until, " AND at < ?"),
+    ] {
+        if let Some(v) = v {
+            sql.push_str(clause);
+            binds.push(v.clone());
+        }
+    }
+    (sql, binds)
 }
 
 pub(crate) fn audit_row(r: &sqlx::sqlite::SqliteRow) -> AuditEntry {

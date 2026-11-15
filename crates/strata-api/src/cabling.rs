@@ -408,16 +408,32 @@ pub(crate) async fn issues_of(store: &Store, pid: &str) -> ApiResult<Vec<Issue>>
     let cables = store.cables(&pid).await?;
     let inv = store.inventory(&pid).await?;
     let mut out: Vec<Issue> = Vec::new();
-    let name = |c: &strata_store::cables::Cable| {
-        c.fields
-            .number
-            .clone()
-            .unwrap_or_else(|| "Câble non numéroté".into())
-    };
     let end_label = |r: &str| {
         port_of
             .get(r)
-            .map(|(n, p)| format!("{} › {}", n.label, p.label))
+            .map(|(n, p)| format!("{} › {}", n.text_name(), p.label))
+    };
+    // Sujet d'une anomalie de câble : son numéro, à défaut son trajet
+    // (« équipement › port → équipement › port »), pour le retrouver sur le terrain.
+    let name = |c: &strata_store::cables::Cable| {
+        c.fields.number.clone().unwrap_or_else(|| {
+            format!(
+                "{} → {}",
+                end_label(&c.a).unwrap_or_else(|| "extrémité manquante".into()),
+                c.fields
+                    .external
+                    .as_ref()
+                    .map(|x| format!(
+                        "port externe{}",
+                        x.label
+                            .as_ref()
+                            .map(|l| format!(" · {l}"))
+                            .unwrap_or_default()
+                    ))
+                    .or_else(|| end_label(&c.b))
+                    .unwrap_or_else(|| "extrémité manquante".into())
+            )
+        })
     };
     // Extrémité connue d'un câble (pour le retrouver quand il n'a pas de numéro).
     let known = |c: &strata_store::cables::Cable| end_label(&c.a).or_else(|| end_label(&c.b));
@@ -529,7 +545,7 @@ pub(crate) async fn issues_of(store: &Store, pid: &str) -> ApiResult<Vec<Issue>>
                 place: None,
                 detail: [&c.a, &c.b]
                     .iter()
-                    .map(|p| end_label(p).unwrap_or_else(|| "extrémité supprimée".into()))
+                    .map(|p| end_label(p).unwrap_or_else(|| "extrémité manquante".into()))
                     .collect::<Vec<_>>()
                     .join(" → "),
                 cables: vec![c.id.clone()],
@@ -602,7 +618,7 @@ pub(crate) async fn issues_of(store: &Store, pid: &str) -> ApiResult<Vec<Issue>>
                 severity: "info",
                 title: "Équipement non câblé",
                 subject: n.label.clone(),
-                place: Some(n.sub.clone()),
+                place: Some(n.place.clone()),
                 detail: "Aucun de ses ports n'est câblé.".into(),
                 cables: vec![],
                 nodes: vec![n.key.clone()],
@@ -653,7 +669,7 @@ pub(crate) async fn issues_of(store: &Store, pid: &str) -> ApiResult<Vec<Issue>>
                 severity: "info",
                 title: "Adaptateur orphelin",
                 subject: n.label.clone(),
-                place: Some(n.sub.clone()),
+                place: Some(n.place.clone()),
                 detail: "Rattaché à aucun port.".into(),
                 cables: vec![],
                 nodes: vec![n.key.clone()],

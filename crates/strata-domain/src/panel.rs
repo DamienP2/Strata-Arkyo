@@ -64,6 +64,9 @@ pub struct PanelGroup {
     pub len: u32,
     pub label: String,
     pub color: String,
+    /// Famille de signal du groupe (clé du référentiel Fonctions) : sa couleur est celle de la
+    /// famille dans tous les rendus ; `color` reste le repli des groupes plus anciens.
+    pub function: Option<String>,
 }
 
 impl Default for PanelGroup {
@@ -74,6 +77,7 @@ impl Default for PanelGroup {
             len: 1,
             label: String::new(),
             color: "#2459E0".into(),
+            function: None,
         }
     }
 }

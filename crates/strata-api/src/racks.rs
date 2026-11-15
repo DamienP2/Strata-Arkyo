@@ -8,7 +8,7 @@ use crate::AppState;
 use crate::auth::Member;
 use crate::error::{ApiError, ApiResult};
 use crate::live::Origin;
-use crate::projects::{ItemView, article_label, fields, item_views, load_of, one, read, room};
+use crate::projects::{ItemView, article_label, fields, item_views, one, read, room};
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::routing::{patch, post};
@@ -255,7 +255,7 @@ async fn rack_view(st: &AppState, c: &Container, token: &str) -> ApiResult<Value
     let all_loads: Vec<_> = ctx
         .articles
         .iter()
-        .map(|a| load_of(a, &ctx.items))
+        .map(|a| crate::projects::placed_load(a, &ctx.items, &placements))
         .collect();
     let warnings: Vec<Value> = placements
         .iter()

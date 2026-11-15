@@ -244,6 +244,7 @@ pub(crate) fn load_of(a: &Article, items: &HashMap<String, ItemView>) -> Article
             height_u: Some(acc.height_u() as f64),
             weight_kg: 0.0,
             power_w: 0.0,
+            placed_u: 0.0,
         },
         (None, Some(it)) => ArticleLoad {
             quantity: q,
@@ -251,12 +252,33 @@ pub(crate) fn load_of(a: &Article, items: &HashMap<String, ItemView>) -> Article
             height_u: it.height_u.filter(|_| it.rackable && a.host.is_none()),
             weight_kg: it.weight_kg.unwrap_or(0.0),
             power_w: it.power_w.unwrap_or(0.0),
+            placed_u: 0.0,
         },
         _ => ArticleLoad {
             quantity: q,
             ..Default::default()
         },
     }
+}
+
+/// Charge d'un article avec les U qu'il occupe réellement dans le rack : chaque pose compte sa
+/// hauteur × sa largeur ; les poses sur étagère et les PDU verticaux (0 U) ne comptent pas.
+pub(crate) fn placed_load(
+    a: &Article,
+    items: &HashMap<String, ItemView>,
+    placements: &[strata_store::Placement],
+) -> ArticleLoad {
+    let mut l = load_of(a, items);
+    let vertical = a.accessory.as_ref().is_some_and(|x| x.is_vertical());
+    if !vertical {
+        let h = l.height_u.unwrap_or(0.0);
+        l.placed_u = placements
+            .iter()
+            .filter(|p| p.article_id == a.id && p.shelf_id.is_none())
+            .map(|p| h * p.width.fraction())
+            .sum();
+    }
+    l
 }
 
 pub(crate) fn article_label(a: &Article, items: &HashMap<String, ItemView>) -> String {
@@ -302,11 +324,16 @@ pub(crate) async fn inventory_view(
     let items = item_views(store, &ids).await?;
     let mut containers = Vec::new();
     for c in &inv.containers {
+        let placements = if c.data.rackable {
+            store.placements(&c.id).await?
+        } else {
+            Vec::new()
+        };
         let loads: Vec<ArticleLoad> = inv
             .articles
             .iter()
             .filter(|a| a.container_id.as_deref() == Some(&c.id))
-            .map(|a| load_of(a, &items))
+            .map(|a| placed_load(a, &items, &placements))
             .collect();
         let mut v = serde_json::to_value(c).unwrap_or_default();
         v["totals"] = json!(container_totals(&c.data, &loads));

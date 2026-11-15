@@ -2,7 +2,7 @@
 // connecteur côté A et côté B ; couleur du câble, à défaut celle du signal ; mise en page
 // sur la planche choisie (zone imprimable en haut, zone transparente laissée vierge).
 
-import { newDoc, addPage, txt, FONT, type LabelSheet } from './pdfkit';
+import { newDoc, addPage, txt, FONT, INK, LW, RULE, type LabelSheet } from './pdfkit';
 
 export interface LabelCable { number: string; color: string | null; a: { equipment: string; tag: string; port: string; connector: string }; b: { equipment: string; tag: string; port: string; connector: string } }
 
@@ -30,7 +30,7 @@ export async function cableLabels(cables: LabelCable[], s: LabelSheet, opts: { p
     const ix = x + (band ? bw + 1.2 : 1.2), iw = w - (ix - x) - 1;
     const big = Math.min(h * 0.42, 14) * 2.6;
     doc.setFont(FONT.sans, 'bold'); doc.setFontSize(Math.max(6, Math.min(big, (iw / Math.max(it.c.number.length, 3)) * 4.2)));
-    doc.setTextColor(21, 23, 26);
+    doc.setTextColor(...INK);
     doc.text(txt(it.c.number), ix, y + Math.min(h * 0.42, 6.5));
     doc.setFont(FONT.sans, 'normal');
     const small = Math.max(6, Math.min(6.5, h * 0.75)); // jamais sous 6 pt
@@ -44,7 +44,7 @@ export async function cableLabels(cables: LabelCable[], s: LabelSheet, opts: { p
       ly += small * 0.4;
     }
     // Repère de la zone transparente (non imprimée) : un filet léger en pointillés.
-    if (s.print_h > 0 && s.print_h < s.label_h) { doc.setDrawColor(200, 205, 212); doc.setLineWidth(0.1); doc.setLineDashPattern([0.6, 0.6], 0); doc.line(x, y + s.print_h, x + w, y + s.print_h); doc.setLineDashPattern([], 0); }
+    if (s.print_h > 0 && s.print_h < s.label_h) { doc.setDrawColor(...RULE); doc.setLineWidth(LW.rule); doc.setLineDashPattern([0.6, 0.6], 0); doc.line(x, y + s.print_h, x + w, y + s.print_h); doc.setLineDashPattern([], 0); }
     slot++;
   }
   return doc.output('blob');

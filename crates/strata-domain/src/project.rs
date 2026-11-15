@@ -725,11 +725,17 @@ pub struct ArticleLoad {
     pub height_u: Option<f64>,
     pub weight_kg: f64,
     pub power_w: f64,
+    /// U réellement occupés dans le rack par les poses de cet article (hauteur × largeur de
+    /// chaque pose), hors étagère et PDU verticaux. Rempli par l'appelant qui lit les poses.
+    pub placed_u: f64,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct ContainerTotals {
+    /// U du matériel affecté à l'élément, posé ou non.
     pub used_u: f64,
+    /// U réellement posés dans le rack (hors étagère et PDU verticaux) : base de `over_u`.
+    pub placed_u: f64,
     pub total_u: Option<f64>,
     pub weight_kg: f64,
     pub power_w: f64,
@@ -750,6 +756,7 @@ pub fn container_totals(c: &ContainerData, articles: &[ArticleLoad]) -> Containe
             .map(|a| a.weight_kg * a.quantity as f64)
             .sum::<f64>();
     let power: f64 = articles.iter().map(|a| a.power_w * a.quantity as f64).sum();
+    let placed_u: f64 = articles.iter().map(|a| a.placed_u).sum();
     let volume = if c.rackable {
         c.height_u
             .zip(c.depth_mm)
@@ -762,13 +769,15 @@ pub fn container_totals(c: &ContainerData, articles: &[ArticleLoad]) -> Containe
     };
     ContainerTotals {
         used_u: used_u + 0.0,
+        placed_u: (placed_u * 100.0).round() / 100.0 + 0.0,
         total_u: if c.rackable { c.height_u } else { None },
         weight_kg: (weight * 10.0).round() / 10.0 + 0.0,
         power_w: power.round() + 0.0,
         volume_m3: volume.map(|v| (v * 1000.0).round() / 1000.0),
         over_weight: c.max_weight_kg.is_some_and(|m| weight > m),
         over_power: c.max_power_w.is_some_and(|m| power > m),
-        over_u: c.rackable && c.height_u.is_some_and(|h| used_u > h),
+        // Dépassement : ce qui est réellement posé, pas le matériel en attente de pose.
+        over_u: c.rackable && c.height_u.is_some_and(|h| placed_u > h + 1e-9),
     }
 }
 
@@ -918,11 +927,12 @@ mod tests {
                 height_u: Some(2.0),
                 weight_kg: 12.0,
                 power_w: 150.0,
+                placed_u: 2.0,
             }],
         );
         assert_eq!(
-            (t.used_u, t.weight_kg, t.power_w, t.over_weight),
-            (4.0, 64.0, 300.0, true)
+            (t.used_u, t.placed_u, t.weight_kg, t.power_w, t.over_weight),
+            (4.0, 2.0, 64.0, 300.0, true)
         );
         c.kind = ContainerKind::Rack;
         c.wheels = true;

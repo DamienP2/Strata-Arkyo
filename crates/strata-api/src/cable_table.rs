@@ -43,6 +43,9 @@ struct End {
     tag: String,
     port: String,
     connector: String,
+    /// Face d'un panel traversant (« avant » ou « arrière »), absente pour les autres ports :
+    /// les deux extrémités d'un panel portent le même nom, la face les distingue.
+    face: Option<&'static str>,
     /// L'équipement ou le port visé n'existe plus.
     missing: bool,
 }
@@ -100,10 +103,16 @@ async fn rows(store: &Store, pid: &str) -> ApiResult<Vec<Row>> {
                 .map(|s| s.to_string())
                 .unwrap_or_default(),
             location_id: Some(n.location_id.clone()),
-            equipment: n.label.clone(),
-            tag: n.sub.rsplit(" · ").next().unwrap_or("").to_string(),
+            equipment: n.model.clone(),
+            tag: n.tag.clone().unwrap_or_default(),
             port: p.label.clone(),
             connector: name_of(RefKind::Connector, &p.connector),
+            face: match r.parse::<strata_domain::synoptic::PortRef>() {
+                Ok(strata_domain::synoptic::PortRef::Panel { rear, .. }) => {
+                    Some(if rear { "arrière" } else { "avant" })
+                }
+                _ => None,
+            },
             missing: false,
         },
         None => End {
@@ -112,10 +121,11 @@ async fn rows(store: &Store, pid: &str) -> ApiResult<Vec<Row>> {
             container_id: None,
             location: String::new(),
             location_id: None,
-            equipment: "Extrémité supprimée".into(),
+            equipment: "Extrémité manquante".into(),
             tag: String::new(),
             port: String::new(),
             connector: String::new(),
+            face: None,
             missing: true,
         },
     };
@@ -174,6 +184,7 @@ async fn rows(store: &Store, pid: &str) -> ApiResult<Vec<Row>> {
                     tag: String::new(),
                     port: String::new(),
                     connector: String::new(),
+                    face: None,
                     missing: false,
                 },
                 None => end(&c.b),

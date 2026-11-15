@@ -350,14 +350,12 @@ async fn show(
                 let used = links.iter().filter(|l| l.point_id == o.id).count();
                 v["used"] = json!(used);
                 v["free"] = json!((*ports as usize).saturating_sub(used));
+                // Couleur du point : celle de la famille de son signal (source unique).
                 v["color"] = json!(
                     signal_id
                         .as_deref()
-                        .and_then(|s| color(RefKind::Signal, s))
-                        .or_else(|| signal_id
-                            .as_deref()
-                            .and_then(sig_family)
-                            .and_then(|f| color(RefKind::Function, &f)))
+                        .and_then(sig_family)
+                        .and_then(|f| color(RefKind::Function, &f))
                 );
             }
             ObjectData::Measure { points } => {

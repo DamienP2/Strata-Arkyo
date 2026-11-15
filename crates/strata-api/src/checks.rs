@@ -76,16 +76,17 @@ async fn lines(store: &Store, c: &Container) -> ApiResult<Vec<Line>> {
                     .instances
                     .iter()
                     .filter(|i| i.article_id == a.id)
-                    .map(|i| match us(Some(&i.id)) {
+                    // Position de chaque exemplaire (à défaut, celle de l'article posé d'un bloc).
+                    .map(|i| match us(Some(&i.id)).or_else(|| us(None)) {
                         Some(u) => format!("{} {u}", i.tag),
                         None => i.tag.clone(),
                     })
                     .collect();
                 let shown = tags.iter().take(6).cloned().collect::<Vec<_>>().join(", ");
-                let more = if tags.len() > 6 {
-                    format!(" et {} autres", tags.len() - 6)
-                } else {
-                    String::new()
+                let more = match tags.len().saturating_sub(6) {
+                    0 => String::new(),
+                    1 => " et 1 autre".to_string(),
+                    n => format!(" et {n} autres"),
                 };
                 (
                     "materiel",

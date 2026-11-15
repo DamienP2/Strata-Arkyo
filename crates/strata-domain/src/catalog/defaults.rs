@@ -30,7 +30,11 @@ fn r(kind: RefKind, id: &str, name: &str, data: Value) -> DefaultRef {
     }
 }
 
-/// Fonctions fournies : clé, libellé, couleur, préfixe de câble.
+/// Fonctions fournies : clé, libellé, couleur, préfixe de câble. Chaque famille a une teinte
+/// bien distincte des autres et de l'accent de l'interface (#2943E4) : la couleur d'un câble
+/// est celle de sa famille, à l'écran, sur papier et en 3D. Flux IP (F) était #1F3DF0,
+/// indiscernable de la vidéo et de l'accent : il passe en violet indigo (#5B3FD9) ; Intercom (I) était
+/// #69788C, trop proche du gris des « Autres » (X) : il passe en brun.
 const FUNCTIONS: &[(&str, &str, &str)] = &[
     ("V", "Vidéo", "#2459E0"),
     ("A", "Audio", "#0E8550"),
@@ -40,8 +44,8 @@ const FUNCTIONS: &[(&str, &str, &str)] = &[
     ("N", "Data", "#0A8797"),
     ("S", "Synchronisation", "#BD3489"),
     ("R", "RF", "#D06006"),
-    ("I", "Intercom", "#69788C"),
-    ("F", "Flux IP", "#1F3DF0"),
+    ("I", "Intercom", "#8C6239"),
+    ("F", "Flux IP", "#5B3FD9"),
     ("X", "Autres", "#8A919B"),
 ];
 

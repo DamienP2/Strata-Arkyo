@@ -32,7 +32,7 @@ pub fn routes() -> Router<AppState> {
 }
 
 /// Groupe des liaisons dont une extrémité n'existe plus (équipement ou port supprimé).
-pub(crate) const MISSING_GROUP: &str = "Extrémité supprimée";
+pub(crate) const MISSING_GROUP: &str = "Extrémité manquante";
 
 struct Live {
     key: String,
@@ -56,10 +56,11 @@ async fn live_points(store: &Store, pid: &str) -> ApiResult<Vec<Live>> {
         .iter()
         .flat_map(|n| n.ports.iter().map(move |p| (p.r.as_str(), (n, p))))
         .collect();
+    // Extrémité : libellé de l'exemplaire (à défaut son ID) et port.
     let end = |r: &str| {
         port_of
             .get(r)
-            .map(|(n, p)| format!("{} › {}", n.label, p.label))
+            .map(|(n, p)| format!("{} › {}", n.text_name(), p.label))
     };
     let mut out = Vec::new();
     for c in store.cables(pid).await?.iter().filter(|c| !c.fields.attach) {
@@ -86,21 +87,24 @@ async fn live_points(store: &Store, pid: &str) -> ApiResult<Vec<Live>> {
                     .map(|l| format!(" · {l}"))
                     .unwrap_or_default()
             ),
-            None => end(&c.b).unwrap_or_else(|| "extrémité supprimée".into()),
+            None => end(&c.b).unwrap_or_else(|| "extrémité manquante".into()),
+        };
+        let route = format!(
+            "{} → {to}",
+            end(&c.a).unwrap_or_else(|| "extrémité manquante".into())
+        );
+        // Sans numéro, le titre est le trajet (« équipement › port → équipement › port ») :
+        // chaque point du PV reste identifiable sur le terrain.
+        let (label, detail) = match c.fields.number.clone() {
+            Some(n) => (n, route),
+            None => (route, "non numéroté".into()),
         };
         out.push(Live {
             key: format!("cable:{}", c.id),
             kind: "cable",
             group,
-            label: c
-                .fields
-                .number
-                .clone()
-                .unwrap_or_else(|| "Câble non numéroté".into()),
-            detail: format!(
-                "{} → {to}",
-                end(&c.a).unwrap_or_else(|| "extrémité supprimée".into())
-            ),
+            label,
+            detail,
         });
     }
     let ids: HashSet<String> = inv
@@ -180,9 +184,12 @@ pub(crate) async fn recette_view(store: &Store, pid: &str) -> ApiResult<Value> {
         .filter(|p| p.kind != "free" && !keys.contains(p.key.as_str()))
         .map(|p| point(&p.key, &p.label, "Élément supprimé du projet", true))
         .collect();
+    // Les liaisons dont une extrémité n'existe plus sont des anomalies à résoudre avant la
+    // recette : elles ne comptent ni dans le total ni dans l'avancement.
     let mut all: Vec<&Value> = cables
-        .values()
-        .flatten()
+        .iter()
+        .filter(|(g, _)| g.as_str() != MISSING_GROUP)
+        .flat_map(|(_, v)| v)
         .chain(equipment.values().flatten())
         .chain(free.iter())
         .collect();

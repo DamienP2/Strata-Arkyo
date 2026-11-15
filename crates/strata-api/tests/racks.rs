@@ -1566,7 +1566,7 @@ async fn synoptic_cables_port_to_port() {
     .await;
     assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
     let nodes = r.body["nodes"].as_array().unwrap();
-    let node = |name: &str| nodes.iter().find(|n| n["label"] == name).unwrap().clone();
+    let node = |name: &str| nodes.iter().find(|n| n["model"] == name).unwrap().clone();
     let conv = node("Convertisseur fibre");
     let mixer = node("Mélangeur 1 M/E");
     assert_eq!(conv["ports"].as_array().unwrap().len(), 3);
@@ -1805,7 +1805,7 @@ async fn numbering_and_validation() {
             .as_array()
             .unwrap()
             .iter()
-            .find(|n| n["label"] == l)
+            .find(|n| n["model"] == l)
             .unwrap()
             .clone()
     };
@@ -1984,7 +1984,7 @@ async fn numbering_and_validation() {
             .as_array()
             .unwrap()
             .iter()
-            .any(|i| i["code"] == 5 && i["subject"] == "Câble non numéroté"),
+            .any(|i| i["code"] == 5 && i["subject"].as_str().is_some_and(|s| s.contains(" → "))),
         "sans numéro, nommé pour être retrouvé"
     );
 }
@@ -2034,7 +2034,7 @@ async fn cable_table_bulk_edit_and_export() {
             .as_array()
             .unwrap()
             .iter()
-            .find(|n| n["label"] == l)
+            .find(|n| n["model"] == l)
             .unwrap()
             .clone()
     };
@@ -2212,7 +2212,7 @@ async fn externals_attachments_harnesses_and_overview() {
             .as_array()
             .unwrap()
             .iter()
-            .find(|n| n["label"] == l)
+            .find(|n| n["model"] == l)
             .unwrap()
             .clone()
     };
@@ -2598,7 +2598,7 @@ async fn preparation_lines_and_cabled_state() {
             .as_array()
             .unwrap()
             .iter()
-            .find(|n| n["label"] == l)
+            .find(|n| n["model"] == l)
             .unwrap()
             .clone()
     };
@@ -3258,7 +3258,7 @@ async fn plans_floors_placements_routes_and_lengths() {
             .as_array()
             .unwrap()
             .iter()
-            .find(|n| n["label"] == "Source")
+            .find(|n| n["model"] == "Source")
             .unwrap()["ports"][0]["ref"]
             .as_str()
             .unwrap()
@@ -3276,7 +3276,7 @@ async fn plans_floors_placements_routes_and_lengths() {
             .as_array()
             .unwrap()
             .iter()
-            .find(|n| n["label"] == "Moniteur")
+            .find(|n| n["model"] == "Moniteur")
             .unwrap()["ports"][0]["ref"]
             .as_str()
             .unwrap()
@@ -3948,7 +3948,7 @@ async fn links_between_projects() {
             .as_array()
             .unwrap()
             .iter()
-            .find(|n| n["label"] == "Boîte fibre")
+            .find(|n| n["model"] == "Boîte fibre")
             .unwrap()
             .clone();
         call(
@@ -4372,8 +4372,8 @@ async fn chassis_receives_modules() {
     .await;
     assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
     let nodes = r.body["nodes"].as_array().unwrap();
-    assert!(!nodes.iter().any(|n| n["label"] == "Carte SDI"));
-    let ch = nodes.iter().find(|n| n["label"] == "Châssis 2U").unwrap();
+    assert!(!nodes.iter().any(|n| n["model"] == "Carte SDI"));
+    let ch = nodes.iter().find(|n| n["model"] == "Châssis 2U").unwrap();
     let labels: Vec<&str> = ch["ports"]
         .as_array()
         .unwrap()

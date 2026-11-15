@@ -68,6 +68,15 @@ export const INK: [number, number, number] = [21, 23, 26];
 export const DARK: [number, number, number] = [51, 51, 51];
 /** Gris moyen réservé aux textes de 8 pt et plus. */
 export const MUTE: [number, number, number] = [91, 99, 109];
+/** Filets fins (séparations de lignes, cadres secondaires). */
+export const RULE: [number, number, number] = [205, 209, 214];
+/** Épaisseurs de trait (mm), les mêmes dans tous les PDF : cadre de page, bloc (cartouche,
+ *  en-tête), filet, trait fort (page de garde, légende). */
+export const LW = { frame: 0.35, block: 0.4, rule: 0.2, strong: 0.6 } as const;
+/** Les mêmes couleurs en hexadécimal, pour les SVG imprimés (planches, dossier). Petits textes
+ *  (moins de 8 pt, 2,82 mm) en `dark` ; `measure` : cotes et mesures (magenta, distinct de
+ *  toutes les familles de signal). */
+export const HEX = { ink: '#15171A', dark: '#333333', mute: '#5B636D', rule: '#CDD1D6', measure: '#E23C7A' } as const;
 /** Couleur d'un texte selon sa taille : jamais de gris clair sous 8 pt. */
 export const ink = (doc: Doc, size: number, muted = true) => { doc.setFontSize(size); doc.setTextColor(...(!muted ? INK : size < 8 ? DARK : MUTE)); };
 
@@ -148,10 +157,10 @@ export function drawTitleBlock(doc: Doc, tpl: TitleBlock | null, v: Vars, margin
   const [W, H] = size(doc);
   const bw = Math.min(tpl.width, W - 2 * margin), k = bw / tpl.width, bh = tpl.height * k;
   const bx = W - margin - bw, by = H - margin - bh;
-  doc.setFillColor(255, 255, 255); doc.setDrawColor(...INK); doc.setLineWidth(0.4); doc.rect(bx, by, bw, bh, 'FD');
+  doc.setFillColor(255, 255, 255); doc.setDrawColor(...INK); doc.setLineWidth(LW.block); doc.rect(bx, by, bw, bh, 'FD');
   for (const z of tpl.zones) {
     const x = bx + z.x * k, y = by + z.y * k, w = z.w * k, h = z.h * k;
-    doc.setLineWidth(0.2); doc.rect(x, y, w, h);
+    doc.setLineWidth(LW.rule); doc.rect(x, y, w, h);
     if (z.kind === 'logo' || (z.kind === 'variable' && z.value === 'logo')) { drawLogo(doc, v.logo, x + 1, y + 1, w - 2, h - 2, 'center'); continue; }
     if (z.label) { doc.setFont(FONT.sans, 'normal'); ink(doc, 6.5); doc.text(txt(z.label).toUpperCase(), x + 1.4, y + 2.9); }
     const value = z.kind === 'text' ? z.value : z.value === 'sheet' ? (v.sheet ? `${v.sheet}${v.sheets ? ` / ${v.sheets}` : ''}` : '') : (v as any)[z.value] ?? '';
@@ -188,7 +197,7 @@ function drawLegend(doc: Doc, items: LegendItem[], x: number, y: number, w: numb
   doc.setFont(FONT.sans, 'normal');
   items.forEach((it, i) => {
     const cx = x + (i % cols) * colW, cy = y + 8 + Math.floor(i / cols) * 5;
-    doc.setDrawColor(...hexRgb(it.color)); doc.setLineWidth(0.6);
+    doc.setDrawColor(...hexRgb(it.color)); doc.setLineWidth(LW.strong);
     doc.setLineDashPattern(it.dash.map((d) => d * 0.6), 0); doc.line(cx, cy - 1, cx + 12, cy - 1); doc.setLineDashPattern([], 0);
     ink(doc, 8, false); doc.text(txt(it.label), cx + 14, cy);
   });
@@ -212,10 +221,17 @@ function minFontSize(svg: SVGSVGElement): number {
 export interface GraphicOpts {
   /** Découpe en tuiles quand l'ajustement ferait passer le texte sous `minPt` (défaut : 6,5 pt). */
   tile?: boolean; minPt?: number; legend?: LegendItem[];
+  /** Blocs à ne pas couper entre deux feuilles (nœuds du synoptique), en unités du dessin,
+   *  origine au coin du viewBox. À défaut, les éléments `[data-block]` (titre = valeur de
+   *  l'attribut) ou `[data-node]` (titre = premier texte) du dessin. */
+  blocks?: GraphicBlock[];
 }
-/** Rectangles occupés par le dessin (unités du dessin, origine au coin du viewBox), mesurés
- * hors écran ; le fond qui couvre tout est ignoré. Sert à ne pas imprimer de tuile vide. */
-function contentBoxes(svg: SVGSVGElement, w: number, h: number): [number, number, number, number][] | null {
+export interface GraphicBlock { box: [number, number, number, number]; title: string }
+type Box4 = [number, number, number, number];
+/** Mesure hors écran (unités du dessin, origine au coin du viewBox) : rectangles occupés par
+ * le dessin (le fond qui couvre tout est ignoré ; sert à ne pas imprimer de tuile vide) et
+ * blocs à ne pas couper. */
+function measure(svg: SVGSVGElement, w: number, h: number): { boxes: Box4[]; blocks: GraphicBlock[] } | null {
   const host = document.createElement('div');
   host.style.cssText = 'position:absolute;left:-200000px;top:0;visibility:hidden';
   const s = svg.cloneNode(true) as SVGSVGElement;
@@ -223,20 +239,50 @@ function contentBoxes(svg: SVGSVGElement, w: number, h: number): [number, number
   host.appendChild(s); document.body.appendChild(host);
   try {
     const r0 = s.getBoundingClientRect(); if (!r0.width) return null;
-    const kx = w / r0.width, ky = h / r0.height, out: [number, number, number, number][] = [];
+    const kx = w / r0.width, ky = h / r0.height;
+    const box = (el: Element): Box4 | null => { const r = el.getBoundingClientRect(); if (!r.width && !r.height) return null; return [(r.left - r0.left) * kx, (r.top - r0.top) * ky, (r.right - r0.left) * kx, (r.bottom - r0.top) * ky]; };
+    const boxes: Box4[] = [];
     for (const el of s.querySelectorAll('text, rect, path, circle, line, polyline, polygon, image, ellipse')) {
-      const r = el.getBoundingClientRect(); if (!r.width && !r.height) continue;
-      const b: [number, number, number, number] = [(r.left - r0.left) * kx, (r.top - r0.top) * ky, (r.right - r0.left) * kx, (r.bottom - r0.top) * ky];
+      const b = box(el); if (!b) continue;
       if ((b[2] - b[0]) * (b[3] - b[1]) > 0.6 * w * h) continue;
-      out.push(b);
+      boxes.push(b);
     }
-    return out;
+    const blocks: GraphicBlock[] = [];
+    for (const el of s.querySelectorAll('[data-block], [data-node]')) {
+      const b = box(el); if (!b) continue;
+      blocks.push({ box: b, title: el.getAttribute('data-block') || el.querySelector('text')?.textContent?.trim() || '' });
+    }
+    return { boxes, blocks };
   } catch { return null; } finally { host.remove(); }
 }
 
 const GM = 10, GPAD = 4, OV = 8;
-interface Plan { W: number; H: number; ax: number; ay: number; aw: number; ah: number; band: number; lx: number; lw: number; ly: number; iy: number; tbW: number; k: number; nx: number; ny: number }
-function plan(W: number, H: number, w: number, h: number, fs: number, tpl: TitleBlock | null, o: GraphicOpts): Plan {
+/** Fenêtres d'une feuille sur un axe : [début, fin] en unités du dessin. */
+type Win = [number, number];
+interface Plan { W: number; H: number; ax: number; ay: number; aw: number; ah: number; band: number; lx: number; lw: number; ly: number; iy: number; tbW: number; k: number; xs: Win[]; ys: Win[] }
+/** Coupes d'un axe : chaque feuille montre au plus `T` unités, recouvre la précédente de `o`,
+ * et s'arrête de préférence entre deux blocs (jamais à travers un nœud quand c'est possible :
+ * la coupe recule jusqu'au bord du bloc, qui passe entier sur la feuille suivante). */
+function cuts(L: number, T: number, o: number, gap: number, spans: Win[]): Win[] {
+  if (L <= T + 0.5) return [[0, L]];
+  const out: Win[] = [];
+  let s = 0;
+  for (let guard = 0; guard < 64; guard++) {
+    const max = s + T;
+    if (max >= L - 0.5) { out.push([s, L]); break; }
+    const lo = s + Math.max(o + gap, T * 0.45);
+    const cand = [max, ...spans.flatMap(([a, b]) => [a - gap, b + gap]).filter((c) => c > lo && c < max)];
+    let best = max, bestN = Infinity;
+    for (const c of cand) {
+      const n = spans.filter(([a, b]) => a < c - 0.01 && b > c + 0.01).length;
+      if (n < bestN || (n === bestN && c > best)) { best = c; bestN = n; }
+    }
+    out.push([s, best]);
+    s = Math.max(best - o, s + 1);
+  }
+  return out;
+}
+function plan(W: number, H: number, w: number, h: number, fs: number, tpl: TitleBlock | null, o: GraphicOpts, blocks: GraphicBlock[] = []): Plan {
   const m = GM, pad = GPAD, ov = OV;
   const tbW = tpl ? Math.min(tpl.width, W - 2 * m) : 0, tbH = tpl ? tpl.height * (tbW / tpl.width) : 0;
   const nl = o.legend?.length ?? 0;
@@ -252,85 +298,120 @@ function plan(W: number, H: number, w: number, h: number, fs: number, tpl: Title
   const ax = m + pad, ay = m + pad, aw = W - 2 * (m + pad), ah = H - 2 * m - pad - band - 3;
   const toPt = 72 / 25.4, minPt = o.minPt ?? 6.5;
   const kFit = Math.min(aw / w, ah / h);
-  let k = kFit, nx = 1, ny = 1;
-  if (o.tile && fs * kFit * toPt < minPt) {
-    const kNeed = minPt / (fs * toPt);
-    nx = Math.max(1, Math.ceil((w * kNeed - ov) / (aw - ov))); ny = Math.max(1, Math.ceil((h * kNeed - ov) / (ah - ov)));
-    while (nx * ny > 48) { if (nx >= ny) nx--; else ny--; }
-    // L'échelle remplit la grille de tuiles sur l'axe le plus contraint.
-    k = Math.min((nx * (aw - ov) + ov) / w, (ny * (ah - ov) + ov) / h);
-    if (nx * ny === 1) k = kFit;
-  }
-  return { W, H, ax, ay, aw, ah, band, lx, lw, ly, iy, tbW, k, nx, ny };
+  const one: Win[] = [[0, w]], oneY: Win[] = [[0, h]];
+  if (!o.tile || fs * kFit * toPt >= minPt) return { W, H, ax, ay, aw, ah, band, lx, lw, ly, iy, tbW, k: kFit, xs: one, ys: oneY };
+  const kNeed = minPt / (fs * toPt);
+  let nx = Math.max(1, Math.ceil((w * kNeed - ov) / (aw - ov))), ny = Math.max(1, Math.ceil((h * kNeed - ov) / (ah - ov)));
+  while (nx * ny > 48) { if (nx >= ny) nx--; else ny--; }
+  // L'échelle remplit la grille de tuiles sur l'axe le plus contraint ; les coupes évitent les
+  // blocs. Si éviter les blocs demande plus de feuilles, on retente à l'échelle minimale lisible.
+  const grid = (k: number) => {
+    const g = 1.5 / k;
+    return { k, xs: cuts(w, aw / k, ov / k, g, blocks.map((b) => [b.box[0], b.box[2]] as Win)), ys: cuts(h, ah / k, ov / k, g, blocks.map((b) => [b.box[1], b.box[3]] as Win)) };
+  };
+  const kGrid = nx * ny === 1 ? kFit : Math.min((nx * (aw - ov) + ov) / w, (ny * (ah - ov) + ov) / h);
+  let best = grid(kGrid);
+  if (best.xs.length * best.ys.length > nx * ny && kNeed < kGrid) { const alt = grid(kNeed); if (alt.xs.length * alt.ys.length < best.xs.length * best.ys.length) best = alt; }
+  if (best.xs.length * best.ys.length > 64) best = grid(kNeed);
+  return { W, H, ax, ay, aw, ah, band, lx, lw, ly, iy, tbW, ...best };
 }
 /** Orientation qui demande le moins de feuilles pour un dessin découpé (à égalité : `landscape`). */
 export function bestLandscape(svg: SVGSVGElement, w: number, h: number, paper: PaperKey, landscape: boolean, tpl: TitleBlock | null, o: GraphicOpts): boolean {
   if (!o.tile) return landscape;
-  const fs = minFontSize(svg), tb = tpl && tpl.width && tpl.height ? tpl : null;
-  const n = (l: boolean) => { const [W, H] = pageMm(paper, l); const p = plan(W, H, w, h, fs, tb, o); return p.nx * p.ny; };
+  const n = (l: boolean) => sheetCount(svg, w, h, paper, l, tpl, o);
   const a = n(landscape), b = n(!landscape);
   return b < a ? !landscape : landscape;
+}
+/** Nombre de feuilles qu'imprimera `svgPage` (tuiles vides comprises : estimation haute). */
+export function sheetCount(svg: SVGSVGElement, w: number, h: number, paper: PaperKey, landscape: boolean, tpl: TitleBlock | null, o: GraphicOpts): number {
+  if (!o.tile) return 1;
+  const fs = minFontSize(svg), tb = tpl && tpl.width && tpl.height ? tpl : null;
+  const blocks = o.blocks ?? measure(svg, w, h)?.blocks ?? [];
+  const [W, H] = pageMm(paper, landscape); const p = plan(W, H, w, h, fs, tb, o, blocks);
+  return p.xs.length * p.ys.length;
 }
 
 /** Une ou plusieurs pages graphiques : cadre à 10 mm du bord, dessin ajusté sur la surface
  * utile, cartouche contre le cadre, légende des familles à sa gauche. Quand le texte du dessin
- * tomberait sous `minPt`, le dessin est découpé en tuiles (recouvrement de 8 mm, repères
- * « feuille i/n » et plan d'assemblage) au lieu d'être écrasé ; les tuiles vides ne sont pas
- * imprimées. Renvoie le nombre de pages. */
+ * tomberait sous `minPt`, le dessin est découpé en tuiles au lieu d'être écrasé : les coupes
+ * passent entre les nœuds (un bloc coupé malgré tout rappelle son nom sur la feuille suivante),
+ * recouvrement de 8 mm, repères « feuille i/n » dans la marge, hors du dessin, et plan
+ * d'assemblage ; les tuiles vides ne sont pas imprimées. Renvoie le nombre de pages. */
 export async function svgPage(doc: Doc, svg: SVGSVGElement, w: number, h: number, tpl: TitleBlock | null, v: Vars, o: GraphicOpts = {}): Promise<number> {
   await import('svg2pdf.js');
-  const [W, H] = size(doc), m = GM, ov = OV;
+  const [W, H] = size(doc), m = GM;
   const tb = tpl && tpl.width && tpl.height ? tpl : null;
   const legend = o.legend ?? [];
-  const { ax, ay, aw, ah, lx, lw, ly, iy, k, nx, ny } = plan(W, H, w, h, minFontSize(svg), tb, o);
+  const meas = o.tile ? measure(svg, w, h) : null;
+  const blocks = o.blocks ?? meas?.blocks ?? [];
+  const { ax, ay, aw, ah, lx, lw, ly, iy, k, xs, ys } = plan(W, H, w, h, minFontSize(svg), tb, o, blocks);
+  const nx = xs.length, ny = ys.length;
   const dw = w * k, dh = h * k, all = nx * ny;
   const origin = (t: number): [number, number] => {
     const cx = t % nx, cy = Math.floor(t / nx);
-    // Une seule feuille : dessin centré ; tuiles : décalage d'une tuile moins le recouvrement.
-    return [all === 1 ? ax + (aw - dw) / 2 : ax - cx * (aw - ov) + (nx === 1 ? (aw - dw) / 2 : 0),
-      all === 1 ? ay + (ah - dh) / 2 : ay - cy * (ah - ov) + (ny === 1 ? (ah - dh) / 2 : 0)];
+    // Une seule feuille sur un axe : dessin centré ; tuiles : début de la fenêtre au bord.
+    return [nx === 1 ? ax + (aw - dw) / 2 : ax - xs[cx]![0] * k, ny === 1 ? ay + (ah - dh) / 2 : ay - ys[cy]![0] * k];
+  };
+  /** Surface imprimée d'une tuile (mm) : la fenêtre, plus courte quand la coupe a reculé. */
+  const clipOf = (t: number): [number, number] => {
+    const cx = t % nx, cy = Math.floor(t / nx);
+    return [nx === 1 ? aw : Math.min(aw, (xs[cx]![1] - xs[cx]![0]) * k), ny === 1 ? ah : Math.min(ah, (ys[cy]![1] - ys[cy]![0]) * k)];
   };
   // Tuiles retenues : celles où le dessin a quelque chose (toutes si la mesure échoue).
   let keep = Array.from({ length: all }, (_, t) => t);
-  if (all > 1) {
-    const boxes = contentBoxes(svg, w, h);
-    if (boxes) {
-      const kept = keep.filter((t) => { const [ox, oy] = origin(t); return boxes.some(([x0, y0, x1, y1]) => ox + x1 * k > ax + 1 && ox + x0 * k < ax + aw - 1 && oy + y1 * k > ay + 1 && oy + y0 * k < ay + ah - 1); });
-      if (kept.length) keep = kept;
-    }
+  if (all > 1 && meas) {
+    const kept = keep.filter((t) => { const [ox, oy] = origin(t), [cw, ch] = clipOf(t); return meas.boxes.some(([x0, y0, x1, y1]) => ox + x1 * k > ax + 1 && ox + x0 * k < ax + cw - 1 && oy + y1 * k > ay + 1 && oy + y0 * k < ay + ch - 1); });
+    if (kept.length) keep = kept;
   }
   const n = keep.length, num = (t: number) => keep.indexOf(t) + 1;
   for (const [i, t] of keep.entries()) {
     if (i > 0) doc.addPage([W, H], W > H ? 'landscape' : 'portrait');
     const cx = t % nx, cy = Math.floor(t / nx);
-    const [ox, oy] = origin(t);
+    const [ox, oy] = origin(t), [cw, ch] = clipOf(t);
     doc.saveGraphicsState();
-    doc.rect(ax, ay, aw, ah, null); (doc as any).clip(); (doc as any).discardPath();
+    doc.rect(ax, ay, cw, ch, null); (doc as any).clip(); (doc as any).discardPath();
     await doc.svg(svg, { x: ox, y: oy, width: dw, height: dh });
     doc.restoreGraphicsState();
-    doc.setDrawColor(...INK); doc.setLineWidth(0.35); doc.setLineDashPattern([], 0); doc.rect(m, m, W - 2 * m, H - 2 * m);
+    doc.setDrawColor(...INK); doc.setLineWidth(LW.frame); doc.setLineDashPattern([], 0); doc.rect(m, m, W - 2 * m, H - 2 * m);
     if (all > 1) {
-      // Repères de recouvrement et de raccord avec les feuilles voisines (imprimées).
+      // Repères de recouvrement avec les feuilles voisines (imprimées).
       const left = cx > 0 && num(t - 1), right = cx < nx - 1 && num(t + 1), up = cy > 0 && num(t - nx), down = cy < ny - 1 && num(t + nx);
-      doc.setDrawColor(...MUTE); doc.setLineWidth(0.2); doc.setLineDashPattern([1.5, 1.5], 0);
-      if (left) doc.line(ax + ov, ay, ax + ov, ay + ah);
-      if (right) doc.line(ax + aw - ov, ay, ax + aw - ov, ay + ah);
-      if (up) doc.line(ax, ay + ov, ax + aw, ay + ov);
-      if (down) doc.line(ax, ay + ah - ov, ax + aw, ay + ah - ov);
+      doc.setDrawColor(...MUTE); doc.setLineWidth(LW.rule); doc.setLineDashPattern([1.5, 1.5], 0);
+      if (left) { const d = (xs[cx - 1]![1] - xs[cx]![0]) * k; if (d > 0.5) doc.line(ax + d, ay, ax + d, ay + ch); }
+      if (right) { const d = (xs[cx + 1]![0] - xs[cx]![0]) * k; if (d < cw - 0.5) doc.line(ax + d, ay, ax + d, ay + ch); }
+      if (up) { const d = (ys[cy - 1]![1] - ys[cy]![0]) * k; if (d > 0.5) doc.line(ax, ay + d, ax + cw, ay + d); }
+      if (down) { const d = (ys[cy + 1]![0] - ys[cy]![0]) * k; if (d < ch - 0.5) doc.line(ax, ay + d, ax + cw, ay + d); }
       doc.setLineDashPattern([], 0);
-      doc.setFont(FONT.sans, 'bold'); ink(doc, 8, false);
+      // Renvois vers les feuilles voisines : dans la marge entre le cadre et le dessin.
+      doc.setFont(FONT.sans, 'bold'); ink(doc, 7.5);
       const lab = (j: number) => `feuille ${j}/${n}`;
-      if (left) doc.text(txt(`← ${lab(left)}`), ax + 1, ay + ah / 2, { angle: 90 });
-      if (right) doc.text(txt(`${lab(right)} →`), ax + aw - 1, ay + ah / 2, { angle: 90 });
-      if (up) doc.text(txt(`↑ ${lab(up)}`), ax + aw / 2, ay + 3.5, { align: 'center' });
-      if (down) doc.text(txt(`↓ ${lab(down)}`), ax + aw / 2, ay + ah - 1.5, { align: 'center' });
+      const tw = (s: string) => doc.getTextWidth(txt(s));
+      if (left) { const s = `← ${lab(left)}`; doc.text(txt(s), ax - 0.9, ay + ch / 2 + tw(s) / 2, { angle: 90 }); }
+      if (right) { const s = `${lab(right)} →`; doc.text(txt(s), ax + aw + 3.3, ay + ch / 2 + tw(s) / 2, { angle: 90 }); }
+      if (up) doc.text(txt(`↑ ${lab(up)}`), ax + cw / 2, ay - 1.1, { align: 'center' });
+      if (down) doc.text(txt(`↓ ${lab(down)}`), ax + cw / 2, ay + ah + 2.5, { align: 'center' });
+      // Bloc coupé malgré tout (plus grand qu'une feuille) : son nom est rappelé en tête de la
+      // portion continuée, sur fond blanc.
+      doc.setFont(FONT.sans, 'bold'); ink(doc, 7.5);
+      for (const b of blocks) {
+        if (!b.title) continue;
+        const [bx0, by0, bx1, by1] = b.box.map((c, j) => (j % 2 ? oy + c * k : ox + c * k)) as Box4;
+        if (bx1 <= ax || bx0 >= ax + cw || by1 <= ay || by0 >= ay + ch) continue;
+        const contY = by0 < ay - 0.5, contX = bx0 < ax - 0.5;
+        if (!contY && !contX) continue;
+        const s = txt(`${contY ? '↑' : '←'} ${b.title} (suite)`), x = Math.max(ax, bx0) + 1, y = Math.max(ay, by0) + 3.4;
+        const sw = Math.min(doc.getTextWidth(s), Math.min(bx1, ax + cw) - x - 1);
+        if (sw < 8) continue;
+        doc.setFillColor(255, 255, 255); doc.rect(x - 0.6, y - 2.6, sw + 1.2, 3.4, 'F');
+        doc.text(doc.splitTextToSize(s, sw + 0.5)[0] ?? '', x, y);
+      }
       // Plan d'assemblage : la grille des feuilles, la courante pleine, les vides hachurées.
       const by = iy, cell = Math.min(5, 13 / ny, 30 / nx);
       doc.setFont(FONT.sans, 'bold'); ink(doc, 9, false); doc.text(txt(`Feuille ${i + 1}/${n}`), ax, by + 3.5);
-      doc.setFont(FONT.sans, 'normal'); ink(doc, 8); doc.text(txt(`plan ${nx} × ${ny}`), ax, by + 7.5); doc.text(txt(`recouvrement ${ov} mm`), ax, by + 11.5);
+      doc.setFont(FONT.sans, 'normal'); ink(doc, 8); doc.text(txt(`plan ${nx} × ${ny}`), ax, by + 7.5); doc.text(txt(`recouvrement ${OV} mm`), ax, by + 11.5);
       for (let j = 0; j < all; j++) {
         const gx = ax + 32 + (j % nx) * cell, gy = by + Math.floor(j / nx) * cell, on = keep.includes(j);
-        doc.setDrawColor(...(on ? INK : [170, 175, 182] as [number, number, number])); doc.setLineWidth(0.2); doc.setFillColor(...(j === t ? INK : [255, 255, 255] as [number, number, number])); doc.rect(gx, gy, cell, cell, 'FD');
+        doc.setDrawColor(...(on ? INK : [170, 175, 182] as [number, number, number])); doc.setLineWidth(LW.rule); doc.setFillColor(...(j === t ? INK : [255, 255, 255] as [number, number, number])); doc.rect(gx, gy, cell, cell, 'FD');
         if (!on) doc.line(gx, gy + cell, gx + cell, gy);
       }
     }
@@ -345,12 +426,19 @@ export async function svgPage(doc: Doc, svg: SVGSVGElement, w: number, h: number
 // ----- En-tête d'identité et tableaux -----
 
 export interface Header { title: string; project: string; client: string; venue: string; dates: string; version?: string }
+/** Dates d'exploitation : « Exploitation le … » pour un seul jour, « du … au … » sinon. */
+export function exploitation(start?: string | null, end?: string | null, commissioning?: string | null): string {
+  const f = (d: string) => new Date(d).toLocaleDateString('fr-FR');
+  if (start) { const a = f(start), b = f(end ?? start); return a === b ? `Exploitation le ${a}` : `Exploitation du ${a} au ${b}`; }
+  return commissioning ? `Exploitation le ${f(commissioning)}` : '';
+}
+/** Révision du projet, la même sur tous les exports (« rév. 2 »). */
+export const revision = (p: { rev?: number | null }) => (p.rev != null ? `rév. ${p.rev}` : '');
 export function projectHeader(p: { name: string; client: string | null; venue: string | null; shoot_start?: string | null; shoot_end?: string | null; commissioning?: string | null; rev?: number }, title: string): Header {
-  const f = (d?: string | null) => (d ? new Date(d).toLocaleDateString('fr-FR') : '');
   return {
     title, project: p.name, client: p.client ?? 'Projet interne', venue: p.venue ?? '',
-    dates: p.shoot_start ? `Exploitation ${f(p.shoot_start)} au ${f(p.shoot_end ?? p.shoot_start)}` : p.commissioning ? `Exploitation ${f(p.commissioning)}` : '',
-    version: p.rev != null ? `rév. ${p.rev}` : '',
+    dates: exploitation(p.shoot_start, p.shoot_end, p.commissioning),
+    version: revision(p),
   };
 }
 
@@ -368,7 +456,7 @@ export function drawHeader(doc: Doc, h: Header, opts: { cont?: boolean } = {}): 
   doc.text(txt([h.project, h.client, h.venue].filter(Boolean).join(' · ')), tx, top + 14.5);
   const right = [`Édité le ${new Date().toLocaleDateString('fr-FR')}${h.version ? ` · ${h.version}` : ''}`, h.dates].filter(Boolean);
   right.forEach((l, i) => doc.text(txt(l), W - m, top + 3 + i * 4.5, { align: 'right' }));
-  doc.setDrawColor(...INK); doc.setLineWidth(0.4); doc.line(m, top + 17, W - m, top + 17);
+  doc.setDrawColor(...INK); doc.setLineWidth(LW.block); doc.line(m, top + 17, W - m, top + 17);
   doc.setTextColor(...INK);
   return top + 23;
 }
@@ -407,18 +495,25 @@ export interface TableOpts {
   y?: number;
   /** Appelé avec le numéro de la page où commence le tableau (sommaire). */
   onStart?: (page: number) => void;
+  /** Largeurs proportionnelles aux indications `w`, et non au contenu : des tableaux de même
+   *  famille gardent leurs colonnes alignées d'une section à l'autre. */
+  fixed?: boolean;
+  /** Cellules imprimées en gras (ex. « ⚠ Extrémité manquante » dans la liste des câbles),
+   *  lisibles aussi en noir et blanc. */
+  bold?: (row: number, col: number) => boolean;
 }
 /** Tableau paginé à partir de la page courante ; chaque nouvelle page reprend l'en-tête
  * d'identité, le titre de section et l'en-tête de colonnes. Rien n'est tronqué. Renvoie
  * l'ordonnée sous le tableau. */
 export function drawTable(doc: Doc, h: Header, cols: Col[], rows: string[][], paper: PaperKey, landscape: boolean, opts: TableOpts = {}): number {
   const [W, H] = size(doc), m = MARGIN, bottom = H - 16;
-  const ws = widths(doc, cols, rows, W - 2 * m);
+  const tw = cols.reduce((a, c) => a + c.w, 0) || 1;
+  const ws = opts.fixed ? cols.map((c) => (c.w * (W - 2 * m)) / tw) : widths(doc, cols, rows, W - 2 * m);
   let y = opts.y ?? drawHeader(doc, h);
   const head = () => {
     doc.setFont(FONT.sans, 'bold'); ink(doc, HEAD);
     let x = m; cols.forEach((c, i) => { doc.text(txt(c.label).toUpperCase(), c.align === 'right' ? x + ws[i]! - GUTTER : x, y, { align: c.align === 'right' ? 'right' : 'left' }); x += ws[i]!; });
-    doc.setDrawColor(...INK); doc.setLineWidth(0.3); doc.line(m, y + 1.6, W - m, y + 1.6); y += 6;
+    doc.setDrawColor(...INK); doc.setLineWidth(LW.frame); doc.line(m, y + 1.6, W - m, y + 1.6); y += 6;
     doc.setFont(FONT.sans, 'normal'); doc.setFontSize(BODY); doc.setTextColor(...INK);
   };
   const title = (cont: boolean) => { if (!opts.section) return; doc.setFont(FONT.sans, 'bold'); ink(doc, 11, false); doc.text(txt(`${opts.section}${cont ? ' (suite)' : ''}`), m, y); y += 6.5; };
@@ -437,11 +532,17 @@ export function drawTable(doc: Doc, h: Header, cols: Col[], rows: string[][], pa
     if (y + lh + (g ? 7 + (rowH(ri + 1 < rows.length ? ri + 1 : ri)) : 0) - LINE > bottom) newPage();
     if (g) { doc.setFont(FONT.sans, 'bold'); ink(doc, 9.5, false); doc.text(txt(g), m, y + 1); y += 6; doc.setFont(FONT.sans, 'normal'); doc.setFontSize(BODY); }
     let x = m;
-    c.forEach((lines, i) => { doc.text(lines, cols[i]!.align === 'right' ? x + ws[i]! - GUTTER : x, y, { align: cols[i]!.align === 'right' ? 'right' : 'left', lineHeightFactor: LINE / (BODY * 25.4 / 72) }); x += ws[i]!; });
+    c.forEach((lines, i) => {
+      const b = opts.bold?.(ri, i) ?? false;
+      if (b) doc.setFont(FONT.sans, 'bold');
+      doc.text(lines, cols[i]!.align === 'right' ? x + ws[i]! - GUTTER : x, y, { align: cols[i]!.align === 'right' ? 'right' : 'left', lineHeightFactor: LINE / (BODY * 25.4 / 72) });
+      if (b) doc.setFont(FONT.sans, 'normal');
+      x += ws[i]!;
+    });
     // Filet à mi-hauteur entre le bas de cette ligne et le haut de la suivante.
     const lastBase = y + (Math.max(1, ...c.map((l) => l.length)) - 1) * LINE;
     y += lh;
-    if (ri < cells.length - 1) { doc.setDrawColor(205, 209, 214); doc.setLineWidth(0.2); doc.line(m, (lastBase + 0.8 + y - 2.2) / 2, W - m, (lastBase + 0.8 + y - 2.2) / 2); }
+    if (ri < cells.length - 1) { doc.setDrawColor(...RULE); doc.setLineWidth(LW.rule); doc.line(m, (lastBase + 0.8 + y - 2.2) / 2, W - m, (lastBase + 0.8 + y - 2.2) / 2); }
   });
   if (!rows.length) { ink(doc, 8.5); doc.text('Aucune ligne.', m, y + 2); y += 6; }
   doc.setTextColor(...INK);

@@ -39,10 +39,11 @@
 
 <div class="r3">
   <div class="r3-bar">
-    <div class="seg" role="group" aria-label="Outil"><button class:on={!pan} title="Tourner autour (glisser)" onclick={() => (pan = false)}>Tourner</button><button class:on={pan} title="Se déplacer dans la vue (glisser)" onclick={() => (pan = true)}><Icon name="hand" size="sm" />Main</button></div>
-    <div class="seg" role="group" aria-label="Cadrage">{#each [['quarter', '3/4'], ['front', 'Avant'], ['rear', 'Arrière'], ['side', 'Côté'], ['top', 'Dessus']] as [k, l]}<button onclick={() => scene?.frame(k as any)}>{l}</button>{/each}</div>
-    {#if !isCase}<span class="r3-l">Portes</span><div class="seg" role="group" aria-label="Portes">{#each [['closed', 'Fermées'], ['open', 'Ouvertes'], ['removed', 'Retirées']] as [k, l]}<button class:on={doors === k} onclick={() => (doors = k as typeof doors)}>{l}</button>{/each}</div>{/if}
-    <span class="r3-l">{isCase ? 'Parois' : 'Flancs'}</span><div class="seg" role="group" aria-label="Panneaux latéraux"><button class:on={sides} onclick={() => (sides = true)}>Avec</button><button class:on={!sides} onclick={() => (sides = false)}>Sans</button></div>
+    <!-- Chaque libellé reste collé à ses boutons (groupe insécable). -->
+    <div class="seg" role="group" aria-label="Outil"><button class:on={!pan} aria-pressed={!pan} title="Tourner autour (glisser)" onclick={() => (pan = false)}>Tourner</button><button class:on={pan} aria-pressed={pan} title="Se déplacer dans la vue (glisser)" onclick={() => (pan = true)}><Icon name="hand" size="sm" />Main</button></div>
+    <span class="r3-g"><span class="r3-l">Cadrage</span><div class="seg" role="group" aria-label="Cadrage">{#each [['quarter', '3/4'], ['front', 'Avant'], ['rear', 'Arrière'], ['side', 'Côté'], ['top', 'Dessus']] as [k, l]}<button onclick={() => scene?.frame(k as any)}>{l}</button>{/each}</div></span>
+    {#if !isCase}<span class="r3-g"><span class="r3-l">Portes</span><div class="seg" role="group" aria-label="Portes">{#each [['closed', 'Fermées'], ['open', 'Ouvertes'], ['removed', 'Retirées']] as [k, l]}<button class:on={doors === k} aria-pressed={doors === k} onclick={() => (doors = k as typeof doors)}>{l}</button>{/each}</div></span>{/if}
+    <span class="r3-g"><span class="r3-l">{isCase ? 'Parois' : 'Flancs'}</span><div class="seg" role="group" aria-label="Panneaux latéraux"><button class:on={sides} aria-pressed={sides} onclick={() => (sides = true)}>Avec</button><button class:on={!sides} aria-pressed={!sides} onclick={() => (sides = false)}>Sans</button></div></span>
     <span style="flex:1"></span>
     <span class="muted small">{pan ? 'Glisser : se déplacer · molette : zoom · clic droit : tourner' : 'Glisser : tourner · molette : zoom · clic droit : se déplacer'}</span>
     <button class="btn sm ghost" onclick={shot}><Icon name="download" size="sm" />PNG</button>
@@ -57,10 +58,11 @@
 <style>
   .r3 { display: flex; flex-direction: column; height: 100%; min-height: 560px; }
   .r3-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 8px 12px; border-bottom: 1px solid var(--line); }
-  .r3-view { position: relative; flex: none; height: max(560px, calc(100vh - 300px)); background: #d6dae0; overflow: hidden; border-radius: 0 0 16px 16px; }
+  .r3-view { position: relative; flex: none; height: max(560px, calc(100vh - 300px)); background: var(--canvas); overflow: hidden; border-radius: 0 0 16px 16px; }
   .r3-view :global(canvas) { position: absolute; inset: 0; display: block; width: 100% !important; height: 100% !important; cursor: grab; }
   .r3-spin { position: absolute; left: 50%; top: 50%; }
-  .r3-err { position: absolute; inset: 0; display: grid; place-items: center; color: #23262b; }
+  .r3-err { position: absolute; inset: 0; display: grid; place-items: center; color: var(--fg-2); }
   .r3-tip { position: absolute; pointer-events: none; background: rgba(15, 16, 18, .9); color: #fff; padding: 6px 9px; border-radius: 8px; font-size: 12.5px; line-height: 1.35; max-width: 280px; }
+  .r3-g { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; flex: none; }
   .r3-l { font: 600 11.5px var(--font); letter-spacing: .05em; text-transform: uppercase; color: var(--fg-3); }
 </style>

@@ -19,3 +19,9 @@ export function visibleColor(c: string | null | undefined, fallback = 'var(--fg-
 export function avatarColor(c: string): string {
   return tooDark(c) ? '#4A5266' : c;
 }
+
+/** Encre lisible sur un aplat (rendus imprimés) : blanc sur une teinte foncée, encre sinon. */
+export function inkOn(c: string): string {
+  const l = luminance(c);
+  return l != null && l > 0.24 ? '#15171A' : '#FFFFFF';
+}

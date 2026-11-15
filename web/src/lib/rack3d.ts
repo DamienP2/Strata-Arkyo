@@ -22,7 +22,14 @@ export interface El3D {
   kind: string; // type de face (faceplate.ts)
   alu: boolean; accessory: any | null; ports: Port3D[]; fnColor: string;
   shelf_id: string | null;
+  /** Nommage commun aux rendus : étiquette blanche = libellé de l'exemplaire, à défaut son ID
+   *  (`title`) ; sérigraphie = marque et modèle (`model`). */
+  title?: string; model?: string;
+  /** Couleur (famille de signal) de chaque emplacement d'un panel, par index. */
+  slotColors?: Record<number, string>;
 }
+/** Polices des textes peints (comme l'interface et les PDF), chargées avant la construction. */
+const SANS3 = "Inter, 'Inter Variable', Helvetica, Arial, sans-serif", MONO3 = "'JetBrains Mono', JetBrainsMono, Courier, monospace";
 /** PDU vertical (0U) dans un couloir arrière, gauche ou droit vu de l'arrière. */
 export interface VPdu3D { length_mm: number; outlets: number; side: 'left' | 'right' }
 export interface Box3DSpec { kind: string; name: string; units: number; width_mm: number | null; depth_mm: number | null; height_mm: number | null; rear_rails_mm: number | null; wheels: boolean }
@@ -149,21 +156,22 @@ function faceCanvases(e: El3D, wPx: number, hPx: number) {
   const keys = (x: number, n: number) => { for (let i = 0; i < n; i++) { roundRect(g, x + i * 26, hPx * 0.3, 20, hPx * 0.4, 3); g.fillStyle = i % 4 === 0 ? '#3a3d42' : '#2b2d31'; g.fill(); g.strokeStyle = '#111'; g.stroke(); } };
   const bays = (x: number, n: number) => { for (let i = 0; i < n; i++) { roundRect(g, x + i * 64, hPx * 0.14, 58, hPx * 0.72, 3); g.fillStyle = '#16171a'; g.fill(); g.fillStyle = '#3c3f44'; g.fillRect(x + i * 64 + 6, hPx * 0.5, 30, 3); led(x + i * 64 + 48, hPx * 0.3, i % 3 ? '#45f58a' : '#4aa3ff'); } };
   const brand = (e.brand ?? '').toUpperCase();
-  g.font = `600 ${Math.round(Math.min(hPx * 0.2, 20))}px Helvetica, Arial`; g.textBaseline = 'top';
+  g.font = `600 ${Math.round(Math.min(hPx * 0.2, 20))}px ${SANS3}`; g.textBaseline = 'top';
   g.fillStyle = alu ? '#2a2c30' : '#c8ccd2';
   // Sérigraphie : en haut à gauche sur 2 U et plus ; en bas à droite, discrète, sur 1 U.
   const tall = e.height_u >= 1.5;
   const mark = brand || e.label.split(' ')[0]!.toUpperCase();
   if (e.nature !== 'accessory' && tall) {
     g.fillText(mark, x0, hPx * 0.06);
-    g.font = `400 ${Math.round(Math.min(hPx * 0.12, 15))}px Helvetica, Arial`; g.fillStyle = alu ? '#4a4d52' : '#8b9096';
-    g.fillText(e.label.slice(0, 40), x0, hPx * 0.06 + Math.min(hPx * 0.17, 22));
+    g.font = `400 ${Math.round(Math.min(hPx * 0.12, 15))}px ${SANS3}`; g.fillStyle = alu ? '#4a4d52' : '#8b9096';
+    g.fillText((e.model ?? e.label).slice(0, 40), x0, hPx * 0.06 + Math.min(hPx * 0.17, 22));
   } else if (e.nature !== 'accessory') {
-    g.font = `600 ${Math.round(hPx * 0.17)}px Helvetica, Arial`; g.textAlign = 'right'; g.textBaseline = 'bottom';
+    g.font = `600 ${Math.round(hPx * 0.17)}px ${SANS3}`; g.textAlign = 'right'; g.textBaseline = 'bottom';
     g.fillText(mark.slice(0, 18), x1 - 6, hPx * 0.94); g.textAlign = 'left'; g.textBaseline = 'top';
   }
-  // Repère de l'exemplaire, étiquette blanche.
-  if (e.tag) { const tw = g.measureText(e.tag).width + 14; roundRect(g, x1 - tw, hPx * 0.08, tw, 18, 3); g.fillStyle = '#f4f4f0'; g.fill(); g.fillStyle = '#15171a'; g.font = '600 12px Courier, monospace'; g.fillText(e.tag, x1 - tw + 7, hPx * 0.08 + 3); }
+  // Étiquette blanche : libellé de l'exemplaire, à défaut son ID (en chasse fixe).
+  const lab = e.nature === 'accessory' ? '' : (e.title ?? e.tag ?? '');
+  if (lab) { g.font = `600 12px ${lab === e.tag ? MONO3 : SANS3}`; const txt = lab.slice(0, 28), tw = g.measureText(txt).width + 14; roundRect(g, x1 - tw, hPx * 0.08, tw, 18, 3); g.fillStyle = '#f4f4f0'; g.fill(); g.fillStyle = '#15171a'; g.fillText(txt, x1 - tw + 7, hPx * 0.08 + 3); }
   const mid = (x0 + x1) / 2, avail = x1 - x0;
   switch (t) {
     case 'ups': lcd(x0, 120, '230V', '#ffb02e'); vents(x0 + 150, x1 - 80); led(x1 - 30, hPx / 2, '#45f58a'); break;
@@ -303,6 +311,14 @@ export class RackScene {
   /** Fin d'un geste de caméra (orbite, zoom, déplacement). */
   onCamera: () => void = () => {};
   private transparent: boolean;
+  private themeObs: MutationObserver | null = null;
+  private mq: MediaQueryList | null = null;
+  private onScheme = () => this.applyBg();
+  private applyBg() {
+    const v = getComputedStyle(document.documentElement).getPropertyValue('--canvas').trim() || '#d6dae0';
+    let c: THREE.Color; try { c = new THREE.Color(v); } catch { c = new THREE.Color('#d6dae0'); }
+    this.scene.background = c; this.scene.fog = new THREE.Fog(c, 14, 34);
+  }
 
   /** `transparent` : sans fond ni sol (planche) ; `still` : pas de boucle d'animation (rendus hors écran). */
   constructor(private host: HTMLElement, opts: { transparent?: boolean; still?: boolean } = {}) {
@@ -320,7 +336,13 @@ export class RackScene {
     this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     this.scene.environmentIntensity = 0.45; // reflets discrets : pas de tache lumineuse sur les tôles
     if (this.transparent) this.renderer.setClearColor(0x000000, 0);
-    else { this.scene.background = new THREE.Color('#d6dae0'); this.scene.fog = new THREE.Fog('#d6dae0', 14, 34); }
+    else {
+      // Fond de scène : le fond des canevas du thème (--canvas), relu à chaque changement de thème.
+      this.applyBg();
+      this.themeObs = new MutationObserver(() => this.applyBg());
+      this.themeObs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+      this.mq = matchMedia('(prefers-color-scheme: dark)'); this.mq.addEventListener('change', this.onScheme);
+    }
     // Éclairage plat et diffus, sans source dominante ni tache lumineuse : lumière ambiante
     // d'environnement, ciel/sol doux et quatre lumières faibles réparties autour de la scène.
     this.scene.add(new THREE.AmbientLight('#ffffff', 1.7));
@@ -689,7 +711,7 @@ export class RackScene {
       const sw = (OPEN - 0.02) / per;
       for (const s of e.accessory.panel.slots as any[]) {
         const idx = s.index - 1, r = Math.floor(idx / per), c = idx % per;
-        const o = connector(ckind(s.connector), m, e.fnColor); const k = Math.min(1, (sw * 0.9) / CSIZE[ckind(s.connector)][0]); o.scale.setScalar(k);
+        const o = connector(ckind(s.connector), m, e.slotColors?.[s.index] ?? e.fnColor); const k = Math.min(1, (sw * 0.9) / CSIZE[ckind(s.connector)][0]); o.scale.setScalar(k);
         o.position.set(-OPEN / 2 + 0.01 + (c + (s.width ?? 1) / 2) * sw, (rows - 1) / 2 * U - r * U, 0.0018); g.add(o);
       }
     } else {
@@ -763,6 +785,7 @@ export class RackScene {
 
   dispose() {
     this.disposed = true; cancelAnimationFrame(this.raf);
+    this.themeObs?.disconnect(); this.mq?.removeEventListener('change', this.onScheme);
     this.renderer.domElement.removeEventListener('pointermove', this.hover);
     this.scene.traverse((o) => { const me = o as THREE.Mesh; if (me.isMesh) { me.geometry.dispose(); const ms = Array.isArray(me.material) ? me.material : [me.material]; ms.forEach((x) => { Object.values(x).forEach((v) => { if (v instanceof THREE.Texture) v.dispose(); }); x.dispose(); }); } });
     this.controls.dispose(); this.composer.dispose(); this.renderer.dispose(); this.renderer.domElement.remove();

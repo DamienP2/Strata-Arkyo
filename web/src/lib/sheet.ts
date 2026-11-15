@@ -20,9 +20,10 @@ export const DESK_VIEWS: Record<DeskView, string> = { front: 'Face', side: 'Côt
 export type RackRender = 'real' | 'schematic' | '3d';
 export const RACK_RENDERS: Record<RackRender, string> = { real: 'Réel', schematic: 'Schématique', '3d': '3D' };
 /** Synoptique : mm papier par unité du dessin à l'échelle propre 1 ; plus petit facteur
- *  permis (le plus petit texte du synoptique, 10 unités, reste à 6 pt au moins). */
+ *  permis (le plus petit texte du synoptique, le connecteur des ports à 8,5 unités comme à
+ *  l'écran, reste à 6 pt au moins : 8,5 × 0,25 × 1,02 = 2,17 mm). */
 export const SYN_MM = 0.25;
-export const SYN_MIN = 0.87;
+export const SYN_MIN = 1.02;
 export const ZOOM_MIN = 0.25, ZOOM_MAX = 4;
 
 export interface SheetItem {
@@ -179,7 +180,8 @@ export const shotKey = (id: string, v: string) => (v === '3d' ? id : `${id}:${v}
 export function blankSheet(): Sheet {
   return {
     paper: 'A3', orientation: 'landscape', scale: 20, format: 'pdf', titleBlock: true,
-    block: { title: 'Planches', reference: '', author: '', checker: '', version: 'A', standards: '', notes: '' },
+    // Version vide : la planche affiche la révision du projet, comme les autres exports.
+    block: { title: 'Planches', reference: '', author: '', checker: '', version: '', standards: '', notes: '' },
     pages: [],
   };
 }

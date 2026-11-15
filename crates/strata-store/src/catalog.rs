@@ -14,6 +14,19 @@ use strata_domain::text::normalize;
 
 const META_SEEDED: &str = "catalog_seeded";
 const META_D_FORMAT: &str = "catalog_d_format";
+const META_FAMILY_COLORS: &str = "catalog_family_colors_v2";
+
+/// Couleur d'origine des familles fournies, remplacée depuis : une base qui l'a gardée telle
+/// quelle reçoit la nouvelle (une couleur choisie par le site n'est pas touchée).
+const FORMER_FAMILY_COLORS: &[(&str, &str)] = &[("F", "#1F3DF0"), ("I", "#69788C")];
+
+/// La couleur d'un signal est celle de sa famille (référentiel Fonctions) : on recopie la
+/// couleur de la famille dans chaque signal qui en diffère, pour que tous les rendus (écran,
+/// PDF, 3D) n'aient qu'une seule source.
+const ALIGN_SIGNAL_COLORS: &str = "UPDATE ref_items SET data = json_set(data, '$.color', \
+     (SELECT json_extract(f.data, '$.color') FROM ref_items f WHERE f.kind = 'functions' AND f.id = json_extract(ref_items.data, '$.function'))) \
+     WHERE kind = 'signals' AND EXISTS (SELECT 1 FROM ref_items f WHERE f.kind = 'functions' AND f.id = json_extract(ref_items.data, '$.function') \
+     AND json_extract(f.data, '$.color') IS NOT NULL AND json_extract(f.data, '$.color') IS NOT json_extract(ref_items.data, '$.color'))";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RefItem {
@@ -234,7 +247,9 @@ impl Store {
     /// du pack ne le voit pas revenir.
     pub(crate) async fn seed_catalog(&self) -> Result<()> {
         if self.meta(META_SEEDED).await?.is_some() {
-            return self.backfill_d_format().await;
+            self.backfill_d_format().await?;
+            self.refresh_family_colors().await?;
+            return self.align_signal_colors().await;
         }
         let mut tx = self.pool.begin().await?;
         let mut position = std::collections::HashMap::new();
@@ -258,6 +273,51 @@ impl Store {
             .await?;
         sqlx::query("INSERT INTO meta (key, value) VALUES (?, ?)")
             .bind(META_D_FORMAT)
+            .bind(now())
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("INSERT INTO meta (key, value) VALUES (?, ?)")
+            .bind(META_FAMILY_COLORS)
+            .bind(now())
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    /// Couleurs de signal recopiées de leur famille (voir `ALIGN_SIGNAL_COLORS`).
+    async fn align_signal_colors(&self) -> Result<()> {
+        sqlx::query(ALIGN_SIGNAL_COLORS).execute(&self.pool).await?;
+        Ok(())
+    }
+
+    /// Une fois : les familles fournies qui ont gardé une couleur d'origine remplacée depuis
+    /// (deux familles trop proches) prennent la nouvelle couleur du pack.
+    async fn refresh_family_colors(&self) -> Result<()> {
+        if self.meta(META_FAMILY_COLORS).await?.is_some() {
+            return Ok(());
+        }
+        let mut tx = self.pool.begin().await?;
+        for (key, former) in FORMER_FAMILY_COLORS {
+            let Some(d) = defaults()
+                .into_iter()
+                .find(|d| d.kind == RefKind::Function && d.id == *key)
+            else {
+                continue;
+            };
+            let Some(color) = d.data.get("color").and_then(Value::as_str) else {
+                continue;
+            };
+            sqlx::query("UPDATE ref_items SET data = json_set(data, '$.color', ?) WHERE kind = ? AND id = ? AND builtin = 1 AND upper(json_extract(data, '$.color')) = upper(?)")
+                .bind(color)
+                .bind(RefKind::Function.path())
+                .bind(key)
+                .bind(former)
+                .execute(&mut *tx)
+                .await?;
+        }
+        sqlx::query("INSERT INTO meta (key, value) VALUES (?, ?)")
+            .bind(META_FAMILY_COLORS)
             .bind(now())
             .execute(&mut *tx)
             .await?;
@@ -329,6 +389,9 @@ impl Store {
         let mut tx = self.pool.begin().await?;
         let (kind, id) = insert_ref_tx(&mut tx, n, false).await?;
         tx.commit().await?;
+        if matches!(kind, RefKind::Signal | RefKind::Function) {
+            self.align_signal_colors().await?;
+        }
         self.ref_item(kind, &id).await?.ok_or(StoreError::NotFound)
     }
 
@@ -366,6 +429,9 @@ impl Store {
                 Some(_) => StoreError::Stale,
                 None => StoreError::NotFound,
             });
+        }
+        if matches!(kind, RefKind::Signal | RefKind::Function) {
+            self.align_signal_colors().await?;
         }
         self.ref_item(kind, id).await?.ok_or(StoreError::NotFound)
     }
@@ -587,6 +653,7 @@ impl Store {
         for i in &c.put_items {
             put_item(&mut tx, i).await?;
         }
+        sqlx::query(ALIGN_SIGNAL_COLORS).execute(&mut *tx).await?;
         tx.commit().await?;
         Ok(())
     }
@@ -886,6 +953,53 @@ mod tests {
         assert_eq!(
             s.list_snapshots().await.unwrap()[0].sections,
             ["refs/phases", "adapters"]
+        );
+    }
+
+    /// Un signal prend toujours la couleur de sa famille, à la création comme quand la famille change.
+    #[tokio::test]
+    async fn signal_color_follows_its_family() {
+        let s = Store::open_in_memory().await.unwrap();
+        let sig = s
+            .insert_ref(NewRef {
+                kind: RefKind::Signal,
+                id: Some("sdi-import".into()),
+                name: "SDI importé".into(),
+                parent_id: None,
+                data: json!({"color": "#6b7280", "function": "V", "prefix": "V", "connectors": []}),
+                active: true,
+                position: None,
+                builtin: false,
+                protected: false,
+            })
+            .await
+            .unwrap();
+        assert_eq!(sig.data["color"], "#2459E0");
+        let v = s.ref_item(RefKind::Function, "V").await.unwrap().unwrap();
+        let mut d = v.data.clone();
+        d["color"] = json!("#112233");
+        s.update_ref(
+            RefKind::Function,
+            "V",
+            v.rev,
+            &v.name,
+            None,
+            &d,
+            true,
+            v.position,
+        )
+        .await
+        .unwrap();
+        let sig = s
+            .ref_item(RefKind::Signal, "sdi-import")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(sig.data["color"], "#112233");
+        let ip = s.ref_item(RefKind::Function, "F").await.unwrap().unwrap();
+        assert_ne!(
+            ip.data["color"], "#1F3DF0",
+            "Flux IP ne reprend plus le bleu de la vidéo"
         );
     }
 
