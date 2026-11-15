@@ -2,17 +2,24 @@
   // Mobilier de régie (pupitres, consoles, meubles) : plan de face aux cotes réelles, casquettes
   // rackables posées sur le plateau (glisser pour les déplacer), propriétés, vue 3D. Le
   // matériel d'une casquette se pose dans l'éditeur de racks, comme dans une baie.
+  import { untrack } from 'svelte';
   import Icon from '../../components/Icon.svelte';
-  import Confirm from '../../components/Confirm.svelte';
   import Dialog from '../../components/Dialog.svelte';
+  import Seg from '../../components/Seg.svelte';
+  import EmptyState from '../../components/EmptyState.svelte';
+  import NumField from '../../components/NumField.svelte';
+  import HeadActions from '../../components/HeadActions.svelte';
   import Desk3D from '../../components/Desk3D.svelte';
   import Racks from './Racks.svelte';
   import AddArticle from './AddArticle.svelte';
   import { api } from '../../lib/api';
   import { can } from '../../lib/session.svelte';
   import { toast, fail } from '../../lib/toast.svelte';
+  import { ask } from '../../lib/ask.svelte';
+  import { canvasKeys } from '../../lib/canvaskeys';
   import { route, navigate } from '../../lib/router.svelte';
-  import { refById } from '../../lib/catalog.svelte';
+  import { familyColor } from '../../lib/catalog.svelte';
+  import { rackLines } from '../../lib/racktext.svelte';
   import { nf } from '../../lib/format';
   import { ALU, decor, accFace, visualOf } from '../../lib/faceplate';
   import { CONTAINER_KINDS, type Container, type ProjectView } from '../../lib/projects';
@@ -36,7 +43,7 @@
   const selC = $derived(casq.find((c) => c.id === sel) ?? null);
 
   // Contenu de chaque casquette (même source que l'éditeur de racks).
-  interface El { placement: { id: string; face: string; u_start: number; width: string; col: number; shelf_id: string | null }; label: string; tag: string | null; nature: string; height_u: number; function: string | null; accessory: any; item_id: string | null; type_id?: string | null; visual?: string | null; depth_mm?: number | null }
+  interface El { placement: { id: string; face: string; u_start: number; width: string; col: number; shelf_id: string | null }; label: string; tag: string | null; custom?: string | null; brand?: string | null; nature: string; height_u: number; function: string | null; accessory: any; item_id: string | null; type_id?: string | null; visual?: string | null; depth_mm?: number | null }
   let racks = $state<Record<string, { elements: El[]; pending: unknown[] }>>({});
   async function loadRacks() {
     const out: Record<string, { elements: El[]; pending: unknown[] }> = {};
@@ -48,7 +55,7 @@
   // ----- Plan de face -----
   let planW = $state(900);
   const s = $derived(Math.min(0.55, Math.max(0.15, (planW - 160) / L)));
-  const fnColor = (f: string | null) => (f ? (refById('functions', f)?.data?.color ?? 'var(--fg-3)') : 'var(--fg-3)');
+  const famColor = (f: string | null) => familyColor(f, { screen: true });
   const typeOf = (e: El) => (e.nature === 'accessory' ? accFace(e as any) : visualOf(e));
   const cols = (w: string) => ({ full: 1, half: 2, third: 3, quarter: 4 } as Record<string, number>)[w] ?? 1;
   const topU = $derived(Math.max(6, ...casq.map((c) => c.height_u ?? 6)));
@@ -86,7 +93,7 @@
     off = Math.round(off / 10) * 10;
     try {
       const c = await api.post<Container>(`/projects/${pid}/containers`, { location_id: desk.location_id, name: `${desk.name} · casquette ${casq.length + 1}`, kind: 'casquette', rackable: true, height_u: 6, depth_mm: 350, parent_id: desk.id, offset_mm: off, tilt_deg: 15, cable_code: '', details: {} });
-      toast('Casquette ajoutée : équipez-la depuis le bouton « Équiper ».'); await reload(); sel = c.id;
+      toast('Casquette ajoutée : équipez-la avec « Équiper la casquette ».'); await reload(); sel = c.id;
     } catch (e) { fail(e); }
   }
   // Nouveau pupitre : on demande l'emplacement et le nom avant de créer.
@@ -95,53 +102,78 @@
     if (!view.locations.length) { toast('Créez d’abord un emplacement dans l’inventaire.', 'warn'); return; }
     newDesk = { location_id: view.locations[0]!.id, name: 'Pupitre', busy: false };
   }
-  async function addDesk(e: SubmitEvent) {
-    e.preventDefault();
+  async function addDesk() {
     const d = newDesk; if (!d || !d.name.trim() || !d.location_id) return;
-    d.busy = true;
-    try {
-      const c = await api.post<Container>(`/projects/${pid}/containers`, { location_id: d.location_id, name: d.name.trim(), kind: 'desk', rackable: false, length_mm: 2400, width_mm: 900, outer_height_mm: 750, cable_code: '', details: { positions: [] } });
-      const loc = view.locations.find((l) => l.id === d.location_id);
-      newDesk = null;
-      toast(`Mobilier « ${c.name} » ajouté${loc ? ` dans ${loc.name}` : ''}.`);
-      await reload(); navigate(`/projets/${pid}/mobilier/${c.id}`);
-    } catch (x) { fail(x); if (newDesk) newDesk.busy = false; }
+    // Erreur : remontée à la boîte (Dialog l'affiche et reste ouverte).
+    const c = await api.post<Container>(`/projects/${pid}/containers`, { location_id: d.location_id, name: d.name.trim(), kind: 'desk', rackable: false, length_mm: 2400, width_mm: 900, outer_height_mm: 750, cable_code: '', details: { positions: [] } });
+    const loc = view.locations.find((l) => l.id === d.location_id);
+    newDesk = null;
+    toast(`Mobilier « ${c.name} » ajouté${loc ? ` dans ${loc.name}` : ''}.`);
+    await reload(); navigate(`/projets/${pid}/mobilier/${c.id}`);
   }
-  let confirmDel = $state<Container | null>(null);
-  async function delCasquette() {
-    const c = confirmDel!; confirmDel = null;
-    try { await api.del(`/containers/${c.id}`); toast('Casquette supprimée.'); sel = null; await reload(); } catch (e) { fail(e); }
+  /** Suppression d'une casquette : son matériel part avec elle (cascade), donc confirmation. */
+  async function delCasquette(c: Container) {
+    const ok = await ask({
+      title: `Supprimer « ${c.name} » ?`, eyebrow: 'Casquette', confirmLabel: 'Supprimer la casquette', danger: true,
+      text: 'Le matériel qu’elle contient est supprimé de l’inventaire avec elle.',
+      run: () => api.del(`/containers/${c.id}`),
+    });
+    if (!ok) return;
+    toast(`« ${c.name} » supprimée.`); sel = null; await reload();
   }
+  // Champs numériques du panneau : copie locale reprise à chaque changement de sélection ou rechargement.
+  type CqKey = 'height_u' | 'depth_mm' | 'offset_mm' | 'tilt_deg';
+  type DkKey = 'length_mm' | 'width_mm' | 'outer_height_mm';
+  let cq = $state<Record<CqKey, number | null>>({ height_u: null, depth_mm: null, offset_mm: null, tilt_deg: null });
+  let dk = $state<Record<DkKey, number | null>>({ length_mm: null, width_mm: null, outer_height_mm: null });
+  $effect(() => { const c = selC; if (c) untrack(() => { cq = { height_u: c.height_u ?? 6, depth_mm: c.depth_mm ?? 350, offset_mm: Math.round(c.offset_mm ?? 0), tilt_deg: c.tilt_deg ?? 0 }; }); });
+  $effect(() => { const d = desk; if (d) untrack(() => { dk = { length_mm: d.length_mm ?? null, width_mm: d.width_mm ?? null, outer_height_mm: d.outer_height_mm ?? null }; }); });
+  /** Enregistre le champ quitté (événement change du champ, identifié par son id « cq-… » ou « dk-… »). */
+  function saveField(e: Event) {
+    const id = (e.target as HTMLElement).id;
+    const k = id.slice(3);
+    if (id.startsWith('cq-') && selC && k in cq) patch(selC, { [k]: cq[k as CqKey] });
+    else if (id.startsWith('dk-') && desk && k in dk) patch(desk, { [k]: dk[k as DkKey] });
+  }
+  // Clavier : Échap désélectionne, Suppr propose de supprimer la casquette sélectionnée (hors éditeur de casquette).
+  $effect(() => canvasKeys({
+    enabled: () => !equip && !!desk,
+    onEscape: () => { if (sel) sel = null; },
+    onDelete: () => { if (writable && selC) delCasquette(selC); },
+  }));
+  const shortName = (c: Container) => (desk ? c.name.replace(`${desk.name} · `, '') : c.name);
   // « Ajouter du matériel » : sur la casquette sélectionnée, sinon sur le mobilier lui-même.
   let adding = $state(false);
   const addTo = $derived(selC ?? desk);
-  const num = (v: string) => (v.trim() === '' ? null : Number(v));
+  const positionsN = $derived(desk?.details?.positions?.length ?? 0);
 </script>
 
 {#if !desks.length}
-  <div class="card empty-mob">
-    <span class="kind"><Icon name="layers" /></span>
-    <h2>Aucun mobilier dans ce projet</h2>
-    <p class="muted">Un mobilier (pupitre, console, meuble) se découpe en postes et reçoit des casquettes rackables pour les écrans, les surfaces de commande et le matériel à portée de main.</p>
-    {#if writable}
-      {#if view.locations.length}<button class="btn primary" onclick={askDesk}><Icon name="plus" size="sm" />Ajouter un mobilier</button>
-      {:else}<p class="muted small">Un mobilier se range dans un emplacement : le projet n’en a pas encore.</p><a class="btn primary" href="/projets/{pid}/inventaire"><Icon name="plus" size="sm" />Créer un emplacement</a>{/if}
-    {/if}
-  </div>
+  <EmptyState icon="layers" message="Aucun mobilier dans ce projet"
+    hint={view.locations.length || !writable ? 'Un mobilier (pupitre, console, meuble) se découpe en postes et reçoit des casquettes rackables pour les écrans, les surfaces de commande et le matériel à portée de main.' : 'Un mobilier se range dans un emplacement : le projet n’en a pas encore.'}>
+    {#snippet action()}
+      {#if writable}
+        {#if view.locations.length}<button class="btn primary" onclick={askDesk}><Icon name="plus" size="sm" />Nouveau mobilier</button>
+        {:else}<a class="btn primary" href="/projets/{pid}/inventaire"><Icon name="plus" size="sm" />Créer un emplacement</a>{/if}
+      {/if}
+    {/snippet}
+  </EmptyState>
 {:else if desk}
+  <!-- Action principale de la page, dans l'en-tête de projet. -->
+  {#if writable}<HeadActions><button class="btn primary" onclick={askDesk}><Icon name="plus" size="sm" />Nouveau mobilier</button></HeadActions>{/if}
   <div class="mob card" style="padding:0;overflow:hidden">
     <div class="mob-bar">
-      <select class="input" aria-label="Mobilier" value={desk.id} onchange={(e) => { sel = null; navigate(`/projets/${pid}/mobilier/${(e.target as HTMLSelectElement).value}`); }}>
+      <select class="input sm" aria-label="Mobilier" value={desk.id} onchange={(e) => { sel = null; navigate(`/projets/${pid}/mobilier/${(e.target as HTMLSelectElement).value}`); }}>
         {#each desks as d}<option value={d.id}>{d.name} · {CONTAINER_KINDS[d.kind].label}</option>{/each}
       </select>
       <span class="muted small">{nf(L)} × {nf(Dp)} mm · {casq.length} casquette{casq.length > 1 ? 's' : ''} · {casq.reduce((n, c) => n + (c.height_u ?? 0), 0)} U</span>
       <span style="flex:1"></span>
       {#if equip}
-        <div class="seg" role="group" aria-label="Casquette">{#each casq as c (c.id)}<button class:on={equip === c.id} onclick={() => navigate(`/projets/${pid}/mobilier/${desk.id}/${c.id}`)}>{c.name.replace(`${desk.name} · `, '')}</button>{/each}</div>
-        <button class="btn sm" onclick={() => navigate(`/projets/${pid}/mobilier/${desk.id}`)}><Icon name="layers" size="sm" />Retour au mobilier</button>
+        <nav class="seg mob-casq" aria-label="Casquette">{#each casq as c (c.id)}<a href="/projets/{pid}/mobilier/{desk.id}/{c.id}" class:on={equip === c.id} aria-current={equip === c.id ? 'page' : undefined}>{shortName(c)}</a>{/each}</nav>
+        <a class="btn sm ghost" href="/projets/{pid}/mobilier/{desk.id}"><Icon name="layers" size="sm" />Retour au mobilier</a>
       {:else}
-        <div class="seg" role="group" aria-label="Vue"><button class:on={mode === 'plan'} onclick={() => (mode = 'plan')}>Plan</button><button class:on={mode === '3d'} onclick={() => (mode = '3d')}><Icon name="case" size="sm" />3D</button></div>
-        {#if writable}<button class="btn sm" onclick={() => (adding = true)} title="Ajouter du matériel {selC ? 'dans la casquette sélectionnée' : 'au mobilier'}"><Icon name="box" size="sm" />Ajouter du matériel</button><button class="btn sm primary" onclick={addCasquette}><Icon name="plus" size="sm" />Ajouter une casquette</button>{/if}
+        <Seg label="Vue" bind:value={mode} options={[{ value: 'plan', label: 'Réel' }, { value: '3d', label: '3D', icon: 'case' }]} />
+        {#if writable}<button class="btn sm" onclick={() => (adding = true)} title="Ajouter du matériel {selC ? 'dans la casquette sélectionnée' : 'au mobilier'}"><Icon name="box" size="sm" />Ajouter du matériel</button><button class="btn sm" onclick={addCasquette}><Icon name="plus" size="sm" />Ajouter une casquette</button>{/if}
       {/if}
     </div>
     {#if equip && casq.some((c) => c.id === equip)}
@@ -160,19 +192,20 @@
               <span class="leg l"></span><span class="leg r"></span><span class="voile"></span><span class="tray"></span>
               <span class="floor"></span>
               <span class="dim mono"><i></i>{nf(L)} mm<i></i></span>
-              <span class="dimh mono">{nf(Hd)}</span>
+              <span class="dimh mono"><i></i><span>{nf(Hd)} mm</span><i></i></span>
               {#each casq as c (c.id)}
                 {@const u = (c.height_u ?? 6)}
                 {@const up = 44.45 * s}
-                <div class="cq" class:sel={sel === c.id} class:dragging={drag?.id === c.id} style="left:{offOf(c) * s}px;width:{WC * s}px;height:{u * up + 50 * s}px;--u:{up}px"
-                  role="button" tabindex="0" title="Glisser pour déplacer · double-clic pour équiper" ondblclick={() => navigate(`/projets/${pid}/mobilier/${desk.id}/${c.id}`)} onpointerdown={(e) => startDrag(e, c)} onkeydown={(e) => { if (e.key === 'Enter') sel = c.id; }}>
-                  <span class="cq-name">{c.name.replace(`${desk.name} · `, '')}{c.tilt_deg ? ` · ${nf(c.tilt_deg)}°` : ''}</span>
-                  {#if (racks[c.id]?.pending.length ?? 0) > 0}<span class="cq-pend" title="Matériel de cette casquette pas encore posé : double-cliquez pour l’équiper">{racks[c.id]!.pending.length} à placer</span>{/if}
+                <div class="cq" class:sel={sel === c.id} class:dragging={drag?.id === c.id} class:draggable={writable} style="left:{offOf(c) * s}px;width:{WC * s}px;height:{u * up + 50 * s}px;--u:{up}px"
+                  role="button" tabindex="0" aria-pressed={sel === c.id} aria-label="{shortName(c)} : Espace pour sélectionner, Entrée pour équiper" title="Glisser pour déplacer · Entrée ou double-clic pour équiper" ondblclick={() => navigate(`/projets/${pid}/mobilier/${desk.id}/${c.id}`)} onpointerdown={(e) => startDrag(e, c)} onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); navigate(`/projets/${pid}/mobilier/${desk.id}/${c.id}`); } else if (e.key === ' ') { e.preventDefault(); sel = c.id; } }}>
+                  <span class="cq-name">{shortName(c)}{c.tilt_deg ? ` · ${nf(c.tilt_deg)}°` : ''}</span>
+                  {#if (racks[c.id]?.pending.length ?? 0) > 0}<span class="cq-pend" title="Matériel de cette casquette pas encore posé : Entrée ou double-clic pour l’équiper">{racks[c.id]!.pending.length} à placer</span>{/if}
                   <div class="cq-in">
                     {#each (racks[c.id]?.elements ?? []).filter((e) => e.placement.face === 'front' && !e.placement.shelf_id) as e (e.placement.id)}
                       {@const n = cols(e.placement.width)}
-                      <span class="ritem {e.nature === 'accessory' ? 'acc' : ''} {ALU.has(typeOf(e)) ? 'alu' : ''} {e.height_u <= 1 ? 'u1' : ''}" title="{e.label}{e.tag ? ` · ${e.tag}` : ''}"
-                        style="--c:{fnColor(e.function)};bottom:{(e.placement.u_start - 1) * up + 1}px;height:{e.height_u * up - 2}px;left:calc({(100 * e.placement.col) / n}% + 1px);width:calc({100 / n}% - 2px)">{#if up * e.height_u > 16}<span class="rn">{e.label}</span><span class="dec">{@html decor(typeOf(e))}</span>{/if}</span>
+                      {@const [l1, l2] = rackLines(e)}
+                      <span class="ritem {e.nature === 'accessory' ? 'acc' : ''} {ALU.has(typeOf(e)) ? 'alu' : ''} {e.height_u <= 1 ? 'u1' : ''}" title="{e.custom ? `${e.custom} · ` : ''}{e.tag ? `${e.tag} · ` : ''}{e.label}"
+                        style="--c:{famColor(e.function)};bottom:{(e.placement.u_start - 1) * up + 1}px;height:{e.height_u * up - 2}px;left:calc({(100 * e.placement.col) / n}% + 1px);width:calc({100 / n}% - 2px)">{#if up * e.height_u > 16}<span class="rl" class:two={!!l2 && up * e.height_u > 30}>{#if l1}<b class="rn" class:id={!!e.tag && l1 === e.tag}>{l1}</b>{/if}{#if l2 && up * e.height_u > 30}<small>{l2}</small>{/if}</span><span class="dec">{@html decor(typeOf(e))}</span>{/if}</span>
                     {/each}
                   </div>
                 </div>
@@ -188,31 +221,31 @@
           <section>
             <span class="lbl-t">Casquette</span>
             <div class="field"><label for="cq-n">Nom</label><input class="input" id="cq-n" value={c.name} disabled={!writable} onchange={(e) => patch(c, { name: (e.target as HTMLInputElement).value })}></div>
-            <div class="g2">
-              <div class="field"><label for="cq-u">Hauteur (U)</label><input class="input mono" id="cq-u" type="number" min="1" max="24" value={c.height_u ?? 6} disabled={!writable} onchange={(e) => patch(c, { height_u: num((e.target as HTMLInputElement).value) })}></div>
-              <div class="field"><label for="cq-d">Profondeur (mm)</label><input class="input mono" id="cq-d" type="number" min="100" max="900" step="10" value={c.depth_mm ?? 350} disabled={!writable} onchange={(e) => patch(c, { depth_mm: num((e.target as HTMLInputElement).value) })}></div>
-              <div class="field"><label for="cq-o">Position (mm)</label><input class="input mono" id="cq-o" type="number" min="0" step="10" value={c.offset_mm ?? 0} disabled={!writable} onchange={(e) => patch(c, { offset_mm: num((e.target as HTMLInputElement).value) })}><span class="help">Depuis le bord gauche du plateau.</span></div>
-              <div class="field"><label for="cq-t">Inclinaison (°)</label><input class="input mono" id="cq-t" type="number" min="0" max="60" value={c.tilt_deg ?? 0} disabled={!writable} onchange={(e) => patch(c, { tilt_deg: num((e.target as HTMLInputElement).value) })}><span class="help">Vers l’arrière, face vers l’opérateur.</span></div>
-            </div>
+            <fieldset class="mob-fs fg2" disabled={!writable} onchange={saveField}>
+              <NumField id="cq-height_u" label="Hauteur" unit="U" min={1} max={24} step={1} bind:value={cq.height_u} />
+              <NumField id="cq-depth_mm" label="Profondeur" unit="mm" min={100} max={900} step={10} bind:value={cq.depth_mm} />
+              <NumField id="cq-offset_mm" label="Position" unit="mm" min={0} step={10} bind:value={cq.offset_mm} help="Depuis le bord gauche du plateau." />
+              <NumField id="cq-tilt_deg" label="Inclinaison" unit="°" min={0} max={60} bind:value={cq.tilt_deg} help="Vers l’arrière, face vers l’opérateur." />
+            </fieldset>
             <dl class="kv"><dt>Matériel posé</dt><dd>{racks[c.id]?.elements.length ?? 0}</dd><dt>À placer</dt><dd>{racks[c.id]?.pending.length ?? 0}</dd><dt>Code câble</dt><dd class="mono">{c.cable_code}</dd></dl>
             <a class="btn sm primary" href="/projets/{pid}/mobilier/{desk.id}/{c.id}"><Icon name="server" size="sm" />Équiper la casquette</a>
-            {#if writable}<button class="btn sm ghost danger" style="justify-self:start" onclick={() => (confirmDel = c)}><Icon name="trash" size="sm" />Supprimer la casquette</button>{/if}
-            <button class="btn sm ghost" style="justify-self:start" onclick={() => (sel = null)}>← {desk.name}</button>
+            {#if writable}<button class="btn sm ghost danger" style="justify-self:start" onclick={() => delCasquette(c)}><Icon name="trash" size="sm" />Supprimer la casquette</button>{/if}
+            <button class="btn sm ghost" style="justify-self:start" title="Désélectionner (Échap)" onclick={() => (sel = null)}>Revenir à {desk.name}</button>
           </section>
         {:else}
           <section>
             <span class="lbl-t">{CONTAINER_KINDS[desk.kind].label}</span>
             <h3 class="mob-t">{desk.name}</h3>
-            <div class="g2">
-              <div class="field"><label for="dk-l">Longueur (mm)</label><input class="input mono" id="dk-l" type="number" min="600" max="3000" step="10" value={desk.length_mm ?? ''} placeholder="2400" disabled={!writable} onchange={(e) => patch(desk, { length_mm: num((e.target as HTMLInputElement).value) })}></div>
-              <div class="field"><label for="dk-w">Profondeur (mm)</label><input class="input mono" id="dk-w" type="number" min="300" max="3000" step="10" value={desk.width_mm ?? ''} placeholder="900" disabled={!writable} onchange={(e) => patch(desk, { width_mm: num((e.target as HTMLInputElement).value) })}></div>
-              <div class="field"><label for="dk-h">Hauteur (mm)</label><input class="input mono" id="dk-h" type="number" min="400" max="1300" step="10" value={desk.outer_height_mm ?? ''} placeholder="750" disabled={!writable} onchange={(e) => patch(desk, { outer_height_mm: num((e.target as HTMLInputElement).value) })}></div>
-            </div>
+            <fieldset class="mob-fs fg2" disabled={!writable} onchange={saveField}>
+              <NumField id="dk-length_mm" label="Longueur" unit="mm" min={600} max={3000} step={10} suggestions={[1800, 2400, 3000]} bind:value={dk.length_mm} />
+              <NumField id="dk-width_mm" label="Profondeur" unit="mm" min={300} max={3000} step={10} suggestions={[900]} bind:value={dk.width_mm} />
+              <NumField id="dk-outer_height_mm" label="Hauteur" unit="mm" min={400} max={1300} step={10} suggestions={[750]} bind:value={dk.outer_height_mm} />
+            </fieldset>
             <span class="lbl-t" style="margin-top:6px">Casquettes</span>
             {#each casq as c (c.id)}
-              <button class="cq-row" onclick={() => (sel = c.id)}><b>{c.name.replace(`${desk.name} · `, '')}</b><span class="muted small mono">{c.height_u} U · {nf(c.offset_mm ?? 0)} mm{c.tilt_deg ? ` · ${nf(c.tilt_deg)}°` : ''}</span><span class="muted small">{racks[c.id]?.elements.length ?? 0} posé{(racks[c.id]?.elements.length ?? 0) > 1 ? 's' : ''}</span></button>
+              <button class="cq-row" onclick={() => (sel = c.id)}><b>{shortName(c)}</b><span class="muted small mono">{c.height_u} U · {nf(c.offset_mm ?? 0)} mm{c.tilt_deg ? ` · ${nf(c.tilt_deg)}°` : ''}</span><span class="muted small">{racks[c.id]?.elements.length ?? 0} posé{(racks[c.id]?.elements.length ?? 0) > 1 ? 's' : ''}</span></button>
             {:else}<p class="muted small" style="margin:0">Aucune casquette : « Ajouter une casquette » en haut à droite.</p>{/each}
-            {#if desk.kind === 'desk'}<p class="muted small" style="margin:6px 0 0">{desk.details?.positions?.length ?? 0} poste{(desk.details?.positions?.length ?? 0) > 1 ? 's' : ''} : rôles et matériel par poste dans l’<a class="ilink" href="/projets/{pid}/inventaire">inventaire</a>.</p>{/if}
+            {#if desk.kind === 'desk'}<p class="muted small" style="margin:6px 0 0">{positionsN ? `${positionsN} poste${positionsN > 1 ? 's' : ''} défini${positionsN > 1 ? 's' : ''}.` : 'Aucun poste défini.'} Les postes (rôle et matériel) se gèrent dans l’<a class="ilink" href="/projets/{pid}/inventaire">inventaire</a>.</p>{/if}
           </section>
         {/if}
       </aside>
@@ -223,26 +256,25 @@
 
 {#if adding && addTo}<AddArticle {view} container={addTo} locationId={addTo.location_id} onclose={() => (adding = false)} ondone={async () => { await reload(); await loadRacks(); }} />{/if}
 
-{#if confirmDel}
-  <Confirm title="Supprimer « {confirmDel.name} » ?" eyebrow="Casquette" confirmLabel="Supprimer" danger onconfirm={delCasquette} onclose={() => (confirmDel = null)}>
-    <p>Le matériel qu’elle contient est supprimé de l’inventaire avec elle.</p>
-  </Confirm>
-{/if}
-
 <style>
-  .empty-mob { display: grid; justify-items: center; gap: 10px; padding: 48px 24px; text-align: center; }
-  .empty-mob .kind { width: 54px; height: 54px; display: grid; place-items: center; border-radius: 14px; background: var(--surface-2); }
-  .empty-mob p { max-width: 560px; }
   .mob-equip { padding: 0; }
+  .mob-fs { margin: 0; padding: 0; border: 0; min-width: 0; }
+  .mob-casq a { display: inline-flex; align-items: center; height: var(--btn-h-sm, 30px); padding: 0 11px; border-radius: var(--btn-r-sm, 7px); font-size: var(--fs-ctl-sm, 13px); font-weight: 550; color: var(--fg-2); text-decoration: none; white-space: nowrap; }
+  .mob-casq a:hover { color: var(--fg); }
+  .mob-casq a.on { background: var(--key-bg); color: var(--fg); font-weight: 650; box-shadow: var(--key); }
+  .mob-casq a:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .cq:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
   .mob-equip :global(.rack-screen) { border-radius: 0; box-shadow: none; }
+  /* Barre du mobilier (~58 px) au-dessus de l'éditeur de casquette : on la retire de la hauteur. */
+  @media (min-width: 1101px) { .mob .mob-equip :global(.rack-screen .design-body) { height: calc(100dvh - 274px); } }
   .mob-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 10px 14px; border-bottom: 1px solid var(--line); }
-  .mob-bar select { width: auto; min-width: 260px; height: 38px; }
+  .mob-bar select { width: auto; min-width: 260px; }
   .mob-body { display: grid; grid-template-columns: minmax(0, 1fr) 320px; }
   .mob-stage { position: relative; min-width: 0; background: radial-gradient(70% 55% at 50% 8%, var(--stage-a) 0%, transparent 100%), linear-gradient(180deg, var(--stage-a), var(--stage-b)); }
   .mob-side { border-left: 1px solid var(--line); padding: 16px; background: var(--surface); overflow: auto; }
   .mob-side section { display: grid; gap: 10px; }
   .mob-t { margin: 0; font-size: 18px; }
-  .g2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .cq-in .rl { flex-direction: column; }
   .plan { position: relative; display: flex; align-items: flex-end; justify-content: center; padding: 44px 60px 50px; box-sizing: content-box; min-height: 300px; touch-action: none; }
   .desk { position: relative; flex: none; }
   /* Plateau : noir mat, bandeau noir laqué côté opérateur, repose-poignets cuir, filet LED. */
@@ -260,15 +292,20 @@
   .desk .dim i { flex: 1; height: 1px; background: var(--line-2); position: relative; }
   .desk .dim i:first-child::before, .desk .dim i:last-child::after { content: ''; position: absolute; top: -4px; width: 1px; height: 9px; background: var(--fg-3); }
   .desk .dim i:first-child::before { left: 0; } .desk .dim i:last-child::after { right: 0; }
-  .desk .dimh { position: absolute; left: -48px; top: 50%; transform: translateY(-50%); font-size: 11px; color: var(--fg-3); }
+  /* Cote verticale : trait de cote avec repères, comme la cote horizontale. */
+  .desk .dimh { position: absolute; left: -54px; top: 0; bottom: 0; width: 44px; display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 11px; color: var(--fg-3); }
+  .desk .dimh span { writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; }
+  .desk .dimh i { flex: 1; width: 1px; background: var(--line-2); position: relative; }
+  .desk .dimh i:first-child::before, .desk .dimh i:last-child::after { content: ''; position: absolute; left: -4px; width: 9px; height: 1px; background: var(--fg-3); }
+  .desk .dimh i:first-child::before { top: 0; } .desk .dimh i:last-child::after { bottom: 0; }
   /* Casquette encastrée : joues noir laqué, dessus noir, liseré alu ; gradin continu derrière. */
-  .cq { position: absolute; bottom: 100%; margin-bottom: 0; padding: 0 calc(25 * var(--u) / 44.45) calc(25 * var(--u) / 44.45); box-sizing: border-box; border-radius: 7px 7px 2px 2px; background: linear-gradient(90deg, #050506, #2a2c31 5%, #141518 6.5%, #141518 93.5%, #2a2c31 95%, #050506); box-shadow: inset 0 3px 0 #1b1d21, inset 0 4px 0 rgba(220,224,230,.6), 0 0 0 1px #0d0e10, 0 14px 22px -14px rgba(0,0,0,.75); cursor: grab; touch-action: none; z-index: 2; }
+  .cq { position: absolute; bottom: 100%; margin-bottom: 0; padding: 0 calc(25 * var(--u) / 44.45) calc(25 * var(--u) / 44.45); box-sizing: border-box; border-radius: 7px 7px 2px 2px; background: linear-gradient(90deg, #050506, #2a2c31 5%, #141518 6.5%, #141518 93.5%, #2a2c31 95%, #050506); box-shadow: inset 0 3px 0 #1b1d21, inset 0 4px 0 rgba(220,224,230,.6), 0 0 0 1px #0d0e10, 0 14px 22px -14px rgba(0,0,0,.75); cursor: pointer; touch-action: none; z-index: 2; }
   .cq.sel { box-shadow: inset 0 3px 0 #1b1d21, inset 0 4px 0 rgba(220,224,230,.6), 0 0 0 1.5px var(--accent), 0 14px 22px -14px rgba(0,0,0,.75); }
   .cq.dragging { cursor: grabbing; opacity: .9; }
   .cq-name { position: absolute; left: 0; right: 0; bottom: 100%; margin-bottom: 4px; text-align: center; font: 600 11px var(--font); color: var(--fg-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .cq-in { position: absolute; left: calc(25 * var(--u) / 44.45 + 10px); right: calc(25 * var(--u) / 44.45 + 10px); top: calc(25 * var(--u) / 44.45); bottom: calc(25 * var(--u) / 44.45); background: repeating-linear-gradient(to top, #1E2228 0 1px, #08090B 1px var(--u)); }
   .cq-in .ritem { position: absolute; font-size: 11px; padding: 0 5px; }
-  .cq-pend { position: absolute; left: 50%; bottom: 100%; margin-bottom: 22px; transform: translateX(-50%); white-space: nowrap; font: 600 10.5px/1.4 var(--mono); padding: 1px 6px; border-radius: 4px; background: var(--warn, #B78400); color: #fff; z-index: 3; }
+  .cq-pend { position: absolute; left: 50%; bottom: 100%; margin-bottom: 22px; transform: translateX(-50%); white-space: nowrap; font: 600 11px/1.4 var(--mono); padding: 1px 6px; border-radius: 4px; background: var(--warn); color: var(--primary-fg); z-index: 3; }
   /* Le matériel posé au-delà de la hauteur de la casquette ne déborde pas sur le plateau. */
   .cq-in { overflow: hidden; }
   .plan-hint { position: absolute; left: 0; right: 0; top: 30px; text-align: center; }
@@ -279,12 +316,11 @@
 </style>
 
 {#if newDesk}
-  <Dialog title="Ajouter un mobilier" eyebrow="Mobilier" onclose={() => (newDesk = null)}>
-    <form id="deskf" class="stack" onsubmit={addDesk}>
+  <Dialog title="Nouveau mobilier" eyebrow="Mobilier" onclose={() => (newDesk = null)} onsubmit={addDesk} submitLabel="Ajouter le mobilier" submitDisabled={!newDesk.name.trim()}>
+    <div class="stack">
       <div class="field"><label for="nd-loc">Emplacement</label><select class="input" id="nd-loc" bind:value={newDesk.location_id}>{#each view.locations as l}<option value={l.id}>{l.name}{l.code && l.code !== l.name ? ` · ${l.code}` : ''}</option>{/each}</select></div>
-      <div class="field"><label for="nd-name">Nom</label><input class="input" id="nd-name" bind:value={newDesk.name} required maxlength="120" placeholder="Pupitre réalisateur, console son…"></div>
+      <div class="field"><label for="nd-name">Nom</label><input class="input" id="nd-name" bind:value={newDesk.name} required maxlength="120" placeholder="Pupitre réalisateur, console son"></div>
       <p class="muted small">Mobilier de 2 400 × 900 mm, 750 mm de haut : les cotes se règlent ensuite dans le panneau de droite.</p>
-    </form>
-    {#snippet footer()}<button class="btn ghost" onclick={() => (newDesk = null)}>Annuler</button><button class="btn primary" type="submit" form="deskf" disabled={!newDesk?.name.trim() || newDesk?.busy}>{#if newDesk?.busy}<span class="spin"></span>{/if}Ajouter le mobilier</button>{/snippet}
+    </div>
   </Dialog>
 {/if}

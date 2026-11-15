@@ -1,16 +1,20 @@
 <script lang="ts">
   // Élévations de racks (section 9) : écran de conception, une personne à la fois.
-  import { untrack, onDestroy } from 'svelte';
+  import { untrack, onDestroy, tick } from 'svelte';
   import Icon from '../../components/Icon.svelte';
   import Vu from '../../components/Vu.svelte';
-  import Confirm from '../../components/Confirm.svelte';
-  import { api, ApiError } from '../../lib/api';
+  import Seg from '../../components/Seg.svelte';
+  import EmptyState from '../../components/EmptyState.svelte';
+  import Loading from '../../components/Loading.svelte';
+  import { api } from '../../lib/api';
+  import { ask } from '../../lib/ask.svelte';
+  import { canvasKeys } from '../../lib/canvaskeys';
   import { can, session } from '../../lib/session.svelte';
   import { toast, fail } from '../../lib/toast.svelte';
   import { route, navigate } from '../../lib/router.svelte';
   import { join } from '../../lib/live.svelte';
   import { nf, relative, pl } from '../../lib/format';
-  import { refById, loadRefs } from '../../lib/catalog.svelte';
+  import { refById, loadRefs, familyColor } from '../../lib/catalog.svelte';
   import { rackLines, rackText, setRackText, RACK_TEXT, type RackText } from '../../lib/racktext.svelte';
   import { faceType, ALU, decor, accFace, visualOf } from '../../lib/faceplate';
   import { CONTAINER_KINDS, type Accessory, type Article, type ProjectView } from '../../lib/projects';
@@ -54,7 +58,6 @@
   let hoverU = $state<{ u: number; col: number } | null>(null);
   let newer = $state(false);
   let requested = $state<string | null>(null);
-  let confirmClear = $state(false);
   // « Ajouter du matériel » : la boîte de l'inventaire, réglée sur l'élément affiché.
   let adding = $state(false);
   const canAdd = $derived(can('projets', 'ecriture'));
@@ -74,13 +77,20 @@
     mq.addEventListener('change', on);
     return () => mq.removeEventListener('change', on);
   });
-  let stageW = $state(0);
+  let stageW = $state(0), stageH = $state(0);
   let sheetOpen = $state(false);
+  // Ordinateur : « Ajuster à la hauteur » met toute la baie dans la hauteur disponible (réglage mémorisé).
+  let fitH = $state((() => { try { return localStorage.getItem('rack-fit') === '1'; } catch { return false; } })());
+  $effect(() => { try { localStorage.setItem('rack-fit', fitH ? '1' : '0'); } catch { /* indisponible */ } });
   const zoom = $derived.by(() => {
-    if (!narrow || !stageW) return 1;
-    const vp = (vpOf().some((v) => v.accessory.side === 'left') ? 26 : 0) + (vpOf().some((v) => v.accessory.side === 'right') ? 26 : 0);
-    const natural = 2 * 28 + BW + 22 + 10 + vp;
-    return Math.min(1, (stageW - 24) / natural);
+    if (narrow && stageW) {
+      const vp = (vpOf().some((v) => v.accessory.side === 'left') ? 26 : 0) + (vpOf().some((v) => v.accessory.side === 'right') ? 26 : 0);
+      const natural = 2 * 28 + BW + 22 + 10 + vp;
+      return Math.min(1, (stageW - 24) / natural);
+    }
+    // Titre de la baie, marges et graduations : environ 90 px en plus des U.
+    if (fitH && stageH && units) return Math.max(0.3, Math.min(1, (stageH - 40) / (units * U + 90)));
+    return 1;
   });
   const cols = (w: W) => ({ full: 1, half: 2, third: 3, quarter: 4 })[w];
 
@@ -139,7 +149,8 @@
   onDestroy(() => { stopBeat(); if (current) release(current); });
 
   // ----- Pose et déplacement -----
-  const faceEls = $derived(rack?.elements.filter((e) => e.placement.face === face && !e.placement.shelf_id) ?? []);
+  // Ordre du document = ordre visuel, du haut vers le bas (parcours au clavier).
+  const faceEls = $derived((rack?.elements.filter((e) => e.placement.face === face && !e.placement.shelf_id) ?? []).sort((a, b) => b.placement.u_start - a.placement.u_start || a.placement.col - b.placement.col));
   const onShelf = (id: string) => rack?.elements.filter((e) => e.placement.shelf_id === id) ?? [];
   const isShelf = (e: RackEl) => e.accessory?.kind === 'shelf';
   const panelOf = (e: { accessory: Accessory | null }) => (e.accessory?.kind === 'panel' ? e.accessory.panel : null);
@@ -173,12 +184,29 @@
     try { await api.patch(`/placements/${p.id}`, { rev: e.placement.rev, face: p.face, u_start: p.u_start, width: p.width, col: p.col, circuit_id: p.circuit_id }); await load(); }
     catch (x) { fail(x); await load(); }
   }
+  /** Retire un équipement du rack (ou de l'étagère) : il redevient « à placer ». Notification avec
+   *  Annuler (reposé au même U, à la même face, à la même colonne), focus sur son entrée « À placer ». */
   async function unplace(e: RackEl) {
     lastAction = Date.now();
-    try { await api.del(`/placements/${e.placement.id}`); sel = null; await load(); } catch (x) { fail(x); }
+    const p = e.placement, key = p.instance_id ?? p.article_id, where = p.shelf_id ? 'de l’étagère' : 'du rack';
+    try {
+      await api.del(`/placements/${p.id}`); sel = null; await load();
+      toast(`« ${e.tag ?? e.label} » retiré ${where} : il est à placer.`, 'ok', { run: async () => {
+        await api.post(`/containers/${cid}/placements`, { article_id: p.article_id, instance_id: p.instance_id, face: p.face, u_start: p.u_start, width: p.width, col: p.col, circuit_id: p.circuit_id, shelf_id: p.shelf_id });
+        await load();
+      } });
+      await tick();
+      (document.querySelector<HTMLElement>(`[data-pend="${CSS.escape(key)}"]`) ?? document.querySelector<HTMLElement>('.rack-screen .rack-body'))?.focus();
+    } catch (x) { fail(x); }
   }
   async function clearRack() {
-    try { const r = await api.post<{ removed: number }>(`/containers/${cid}/placements/clear`); toast(`${r.removed} élément${pl(r.removed)} remis à placer.`); confirmClear = false; await load(); } catch (e) { fail(e); }
+    const n = rack?.elements.length ?? 0;
+    await ask({
+      title: 'Vider le rack ?', eyebrow: rack?.container.name,
+      text: `Tous les équipements posés (${n}) redeviennent « à placer ». L’inventaire ne change pas.`,
+      confirmLabel: 'Vider le rack', danger: true,
+      run: async () => { const r = await api.post<{ removed: number }>(`/containers/${cid}/placements/clear`); toast(`${r.removed} équipement${pl(r.removed)} remis à placer.`); await load(); },
+    });
   }
   function slotFromEvent(ev: MouseEvent, el: HTMLElement): { u: number; col: number } {
     const r = el.getBoundingClientRect();
@@ -208,18 +236,18 @@
   async function delCircuit(c: Circuit) {
     try {
       await api.del(`/circuits/${c.id}`); await load();
-      toast(`Circuit « ${c.name} » supprimé : ses équipements n’ont plus de circuit.`, 'ok', { label: 'Recréer', run: async () => { try { await api.post(`/containers/${cid}/circuits`, { name: c.name, phase: c.phase, rating_a: c.rating_a }); await load(); } catch (e) { fail(e); } } });
+      toast(`Circuit « ${c.name} » supprimé : ses équipements n’ont plus de circuit.`, 'ok', { run: async () => { await api.post(`/containers/${cid}/circuits`, { name: c.name, phase: c.phase, rating_a: c.rating_a }); await load(); } });
     } catch (e) { fail(e); }
   }
 
   // ----- Rendu -----
-  const fnColor = (f: string | null) => (f ? (refById('functions', f)?.data?.color ?? 'var(--fg-3)') : 'var(--fg-3)');
-  const CAT_COLORS = ['#2459E0', '#0E8550', '#B78400', '#7A44C9', '#CF3A2F', '#0A8797', '#BD3489', '#D06006', '#69788C'];
-  const catColor = (c: string | null) => { if (!c) return '#69788C'; let h = 0; for (const ch of c) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return CAT_COLORS[h % CAT_COLORS.length]!; };
-  const legend = $derived([...new Set(rack?.elements.map((e) => e.category ?? 'Sans catégorie') ?? [])]);
+  // Couleur = famille de signal (charte § 4), jamais la catégorie : source unique familyColor().
+  const famColor = (f: string | null | undefined) => familyColor(f, { screen: true });
+  /** Légende « Familles de signal » du rendu schématique : familles des équipements posés. */
+  const legend = $derived([...new Map((rack?.elements ?? []).filter((e) => e.nature !== 'accessory').map((e) => [e.function ?? '', e.function ? (refById('functions', e.function)?.name ?? e.function) : 'Sans famille'] as const)).entries()]);
   function style(e: RackEl) {
-    const n = cols(e.placement.width), l = (100 * e.placement.col) / n, w = 100 / n;
-    return `--c:${mode === 'schematic' ? catColor(e.category) : fnColor(e.function)};bottom:calc(${e.placement.u_start - 1} * var(--u) + 1px);height:calc(${e.height_u} * var(--u) - 2px);left:calc(${l}% + 2px);width:calc(${w}% - 4px)` + (mode === 'schematic' ? `;--fp-bg:linear-gradient(180deg,color-mix(in srgb,${catColor(e.category)} 72%,#fff),${catColor(e.category)});--fp-ink:#fff` : '');
+    const n = cols(e.placement.width), l = (100 * e.placement.col) / n, w = 100 / n, c = famColor(e.function);
+    return `--c:${c};bottom:calc(${e.placement.u_start - 1} * var(--u) + 1px);height:calc(${e.height_u} * var(--u) - 2px);left:calc(${l}% + 2px);width:calc(${w}% - 4px)` + (mode === 'schematic' ? `;--fp-bg:linear-gradient(180deg,color-mix(in srgb,${c} 72%,#fff),${c});--fp-ink:#fff` : '');
   }
   /** Textes : en schématique, les accessoires gardent leur nom (pas de façade dessinée). */
   const rl = (e: RackEl): [string, string] => (mode === 'schematic' && e.nature === 'accessory' ? [e.label, ''] : rackLines(e));
@@ -248,7 +276,7 @@
     const t = p.type_id ? refById('types', p.type_id) : null;
     const fk = p.function ?? t?.data?.function ?? (t?.parent_id ? refById('types', t.parent_id)?.data?.function : null) ?? null;
     const f = fk ? refById('functions', fk) : null;
-    return f ? { key: f.id, label: f.name, color: f.data?.color ?? 'var(--fg-3)', order: f.position ?? 500 } : { key: '~none', label: 'Autres équipements', color: 'var(--fg-3)', order: 999 };
+    return f ? { key: f.id, label: f.name, color: famColor(f.id), order: f.position ?? 500 } : { key: '~none', label: 'Autres équipements', color: famColor(null), order: 999 };
   };
   const wantedGroups = $derived.by(() => {
     const m = new Map<string, { key: string; label: string; color: string; order: number; list: Pending[] }>();
@@ -257,14 +285,51 @@
     return [...m.values()].sort((a, b) => a.order - b.order || a.label.localeCompare(b.label, 'fr'));
   });
   const FACES: Record<Face | 'side', string> = { front: 'Avant', rear: 'Arrière', rear_inner: 'Arrière intérieure', side: 'Côté' };
+
+  // ----- Occupation : U réellement posés (pas le matériel affecté encore à placer) -----
+  /** U posés sur une face (hors étagères), au prorata de la largeur (½, ⅓, ¼). */
+  const posedOn = (f: Face) => (rack?.elements ?? []).filter((e) => e.placement.face === f && !e.placement.shelf_id).reduce((n, e) => n + e.height_u / cols(e.placement.width), 0);
+  const posedU = $derived(rack ? Math.max(0, ...rack.faces.map(posedOn)) : 0);
+  const pendingU = $derived(wanted.reduce((n, p) => n + (p.height_u ?? 0), 0));
+  const fmtU = (u: number) => nf(u, u % 1 ? 1 : 0);
+
+  // ----- Clavier -----
+  // Échap remonte d'un seul niveau (équipement armé, puis sélection) ; Suppr retire l'équipement sélectionné (annulable).
+  $effect(() => canvasKeys({
+    onEscape: () => { if (armed) { armed = null; hoverU = null; } else if (sel) sel = null; },
+    onDelete: () => { if (mine && selected) unplace(selected); },
+  }));
+  /** Pose au clavier : une fois l'équipement armé, flèches haut/bas pour choisir le U, Entrée pour poser. */
+  function rackKey(e: KeyboardEvent) {
+    if (!armed || face === 'side') return;
+    const h = Math.ceil(armed.height_u ?? 1), top = Math.max(1, units - h + 1);
+    const at = hoverU ?? { u: top, col: 0 };
+    const n = armed.width ? cols(armed.width) : 1;
+    if (e.key === 'ArrowUp') hoverU = { ...at, u: Math.min(top, at.u + (e.shiftKey ? 5 : 1)) };
+    else if (e.key === 'ArrowDown') hoverU = { ...at, u: Math.max(1, at.u - (e.shiftKey ? 5 : 1)) };
+    else if (e.key === 'ArrowLeft' && n > 1) hoverU = { ...at, col: Math.max(0, at.col - 1) };
+    else if (e.key === 'ArrowRight' && n > 1) hoverU = { ...at, col: Math.min(n - 1, at.col + 1) };
+    else if (e.key === 'Enter' || e.key === ' ') placeAt(at.u, at.col);
+    else return;
+    e.preventDefault();
+  }
+  async function arm(p: Pending) {
+    armed = armed === p ? null : p;
+    hoverU = null;
+    if (armed && narrow) sheetOpen = false;
+    if (armed) { await tick(); document.querySelector<HTMLElement>('.rack-screen .rack-body')?.focus(); }
+  }
+  const RENDERS = [{ value: 'real', label: 'Réel' }, { value: 'schematic', label: 'Schématique' }, { value: '3d', label: '3D', icon: 'box' }] as const;
 </script>
 
-<svelte:window onbeforeunload={leave} onkeydown={(e) => { if (e.key === 'Escape') { armed = null; sel = null; } }} />
+<svelte:window onbeforeunload={leave} />
 
 {#if all && racks.length}
   <AllRacks {view} loc={route.path.split('/')[5] ?? null} />
 {:else if !racks.length && !fixed}
-  <div class="empty">Aucun élément rackable dans ce projet. Ajoutez un rack ou un flight-case depuis l’<a class="ilink" href="/projets/{view.project.id}/inventaire">inventaire</a>.</div>
+  <EmptyState icon="server" message="Aucun rack dans ce projet" hint="Ajoutez un rack ou un flight-case depuis l’inventaire.">
+    {#snippet action()}<a class="btn primary" href="/projets/{view.project.id}/inventaire"><Icon name="plus" size="sm" />Ajouter un élément</a>{/snippet}
+  </EmptyState>
 {:else if rack}
   {@const t = rack.totals}
   <div class="rack-screen card" style="padding:0;overflow:hidden">
@@ -282,11 +347,13 @@
     </div>{/if}
     <div class="dtool">
       {#if !fixed}<RackPicker {view} value={cid ?? ''} onpick={(v) => navigate(`/projets/${view.project.id}/racks/${v.replace(':', '/')}`)} />{/if}
-      <div class="seg" role="group" aria-label="Face">{#each [...rack.faces, 'side'] as f}<button class:on={face === f} onclick={() => { face = f as Face | 'side'; armed = null; }}>{FACES[f as Face]}</button>{/each}</div>
-      <div class="seg" role="group" aria-label="Rendu"><button class:on={mode === 'real' && !show3d} onclick={() => { mode = 'real'; show3d = false; }}>Réel</button><button class:on={mode === 'schematic' && !show3d} onclick={() => { mode = 'schematic'; show3d = false; }}>Schématique</button><button class:on={show3d} onclick={() => (show3d = true)}><Icon name="box" size="sm" />3D</button></div>
-      {#if !show3d}<label class="rtx" title="Textes affichés sur les équipements"><span>Textes</span><select class="input" value={rackText.v} onchange={(e) => setRackText((e.target as HTMLSelectElement).value as RackText)}>{#each Object.entries(RACK_TEXT) as [k, l]}<option value={k}>{l}</option>{/each}</select></label>{/if}
+      <!-- En 3D, la face et les textes n'ont pas d'effet : ils sont masqués (le cadrage est dans la vue 3D). -->
+      {#if !show3d}<Seg label="Face" value={face} options={[...rack.faces, 'side' as const].map((f) => ({ value: f, label: FACES[f] }))} onchange={(f) => { face = f; armed = null; hoverU = null; }} />{/if}
+      <Seg label="Rendu" value={show3d ? '3d' : mode} options={[...RENDERS]} onchange={(v) => { if (v === '3d') { show3d = true; armed = null; } else { mode = v; show3d = false; } }} />
+      {#if !show3d}<label class="rtx" title="Textes affichés sur les équipements"><span class="flabel">Textes</span><select class="input sm" value={rackText.v} onchange={(e) => setRackText((e.target as HTMLSelectElement).value as RackText)}>{#each Object.entries(RACK_TEXT) as [k, l]}<option value={k}>{l}</option>{/each}</select></label>
+        <button class="btn sm ghost" aria-pressed={fitH} title="Ajuster le rack à la hauteur de l’écran" onclick={() => (fitH = !fitH)}><Icon name="fit" size="sm" />Ajuster à la hauteur</button>{/if}
       <span class="gap"></span>
-      <span class="meter" class:err={t.over_u}><span>U</span><Vu value={(t.used_u / (t.total_u || 1)) * 100} mode="load" n={16} /><span class="mono">{nf(t.used_u, t.used_u % 1 ? 1 : 0)} / {t.total_u} U</span></span>
+      <span class="meter" class:err={!!t.total_u && posedU > t.total_u} title="U posés dans le rack{pendingU ? ` ; ${fmtU(pendingU)} U de matériel affecté reste à placer` : ''}"><span>U</span><Vu value={(posedU / (t.total_u || 1)) * 100} mode="load" n={16} /><span class="mono">{fmtU(posedU)} / {t.total_u} U</span>{#if pendingU}<span class="muted small mu-pend">+ {fmtU(pendingU)} U à placer</span>{/if}</span>
       <span class="meter" class:err={t.over_weight}><span>Poids</span><Vu value={rack.container.max_weight_kg ? (t.weight_kg / rack.container.max_weight_kg) * 100 : 0} mode="load" n={16} /><span class="mono">{nf(t.weight_kg, 1)}{rack.container.max_weight_kg ? ` / ${nf(rack.container.max_weight_kg)}` : ''} kg</span></span>
       <span class="meter" class:err={t.over_power}><span>Puiss.</span><Vu value={rack.container.max_power_w ? (t.power_w / rack.container.max_power_w) * 100 : 0} mode="load" n={16} /><span class="mono">{nf(t.power_w)}{rack.container.max_power_w ? ` / ${nf(rack.container.max_power_w)}` : ''} W</span></span>
     </div>
@@ -300,25 +367,25 @@
         </button>
         <section>
           <h2 class="sheet-t">À placer <span class="muted">· {wanted.length}</span></h2>
-          {#if mine}<p class="small muted">Choisissez un élément, puis une position dans le rack. Échap pour annuler.</p>{/if}
+          {#if mine && !show3d}<p class="small muted">Choisissez un équipement, puis sa position dans le rack (clic, ou flèches et Entrée). Échap pour annuler.</p>{/if}
           {#if canAdd && shownC}<button class="btn sm add-mat" onclick={() => (adding = true)}><Icon name="plus" size="sm" />Ajouter du matériel</button>{/if}
           {#each wantedGroups as g (g.key)}
-            <div class="pcat"><i style="--c:{g.color}"></i><span>{g.label}</span><b>{g.list.length}</b></div>
+            <div class="pcat eyebrow"><i style="--c:{g.color}"></i><span>{g.label}</span><b>{g.list.length}</b></div>
           {#each g.list as p (p.instance_id ?? p.article_id)}
-            <button class="pend mini" class:on={armed === p} disabled={!mine || face === 'side'} onclick={() => { armed = armed === p ? null : p; if (armed && narrow) sheetOpen = false; }} title="{p.label}{p.tag ? ` · ${p.tag}` : ''}">
-              <i class="pm-c" style="--c:{fnColor(p.function)}"></i><span class="pm-l">{p.label}</span>{#if p.tag}<span class="pm-t">{p.tag}</span>{/if}<span class="pm-u">{p.height_u} U{p.width && p.width !== 'full' ? ` · ${p.width === 'half' ? '½' : p.width === 'third' ? '⅓' : '¼'}` : ''}</span>
+            <button class="pend mini" class:on={armed === p} aria-pressed={armed === p} data-pend={p.instance_id ?? p.article_id} disabled={!mine || face === 'side' || show3d} onclick={() => arm(p)} title="{p.label}{p.tag ? ` · ${p.tag}` : ''}">
+              <i class="pm-c" style="--c:{famColor(p.function)}"></i><span class="pm-l">{p.label}</span>{#if p.tag}<span class="pm-t">{p.tag}</span>{/if}<span class="pm-u">{p.height_u} U{p.width && p.width !== 'full' ? ` · ${p.width === 'half' ? '½' : p.width === 'third' ? '⅓' : '¼'}` : ''}</span>
             </button>
           {/each}
           {:else}<p class="small muted">Tout est posé.</p>{/each}
           {#if notRackable.length}
             <h2 style="margin-top:8px">Sur étagère <span class="muted">· {notRackable.length}</span></h2>
             <p class="small muted">Hors format rack : choisissez une étagère posée dans le rack, puis « Poser ».</p>
-            {#each notRackable as p (p.instance_id ?? p.article_id)}<div class="pend mini" style="cursor:default" title="{p.label}{p.tag ? ` · ${p.tag}` : ''}"><i class="pm-c" style="--c:{fnColor(p.function)}"></i><span class="pm-l">{p.label}</span>{#if p.tag}<span class="pm-t">{p.tag}</span>{/if}</div>{/each}
+            {#each notRackable as p (p.instance_id ?? p.article_id)}<div class="pend mini" style="cursor:default" data-pend={p.instance_id ?? p.article_id} tabindex="-1" title="{p.label}{p.tag ? ` · ${p.tag}` : ''}"><i class="pm-c" style="--c:{famColor(p.function)}"></i><span class="pm-l">{p.label}</span>{#if p.tag}<span class="pm-t">{p.tag}</span>{/if}</div>{/each}
           {/if}
         </section>
       </aside>
 
-      <div class="rack-stage" class:stage3d={show3d} bind:clientWidth={stageW}>
+      <div class="rack-stage" class:stage3d={show3d} bind:clientWidth={stageW} bind:clientHeight={stageH}>
         {#if show3d}
           <Rack3D container={rack.container} elements={rack.elements} vpdus={rack.vpdus ?? []} title={rack.container.name} />
         {:else if face === 'side'}
@@ -329,7 +396,7 @@
               <div>
                 <div class="side-body" style="--w:{SW}px">
                   {#each sideBars as b (b.e.placement.id)}
-                    <span class="sbar" style="--c:{fnColor(b.e.function)};bottom:calc({b.e.placement.u_start - 1} * var(--u) + 1px);height:calc({b.e.height_u} * var(--u) - 3px);left:{b.x}px;width:{b.w}px" title="{b.e.label} · {b.e.depth_mm ?? '?'} mm"></span>
+                    <span class="sbar" style="--c:{famColor(b.e.function)};bottom:calc({b.e.placement.u_start - 1} * var(--u) + 1px);height:calc({b.e.height_u} * var(--u) - 3px);left:{b.x}px;width:{b.w}px" title="{b.e.label} · {b.e.depth_mm ?? '?'} mm"></span>
                     {#if b.rw > 0}<span class="sres" class:over={b.over} style="bottom:calc({b.e.placement.u_start - 1} * var(--u) + 1px);height:calc({b.e.height_u} * var(--u) - 3px);left:{Math.min(b.rx, b.rx + b.rw)}px;width:{Math.abs(b.rw)}px"></span>{/if}
                   {/each}
                 </div>
@@ -349,19 +416,19 @@
                 <div class="vpdu" style="{left ? 'left' : 'right'}:{6 + k * 20}px;bottom:calc(24px + {(units * U - h) / 2}px);height:{h}px;--n:{v.accessory.outlets}" title={v.label}><i></i></div>
               {/each}
               <div class="rack-scale">{#each Array(units) as _, i}<span>{units - i}</span>{/each}</div>
-              <div class="rack-body" role="grid" tabindex="-1" aria-label="Élévation"
+              <div class="rack-body" role="grid" tabindex={armed ? 0 : -1} aria-label={armed ? `Élévation : position de ${armed.label}${hoverU ? `, U${hoverU.u}` : ''} (flèches haut et bas, Entrée pour poser)` : 'Élévation'}
                 onmousemove={(e) => { if (armed) hoverU = slotFromEvent(e, e.currentTarget as HTMLElement); }}
                 onmouseleave={() => (hoverU = null)}
                 onclick={(e) => { if (armed && !(e.target as Element).closest('.ritem')) { const at = slotFromEvent(e, e.currentTarget as HTMLElement); placeAt(at.u, at.col); } else if (!(e.target as Element).closest('.ritem')) sel = null; }}
-                onkeydown={(e) => { if (e.key === 'Escape') { armed = null; sel = null; } }}
+                onkeydown={rackKey}
                 ondragover={(e) => { if (mine) e.preventDefault(); }}
                 ondrop={(e) => drop(e, e.currentTarget as HTMLElement)}>
                 {#each faceEls as e (e.placement.id)}
-                  <div class="ritem {e.nature === 'accessory' ? 'acc' : ''} {ALU.has(typeOf(e)) && mode === 'real' ? 'alu' : ''} {e.height_u <= 1 ? 'u1' : ''} {e.placement.width !== 'full' ? `half c${e.placement.col}` : ''}" class:sel={sel === e.placement.id} class:dw={dw(e)}
-                    style={style(e)} role="button" tabindex="0" draggable={mine} title="{e.custom ? `${e.custom} · ` : ''}{e.tag ? `${e.tag} · ` : ''}{e.label} · U{e.placement.u_start}"
-                    onclick={() => (sel = e.placement.id)} onkeydown={(k) => { if (k.key === 'Enter') sel = e.placement.id; }}
+                  <div class="ritem {e.nature === 'accessory' ? 'acc' : ''} {ALU.has(typeOf(e)) && mode === 'real' ? 'alu' : ''} {e.height_u <= 1 ? 'u1' : ''} {e.placement.width !== 'full' ? `half c${e.placement.col}` : ''}" class:sel={sel === e.placement.id} class:dw={dw(e)} class:draggable={mine} class:dragging={dragging === e}
+                    style={style(e)} role="button" tabindex="0" draggable={mine} aria-pressed={sel === e.placement.id} aria-label="{e.custom ? `${e.custom} · ` : ''}{e.tag ? `${e.tag} · ` : ''}{e.label} · U{e.placement.u_start}" title="{e.custom ? `${e.custom} · ` : ''}{e.tag ? `${e.tag} · ` : ''}{e.label} · U{e.placement.u_start}"
+                    onclick={() => (sel = e.placement.id)} onkeydown={(k) => { if (k.key === 'Enter' || k.key === ' ') { k.preventDefault(); sel = e.placement.id; } }}
                     ondragstart={() => (dragging = e)} ondragend={() => (dragging = null)}>
-                    {#if e.nature !== 'accessory'}<i class="led"></i>{/if}<span class="rl" class:two={!!rl(e)[1]}>{#if rl(e)[0]}<b class="rn" class:id={!!e.tag && rl(e)[0] === e.tag}>{rl(e)[0]}</b>{/if}{#if rl(e)[1]}<small>{rl(e)[1]}</small>{/if}</span>{#if isShelf(e) && onShelf(e.placement.id).length}<span class="shelf-load">{#each onShelf(e.placement.id) as x (x.placement.id)}<span class="sh-it" style="--c:{fnColor(x.function)}">{x.label}</span>{/each}</span>{:else if mode === 'real' && panelOf(e)}<span class="pdec"><PanelFace panel={panelOf(e)!} /></span>{:else if mode === 'real'}<span class="dec">{@html decor(typeOf(e))}</span>{:else}<span class="dec"></span>{/if}
+                    {#if e.nature !== 'accessory'}<i class="led"></i>{/if}<span class="rl" class:two={!!rl(e)[1]}>{#if rl(e)[0]}<b class="rn" class:id={!!e.tag && rl(e)[0] === e.tag}>{rl(e)[0]}</b>{/if}{#if rl(e)[1]}<small>{rl(e)[1]}</small>{/if}</span>{#if isShelf(e) && onShelf(e.placement.id).length}<span class="shelf-load">{#each onShelf(e.placement.id) as x (x.placement.id)}<span class="sh-it" style="--c:{famColor(x.function)}">{x.label}</span>{/each}</span>{:else if mode === 'real' && panelOf(e)}<span class="pdec"><PanelFace panel={panelOf(e)!} /></span>{:else if mode === 'real'}<span class="dec">{@html decor(typeOf(e))}</span>{:else}<span class="dec"></span>{/if}
                   </div>
                 {/each}
                 {#if armed && hoverU}
@@ -379,7 +446,7 @@
         {#if selected}
           {@const p = selected.placement}
           <section>
-            <h2 class="sel-h"><span>{selected.label}</span><button class="icon-btn sm" title="Désélectionner (Échap)" onclick={() => (sel = null)}><Icon name="x" /></button></h2>
+            <h2 class="sel-h"><span>{selected.label}</span><button class="icon-btn sm" aria-label="Désélectionner (Échap)" title="Désélectionner (Échap)" onclick={() => (sel = null)}><Icon name="x" /></button></h2>
             <dl class="kv"><dt>ID</dt><dd class="mono">{selected.tag ?? '—'}</dd><dt>Position</dt><dd>U{p.u_start}{selected.height_u > 1 ? `–${p.u_start + Math.ceil(selected.height_u) - 1}` : ''} · {FACES[p.face]}</dd>
               <dt>Profondeur</dt><dd>{selected.depth_mm ? `${nf(selected.depth_mm)} mm` : '—'}</dd><dt>Puissance</dt><dd>{selected.power_w ? `${nf(selected.power_w)} W` : '—'}</dd></dl>
             {#each rack.warnings.filter((w) => w.placement_id === p.id) as w}<div class="alert warn"><Icon name="alert" /><span>{w.message}</span></div>{/each}
@@ -400,23 +467,23 @@
             {#if selected.placement.shelf_id}
               <p class="small muted">Posé sur {shelfOf(selected)?.label ?? 'une étagère'} : il en suit la position.</p>
               {#if mine}
-                <div class="field"><label for="rk-c2">Circuit</label><select class="input" id="rk-c2" value={p.circuit_id ?? ''} onchange={(e) => patch(selected, { circuit_id: (e.target as HTMLSelectElement).value || null })}><option value="">Non branché</option>{#each rack.circuits as c}<option value={c.id}>{c.name} · {c.phase} · {c.rating_a} A</option>{/each}</select></div>
-                <button class="btn sm ghost danger" style="align-self:flex-start" onclick={() => unplace(selected)}><Icon name="x" size="sm" />Retirer de l’étagère</button>
+                <div class="field"><label for="rk-c2">Circuit</label><select class="input sm" id="rk-c2" value={p.circuit_id ?? ''} onchange={(e) => patch(selected, { circuit_id: (e.target as HTMLSelectElement).value || null })}><option value="">Non branché</option>{#each rack.circuits as c}<option value={c.id}>{c.name} · {c.phase} · {c.rating_a} A</option>{/each}</select></div>
+                <button class="btn sm ghost danger" style="align-self:flex-start" title="Retirer de l’étagère (Suppr) : il redevient à placer" onclick={() => unplace(selected)}><Icon name="x" size="sm" />Retirer de l’étagère</button>
               {/if}
             {:else if mine}
               <div style="display:flex;gap:6px;flex-wrap:wrap">
-                <button class="btn sm" onclick={() => patch(selected, { u_start: p.u_start + 1 })} disabled={p.u_start + selected.height_u > units}>▲ Monter</button>
-                <button class="btn sm" onclick={() => patch(selected, { u_start: p.u_start - 1 })} disabled={p.u_start <= 1}>▼ Descendre</button>
+                <button class="btn sm" onclick={() => patch(selected, { u_start: p.u_start + 1 })} disabled={p.u_start + selected.height_u > units}><span class="rot-up"><Icon name="chevr" size="sm" /></span>Monter d’un U</button>
+                <button class="btn sm" onclick={() => patch(selected, { u_start: p.u_start - 1 })} disabled={p.u_start <= 1}><span class="rot-dn"><Icon name="chevr" size="sm" /></span>Descendre d’un U</button>
               </div>
-              <div class="field"><label for="rk-face">Face</label><select class="input" id="rk-face" value={p.face} onchange={(e) => patch(selected, { face: (e.target as HTMLSelectElement).value as Face })}>{#each rack.faces as f}<option value={f}>{FACES[f]}</option>{/each}</select></div>
+              <div class="field"><label for="rk-face">Face</label><select class="input sm" id="rk-face" value={p.face} onchange={(e) => patch(selected, { face: (e.target as HTMLSelectElement).value as Face })}>{#each rack.faces as f}<option value={f}>{FACES[f]}</option>{/each}</select></div>
               {#if selected.nature !== 'accessory'}
-                <div class="field"><label for="rk-w">Largeur et colonne</label><select class="input" id="rk-w" value="{p.width}:{p.col}" onchange={(e) => { const [w, c] = (e.target as HTMLSelectElement).value.split(':'); patch(selected, { width: w as W, col: Number(c) }); }}>
+                <div class="field"><label for="rk-w">Largeur et colonne</label><select class="input sm" id="rk-w" value="{p.width}:{p.col}" onchange={(e) => { const [w, c] = (e.target as HTMLSelectElement).value.split(':'); patch(selected, { width: w as W, col: Number(c) }); }}>
                   <option value="full:0">Pleine largeur</option>
                   {#each [['half', 2, '1/2'], ['third', 3, '1/3'], ['quarter', 4, '1/4']] as [w, n, l]}{#each Array(n) as _, c}<option value="{w}:{c}">{l} · colonne {c + 1}</option>{/each}{/each}
                 </select></div>
-                <div class="field"><label for="rk-c">Circuit</label><select class="input" id="rk-c" value={p.circuit_id ?? ''} onchange={(e) => patch(selected, { circuit_id: (e.target as HTMLSelectElement).value || null })}><option value="">Non branché</option>{#each rack.circuits as c}<option value={c.id}>{c.name} · {c.phase} · {c.rating_a} A</option>{/each}</select></div>
+                <div class="field"><label for="rk-c">Circuit</label><select class="input sm" id="rk-c" value={p.circuit_id ?? ''} onchange={(e) => patch(selected, { circuit_id: (e.target as HTMLSelectElement).value || null })}><option value="">Non branché</option>{#each rack.circuits as c}<option value={c.id}>{c.name} · {c.phase} · {c.rating_a} A</option>{/each}</select></div>
               {/if}
-              <button class="btn sm ghost danger" style="align-self:flex-start" onclick={() => unplace(selected)}><Icon name="x" size="sm" />Retirer du rack</button>
+              <button class="btn sm ghost danger" style="align-self:flex-start" title="Retirer du rack (Suppr) : il redevient à placer" onclick={() => unplace(selected)}><Icon name="x" size="sm" />Retirer du rack</button>
             {/if}
           </section>
         {:else}
@@ -429,13 +496,13 @@
           {#if rack.electrical.unbalanced}<div class="alert warn"><Icon name="alert" /><span>Phases déséquilibrées : écart de {rack.electrical.imbalance_pct} %.</span></div>{/if}
           {#if rack.electrical.unassigned_watts}<p class="small muted">{nf(rack.electrical.unassigned_watts)} W posés sans circuit.</p>{/if}
           {#each rack.electrical.circuits as c}
-            <div class="circ" class:over={c.over}><span><b>{c.name}</b><span class="small muted">{' · '}{c.phase} · {c.rating_a} A</span></span><span class="mono">{nf(c.amps, 1)} A</span>{#if mine}<button class="icon-btn sm" title="Supprimer le circuit" onclick={() => delCircuit(rack!.circuits.find((x) => x.id === c.id)!)}><Icon name="x" /></button>{/if}</div>
+            <div class="circ" class:over={c.over}><span><b>{c.name}</b><span class="small muted">{' · '}{c.phase} · {c.rating_a} A</span></span><span class="mono">{nf(c.amps, 1)} A</span>{#if mine}<button class="icon-btn sm" aria-label="Supprimer le circuit {c.name}" title="Supprimer le circuit" onclick={() => delCircuit(rack!.circuits.find((x) => x.id === c.id)!)}><Icon name="x" /></button>{/if}</div>
           {/each}
           {#if mine}
             <form class="circ-form" onsubmit={addCircuit}>
-              <label class="circ-n"><span class="small muted">Nouveau circuit</span><input class="input" bind:value={circ.name} placeholder="Nom : PDU A · prise 1" aria-label="Nom du circuit" title="Nom du circuit (par défaut « PDU · phase »)"></label>
-              <select class="input" bind:value={circ.phase} aria-label="Phase"><option>L1</option><option>L2</option><option>L3</option></select>
-              <select class="input" bind:value={circ.rating_a} aria-label="Calibre"><option value={16}>16 A</option><option value={32}>32 A</option></select>
+              <div class="field circ-n"><label for="rk-cn">Nouveau circuit</label><input class="input sm" id="rk-cn" bind:value={circ.name} placeholder="PDU A · prise 1" title="Nom du circuit (par défaut « PDU · phase »)" data-no-dirty></div>
+              <select class="input sm" bind:value={circ.phase} aria-label="Phase"><option>L1</option><option>L2</option><option>L3</option></select>
+              <select class="input sm" bind:value={circ.rating_a} aria-label="Calibre"><option value={16}>16 A</option><option value={32}>32 A</option></select>
               <button class="btn sm"><Icon name="plus" size="sm" />Circuit</button>
             </form>
           {/if}
@@ -446,7 +513,7 @@
             {#each rack.vpdus as v (v.article_id)}
               <div class="vp-row" class:over={v.over}>
                 <span class="vp-n"><b>{v.accessory.side === 'left' ? 'Gauche' : 'Droite'} · {v.accessory.outlets} prises</b><small>{v.accessory.circuit_id ? `${v.fed} occupée${v.fed > 1 ? 's' : ''} · ${v.over ? `${v.fed - v.accessory.outlets} de trop` : `${v.free} libre${v.free > 1 ? 's' : ''}`}` : 'Rattachez un circuit pour compter les prises'}</small></span>
-                <select class="input" aria-label="Circuit d’alimentation" disabled={!mine || !rack.circuits.length} value={v.accessory.circuit_id ?? ''} onchange={(e) => setPduCircuit(v, (e.target as HTMLSelectElement).value || null)}><option value="">{rack.circuits.length ? 'Sans circuit' : 'Aucun circuit'}</option>{#each rack.circuits as c}<option value={c.id}>{c.name} · {c.phase}</option>{/each}</select>
+                <select class="input sm" aria-label="Circuit d’alimentation" disabled={!mine || !rack.circuits.length} value={v.accessory.circuit_id ?? ''} onchange={(e) => setPduCircuit(v, (e.target as HTMLSelectElement).value || null)}><option value="">{rack.circuits.length ? 'Sans circuit' : 'Aucun circuit'}</option>{#each rack.circuits as c}<option value={c.id}>{c.name} · {c.phase}</option>{/each}</select>
               </div>
             {/each}
             {#if rack.vpdus.some((v) => v.over)}<div class="alert warn"><Icon name="alert" /><span>Plus d’équipements alimentés que de prises sur un PDU : ajoutez un PDU ou répartissez les équipements sur un autre circuit.</span></div>{/if}
@@ -455,26 +522,20 @@
         {/if}
         <section>
           <h2>Totaux</h2>
-          <dl class="kv"><dt>Hauteur</dt><dd>{nf(t.used_u, t.used_u % 1 ? 1 : 0)} / {t.total_u} U</dd><dt>Poids</dt><dd>{nf(t.weight_kg, 1)} kg</dd><dt>Puissance</dt><dd>{nf(t.power_w)} W</dd><dt>Dissipation</dt><dd>{nf(t.power_w * 3.412)} BTU/h</dd></dl>
+          <dl class="kv"><dt>Hauteur posée</dt><dd>{fmtU(posedU)} / {t.total_u} U</dd>{#if pendingU}<dt>À placer</dt><dd>{fmtU(pendingU)} U{t.total_u && posedU + pendingU > t.total_u ? ` · dépasse de ${fmtU(posedU + pendingU - t.total_u)} U une fois tout posé` : ''}</dd>{/if}<dt>Poids</dt><dd>{nf(t.weight_kg, 1)} kg</dd><dt>Puissance</dt><dd>{nf(t.power_w)} W</dd><dt>Dissipation</dt><dd>{nf(t.power_w * 3.412)} BTU/h</dd></dl>
           {#each rack.warnings as w}<div class="alert warn"><Icon name="alert" /><span>{w.message}</span></div>{/each}
-          {#if mode === 'schematic'}<div class="legend" style="grid-template-columns:1fr">{#each legend as l}<div><span class="sw" style="--c:{catColor(l === 'Sans catégorie' ? null : l)}"></span>{l}</div>{/each}</div>{/if}
+          {#if mode === 'schematic' && !show3d && legend.length}<span class="lbl-t">Familles de signal</span><div class="legend" style="grid-template-columns:1fr">{#each legend as [k, name] (k)}<div><span class="sw" style="--c:{famColor(k || null)}"></span>{name}</div>{/each}</div>{/if}
         </section>
         {#if mine && rack.elements.length}
           <section class="rk-clear">
-            <button class="btn sm" title="Tous les éléments posés redeviennent « à placer » (après confirmation)" onclick={() => (confirmClear = true)}><Icon name="undo" size="sm" />Vider le rack…</button>
+            <button class="btn sm ghost danger" title="Tous les équipements posés redeviennent « à placer » (après confirmation)" onclick={clearRack}><Icon name="undo" size="sm" />Vider le rack</button>
           </section>
         {/if}
         {/if}
       </aside>
     </div>
   </div>
-{:else}<span class="spin"></span>{/if}
-
-{#if confirmClear}
-  <Confirm title="Vider le rack ?" eyebrow={rack?.container.name} confirmLabel="Vider" danger onconfirm={clearRack} onclose={() => (confirmClear = false)}>
-    <p>Tous les éléments redeviennent « à placer ». L’inventaire ne change pas.</p>
-  </Confirm>
-{/if}
+{:else}<Loading label="Chargement du rack" />{/if}
 
 {#if adding && shownC}<AddArticle {view} container={shownC} locationId={shownC.location_id} onclose={() => (adding = false)} ondone={load} />{/if}
 
@@ -487,7 +548,13 @@
   .rack-screen :global(.rack-body) { width: var(--bw, 370px); }
   .sel-h { justify-content: space-between; align-items: center; }
   .sel-h span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .pcat { display: flex; align-items: center; gap: 8px; margin: 10px 0 2px; padding: 0 2px; font: 700 11.5px var(--font); letter-spacing: .07em; text-transform: uppercase; color: var(--fg); }
+  .pcat { display: flex; align-items: center; gap: 8px; margin: 10px 0 2px; padding: 0 2px; }
+  .mu-pend { white-space: nowrap; }
+  .rot-up, .rot-dn { display: inline-flex; }
+  .rot-up { transform: rotate(-90deg); }
+  .rot-dn { transform: rotate(90deg); }
+  .rack-body:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  .ritem.dragging { opacity: .35; }
   .pcat i { width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
   .pcat b { margin-left: auto; font: 600 11px var(--mono); padding: 1px 7px; border-radius: 99px; background: var(--surface-3); color: var(--fg-2); }
   .pend.mini { flex-direction: row; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; min-height: 34px; }
@@ -497,7 +564,8 @@
   .pm-u { flex: none; font: 600 11px/1 var(--mono) !important; padding: 3px 6px; border-radius: 5px; background: var(--sunken); color: var(--fg-2) !important; }
   .rack-stage.stage3d { padding: 0; display: block; align-self: stretch; }
   /* Hauteur fixe : la baie défile seule, les panneaux latéraux restent visibles. */
-  .rack-screen .design-body { height: calc(100dvh - 236px); min-height: 560px; }
+  /* En-tête de projet commun (~90 px), barre du rack et marges de la page : la zone de travail remplit la hauteur sans défilement de page. */
+  .rack-screen .design-body { height: calc(100dvh - 216px); min-height: 560px; }
   .shelf-load { flex: 1 1 0; min-width: 0; display: flex; gap: 4px; justify-content: flex-end; overflow: hidden; }
   .sh-it { flex: none; font: 600 10px/1 var(--font); padding: 3px 6px; border-radius: 3px; color: #fff; background: color-mix(in srgb, var(--c) 70%, #1C1F23); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .15); max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .circ { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 8px 10px; border-radius: 10px; background: var(--surface-2); font-size: 14px; }
@@ -507,7 +575,7 @@
   .circ-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 6px; }
   .circ-n { grid-column: 1 / -1; display: grid; gap: 4px; }
   .rk-clear { padding-top: 14px; border-top: 1px solid var(--line); }
-  .circ-form .input { height: 36px; font-size: 14px; padding: 0 8px; }
+  .circ-form { align-items: end; }
   .pdec { flex: 1 1 0; min-width: 0; align-self: stretch; display: block; padding: 2px 0; margin-left: 8px; }
   .pside { display: grid; gap: 8px; justify-items: start; }
   .pface-s { display: block; width: 100%; height: calc(var(--h) * 26px); background: linear-gradient(180deg, #363B42, #1D2025); border-radius: 4px; padding: 2px 4px; }
@@ -528,10 +596,10 @@
     /* Place pour le panneau en bas. */
     .rack-screen .design-body { padding-bottom: 64px; }
   }
-  .rtx { display: inline-flex; align-items: center; gap: 6px; font: 600 10.5px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--fg-3); }
-  .rtx .input { height: 30px; width: auto; padding: 0 26px 0 9px; font: 500 13px var(--font); letter-spacing: 0; text-transform: none; }
+  .rtx { display: inline-flex; align-items: center; gap: 8px; }
+  .rtx .input { width: auto; }
   .vp-row { display: grid; grid-template-columns: minmax(0, 1fr) 150px; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line); }
-  .vp-row .input { height: 32px; font-size: 13px; }
+  .vp-row .input { width: 100%; }
   .vp-n { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; }
   .vp-n small { color: var(--fg-3); font-size: 12px; }
   .vp-row.over .vp-n small { color: var(--err); }
