@@ -1,6 +1,7 @@
 <script lang="ts">
   import { api } from '../../lib/api';
   import Unavailable from './Unavailable.svelte';
+  import Loading from '../../components/Loading.svelte';
   let sys = $state<any>(null);
   let error = $state<string | null>(null);
   api.get<any>('/admin/system').then((s) => (sys = s)).catch((e) => (error = e.message));
@@ -21,4 +22,4 @@
       <dt>Source des mises à jour</dt><dd class="mono">{sys.update_url ? (sys.update_url.startsWith('github:') ? `GitHub · ${sys.update_url.slice(7)}` : sys.update_url) : 'Non configurée'}</dd>
     </dl>
   </section>
-{:else}<span class="spin"></span>{/if}
+{:else}<Loading label="Chargement des informations du système" />{/if}

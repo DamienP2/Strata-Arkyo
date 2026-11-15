@@ -2,6 +2,10 @@
   import { ask } from '../../lib/ask.svelte';
   import Icon from '../../components/Icon.svelte';
   import Confirm from '../../components/Confirm.svelte';
+  import SortTh, { type Sort } from '../../components/SortTh.svelte';
+  import Seg from '../../components/Seg.svelte';
+  import Loading from '../../components/Loading.svelte';
+  import EmptyState from '../../components/EmptyState.svelte';
   import Unavailable from './Unavailable.svelte';
   import { api, download } from '../../lib/api';
   import { toast, fail } from '../../lib/toast.svelte';
@@ -16,6 +20,9 @@
   let deleting = $state<any>(null);
 
   const KIND: Record<string, string> = { auto: 'Automatique', manual: 'Manuelle', 'pre-update': 'Avant mise à jour' };
+  // Tri par date (plus récente d'abord) ou par taille.
+  let sort = $state<Sort>({ key: 'date', dir: -1 });
+  const backups = $derived(st ? [...st.backups].sort((a: any, b: any) => sort.dir * (sort.key === 'size' ? a.size - b.size : String(a.manifest.created_at).localeCompare(String(b.manifest.created_at)))) : []);
 
   async function load() {
     try { st = await api.get<any>('/admin/backups'); dir = st.dir; error = null; } catch (e: any) { error = e.message; }
@@ -53,14 +60,14 @@
   async function loadPoints() { try { pInterval = (await api.get<{ interval_h: number }>('/site/points')).interval_h; orphans = (await api.get<{ points: typeof orphans }>('/points/orphans')).points; } catch { /* droits insuffisants */ } }
   loadPoints();
   const FREQ: [number, string][] = [[1, 'chaque heure'], [6, 'toutes les 6 h'], [24, 'chaque jour']];
-  async function setInterval_(h: number) { try { pInterval = (await api.put<{ interval_h: number }>('/site/points', { interval_h: h })).interval_h; toast('Fréquence des points de restauration enregistrée.'); } catch (e) { fail(e); } }
+  async function setInterval_(h: number) { try { pInterval = (await api.put<{ interval_h: number }>('/site/points', { interval_h: h })).interval_h; toast('Fréquence des points de restauration enregistrée.'); } catch (e) { fail(e); loadPoints(); } }
   async function restoreOrphan(o: (typeof orphans)[number]) { if (!(await ask({ title: `Restaurer le projet supprimé « ${o.project_name} » ?`, confirmLabel: 'Restaurer' }))) return; try { await api.post(`/points/${o.id}/restore`); toast('Projet restauré.'); await loadPoints(); } catch (e) { fail(e); } }
 </script>
 
 {#if error}<Unavailable message={error} />
 {:else if st}
   {#if st.pending_restore}
-    <div class="alert warn"><Icon name="alert" /><span style="flex:1">Une restauration de la sauvegarde du <b>{dateTime(st.pending_restore.created_at)}</b> s’appliquera au prochain démarrage du service.</span><button class="btn sm" onclick={cancelRestore}>Annuler</button></div>
+    <div class="alert warn"><Icon name="alert" /><span style="flex:1">Une restauration de la sauvegarde du <b>{dateTime(st.pending_restore.created_at)}</b> s’appliquera au prochain démarrage du service.</span><button class="btn sm ghost" onclick={cancelRestore}>Annuler la restauration</button></div>
   {/if}
   {#if st.last_error}<div class="alert err"><Icon name="alert" /><span>La dernière sauvegarde automatique a échoué : {st.last_error}</span></div>{/if}
   {#if !st.last_success}
@@ -82,38 +89,38 @@
     </section>
   </div>
 
-  <section class="card" style="padding:6px 18px 10px">
+  <section class="card tbl-card">
     <div class="card-head" style="padding-top:12px"><h2>Sauvegardes disponibles</h2>{#if st.backups.length}<span class="muted small">{st.backups.length} dans le dossier</span>{/if}</div>
     {#if st.backups.length}
     <div class="tbl-wrap">
-      <table class="tbl">
-        <thead><tr><th>Date</th><th>Type</th><th>Version</th><th class="num">Taille</th><th></th></tr></thead>
+      <table class="tbl stack">
+        <thead><tr><SortTh label="Date" key="date" bind:sort /><th>Type</th><th>Version</th><SortTh label="Taille" key="size" bind:sort cls="num" /><th><span class="sr-only">Actions</span></th></tr></thead>
         <tbody>
-          {#each st.backups as b (b.name)}
+          {#each backups as b (b.name)}
             <tr>
-              <td><b>{dateTime(b.manifest.created_at)}</b>{#if b.manifest.label}<br><span class="muted small">{b.manifest.label}</span>{/if}</td>
-              <td>{KIND[b.manifest.kind] ?? b.manifest.kind}</td>
-              <td class="mono">{b.manifest.app_version} · schéma {b.manifest.schema}</td>
-              <td class="num">{bytes(b.size)}</td>
-              <td><div class="dl-actions">
-                <button class="btn sm ghost" onclick={() => download(`/admin/backups/${encodeURIComponent(b.name)}/download`)} title="Télécharger"><Icon name="download" size="sm" /></button>
+              <td class="first"><div><b>{dateTime(b.manifest.created_at)}</b>{#if b.manifest.label}<br><span class="muted small">{b.manifest.label}</span>{/if}</div></td>
+              <td data-l="Type">{KIND[b.manifest.kind] ?? b.manifest.kind}</td>
+              <td class="mono" data-l="Version">{b.manifest.app_version} · schéma {b.manifest.schema}</td>
+              <td class="num" data-l="Taille">{bytes(b.size)}</td>
+              <td class="acts"><div class="dl-actions">
+                <button class="icon-btn sm" onclick={() => download(`/admin/backups/${encodeURIComponent(b.name)}/download`)} title="Télécharger la sauvegarde" aria-label="Télécharger la sauvegarde"><Icon name="download" size="sm" /></button>
                 <button class="btn sm" onclick={() => (restoring = b)}>Restaurer</button>
-                <button class="btn sm ghost danger" onclick={() => (deleting = b)} title="Supprimer…" aria-label="Supprimer cette sauvegarde"><Icon name="trash" size="sm" /></button>
+                <button class="icon-btn sm danger" onclick={() => (deleting = b)} title="Supprimer la sauvegarde" aria-label="Supprimer la sauvegarde"><Icon name="trash" size="sm" /></button>
               </div></td>
             </tr>
           {/each}
         </tbody>
       </table>
     </div>
-    {:else}<p class="muted small" style="margin:10px 0 8px">Aucune sauvegarde dans ce dossier : elles apparaîtront ici, avec leur date, leur taille et un bouton pour restaurer.</p>{/if}
+    {:else}<EmptyState card={false} icon="disk" message="Aucune sauvegarde dans ce dossier" hint="Elles apparaîtront ici, avec leur date, leur taille et un bouton pour restaurer." />{/if}
   </section>
-{:else}<span class="spin"></span>{/if}
+{:else}<Loading label="Chargement des sauvegardes" />{/if}
 
 <section class="card stack" style="margin-top:20px">
   <div class="card-head"><div><h2>Points de restauration des projets</h2><span class="muted small">Un point automatique est pris si le projet a changé ; les 48 derniers sont gardés par projet.</span></div></div>
   <div class="bk-freq">
-    <span class="flabel" id="pfreq">Fréquence des points de restauration</span>
-    <div class="seg" role="group" aria-labelledby="pfreq">{#each FREQ as [h, l]}<button class:on={pInterval === h} aria-pressed={pInterval === h} onclick={() => setInterval_(h)}>{l}</button>{/each}</div>
+    <span class="flabel" aria-hidden="true">Fréquence des points de restauration</span>
+    <Seg label="Fréquence des points de restauration" bind:value={pInterval} options={FREQ.map(([h, l]) => ({ value: h, label: l }))} onchange={setInterval_} />
     <span class="muted small"><Icon name="check" size="sm" /> Enregistré : {FREQ.find(([h]) => h === pInterval)?.[1] ?? `toutes les ${pInterval} h`}</span>
   </div>
 </section>
@@ -121,8 +128,8 @@
 <section class="card stack" style="margin-top:20px">
   <div class="card-head"><div><h2>Projets supprimés</h2><span class="muted small">Un projet supprimé se récupère depuis son dernier point de restauration.</span></div></div>
   {#each orphans as o (o.id)}
-    <div style="display:flex;gap:10px;align-items:center;border-top:1px solid var(--line);padding:6px 0"><span style="flex:1"><b>{o.project_name}</b> <span class="muted small">{o.label ?? 'point'} · {dateTime(o.created_at)}</span></span><button class="icon-btn sm" aria-label="Télécharger" onclick={() => download(`/points/${o.id}/download`)}><Icon name="download" size="sm" /></button><button class="btn sm" onclick={() => restoreOrphan(o)}>Restaurer</button></div>
-  {:else}<p class="muted small" style="margin:0">Aucun projet supprimé n’a de point de restauration.</p>{/each}
+    <div style="display:flex;gap:10px;align-items:center;border-top:1px solid var(--line);padding:6px 0"><span style="flex:1"><b>{o.project_name}</b> <span class="muted small">{o.label ?? 'point'} · {dateTime(o.created_at)}</span></span><button class="icon-btn sm" title="Télécharger le point de restauration" aria-label="Télécharger le point de restauration" onclick={() => download(`/points/${o.id}/download`)}><Icon name="download" size="sm" /></button><button class="btn sm" onclick={() => restoreOrphan(o)}>Restaurer</button></div>
+  {:else}<EmptyState card={false} icon="folder" message="Aucun projet supprimé à récupérer" hint="Un projet supprimé apparaît ici tant qu’il lui reste un point de restauration." />{/each}
 </section>
 
 {#if restoring}

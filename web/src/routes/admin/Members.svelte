@@ -1,20 +1,24 @@
 <script lang="ts">
+  import { tick, untrack } from 'svelte';
   import { copyText } from '../../lib/clipboard';
   import Icon from '../../components/Icon.svelte';
   import Avatar from '../../components/Avatar.svelte';
   import Dialog from '../../components/Dialog.svelte';
   import Confirm from '../../components/Confirm.svelte';
+  import SortTh, { type Sort } from '../../components/SortTh.svelte';
+  import Loading from '../../components/Loading.svelte';
   import { api, ApiError } from '../../lib/api';
   import { session } from '../../lib/session.svelte';
   import { toast, fail } from '../../lib/toast.svelte';
   import { relative } from '../../lib/format';
+  import { route } from '../../lib/router.svelte';
   import type { Member, Role } from '../../lib/types';
   import { ask } from '../../lib/ask.svelte';
   import EmptyState from '../../components/EmptyState.svelte';
   import HeadActions from '../../components/HeadActions.svelte';
   import { pageHead, plural } from '../../lib/pagehead.svelte';
 
-  let members = $state<Member[]>([]);
+  let members = $state<Member[] | null>(null);
   let roles = $state<Role[]>([]);
   let showRemoved = $state(false);
   let q = $state('');
@@ -25,19 +29,50 @@
   let removing = $state<Member | null>(null);
   let resetting = $state<Member | null>(null);
 
+  // Tri des colonnes Membre, Rôle et Ajouté, mémorisé dans le navigateur.
+  const SORT_KEY = 'admin-members-sort';
+  const SORT_KEYS = ['name', 'role', 'added'];
+  function savedSort(): Sort {
+    try { const s = JSON.parse(localStorage.getItem(SORT_KEY) ?? ''); if (SORT_KEYS.includes(s?.key) && (s.dir === 1 || s.dir === -1)) return s; } catch { /* stockage indisponible */ }
+    return { key: 'name', dir: 1 };
+  }
+  let sort = $state<Sort>(savedSort());
+  $effect(() => { const s = JSON.stringify(sort); try { localStorage.setItem(SORT_KEY, s); } catch { /* stockage indisponible */ } });
+
   const roleOf = (id: string) => roles.find((r) => r.id === id);
-  const shown = $derived(members.filter((m) => !q || `${m.name} ${m.email} ${m.username ?? ''}`.toLowerCase().includes(q.toLowerCase())));
+  const sortVal = (m: Member): string => sort.key === 'role' ? m.role_name : sort.key === 'added' ? m.created_at : m.name;
+  const shown = $derived((members ?? [])
+    .filter((m) => !q || `${m.name} ${m.email} ${m.username ?? ''}`.toLowerCase().includes(q.toLowerCase()))
+    .sort((a, b) => sort.dir * sortVal(a).localeCompare(sortVal(b), 'fr', { numeric: true, sensitivity: 'base' })));
 
   async function load() {
     try {
       const [m, r] = await Promise.all([api.get<{ members: Member[] }>(`/members?removed=${showRemoved}`), api.get<{ roles: Role[] }>('/roles')]);
       members = m.members; roles = r.roles;
-    } catch (e) { fail(e); }
+    } catch (e) { fail(e); members ??= []; }
   }
   $effect(() => { showRemoved; load(); });
 
-  async function create(e: SubmitEvent) {
-    e.preventDefault();
+  // Lien ciblé (palette de recherche) : /admin/membres?membre=<id> fait défiler jusqu'au membre et le met en surbrillance.
+  const target = $derived(route.query.get('membre'));
+  let handled = '';
+  let hl = $state<string | null>(null);
+  $effect(() => {
+    const id = target, list = members;
+    if (!id || id === handled || !list) return;
+    untrack(async () => {
+      if (!list.some((m) => m.id === id)) {
+        // Membre retiré du site : on affiche les retirés puis on réessaie au chargement suivant.
+        if (!showRemoved) { showRemoved = true; return; }
+        handled = id; toast('Ce membre n’existe plus.', 'warn'); return;
+      }
+      handled = id; q = ''; hl = id;
+      await tick();
+      document.getElementById(`mem-${id}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+  });
+
+  async function create() {
     formError = null;
     try {
       const r = await api.post<{ member: Member; temporary_password: string; reactivated: boolean }>('/members', { email: form.email.trim(), name: form.name.trim() || null, username: form.username.trim() || null, role_id: form.role_id });
@@ -48,13 +83,14 @@
       load();
     } catch (x) { formError = x instanceof ApiError ? x.message : 'Ajout impossible.'; }
   }
-  pageHead(() => ({ count: members.length ? plural(shown.length, 'membre') : '' }));
+  pageHead(() => ({ count: members?.length ? plural(shown.length, 'membre') : '' }));
   async function toggleActive(m: Member) {
     if (m.active && !(await ask({ title: `Désactiver le compte de ${m.name} ?`, text: 'La personne ne pourra plus se connecter jusqu’à sa réactivation. Ses données et son historique sont conservés.', confirmLabel: 'Désactiver', danger: true }))) return;
-    patch(m, { active: !m.active }, m.active ? 'Compte désactivé.' : 'Compte réactivé.');
+    patch(m, { active: !m.active });
   }
-  async function patch(m: Member, body: object, ok: string) {
-    try { await api.patch(`/members/${m.id}`, body); toast(ok); } catch (e) { fail(e); } finally { load(); }
+  // Changement en place (rôle, activation) : le nouvel état affiché dans la ligne suffit, sans message.
+  async function patch(m: Member, body: object) {
+    try { await api.patch(`/members/${m.id}`, body); } catch (e) { fail(e); } finally { load(); }
   }
   async function reset() {
     const m = resetting!;
@@ -67,61 +103,64 @@
   async function copy(t: string) { if (await copyText(t)) toast('Mot de passe copié.'); else toast('Copie impossible dans ce navigateur : sélectionnez le mot de passe et copiez-le à la main.', 'warn'); }
 </script>
 
-<HeadActions><button class="btn primary" onclick={() => (creating = true)}><Icon name="plus" />Ajouter un membre</button></HeadActions>
+<HeadActions><button class="btn primary" onclick={() => (creating = true)}><Icon name="plus" />Nouveau membre</button></HeadActions>
 
-<div class="toolbar" style="display:flex;gap:10px 16px;flex-wrap:wrap;align-items:center">
-  <label class="search" style="flex:1;min-width:220px;max-width:480px"><Icon name="search" /><input class="input" bind:value={q} placeholder="Nom, e-mail, identifiant…" aria-label="Rechercher un membre"></label>
+<div class="toolbar">
+  <label class="search"><Icon name="search" /><input class="input" bind:value={q} placeholder="Nom, e-mail ou identifiant" aria-label="Rechercher un membre"></label>
   <label class="toggle-row"><input type="checkbox" bind:checked={showRemoved}>Afficher les membres retirés du site</label>
 </div>
 
-<section class="card" style="padding:6px 18px 10px">
+<section class="card tbl-card">
+  {#if members === null}<Loading label="Chargement des membres" />
+  {:else}
   <div class="tbl-wrap">
-    <table class="tbl mem-tbl">
-      <thead><tr><th>Membre</th><th>Rôle</th><th>État</th><th>Ajouté</th><th><span class="sr-only">Actions</span></th></tr></thead>
+    <table class="tbl stack mem-tbl">
+      <thead><tr><SortTh label="Membre" key="name" bind:sort /><SortTh label="Rôle" key="role" bind:sort /><th>État</th><SortTh label="Ajouté" key="added" bind:sort /><th><span class="sr-only">Actions</span></th></tr></thead>
       <tbody>
         {#each shown as m (m.id)}
           {@const self = m.id === session.me?.account.id}
           {@const roleLocked = self || (m.role_id === 'owner' && !session.me?.is_owner)}
-          <tr>
-            <td class="m-who"><div style="display:flex;gap:12px;align-items:center"><Avatar name={m.name} color={roleOf(m.role_id)?.color} /><div><b>{m.name}</b>{#if self} <span class="chip">vous</span>{/if}<br><span class="muted small">{m.email}{m.username ? ` · ${m.username}` : ''}</span></div></div></td>
-            <td class="m-role">
+          <tr id="mem-{m.id}" class:focus={hl === m.id} class:flash={hl === m.id}>
+            <td class="first"><div class="m-who"><Avatar name={m.name} color={roleOf(m.role_id)?.color} /><div><b>{m.name}</b>{#if self} <span class="chip">vous</span>{/if}<br><span class="muted small">{m.email}{m.username ? ` · ${m.username}` : ''}</span></div></div></td>
+            <td data-l="Rôle">
               {#if m.removed}<span class="muted">{m.role_name}</span>
               {:else if roleLocked}<span class="role-ro" title={self ? 'Vous ne pouvez pas changer votre propre rôle.' : 'Seul un propriétaire peut changer ce rôle.'}>{m.role_name}</span>
               {:else}
-                <select class="input" style="height:38px;width:auto" value={m.role_id} aria-label="Rôle de {m.name}" onchange={(e) => patch(m, { role_id: (e.target as HTMLSelectElement).value }, 'Rôle changé.')}>
+                <select class="input sm" value={m.role_id} aria-label="Rôle de {m.name}" onchange={(e) => patch(m, { role_id: (e.target as HTMLSelectElement).value })}>
                   {#each roles as r}<option value={r.id}>{r.name}</option>{/each}
                 </select>
               {/if}
             </td>
-            <td class="m-state">{#if m.removed}<span class="chip">Retiré</span>{:else if !m.active}<span class="chip warn">Désactivé</span>{:else if m.must_change_password}<span class="chip info">Mot de passe temporaire</span>{:else}<span class="chip ok">Actif</span>{/if}</td>
-            <td class="muted small m-added">{relative(m.created_at)}</td>
-            <td class="m-acts"><div class="dl-actions">
+            <td data-l="État">{#if m.removed}<span class="chip">Retiré</span>{:else if !m.active}<span class="chip warn">Désactivé</span>{:else if m.must_change_password}<span class="chip warn">Mot de passe temporaire</span>{:else}<span class="chip ok">Actif</span>{/if}</td>
+            <td class="muted small" data-l="Ajouté">{relative(m.created_at)}</td>
+            <td class="acts"><div class="dl-actions">
               {#if !m.removed && !self}
-                <button class="btn sm ghost" title="Réinitialiser le mot de passe" aria-label="Réinitialiser le mot de passe de {m.name}" onclick={() => (resetting = m)}><Icon name="lock" size="sm" /></button>
+                <button class="icon-btn sm" title="Réinitialiser le mot de passe de {m.name}" aria-label="Réinitialiser le mot de passe de {m.name}" onclick={() => (resetting = m)}><Icon name="lock" size="sm" /></button>
                 <button class="btn sm" onclick={() => toggleActive(m)}>{m.active ? 'Désactiver' : 'Réactiver'}</button>
-                <button class="btn sm ghost danger" title="Retirer du site…" aria-label="Retirer {m.name} du site" onclick={() => (removing = m)}><Icon name="trash" size="sm" /></button>
+                <button class="icon-btn sm danger" title="Retirer {m.name} du site" aria-label="Retirer {m.name} du site" onclick={() => (removing = m)}><Icon name="trash" size="sm" /></button>
               {/if}
             </div></td>
           </tr>
-        {:else}<tr><td colspan="5"><EmptyState card={false} icon="users" message="Aucun membre ne correspond à cette recherche." /></td></tr>{/each}
+        {:else}<tr><td colspan="5" class="first"><EmptyState card={false} icon="users" message={q ? 'Aucun membre ne correspond à cette recherche.' : 'Aucun membre.'} /></td></tr>{/each}
       </tbody>
     </table>
   </div>
+  {/if}
 </section>
 
 {#if creating}
-  <Dialog title="Ajouter un membre" eyebrow="Équipe" onclose={() => (creating = false)}>
-    <form id="newm" class="stack" onsubmit={create}>
+  <Dialog title="Nouveau membre" eyebrow="Équipe" onclose={() => (creating = false)} onsubmit={create} submitLabel="Ajouter">
+    <div class="stack">
       <div class="field"><label for="m-em">E-mail</label><input class="input" id="m-em" type="email" bind:value={form.email} required></div>
-      <div class="form-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="form-grid">
         <div class="field"><label for="m-nm">Nom affiché</label><input class="input" id="m-nm" bind:value={form.name} placeholder="Facultatif"></div>
         <div class="field"><label for="m-un">Identifiant</label><input class="input" id="m-un" bind:value={form.username} placeholder="Facultatif"></div>
       </div>
-      <div class="field"><label for="m-ro">Rôle</label><select class="input" id="m-ro" bind:value={form.role_id}>{#each roles.filter((r) => r.id !== 'owner') as r}<option value={r.id}>{r.name}</option>{/each}</select></div>
-      <p class="muted small">Un mot de passe temporaire est créé : transmettez-le à la personne, elle le remplacera à sa première connexion.</p>
+      <div class="field"><label for="m-ro">Rôle</label><select class="input" id="m-ro" bind:value={form.role_id} aria-describedby="m-ro-help">{#each roles.filter((r) => r.id !== 'owner') as r}<option value={r.id}>{r.name}</option>{/each}</select>
+        <span class="help" id="m-ro-help">Un mot de passe temporaire est créé : transmettez-le à la personne, elle le remplacera à sa première connexion.</span>
+      </div>
       {#if formError}<div class="alert err" role="alert">{formError}</div>{/if}
-    </form>
-    {#snippet footer()}<button class="btn ghost" onclick={() => (creating = false)}>Annuler</button><button class="btn primary" type="submit" form="newm">Ajouter</button>{/snippet}
+    </div>
   </Dialog>
 {/if}
 
@@ -145,19 +184,8 @@
 {/if}
 
 <style>
+  .m-who { display: flex; gap: 12px; align-items: center; min-width: 0; }
   .role-ro { font-weight: 550; color: var(--fg-2); }
   .mem-tbl .chip { white-space: nowrap; }
-  /* Téléphone : une carte par membre (nom, rôle et état sur une ligne, actions dessous). */
-  @media (max-width: 640px) {
-    .mem-tbl thead { display: none; }
-    .mem-tbl, .mem-tbl tbody { display: block; }
-    .mem-tbl tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "who who" "role state" "added acts"; align-items: center; gap: 8px 10px; padding: 12px 0; border-bottom: 1px solid var(--line); }
-    .mem-tbl tr:last-child { border-bottom: 0; }
-    .mem-tbl td { display: block; padding: 0; border: 0; min-width: 0; }
-    .mem-tbl td[colspan] { grid-column: 1 / -1; }
-    .m-who { grid-area: who; } .m-role { grid-area: role; } .m-state { grid-area: state; justify-self: end; }
-    .m-added { grid-area: added; } .m-acts { grid-area: acts; justify-self: end; }
-    .m-role select { max-width: 100%; }
-    .m-acts :global(.btn.sm) { min-height: 40px; min-width: 40px; }
-  }
+  .mem-tbl select { width: auto; max-width: 100%; }
 </style>
