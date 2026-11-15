@@ -250,8 +250,7 @@
   .cell { width: 100%; min-width: 110px; height: 30px; border-radius: 8px; border: 1px solid transparent; background: transparent; padding: 0 8px; font: inherit; color: inherit; }
   .cell:hover:not(:disabled), .cell:focus { border-color: var(--line); background: var(--surface); outline: none; }
   .cell.num { width: 90px; min-width: 0; text-align: right; }
-  .cell.dirty, .swatch.dirty { box-shadow: inset 0 0 0 2px var(--accent, #4F6BFF); background: color-mix(in srgb, var(--accent, #4F6BFF) 8%, var(--surface)); }
-  .swatch { display: block; width: 36px; height: 26px; padding: 2px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); cursor: pointer; }
+  .cell.dirty { box-shadow: inset 0 0 0 2px var(--accent, #4F6BFF); background: color-mix(in srgb, var(--accent, #4F6BFF) 8%, var(--surface)); }
   .c-end { width: 34%; }
   .end { display: table-cell; min-width: 200px; max-width: 0; }
   .end-l { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

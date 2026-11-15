@@ -12,6 +12,8 @@
   let loading = $state(true);
   let error = $state<string | null>(null);
   let doors = $state<'closed' | 'open' | 'removed'>('open'), sides = $state(true);
+  let pan = $state(false);
+  $effect(() => { const v = pan; scene?.setPan(v); });
   let hover = $state<{ h: Hit; x: number; y: number } | null>(null);
   const toEls = () => Promise.all(elements.map(toEl3D));
   const spec = $derived(boxSpec(container));
@@ -37,11 +39,12 @@
 
 <div class="r3">
   <div class="r3-bar">
+    <div class="seg" role="group" aria-label="Outil"><button class:on={!pan} title="Tourner autour (glisser)" onclick={() => (pan = false)}>Tourner</button><button class:on={pan} title="Se déplacer dans la vue (glisser)" onclick={() => (pan = true)}><Icon name="hand" size="sm" />Main</button></div>
     <div class="seg" role="group" aria-label="Cadrage">{#each [['quarter', '3/4'], ['front', 'Avant'], ['rear', 'Arrière'], ['side', 'Côté'], ['top', 'Dessus']] as [k, l]}<button onclick={() => scene?.frame(k as any)}>{l}</button>{/each}</div>
     {#if !isCase}<span class="r3-l">Portes</span><div class="seg" role="group" aria-label="Portes">{#each [['closed', 'Fermées'], ['open', 'Ouvertes'], ['removed', 'Retirées']] as [k, l]}<button class:on={doors === k} onclick={() => (doors = k as typeof doors)}>{l}</button>{/each}</div>{/if}
     <span class="r3-l">{isCase ? 'Parois' : 'Flancs'}</span><div class="seg" role="group" aria-label="Panneaux latéraux"><button class:on={sides} onclick={() => (sides = true)}>Avec</button><button class:on={!sides} onclick={() => (sides = false)}>Sans</button></div>
     <span style="flex:1"></span>
-    <span class="muted small">Glisser : tourner · molette : zoom · clic droit : déplacer</span>
+    <span class="muted small">{pan ? 'Glisser : se déplacer · molette : zoom · clic droit : tourner' : 'Glisser : tourner · molette : zoom · clic droit : se déplacer'}</span>
     <button class="btn sm ghost" onclick={shot}><Icon name="download" size="sm" />PNG</button>
   </div>
   <div class="r3-view" bind:this={host}>

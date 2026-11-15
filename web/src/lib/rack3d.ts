@@ -309,26 +309,25 @@ export class RackScene {
     this.transparent = !!opts.transparent;
     this.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, alpha: this.transparent });
     this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping; this.renderer.toneMappingExposure = 1.05;
+    this.renderer.toneMapping = THREE.NeutralToneMapping; this.renderer.toneMappingExposure = 1.5; // rendu neutre, couleurs fidèles
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.renderer.shadowMap.enabled = true; this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.enabled = false; // éclairage diffus : pas d'ombres portées
     host.appendChild(this.renderer.domElement);
     this.camera = new THREE.PerspectiveCamera(32, 1, 0.02, 60);
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true; this.controls.dampingFactor = 0.08; this.controls.minDistance = 0.3; this.controls.maxDistance = 12; this.controls.maxPolarAngle = Math.PI * 0.495;
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    this.scene.environmentIntensity = 0.9;
+    this.scene.environmentIntensity = 0.45; // reflets discrets : pas de tache lumineuse sur les tôles
     if (this.transparent) this.renderer.setClearColor(0x000000, 0);
     else { this.scene.background = new THREE.Color('#d6dae0'); this.scene.fog = new THREE.Fog('#d6dae0', 14, 34); }
-    // Lumières de studio clair : clé douce et neutre, contre-jour léger, débouchage de face.
-    const key = new THREE.DirectionalLight('#fffaf2', 2.1); key.position.set(2.2, 4, 3.2); key.castShadow = true;
-    key.shadow.mapSize.set(2048, 2048); key.shadow.camera.left = -2; key.shadow.camera.right = 2; key.shadow.camera.top = 3; key.shadow.camera.bottom = -1; key.shadow.bias = -0.0004; key.shadow.radius = 9; key.shadow.normalBias = 0.02;
-    this.scene.add(key);
-    const rim = new THREE.DirectionalLight('#e6efff', 0.7); rim.position.set(-3, 2.5, -2.5); this.scene.add(rim);
-    this.scene.add(new THREE.HemisphereLight('#f4f6fa', '#a9a49c', 1.1));
-    // Débouchage de face : on lit les façades même en vue de face.
-    const fill = new THREE.DirectionalLight('#ffffff', 0.9); fill.position.set(0.4, 1.6, 5); this.scene.add(fill);
+    // Éclairage plat et diffus, sans source dominante ni tache lumineuse : lumière ambiante
+    // d'environnement, ciel/sol doux et quatre lumières faibles réparties autour de la scène.
+    this.scene.add(new THREE.AmbientLight('#ffffff', 1.7));
+    this.scene.add(new THREE.HemisphereLight('#ffffff', '#d8dadf', 1.3));
+    for (const [x, y, z] of [[3, 3, 3], [-3, 3, 3], [3, 3, -3], [-3, 3, -3]] as [number, number, number][]) {
+      const l = new THREE.DirectionalLight('#ffffff', 0.38); l.position.set(x, y, z); this.scene.add(l);
+    }
     // Sol : béton lissé, rugosité variable.
     const floorTex = tex(noise(512, 120, 40, 3), true, [8, 8]);
     const floorR = tex(noise(512, 170, 70, 5), false, [8, 8]);
@@ -473,7 +472,6 @@ export class RackScene {
 
     // Équipements : au rack, ou posés sur une étagère.
     // Éclairage intérieur doux : on lit les façades même au fond d'une baie sombre.
-    for (const z of [frontRail + 0.25, rearRail - 0.25]) { const l = new THREE.PointLight('#ffffff', 0.55, Math.max(1.2, H * 1.2), 2); l.position.set(0, y0 + (units * U) * 0.6, z); this.root.add(l); }
     for (const e of els.filter((x) => !x.shelf_id)) this.equipment(e, frontRail, rearRail, y0);
     // PDU verticaux : profilé noir dans le couloir arrière, disjoncteur en tête, prises
     // tournées vers l'arrière, réparties sur la longueur.
@@ -748,6 +746,15 @@ export class RackScene {
   draw() { if (this.transparent) this.renderer.render(this.scene, this.camera); else this.composer.render(); }
 
   snapshot(): string { this.controls.update(); this.draw(); return this.renderer.domElement.toDataURL('image/png'); }
+  /** Outil main : le glisser gauche déplace la vue au lieu de la faire tourner. */
+  setPan(on: boolean) {
+    this.controls.mouseButtons = on
+      ? { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE }
+      : { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
+    this.controls.touches = on ? { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE } : { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
+    this.controls.screenSpacePanning = true;
+    this.renderer.domElement.style.cursor = on ? 'move' : 'grab';
+  }
   /** Position de caméra et cible, pour retrouver un angle de vue. */
   pose(): number[] { return [...this.camera.position.toArray(), ...this.controls.target.toArray()].map((v) => Math.round(v * 1000) / 1000); }
   setPose(p: number[]) { if (p.length !== 6) return; this.camera.position.set(p[0]!, p[1]!, p[2]!); this.controls.target.set(p[3]!, p[4]!, p[5]!); this.controls.update(); }

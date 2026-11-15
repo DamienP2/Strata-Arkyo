@@ -11,6 +11,8 @@
   let loading = $state(true);
   let error = $state<string | null>(null);
   let sides = $state(true);
+  let pan = $state(false);
+  $effect(() => { const v = pan; scene?.setPan(v); });
   let hover = $state<{ h: Hit; x: number; y: number } | null>(null);
   $effect(() => {
     const d = deskSpec(desk);
@@ -32,10 +34,11 @@
 
 <div class="d3">
   <div class="d3-bar">
+    <div class="seg" role="group" aria-label="Outil"><button class:on={!pan} title="Tourner autour (glisser)" onclick={() => (pan = false)}>Tourner</button><button class:on={pan} title="Se déplacer dans la vue (glisser)" onclick={() => (pan = true)}><Icon name="hand" size="sm" />Main</button></div>
     <div class="seg" role="group" aria-label="Cadrage">{#each [['quarter', '3/4'], ['front', 'Opérateur'], ['rear', 'Arrière'], ['side', 'Côté'], ['top', 'Dessus']] as [k, l]}<button onclick={() => scene?.frame(k as any)}>{l}</button>{/each}</div>
     <span class="d3-l">Joues</span><div class="seg" role="group" aria-label="Joues"><button class:on={sides} onclick={() => (sides = true)}>Avec</button><button class:on={!sides} onclick={() => (sides = false)}>Sans</button></div>
     <span style="flex:1"></span>
-    <span class="muted small">Glisser : tourner · molette : zoom · clic droit : déplacer</span>
+    <span class="muted small">{pan ? 'Glisser : se déplacer · molette : zoom · clic droit : tourner' : 'Glisser : tourner · molette : zoom · clic droit : se déplacer'}</span>
     <button class="btn sm ghost" onclick={shot}><Icon name="download" size="sm" />PNG</button>
   </div>
   <div class="d3-view" bind:this={host}>
