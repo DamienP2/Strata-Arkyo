@@ -37,8 +37,8 @@
   let exporting = $state(false);
   let renaming = $state<{ p: Pt; label: string } | null>(null);
 
-  const MISSING = 'Extrémité supprimée';
-  const UNNUMBERED = 'Câble non numéroté';
+  /** Groupe des liaisons dont une extrémité n'existe plus (nom du serveur : recette.rs, MISSING_GROUP). */
+  const MISSING = 'Extrémité manquante';
   // Les liaisons dont un bout a disparu sont mises à part, repliées, avec leur nombre : elles
   // ne comptent ni dans le total ni dans l'avancement (on ne peut pas juger un câble qui n'existe plus).
   const missing = $derived(r?.cables.find((g) => g.title === MISSING) ?? null);
@@ -53,8 +53,6 @@
     return { total, tested, counts, progress: total ? Math.round((100 * tested) / total) : 0 };
   });
   const totalHint = $derived(r ? `Une liaison par câble (${nPts(liaisons)}), un point par équipement rangé dans un élément (${nPts(r.equipment)}) et les points libres (${r.free.length}).${missing ? ` Les ${missing.points.length} liaison${pl(missing.points.length)} sans extrémité ne compte${missing.points.length > 1 ? 'nt' : ''} pas.` : ''}` : '');
-  /** Titre d'un point : pour un câble sans numéro, ses extrémités (sinon toutes les lignes s'appelleraient pareil). */
-  const unnumbered = (p: Pt) => p.label === UNNUMBERED && !!p.detail;
   async function load() { try { r = await api.get(`/projects/${pid}/recette`); if (openLog) loadLog(openLog); } catch (e) { fail(e); } }
   $effect(() => { view; untrack(load); });
   async function loadLog(key: string) { try { logs = (await api.get<{ entries: typeof logs }>(`/projects/${pid}/recette/log?key=${encodeURIComponent(key)}`)).entries; } catch (e) { fail(e); } }
@@ -105,10 +103,10 @@
 </script>
 
 {#snippet row(p: Pt, free = false, i = 0)}
-  {@const title = unnumbered(p) ? p.detail : p.label}
+  {@const title = p.label}
   <div class="pt" class:open={openLog === p.key}>
     <div class="pt-main">
-      <div class="pt-t"><b>{title}</b>{#if unnumbered(p)}<span class="muted small">non numéroté</span>{:else if p.detail}<span class="muted small">{p.detail}</span>{/if}</div>
+      <div class="pt-t"><b>{title}</b>{#if p.detail}<span class="muted small">{p.detail}</span>{/if}</div>
       <div class="pt-st">
         <div class="pt-sv" role="group" aria-label="Verdict de {title}">
           {#each Object.entries(ST) as [k, s]}<button class="sv {k}" class:on={p.status === k} aria-pressed={p.status === k} disabled={!writable || p.deleted} onclick={() => verdict(p, k as St)}>{s.label}</button>{/each}
@@ -190,7 +188,7 @@
   .cnt:hover:not(.on) { box-shadow: inset 0 0 0 1px var(--line-2); }
   .cnt.on { background: var(--accent-soft); color: var(--accent-2); box-shadow: inset 0 0 0 1.5px var(--accent); }
   .cnt:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .cnt b { font-size: 18px; }
+  .cnt b { font-size: var(--fs-xl); }
   .cnt.ok b { color: var(--ok); } .cnt.reserve b { color: var(--warn); } .cnt.ko b { color: var(--err); }
   .rc-act { display: flex; gap: 8px; align-items: center; }
   .rc-act select { width: auto; }
@@ -225,7 +223,7 @@
   .pt-c { display: flex; flex-direction: column; gap: 2px; }
   .pt-a { display: flex; gap: 4px; align-items: center; }
   .pt-log { margin: 8px 0 4px; padding: 10px; border-radius: 12px; background: var(--surface-2); display: grid; gap: 6px; }
-  .lg { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; font-size: 14px; }
+  .lg { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; font-size: var(--fs-md); }
   .lg-add { display: flex; gap: 8px; margin-top: 6px; }
   .lg-add .input { flex: 1; }
   @media (max-width: 980px) { .rc-head { grid-template-columns: 1fr; } .pt-main { grid-template-columns: 1fr; } }
@@ -235,13 +233,13 @@
     .rc-big b { font-size: 32px; }
     .rc-big .eyebrow { margin-bottom: 2px; }
     .rc-counts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; width: auto; }
-    .cnt { flex-direction: column; align-items: center; gap: 0; padding: 6px 4px; font-size: 12px; }
-    .cnt b { font-size: 17px; }
+    .cnt { flex-direction: column; align-items: center; gap: 0; padding: 6px 4px; font-size: var(--fs-xs); }
+    .cnt b { font-size: var(--fs-lg); }
     .rc-act { grid-column: 1 / -1; }
     .rc-act .btn { flex: 1; }
     .pt-st { flex-wrap: wrap; }
     .pt-sv { flex: 1 1 100%; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; padding: 2px; border-radius: 12px; background: var(--surface-2); }
-    .sv { min-height: 44px; height: 44px; padding: 0 4px; border-radius: 10px; font-size: 14px; background: transparent; }
+    .sv { min-height: 44px; height: 44px; padding: 0 4px; border-radius: 10px; font-size: var(--fs-md); background: transparent; }
     .pt-log-b { margin-left: auto; }
   }
 </style>

@@ -2,6 +2,7 @@
   // Assistant de dossier (section 11.6) : départ (nouvelle composition, dernière exportation
   // ou modèle), composition, une étape par plan, récapitulatif, téléchargement. La dernière
   // exportation est mémorisée ; une composition peut devenir un modèle de dossier (6.4).
+  import { untrack } from 'svelte';
   import Icon from '../../components/Icon.svelte';
   import Dialog from '../../components/Dialog.svelte';
   import Seg from '../../components/Seg.svelte';
@@ -32,7 +33,6 @@
   let busyKey = $state<string | null>(null);
   let done = $state<{ pages: number; skipped: string[] } | null>(null);
   /** « Plans » désigne ailleurs la page du site : le groupe des dessins porte son vrai nom. */
-  const GROUP_LABEL: Record<DocDef['group'], string> = { ...GROUPS, plans: 'Dessins et synoptiques' };
 
   async function init() {
     try {
@@ -57,12 +57,28 @@
     // Les pages des plans sont toutes retenues par défaut, sauf choix déjà fait.
     for (const o of docs) { const ch = probes[o.key]?.choices; if (ch && !o.pages) o.pages = ch.map((c) => c.id); }
   }
+  /** Données lues pour la composition en cours (réutilisées par le récapitulatif). */
+  let pctx: { view: ProjectView; cache: Map<string, any> } | null = null;
   async function runProbes() {
-    const ctx = { view, cache: new Map() };
+    pctx = { view, cache: new Map() };
     const out: Record<string, Probe> = {};
-    await Promise.all(defs.map(async (d) => { out[d.key] = await probe(ctx as any, d.key); }));
+    await Promise.all(defs.map(async (d) => { out[d.key] = await probe(pctx as any, d.key); }));
     probes = out;
   }
+  // Récapitulatif : chaque document à pages choisies est relu avec ses options (format, orientation,
+  // pages retenues) ; le synoptique y donne le nombre exact de feuilles et leur orientation.
+  let recap = $state<Record<string, Probe>>({});
+  let recapRun = 0;
+  $effect(() => {
+    if (step !== steps.length - 1 || !docs.length) return;
+    const list = included.filter((o) => o.pages && probes[o.key]?.state === 'ok').map((o) => { const f = fmt(o); return { ...$state.snapshot(o), paper: f[0], landscape: f[1] } as DocOpt; });
+    const run = ++recapRun;
+    untrack(async () => {
+      const out: Record<string, Probe> = {};
+      await Promise.all(list.map(async (o) => { out[o.key] = await probe((pctx ??= { view, cache: new Map() }) as any, o.key, o); }));
+      if (run === recapRun) recap = out;
+    });
+  });
 
   // Étapes : Départ, Composition, une par plan à choix de pages (grisée si le document n'est pas retenu), Récapitulatif.
   const planDefs = $derived(defs.filter((d) => probes[d.key]?.choices && probes[d.key]!.state === 'ok'));
@@ -91,7 +107,7 @@
     if (pr?.state !== 'ok') return `En échec : ${pr?.message ?? ''}`;
     if (!o.pages) return pr.message;
     const n = o.pages.length;
-    if (o.key === 'plan_synoptic') return `${n} synoptique${n > 1 ? 's' : ''}, chacun sur une ou plusieurs feuilles selon sa taille`;
+    if (o.key === 'plan_synoptic') return recap[o.key]?.state === 'ok' ? recap[o.key]!.message : `${n} synoptique${n > 1 ? 's' : ''} (calcul des feuilles en cours)`;
     return `${n} page${n > 1 ? 's' : ''}`;
   }
 
@@ -151,7 +167,7 @@
     <section class="card st1">
       <div class="field"><label for="dz-title">Titre du dossier</label><input class="input" id="dz-title" bind:value={title} maxlength="80"></div>
       <div class="fmtmode"><span class="flabel">Formats</span><Seg label="Formats du dossier" value={allA4 ? 'A4' : 'A3'} onchange={(v) => setPlans(v as 'A4' | 'A3')} options={[{ value: 'A4', label: 'Tout en A4' }, { value: 'A3', label: 'A3 pour les plans' }]} /><span class="muted small">{allA4 ? 'Un seul format : A4.' : 'Formats mélangés : A4 pour les listes, A3 pour les plans (indiqué au sommaire).'}</span></div>
-      {#each Object.entries(GROUP_LABEL) as [g, gl]}
+      {#each Object.entries(GROUPS) as [g, gl]}
         <h3 class="eyebrow grp">{gl}</h3>
         {#each docs.filter((o) => def(o.key)?.group === g) as o (o.key)}
           {@const d = def(o.key)}{@const pr = probes[o.key]}{@const f = fmt(o)}
@@ -195,7 +211,7 @@
         {#each included as o (o.key)}
           {@const pr = probes[o.key]}
           {@const name = o.title ?? def(o.key).title}
-          <tr class:muted={pr?.state !== 'ok'}><td><b>{name}</b><span class="muted small">{' · '}{GROUP_LABEL[def(o.key).group]}</span></td><td>{fmtText(o)}</td>
+          <tr class:muted={pr?.state !== 'ok'}><td><b>{name}</b><span class="muted small">{' · '}{GROUPS[def(o.key).group]}</span></td><td>{fmtText(o)}</td>
             <td class="small">{contentText(o, pr)}</td>
             <td class="acts">{#if o.key !== 'cover' && pr?.state === 'ok'}<button class="btn sm ghost" disabled={!!busy} aria-label="Télécharger « {name} » seul" onclick={() => download(o.key)}>{#if busyKey === o.key}<span class="spin sm" aria-hidden="true"></span>{:else}<Icon name="download" size="sm" />{/if}Télécharger seul</button>{/if}</td></tr>
         {/each}

@@ -14,7 +14,7 @@
   import { toast } from '../lib/toast.svelte';
   import { ApiError } from '../lib/api';
   import {
-    PER_U, D_FORMAT_MAX_PER_U, clonePanel, fill, moveSlot, rowOf, colOf, slotAt, stats, dFormatAllowed, total,
+    PER_U, D_FORMAT_MAX_PER_U, clonePanel, fill, moveSlot, rowOf, colOf, slotAt, stats, dFormatAllowed, total, groupFamily,
     type PanelData, type PanelGroup, type PanelSlot, type FillMode,
   } from '../lib/panel';
 
@@ -55,8 +55,6 @@
   const one = $derived(sel.length === 1 ? slotAt(p, sel[0]!) : undefined);
   const range = $derived(sel.length > 1);
   const PALETTE = $derived(refList('functions').map((f) => ({ key: f.id, name: f.name, color: familyColor(f.id, { screen: false }) })));
-  /** Famille dont la couleur est celle du groupe (les groupes stockent encore l'hexadécimal de la famille). */
-  const fnOfColor = (c: string) => PALETTE.find((f) => f.color.toLowerCase() === (c ?? '').toLowerCase())?.key ?? null;
   const mix = $derived.by(() => {
     const m = new Map<string, number>();
     for (const s of p.slots) m.set(s.connector, (m.get(s.connector) ?? 0) + 1);
@@ -101,7 +99,7 @@
   function makeGroup() {
     const row = rowOf(p, sel[0]!), start = colOf(p, sel[0]!), len = sel.length;
     p.groups = p.groups.filter((g) => !(g.row === row && g.start < start + len && start < g.start + g.len));
-    p.groups.push({ row, start, len, label: gLabel.trim(), color: familyColor(gFn, { screen: false }) });
+    p.groups.push({ row, start, len, label: gLabel.trim(), function: gFn, color: familyColor(gFn, { screen: false }) });
     p.groups.sort((a, b) => a.row - b.row || a.start - b.start);
     gLabel = '';
   }
@@ -181,7 +179,7 @@
         <section class="card pe-card">
           <span class="flabel">Groupe · rangée {g.row} · ports {g.start} à {g.start + g.len - 1}</span>
           <div class="field"><label for="pe-gl">Nom du groupe</label><input class="input" id="pe-gl" bind:value={g.label} maxlength="40"></div>
-          <div class="field"><span class="flabel" id="pe-gc-l">Famille de signal</span><div class="swatches" role="group" aria-labelledby="pe-gc-l">{#each PALETTE as c}<button class="sw" class:on={fnOfColor(g.color) === c.key} aria-pressed={fnOfColor(g.color) === c.key} style="--s:{c.color}" title={c.name} aria-label={c.name} onclick={() => (g.color = c.color)}></button>{/each}</div></div>
+          <div class="field"><span class="flabel" id="pe-gc-l">Famille de signal</span><div class="swatches" role="group" aria-labelledby="pe-gc-l">{#each PALETTE as c}<button class="sw" class:on={groupFamily(g) === c.key} aria-pressed={groupFamily(g) === c.key} style="--s:{c.color}" title={c.name} aria-label={c.name} onclick={() => { g.function = c.key; g.color = c.color; }}></button>{/each}</div></div>
           <div class="row-actions"><button class="btn ghost danger" onclick={() => { p.groups = p.groups.filter((x) => x !== g); group = null; }}><Icon name="trash" size="sm" />Supprimer le groupe</button><button class="btn" onclick={() => (group = null)}>Terminé</button></div>
         </section>
       {:else if one}
@@ -190,7 +188,7 @@
           <span class="flabel">Emplacement {s.index}{s.width > 1 ? `–${s.index + s.width - 1}` : ''} · {refById('connectors', s.connector)?.name ?? s.connector}</span>
           <div class="fg2">
             <div class="field"><label for="pe-sl">Libellé</label><input class="input" id="pe-sl" bind:value={s.label} maxlength="40" placeholder="CAM 1"></div>
-            <div class="field"><label for="pe-sf">Famille de signal</label><select class="input" id="pe-sf" bind:value={s.function}><option value={null}>Couleur du connecteur</option>{#each fnsOf(s.connector) as k}<option value={k}>{refById('functions', k)?.name ?? k}</option>{/each}</select></div>
+            <div class="field"><label for="pe-sf">Famille de signal</label><select class="input" id="pe-sf" bind:value={s.function}><option value={null}>Celle du groupe</option>{#each fnsOf(s.connector) as k}<option value={k}>{refById('functions', k)?.name ?? k}</option>{/each}</select></div>
             {#if (info(s.connector).variants ?? []).length}<div class="field"><label for="pe-sv">Variante</label><select class="input" id="pe-sv" bind:value={s.variant}><option value={null}>—</option>{#each info(s.connector).variants as v}<option value={v}>{v}</option>{/each}</select></div>{/if}
             <div class="field"><label for="pe-sw">Largeur</label><select class="input" id="pe-sw" value={s.width} onchange={(e) => { const w = Number((e.target as HTMLSelectElement).value); const was = s.width; s.width = w; if (!p.slots.every((x) => x === s || !(s.index < x.index + x.width && x.index < s.index + w)) || colOf(p, s.index) + w - 1 > p.per_u) { s.width = was; toast('Pas assez de place à droite.', 'warn'); } }}>{#each [1, 2, 3, 4] as w}<option value={w}>{w} emplacement{w > 1 ? 's' : ''}</option>{/each}</select></div>
           </div>
@@ -206,7 +204,7 @@
           <div class="fg2">
             <div class="field"><label for="pe-c">Connecteur</label><select class="input" id="pe-c" bind:value={conn}>{#each connectors as c}<option value={c.id}>{c.name}</option>{/each}</select></div>
             {#if (info(conn).variants ?? []).length}<div class="field"><label for="pe-v">Variante</label><select class="input" id="pe-v" bind:value={variant}><option value={null}>—</option>{#each info(conn).variants as v}<option value={v}>{v}</option>{/each}</select></div>{/if}
-            {#if fnsOf(conn).length > 1}<div class="field"><label for="pe-f">Famille de signal</label><select class="input" id="pe-f" bind:value={fn}><option value={null}>Couleur du connecteur</option>{#each fnsOf(conn) as k}<option value={k}>{refById('functions', k)?.name ?? k}</option>{/each}</select></div>{/if}
+            {#if fnsOf(conn).length > 1}<div class="field"><label for="pe-f">Famille de signal</label><select class="input" id="pe-f" bind:value={fn}><option value={null}>Celle du groupe</option>{#each fnsOf(conn) as k}<option value={k}>{refById('functions', k)?.name ?? k}</option>{/each}</select></div>{/if}
             <div class="field"><label for="pe-w">Largeur</label><select class="input" id="pe-w" bind:value={width}>{#each [1, 2, 3, 4] as w}<option value={w}>{w} emplacement{w > 1 ? 's' : ''}</option>{/each}</select></div>
           </div>
           <label class="toggle-row"><input type="checkbox" bind:checked={dfmt} disabled={!dFormatAllowed(p, conn)}>Format D{#if !dFormatAllowed(p, conn)}<span class="muted small">{' · '}{p.per_u > D_FORMAT_MAX_PER_U ? 'densité trop forte' : 'non disponible'}</span>{/if}</label>

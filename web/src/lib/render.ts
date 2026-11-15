@@ -7,7 +7,7 @@
 import { FAMILY_NONE, familyColor, refById } from './catalog.svelte';
 import { rackLines } from './racktext.svelte';
 import { routeAll, rounded, type Req as RouteReq } from './cableroute';
-import { fitText, shareRow, textWidth } from './fit';
+import { fitSub, fitText, shareRow, textWidth } from './fit';
 import { FONT, HEX, SVG_MONO, SVG_SANS, familyDash } from './pdfkit';
 
 const esc = (s: unknown) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -241,7 +241,7 @@ export function synNodeSvg(n: SynNodeData, x: number, y: number, fitted: { l: st
   const h = HH + Math.max(L.length, R.length, 1) * PS + 12;
   const col = n.function ? familyColor(n.function, { screen: false }) : n.kind === 'panel' ? HEX.mute : FAMILY_NONE;
   const [t1, t2] = nodeLines(n);
-  const title = fitText(t1 || 'Équipement', NW - 44, TITLE_F), sub = fitText(t2, NW - 44, SUB_F);
+  const title = fitText(t1 || 'Équipement', NW - 44, TITLE_F), sub = fitSub(t2, NW - 44, SUB_F);
   const o: string[] = [];
   o.push(`<g data-block="${esc(t1)}" transform="translate(${x} ${y})">`);
   o.push(`<rect width="${NW}" height="${h}" rx="10" fill="#FFFFFF" stroke="#CEC9BF" stroke-width="1"/>`);

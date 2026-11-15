@@ -35,6 +35,19 @@ export function fitText(text: string, max: number, font = PORT_FONT): string {
   return cut(text, max, font);
 }
 
+/** Sous-titre d'un nœud (« marque modèle · ID · élément ») : on raccourcit le premier morceau
+ *  (le modèle) et on garde la fin entière, plutôt que d'en couper la fin (« VIDEOHU… 3 »). */
+export function fitSub(text: string, max: number, font = PORT_FONT): string {
+  if (max <= 0) return '';
+  if (textWidth(text, font) <= max) return text;
+  const i = text.indexOf(' · ');
+  if (i > 0) {
+    const tail = text.slice(i), room = max - textWidth(tail, font);
+    if (room > textWidth('MMM…', font)) return cut(text.slice(0, i), room, font) + tail;
+  }
+  return cut(text, max, font);
+}
+
 function cut(text: string, max: number, font: string): string {
   let lo = 0, hi = text.length;
   while (lo < hi) {

@@ -60,10 +60,10 @@ export const refById = (k: RefPath, id: string | null | undefined) => (id ? refs
 /** Couleur des éléments sans famille (et de la famille « Autres », X), à l'écran comme sur papier. */
 export const FAMILY_NONE = '#8A919B';
 /** Familles fournies (clé du référentiel Fonctions) → jeton d'écran propre au thème (strates.css).
- *  RF a la clé R mais le jeton --sig-f ; Flux IP (F) n'a pas encore de jeton (décision produit). */
-const FAMILY_TOKEN: Record<string, string> = { V: '--sig-v', A: '--sig-a', L: '--sig-l', C: '--sig-c', P: '--sig-p', N: '--sig-n', S: '--sig-s', I: '--sig-i', R: '--sig-f' };
+ *  RF a la clé R mais le jeton --sig-f ; Flux IP (F) a le jeton --sig-ip. */
+const FAMILY_TOKEN: Record<string, string> = { V: '--sig-v', A: '--sig-a', L: '--sig-l', C: '--sig-c', P: '--sig-p', N: '--sig-n', S: '--sig-s', I: '--sig-i', R: '--sig-f', F: '--sig-ip' };
 /** Couleurs papier des familles fournies, si le référentiel n'est pas chargé. */
-const FAMILY_PAPER: Record<string, string> = { V: '#2459E0', A: '#0E8550', L: '#B78400', C: '#7A44C9', P: '#CF3A2F', N: '#0A8797', S: '#BD3489', R: '#D06006', I: '#69788C', F: '#1F3DF0', X: FAMILY_NONE };
+const FAMILY_PAPER: Record<string, string> = { V: '#2459E0', A: '#0E8550', L: '#B78400', C: '#7A44C9', P: '#CF3A2F', N: '#0A8797', S: '#BD3489', R: '#D06006', I: '#8C6239', F: '#5B3FD9', X: FAMILY_NONE };
 
 /** Couleur d'une famille de signal (clé du référentiel Fonctions). Le support est obligatoire,
  *  pour qu'aucun `var()` ne parte dans un PDF :
@@ -81,12 +81,6 @@ export function familyColor(key: string | null | undefined, opts: { screen: bool
   if (token) return `var(${token})`;
   if (!hex) return FAMILY_NONE;
   return isDark() ? `color-mix(in srgb, ${hex} 75%, #fff)` : hex;
-}
-
-/** @deprecated Utiliser familyColor(clé, { screen: true }) à l'écran, familyColor(clé, { screen: false }) sur papier.
- *  Alias gardé le temps de la migration : renvoie l'hexadécimal (rendus et exports), FAMILY_NONE sans famille. */
-export function fnColor(key: string | null | undefined): string {
-  return familyColor(key, { screen: false });
 }
 
 /** Nouvelle fiche vide, conforme au modèle du moteur. */

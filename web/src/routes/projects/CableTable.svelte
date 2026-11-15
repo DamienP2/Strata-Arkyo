@@ -10,7 +10,7 @@
   import { can } from '../../lib/session.svelte';
   import { toast, fail } from '../../lib/toast.svelte';
   import { nf, pl } from '../../lib/format';
-  import { loadRefs, familyColor, FAMILY_NONE, refById } from '../../lib/catalog.svelte';
+  import { loadRefs, familyColor, refById } from '../../lib/catalog.svelte';
   import Dialog from '../../components/Dialog.svelte';
   import Loading from '../../components/Loading.svelte';
   import EmptyState from '../../components/EmptyState.svelte';
@@ -18,9 +18,10 @@
   import SortTh, { type Sort } from '../../components/SortTh.svelte';
   import AnomalyGroups from '../../components/AnomalyGroups.svelte';
   import type { Anomaly } from '../../lib/anomalies';
+  import { endLabel } from '../../lib/pv';
   import type { ProjectView } from '../../lib/projects';
 
-  interface End { port_ref: string; element: string; container_id: string | null; location: string; location_id: string | null; equipment: string; tag: string; port: string; connector: string; missing: boolean }
+  interface End { port_ref: string; element: string; container_id: string | null; location: string; location_id: string | null; equipment: string; tag: string; port: string; connector: string; face?: string | null; missing: boolean }
   interface Row { id: string; rev: number; number: string | null; color: string | null; notes: string | null; length_m: number | null; estimate_m: number | null; signal: string; family: string | null; a: End; b: End; warnings: string[] }
   type Field = 'number' | 'notes' | 'length_m';
 
@@ -47,8 +48,9 @@
   // Un seul câble ciblé : sa ligne devient la ligne active.
   $effect(() => { if (only.size === 1) { const id = [...only][0]!; untrack(() => (focusRow = id)); } });
 
-  /** Extrémité en clair : « Équipement repère › port », ou « Extrémité manquante ». */
-  const endText = (x: End, withElement = false) => (x.missing ? 'Extrémité manquante' : [withElement ? x.element : '', [x.equipment, x.tag].filter(Boolean).join(' '), x.port].filter(Boolean).join(' › '));
+  const MISSING = 'Extrémité manquante';
+  /** Extrémité en clair : « Équipement ID › port (face d'un panel) », ou « Extrémité manquante » (lib/pv, comme le PV). */
+  const endText = (x: End, withElement = false) => (x.missing ? MISSING : endLabel({ ...x, element: withElement ? x.element : '' }));
   /** Nom d'un câble : son numéro, à défaut ses deux extrémités (jamais un libellé générique). */
   const cableName = (r: Row) => (r.number ? r.number : `${endText(r.a)} → ${endText(r.b)}`);
 
@@ -197,12 +199,13 @@
         estimated = true;
         return `${approx} ${nf(r.estimate_m, 1)}`;
       };
-      // Extrémité manquante en capitales : l'anomalie se voit aussi en noir et blanc.
-      const end = (x: End) => (x.missing ? 'EXTRÉMITÉ MANQUANTE' : endText(x, true));
+      // Extrémité manquante signalée et en gras : l'anomalie se voit aussi en noir et blanc.
+      const end = (x: End) => (x.missing ? `⚠ ${MISSING}` : endText(x, true));
       const h = kit.projectHeader(view.project, `Liste des câbles (${shown.length})`);
       // Largeurs selon le contenu (les indications ne servent qu'à répartir la place restante).
       let y = kit.drawTable(doc, h, [{ label: 'N°', w: 14 }, { label: 'Signal', w: 18 }, { label: 'De', w: 90 }, { label: 'Vers', w: 90 }, { label: 'Long. (m)', w: 12, align: 'right' }, { label: 'Notes', w: 30 }],
-        shown.map((r) => [String(val(r, 'number') || 'non numéroté'), r.signal || 'Non défini', end(r.a), end(r.b), len(r), String(val(r, 'notes') ?? '')]), 'A4', true);
+        shown.map((r) => [String(val(r, 'number') || 'non numéroté'), r.signal || 'Non défini', end(r.a), end(r.b), len(r), String(val(r, 'notes') ?? '')]), 'A4', true,
+        { bold: (ri, ci) => (ci === 2 && !!shown[ri]?.a.missing) || (ci === 3 && !!shown[ri]?.b.missing) });
       if (estimated) {
         const [, H] = kit.size(doc);
         if (y + 6 > H - 16) { kit.addPage(doc, 'A4', true); y = kit.drawHeader(doc, h, { cont: true }); }
@@ -237,9 +240,9 @@
 </script>
 
 {#snippet end(x: End, side: 'a' | 'b')}
-  {#if x.missing}<td class="end gone c-{side}" data-l={side === 'a' ? 'De' : 'Vers'} title="L’équipement ou le port n’existe plus."><span class="end-l"><Icon name="alert" size="sm" /><b>Extrémité manquante</b></span></td>
+  {#if x.missing}<td class="end gone c-{side}" data-l={side === 'a' ? 'De' : 'Vers'} title="L’équipement ou le port n’existe plus."><span class="end-l"><Icon name="alert" size="sm" /><b>{MISSING}</b></span></td>
   {:else if !x.port}<td class="end c-{side}" data-l={side === 'a' ? 'De' : 'Vers'} title="{x.equipment} · {x.location}"><span class="end-l"><b>{x.equipment}</b> <span class="muted">· {x.location}</span></span></td>
-  {:else}<td class="end c-{side}" data-l={side === 'a' ? 'De' : 'Vers'} title="{x.element} › {x.equipment}{x.tag ? ` ${x.tag}` : ''} › {x.port}{x.connector ? ` · ${x.connector}` : ''}"><span class="end-l"><b>{x.equipment}</b>{#if x.tag}{" "}<span class="mono muted">{x.tag}</span>{/if}{" "}<span class="muted">›</span>{" "}<b class="pt">{x.port}</b></span></td>{/if}
+  {:else}<td class="end c-{side}" data-l={side === 'a' ? 'De' : 'Vers'} title="{x.element} › {x.equipment}{x.tag ? ` ${x.tag}` : ''} › {x.port}{x.face ? ` ${x.face}` : ''}{x.connector ? ` · ${x.connector}` : ''}"><span class="end-l"><b>{x.equipment}</b>{#if x.tag}{" "}<span class="mono muted">{x.tag}</span>{/if}{" "}<span class="muted">›</span>{" "}<b class="pt">{x.port}</b>{#if x.face}{" "}<span class="muted face">{x.face}</span>{/if}</span></td>{/if}
 {/snippet}
 
 {#if !rows}<Loading label="Chargement des câbles" />
@@ -306,7 +309,7 @@
             <td class="c-sig"><span class="sig"><i class="dot" style="--c:{familyColor(r.family, { screen: true })}"></i>{r.signal || 'Non défini'}</span></td>
             {@render end(r.a, 'a')}{@render end(r.b, 'b')}
             <td class="num c-len" data-l="Longueur (m)"><input class="cell mono" class:dirty={'length_m' in e} type="number" min="0" step="0.5" value={val(r, 'length_m') ?? ''} disabled={!writable} placeholder={r.estimate_m ? `≈ ${nf(r.estimate_m, 1)}` : ''} title={r.estimate_m && val(r, 'length_m') == null ? 'Longueur estimée depuis le plan' : undefined} oninput={(x) => { const v = (x.target as HTMLInputElement).value; set(r, 'length_m', v === '' ? null : Number(v)); }} aria-label="Longueur en mètres"></td>
-            <td class="hide-m"><span class="swatch-ro" style="background:{r.family ? familyColor(r.family, { screen: true }) : FAMILY_NONE}" title={famName(r.family)} aria-label="Couleur de la famille du signal : {famName(r.family)}"></span></td>
+            <td class="hide-m"><span class="swatch-ro" style="background:{familyColor(r.family, { screen: true })}" title={famName(r.family)} aria-label="Couleur de la famille du signal : {famName(r.family)}"></span></td>
             <td class="c-notes" data-l="Notes"><input class="cell" class:dirty={'notes' in e} value={val(r, 'notes') ?? ''} disabled={!writable} maxlength="2000" oninput={(x) => set(r, 'notes', (x.target as HTMLInputElement).value)} aria-label="Notes" title={(val(r, 'notes') as string) || undefined}></td>
             <td class="c-warn">{#if r.warnings.length}<span class="warn-i" class:err={gone} title={r.warnings.join(' ')} aria-label={r.warnings.join(' ')} role="img"><Icon name="alert" size="sm" /></span>{/if}</td>
           </tr>

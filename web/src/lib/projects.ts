@@ -32,7 +32,9 @@ export interface ProjectData {
 export interface Project extends ProjectData { id: string; rev: number; created_by: string | null; created_at: string; updated_at: string }
 export interface ProjectSummary extends Project { completion: number; locations: number; containers: number; articles: number }
 
-export interface ContainerTotals { used_u: number; total_u: number | null; weight_kg: number; power_w: number; volume_m3: number | null; over_weight: boolean; over_power: boolean; over_u: boolean }
+/** `used_u` : U du matériel affecté ; `placed_u` : U réellement posés en baie (hors étagère et PDU verticaux) ;
+ *  `pending_u` : U affectés encore sans pose. Absents d'une réponse plus ancienne. */
+export interface ContainerTotals { used_u: number; placed_u?: number; pending_u?: number; total_u: number | null; weight_kg: number; power_w: number; volume_m3: number | null; over_weight: boolean; over_power: boolean; over_u: boolean }
 export interface Location { id: string; project_id: string; name: string; code: string; position: number; rev: number; totals: { containers: number; free_items: number; power_w: number; weight_kg: number } }
 export interface ContainerData {
   kind: ContainerKind; rackable: boolean; height_u: number | null; depth_mm: number | null; rear_rails_mm: number | null;

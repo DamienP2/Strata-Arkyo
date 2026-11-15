@@ -3,8 +3,8 @@
   // colorés, connecteurs et libellés par port. En compact (élévation de la baie) : les
   // connecteurs seuls, à l'échelle de l'élément.
   import ConnGlyph from './ConnGlyph.svelte';
-  import { family, groupAt, colOf, rowOf, type PanelData, type PanelGroup, type PanelSlot } from '../lib/panel';
-  import { FAMILY_NONE, familyColor, refById, refList } from '../lib/catalog.svelte';
+  import { family, groupAt, groupFamily, colOf, rowOf, type PanelData, type PanelGroup, type PanelSlot } from '../lib/panel';
+  import { FAMILY_NONE, familyColor, refById } from '../lib/catalog.svelte';
 
   let {
     panel, detail = false, selected = [], target = null, onslot, ongroup,
@@ -26,18 +26,9 @@
   const sy = (index: number) => (rowOf(panel, index) - 1) * ROW;
   const sel = $derived(new Set(selected));
   // Couleurs : la famille de signal (familyColor, suit le thème), jamais une couleur libre.
-  // Un groupe porte sa famille (`function`) ; un groupe plus ancien n'a qu'une couleur prise
-  // dans la palette des familles : on retrouve la famille d'après cette couleur.
-  const groupFamily = (g: PanelGroup | undefined): string | null => {
-    if (!g) return null;
-    const f = (g as PanelGroup & { function?: string | null }).function;
-    return f || (refList('functions').find((x) => x.data?.color?.toLowerCase() === g.color?.toLowerCase())?.id ?? null);
-  };
+  // Un groupe porte sa famille (`function`) ; un groupe plus ancien est retrouvé d'après sa couleur (groupFamily).
   const groupColor = (g: PanelGroup) => { const f = groupFamily(g); return f ? familyColor(f, { screen: true }) : g.color || FAMILY_NONE; };
-  const slotColor = (s: PanelSlot) => {
-    const f = s.function ?? groupFamily(groupAt(panel, rowOf(panel, s.index), colOf(panel, s.index)));
-    return f ? familyColor(f, { screen: true }) : (refById('connectors', s.connector)?.data?.color as string | undefined) ?? FAMILY_NONE;
-  };
+  const slotColor = (s: PanelSlot) => familyColor(s.function ?? groupFamily(groupAt(panel, rowOf(panel, s.index), colOf(panel, s.index))), { screen: true });
   const name = (s: PanelSlot) => `${refById('connectors', s.connector)?.name ?? s.connector}${s.variant ? ` ${s.variant}` : ''}${s.d_format ? ' · format D' : ''}`;
   const empties = $derived.by(() => {
     const out: number[] = [];

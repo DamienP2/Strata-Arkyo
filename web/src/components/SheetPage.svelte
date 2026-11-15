@@ -6,8 +6,9 @@
   // (aplats à la couleur de la famille de signal, catégorie en texte) ou 3D ; mobilier : face,
   // côté, dessus, 3D et casquettes ; synoptiques (même rendu que l'écran et le dossier, mis à
   // l'échelle). Chaque dessin a sa propre échelle (`zoom`). Couleurs et traits de pdfkit.
-  import { FAMILY_NONE, familyColor, refList } from '../lib/catalog.svelte';
+  import { familyColor } from '../lib/catalog.svelte';
   import { rackLines } from '../lib/racktext.svelte';
+  import { slotColor as panelSlotColor } from '../lib/panel';
   import { HEX } from '../lib/pdfkit';
   import { inkOn } from '../lib/color';
   import { accFace, screensOf, visualOf } from '../lib/faceplate';
@@ -47,14 +48,8 @@
   const COLS: Record<string, number> = { full: 1, half: 2, third: 3, quarter: 4 };
   /** Couleur d'un appareil : sa famille de signal (papier), FAMILY_NONE sans famille. */
   const color = (e: any) => familyColor(e.function, { screen: false });
-  /** Emplacement de panel : famille de l'emplacement, sinon celle de son groupe (couleur de la palette des familles). */
-  const slotColor = (panel: any, s: any) => {
-    if (s.function) return familyColor(s.function, { screen: false });
-    const per = panel.per_u, row = Math.floor((s.index - 1) / per) + 1, col = ((s.index - 1) % per) + 1;
-    const g = (panel.groups ?? []).find((x: any) => x.row === row && col >= x.start && col < x.start + x.len);
-    const f = g ? g.function || refList('functions').find((x) => x.data?.color?.toLowerCase() === g.color?.toLowerCase())?.id : null;
-    return f ? familyColor(f, { screen: false }) : FAMILY_NONE;
-  };
+  /** Emplacement de panel : famille de l'emplacement, sinon celle de son groupe (lib/panel). */
+  const slotColor = (panel: any, s: any) => panelSlotColor(panel, s);
   const block = $derived({ x: size[0] - FRAME - BLOCK[0], y: size[1] - FRAME - BLOCK[1] });
   const cells = $derived.by(() => {
     const b = sheet.block;

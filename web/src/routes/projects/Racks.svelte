@@ -566,6 +566,8 @@
   /* Hauteur fixe : la baie défile seule, les panneaux latéraux restent visibles. */
   /* En-tête de projet commun (~90 px), barre du rack et marges de la page : la zone de travail remplit la hauteur sans défilement de page. */
   .rack-screen .design-body { height: calc(100dvh - 216px); min-height: 560px; }
+  /* Barre de verrou affichée (49 px : bouton de 30 px + marges) : la zone de travail rétrécit d'autant, la page ne défile pas. */
+  @media (min-width: 1101px) { .rack-screen:has(> .lockbar) .design-body { height: calc(100dvh - 265px); } }
   .shelf-load { flex: 1 1 0; min-width: 0; display: flex; gap: 4px; justify-content: flex-end; overflow: hidden; }
   .sh-it { flex: none; font: 600 10px/1 var(--font); padding: 3px 6px; border-radius: 3px; color: #fff; background: color-mix(in srgb, var(--c) 70%, #1C1F23); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .15); max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .circ { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 8px 10px; border-radius: 10px; background: var(--surface-2); font-size: 14px; }

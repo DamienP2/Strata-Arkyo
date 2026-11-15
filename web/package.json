@@ -7,7 +7,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "check": "svelte-check --tsconfig ./tsconfig.json"
+    "check": "svelte-check --tsconfig ./tsconfig.json",
+    "lint:ui": "! grep -rnE -e '--font-mono|danger-btn|chip\\.sm' src"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "5.1.1",

@@ -17,7 +17,9 @@
   const label = $derived(cur ? cur.name : value.startsWith('tout:') ? `Tous les racks · ${locOf(value)?.name ?? ''}` : 'Tous les racks');
   const allN = $derived(value.startsWith('tout:') ? groups.find((g) => g.l.id === value.split(':')[1])?.list.length ?? 0 : racks.length);
   const sub = $derived(cur ? `${view.locations.find((l) => l.id === cur.location_id)?.name ?? ''} · ${CONTAINER_KINDS[cur.kind].label} · ${cur.height_u} U` : `${allN} rack${pl(allN)} côte à côte`);
-  const pct = (c: (typeof racks)[number]) => (c.height_u ? Math.min(100, (c.totals.used_u / c.height_u) * 100) : 0);
+  /** U posés en baie (placed_u du serveur ; à défaut, U affectés). */
+  const usedOf = (c: (typeof racks)[number]) => c.totals.placed_u ?? c.totals.used_u;
+  const pct = (c: (typeof racks)[number]) => (c.height_u ? Math.min(100, (usedOf(c) / c.height_u) * 100) : 0);
   function pick(v: string) { open = false; onpick(v); }
   /** Échap ferme le sélecteur seulement (pas la sélection de l'écran derrière) et rend le focus au bouton. */
   function key(e: KeyboardEvent) {
@@ -45,7 +47,7 @@
             <button role="option" aria-selected={value === c.id} class="rp-it" class:on={value === c.id} onclick={() => pick(c.id)}>
               <span class="rp-n"><b>{c.name}</b><small>{CONTAINER_KINDS[c.kind].label}</small></span>
               <span class="rp-fill" class:over={c.totals.over_u}><i style="width:{pct(c)}%"></i></span>
-              <span class="rp-u mono">{nf(c.totals.used_u, c.totals.used_u % 1 ? 1 : 0)} / {c.height_u} U</span>
+              <span class="rp-u mono">{nf(usedOf(c), usedOf(c) % 1 ? 1 : 0)} / {c.height_u} U</span>
             </button>
           {/each}
         </div>

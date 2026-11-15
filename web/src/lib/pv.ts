@@ -15,12 +15,13 @@ const ST: Record<St, { label: string }> = { to_test: { label: 'À tester' }, ok:
 /** Groupe des liaisons dont une extrémité n'existe plus (nom du serveur, ancien et nouveau). */
 const MISSING = new Set(['Extrémité manquante', 'Extrémité supprimée']);
 /** Extrémités d'une liaison (liste des câbles), par identifiant de câble. */
-export interface PvEnd { element: string; equipment: string; tag: string; port: string }
+export interface PvEnd { element: string; equipment: string; tag: string; port: string; face?: string | null }
 export type PvEnds = Map<string, { a: PvEnd; b: PvEnd; signal?: string }>;
 
 /** Extrémité lisible d'une liaison : « élément › équipement ID › port », construite à partir
- *  des seuls morceaux renseignés (jamais de séparateur orphelin). */
-export const endLabel = (e: PvEnd) => [e.element, `${e.equipment ?? ''} ${e.tag ?? ''}`.trim(), e.port].filter((x) => x && String(x).trim()).join(' › ');
+ *  des seuls morceaux renseignés (jamais de séparateur orphelin). Un port de panel traversant
+ *  porte sa face (« 12 avant », « 12 arrière ») : les deux faces ont le même nom. */
+export const endLabel = (e: PvEnd) => [e.element, `${e.equipment ?? ''} ${e.tag ?? ''}`.trim(), [e.port, e.port ? e.face : ''].filter(Boolean).join(' ')].filter((x) => x && String(x).trim()).join(' › ');
 export async function pvEnds(pid: string): Promise<PvEnds> {
   const { api } = await import('./api');
   try {

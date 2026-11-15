@@ -25,7 +25,7 @@
   /* Alias : une couleur par sens */
   --urg:var(--err); --soon:var(--warn); --st-fini:var(--ok); --live:var(--led-g); --lock-soft:var(--warn-soft);
   /* Familles de signaux */
-  --sig-v:#2459E0; --sig-a:#0E8550; --sig-l:#B78400; --sig-c:#7A44C9; --sig-p:#CF3A2F; --sig-n:#0A8797; --sig-s:#BD3489; --sig-i:#69788C; --sig-f:#D06006;
+  --sig-v:#2459E0; --sig-a:#0E8550; --sig-l:#B78400; --sig-c:#7A44C9; --sig-p:#CF3A2F; --sig-n:#0A8797; --sig-s:#BD3489; --sig-i:#8C6239; --sig-f:#D06006; --sig-ip:#5B3FD9;
   /* Toiles de conception */
   --canvas:#F3F1EC; --dot:#CFCAC0; --node-bg:#FFFFFF; --node-edge:#CEC9BF;
   --tag-hi:#FFFFFF; --tag-bg:#F3F1EB; --tag-lo:#DCD8CE; --tag-edge:#B9B4A9; --tag-fg:#17181B;
@@ -92,7 +92,7 @@
   --led-g:#3EDB87; --led-y:#F6B73C; --led-r:#FF5A4C; --seg-off:#283046;
   --tally-k:100%; --gauge-face:#2A2416; --gauge-ink:#F1D592; --gauge-ndl:#FFE2A6; --wk-c:rgba(255,255,255,.04);
   --st-prep:#97A0FF; --st-pret:#3CC7DA; --st-cours:#FF9E4F; --st-annule:#A0A8B8;
-  --sig-v:#6E9BFF; --sig-a:#45CB87; --sig-l:#F4C53A; --sig-c:#B18CF5; --sig-p:#FF7468; --sig-n:#35C8D8; --sig-s:#F370C0; --sig-i:#A0AEC0; --sig-f:#FF9A4A;
+  --sig-v:#6E9BFF; --sig-a:#45CB87; --sig-l:#F4C53A; --sig-c:#B18CF5; --sig-p:#FF7468; --sig-n:#35C8D8; --sig-s:#F370C0; --sig-i:#C9935F; --sig-f:#FF9A4A; --sig-ip:#9C8BFF;
   --canvas:#0E1119; --dot:#2E3550; --node-bg:#1A1F2E; --node-edge:#3D4560;
   --tag-hi:#F6F4EE; --tag-bg:#E4E1D9; --tag-lo:#C7C3B9; --tag-edge:#8E8A82; --tag-fg:#141518;
   --glow:drop-shadow(0 0 2.5px currentColor); --node-shadow:drop-shadow(0 1px 1px rgba(0,0,0,.6)) drop-shadow(0 8px 14px rgba(0,0,0,.55));
@@ -138,7 +138,7 @@
   --led-g:#3EDB87; --led-y:#F6B73C; --led-r:#FF5A4C; --seg-off:#283046;
   --tally-k:100%; --gauge-face:#2A2416; --gauge-ink:#F1D592; --gauge-ndl:#FFE2A6; --wk-c:rgba(255,255,255,.04);
   --st-prep:#97A0FF; --st-pret:#3CC7DA; --st-cours:#FF9E4F; --st-annule:#A0A8B8;
-  --sig-v:#6E9BFF; --sig-a:#45CB87; --sig-l:#F4C53A; --sig-c:#B18CF5; --sig-p:#FF7468; --sig-n:#35C8D8; --sig-s:#F370C0; --sig-i:#A0AEC0; --sig-f:#FF9A4A;
+  --sig-v:#6E9BFF; --sig-a:#45CB87; --sig-l:#F4C53A; --sig-c:#B18CF5; --sig-p:#FF7468; --sig-n:#35C8D8; --sig-s:#F370C0; --sig-i:#C9935F; --sig-f:#FF9A4A; --sig-ip:#9C8BFF;
   --canvas:#0E1119; --dot:#2E3550; --node-bg:#1A1F2E; --node-edge:#3D4560;
   --tag-hi:#F6F4EE; --tag-bg:#E4E1D9; --tag-lo:#C7C3B9; --tag-edge:#8E8A82; --tag-fg:#141518;
   --glow:drop-shadow(0 0 2.5px currentColor); --node-shadow:drop-shadow(0 1px 1px rgba(0,0,0,.6)) drop-shadow(0 8px 14px rgba(0,0,0,.55));

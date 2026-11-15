@@ -1,12 +1,14 @@
 // Panels de brassage : mêmes règles que le moteur (crates/strata-domain/src/panel.rs).
 
-import { refById, familyColor, FAMILY_NONE } from './catalog.svelte';
+import { refById, refList, familyColor } from './catalog.svelte';
 
 export interface PanelSlot {
   index: number; connector: string; variant: string | null; label: string; notes: string | null;
   width: number; function: string | null; d_format: boolean;
 }
-export interface PanelGroup { row: number; start: number; len: number; label: string; color: string }
+/** Groupe de ports : sa couleur est celle de sa famille de signal (`function`) ; `color` (hexadécimal de la
+ *  famille) reste le repli des groupes plus anciens et est tenu à jour pour eux. */
+export interface PanelGroup { row: number; start: number; len: number; label: string; color: string; function?: string | null }
 export interface PanelData {
   name: string; height_u: number; per_u: number; rear_depth_mm: number; notes: string | null;
   slots: PanelSlot[]; groups: PanelGroup[];
@@ -65,10 +67,16 @@ export function stats(p: PanelData): PanelStats {
 /** Le connecteur existe-t-il en format D, et la densité le permet-elle ? */
 export const dFormatAllowed = (p: PanelData, connector: string) => p.per_u <= D_FORMAT_MAX_PER_U && !!refById('connectors', connector)?.data?.d_format;
 
+/** Famille d'un groupe : `function`, sinon (groupe plus ancien) la famille dont la couleur est `color`. */
+export function groupFamily(g: PanelGroup | undefined | null): string | null {
+  if (!g) return null;
+  return g.function || (refList('functions').find((x) => x.data?.color?.toLowerCase() === g.color?.toLowerCase())?.id ?? null);
+}
+
 /** Couleur d'un emplacement (façade, objet physique : hexadécimal) : famille de signal de l'emplacement,
- *  sinon couleur du connecteur, sinon la couleur « sans famille ». */
-export function slotColor(s: PanelSlot): string {
-  return (s.function ? familyColor(s.function, { screen: false }) : null) || refById('connectors', s.connector)?.data?.color || FAMILY_NONE;
+ *  sinon celle de son groupe, sinon la couleur « sans famille ». */
+export function slotColor(p: PanelData, s: PanelSlot): string {
+  return familyColor(s.function ?? groupFamily(groupAt(p, rowOf(p, s.index), colOf(p, s.index))), { screen: false });
 }
 
 export function groupAt(p: PanelData, row: number, col: number): PanelGroup | undefined {

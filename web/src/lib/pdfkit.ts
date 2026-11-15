@@ -57,8 +57,9 @@ export function pdfFonts(): Promise<boolean> {
   return fontsP;
 }
 /** Texte imprimable : avec les polices standard (repli), les flèches sont remplacées. */
+// ⚠ n'existe dans aucune police embarquée (Inter, JetBrains Mono) : « ! » à la place, jamais un blanc.
 export const txt = (s: unknown) => {
-  const t = String(s ?? '').replace(/[  ]/g, ' ');
+  const t = String(s ?? '').replace(/⚠\uFE0F?/g, '!').replace(/[  ]/g, ' ');
   return FONT.unicode ? t : t.replace(/→/g, '»').replace(/←/g, '«').replace(/↑/g, '^').replace(/↓/g, 'v').replace(/[↔⇄]/g, '<>').replace(/[↕↗]/g, '»').replace(/✓/g, 'x').replace(/[□▢]/g, '[ ]');
 };
 

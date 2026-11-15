@@ -95,7 +95,7 @@
   const fpH = $derived((fpW * 44.45 * hu) / 482.6);
   const frac = $derived(({ full: 1, half: 0.5, third: 1 / 3, quarter: 0.25 } as Record<string, number>)[data.format.width ?? 'full'] ?? 1);
   // Façade (objet physique, sombre fixe) : couleur de famille en hexadécimal, comme dans les racks.
-  const fnColor0 = $derived(familyColor(data.functions[0], { screen: false }));
+  const famColor0 = $derived(familyColor(data.functions[0], { screen: false }));
   // Cote inconnue : le moteur stocke 0, le champ reste vide (liaisons de Profondeur, Longueur, Largeur, Hauteur).
   const freeDims = $derived(data.format.kind === 'free' && [data.format.length_mm, data.format.width_mm, data.format.height_mm].every((v: number) => Number(v) > 0));
   const inCount = $derived(countOf(true)), outCount = $derived(countOf(false));
@@ -138,7 +138,7 @@
   <div class="fh-face">
     {#if data.format.kind === 'rack'}
       <div class="fp-big" style="width:{fpW}px;height:{fpH}px;--u:{fpH / hu}px">
-        <span class="ritem {ALU.has(vis) ? 'alu' : ''} {hu <= 1 ? 'u1' : ''}" style="--c:{fnColor0};left:12px;width:calc(({fpW}px - 24px) * {frac});height:{fpH}px"><i class="led"></i><span class="rn">{data.name || 'Équipement'}</span><span class="dec">{@html decor(vis)}</span></span>
+        <span class="ritem {ALU.has(vis) ? 'alu' : ''} {hu <= 1 ? 'u1' : ''}" style="--c:{famColor0};left:12px;width:calc(({fpW}px - 24px) * {frac});height:{fpH}px"><i class="led"></i><span class="rn">{data.name || 'Équipement'}</span><span class="dec">{@html decor(vis)}</span></span>
       </div>
       <span class="muted small">Façade {nf(hu, hu % 1 ? 1 : 0)} U{frac < 1 ? ` · ${data.format.width === 'half' ? '1/2' : data.format.width === 'third' ? '1/3' : '1/4'} largeur` : ''} · {VISUALS.find(([k]) => k === vis)?.[1] ?? 'Générique'}{data.visual ? '' : ' (automatique)'}</span>
     {:else}

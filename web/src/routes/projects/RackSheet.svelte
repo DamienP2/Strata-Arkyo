@@ -11,6 +11,7 @@
   import Icon from '../../components/Icon.svelte';
   import Confirm from '../../components/Confirm.svelte';
   import Seg from '../../components/Seg.svelte';
+  import Menu from '../../components/Menu.svelte';
   import SaveState from '../../components/SaveState.svelte';
   import Loading from '../../components/Loading.svelte';
   import EmptyState from '../../components/EmptyState.svelte';
@@ -18,6 +19,7 @@
   import SheetPage from '../../components/SheetPage.svelte';
   import Sheet3DView from '../../components/Sheet3DView.svelte';
   import { api } from '../../lib/api';
+  import { revision } from '../../lib/pdfkit';
   import { ask } from '../../lib/ask.svelte';
   import { autosave } from '../../lib/autosave';
   import { canvasKeys } from '../../lib/canvaskeys';
@@ -60,7 +62,7 @@
 
   const info = $derived({
     project: view.project.name, client: view.project.client ?? 'Projet interne', venue: view.project.venue ?? '', site,
-    date: new Date().toLocaleDateString('fr-FR'),
+    date: new Date().toLocaleDateString('fr-FR'), revision: revision(view.project),
     locations: Object.fromEntries(view.locations.map((l) => [l.id, { name: l.name, code: l.code }])),
   });
 
@@ -456,9 +458,16 @@
   }
 
   const ORIENT = [{ value: 'portrait', label: 'Portrait' }, { value: 'landscape', label: 'Paysage' }] as const;
-  const FORMATS = [{ value: 'pdf', label: 'PDF' }, { value: 'png', label: 'PNG' }, { value: 'jpg', label: 'JPG' }] as const;
+  const FORMATS = [{ value: 'pdf', label: 'PDF', hint: 'Un document, une page par feuille' }, { value: 'png', label: 'PNG', hint: 'Une image par feuille' }, { value: 'jpg', label: 'JPG', hint: 'Une image par feuille, plus légère' }] as const;
+  /** Le format choisi est retenu avec la planche (proposé en premier la fois suivante). */
+  function exportAs(f: Sheet['format']) {
+    if (sheet && sheet.format !== f) { sheet.format = f; if (writable) changed(); }
+    exportSheet();
+  }
   const FRAMES = [['quarter', '3/4'], ['front', 'Avant'], ['side', 'Côté'], ['rear', 'Arrière'], ['top', 'Dessus']] as const;
 </script>
+
+{#snippet busyTrig()}<span class="spin" aria-hidden="true"></span>Génération{/snippet}
 
 {#if !sheet}<Loading label="Chargement des planches" />
 {:else if !bays.length && !desks.length}
@@ -471,7 +480,7 @@
       <select class="input sm" aria-label="Format de la feuille" value={sheet.paper} disabled={!writable} onchange={(e) => { sheet!.paper = (e.target as HTMLSelectElement).value as Paper; changed(); }}>{#each Object.keys(PAPERS) as p}<option value={p}>{p}</option>{/each}</select>
       <Seg label="Orientation" bind:value={sheet.orientation} options={ORIENT.map((o) => ({ ...o, disabled: !writable }))} onchange={() => changed()} />
       <select class="input sm" aria-label="Échelle" value={sheet.scale} disabled={!writable} onchange={(e) => { sheet!.scale = Number((e.target as HTMLSelectElement).value); changed(); }}>{#each SCALES as s}<option value={s}>1:{s}</option>{/each}</select>
-      {#if writable}<button class="btn sm ghost" aria-label="Disposer automatiquement" title="Placer tous les racks et le mobilier sur les feuilles, d’un coup" onclick={() => (relayout = true)}><Icon name="grid" size="sm" />Disposer</button>{/if}
+      {#if writable}<button class="btn sm ghost" aria-label="Disposer automatiquement" title="Placer tous les racks et le mobilier sur les feuilles, d’un coup" onclick={() => (relayout = true)}><Icon name="grid" size="sm" /><span class="pl-lbl">Disposer</span></button>{/if}
       <span class="pl-sep"></span>
       <Seg mode="tabs" label="Feuilles" bind:value={cur} options={sheet.pages.map((_, i) => ({ value: i, label: `Feuille ${i + 1}` }))} onchange={() => (selected = null)} />
       {#if writable}<button class="btn sm ghost" aria-label="Ajouter une feuille" title="Ajouter une feuille à la planche" onclick={addPage}><Icon name="plus" size="sm" /><span class="pl-lbl">Ajouter une feuille</span></button>{/if}
@@ -485,24 +494,27 @@
         <button class="icon-btn sm" aria-label="Zoom arrière" title="Zoom arrière (Ctrl + molette)" disabled={zoom <= 0.25} onclick={() => zoomTo(zoom / 1.25)}><Icon name="zout" size="sm" /></button>
         <span class="mono small pl-zv" title="Taille à l’écran, par rapport à la feuille entière visible">{zoom === 1 ? 'Ajusté' : `${Math.round(zoom * 100)} %`}</span>
         <button class="icon-btn sm" aria-label="Zoom avant" title="Zoom avant (Ctrl + molette)" disabled={zoom >= 8} onclick={() => zoomTo(zoom * 1.25)}><Icon name="zin" size="sm" /></button>
-        <button class="btn sm ghost" title="Ajuster : voir la feuille entière" disabled={zoom === 1} onclick={() => { zoom = 1; deskEl?.scrollTo(0, 0); }}><Icon name="fit" size="sm" />Ajuster</button>
+        <button class="icon-btn sm" aria-label="Ajuster : voir la feuille entière" title="Ajuster : voir la feuille entière" disabled={zoom === 1} onclick={() => { zoom = 1; deskEl?.scrollTo(0, 0); }}><Icon name="fit" size="sm" /></button>
       </div>
-      <span class="pl-sp"></span>
       <!-- Bloc insécable aligné à droite : l'indicateur d'enregistrement a une largeur réservée, Exporter ne bouge pas. -->
       <div class="pl-out">
         {#if writable}<SaveState status={$saver} onretry={() => saver.flush()} />{/if}
-        {#if outside.length}<span class="chip warn" title="{outside.map((o) => `${o.name} (feuille ${o.page})`).join(', ')} : réduisez l’échelle, déplacez ou choisissez un format plus grand."><Icon name="alert" size="sm" />{outside.length} hors cadre</span>{/if}
-        <Seg label="Format d’export" bind:value={sheet.format} options={[...FORMATS]} onchange={() => changed()} />
-        <span title={hasItems ? undefined : 'Planches vides : aucune feuille ne contient d’élément, composez les planches avant de les exporter.'}><button class="btn primary" disabled={exporting || !hasItems} onclick={exportSheet}>{#if exporting}<span class="spin"></span>Génération{:else}<Icon name="download" size="sm" />Exporter{/if}</button></span>
+        <span title={hasItems ? undefined : 'Planches vides : aucune feuille ne contient d’élément, composez les planches avant de les exporter.'}>
+          <Menu label="Exporter" icon="download" btnClass="btn primary" menuLabel="Format d’export des planches" disabled={exporting || !hasItems} trigger={exporting ? busyTrig : undefined}>
+            {#snippet children()}{#each FORMATS as f}<button role="menuitem" class="pl-exp" aria-current={sheet!.format === f.value ? 'true' : undefined} onclick={() => exportAs(f.value)}><b>{f.label}</b><small>{f.hint}</small></button>{/each}{/snippet}
+          </Menu>
+        </span>
       </div>
     </div>
 
     <div class="pl-body">
       <div class="pl-stage">
+        <!-- Éléments hors cadre : signalés sur la feuille (la barre d'outils reste sur une ligne). -->
+        {#if outside.length}<span class="chip warn pl-out-chip" role="status" title="{outside.map((o) => `${o.name} (feuille ${o.page})`).join(', ')} : réduisez l’échelle, déplacez ou choisissez un format plus grand."><Icon name="alert" size="sm" />{outside.length} hors cadre</span>{/if}
         <div class="pl-desk" role="presentation" bind:this={deskEl} bind:clientWidth={deskW} bind:clientHeight={deskH} onpointerdown={(e) => { if (!(e.target as Element).closest('.it, .rz, .pl-empty button')) selected = null; }}>
           <div class="pl-paper" bind:this={svgHost} style="width:{paperW}px;aspect-ratio:{pageSize(sheet)[0]} / {pageSize(sheet)[1]}">
             {#if page && !page.items.length}<div class="pl-empty"><b>Feuille vide</b><span>{writable ? 'Ajoutez des racks, du mobilier ou des synoptiques depuis le panneau de droite, ou placez tout d’un coup.' : 'Aucun élément sur cette feuille.'}</span>{#if writable}<button class="btn sm" onclick={() => (relayout = true)}><Icon name="grid" size="sm" />Disposer automatiquement</button>{/if}</div>{/if}
-            {#if page}<SheetPage {sheet} {page} {ctx} {info} {shots} index={cur} total={sheet.pages.length} editable={writable} {selected} onpick={pick} onresize={startResize} />{/if}
+            {#if page}<SheetPage {sheet} {page} {ctx} {info} {shots} index={cur} total={sheet.pages.length} editable={writable} {selected} onpick={pick} onresize={startResize} onselect={(it) => (selected = it.id)} {nameOf} />{/if}
           </div>
         </div>
       </div>
@@ -670,16 +682,20 @@
 
 <style>
   .pl { display: grid; gap: 10px; }
-  /* Barre étroite : « Ajouter une feuille » cède la place à son icône (l’infobulle reste) ; « Disposer » garde son texte. */
+  /* Barre étroite : « Ajouter une feuille » et « Disposer » cèdent la place à leur icône (nom accessible et infobulle restent) : la barre tient sur une ligne à 1440 px. */
   @media (max-width: 1720px) { .pl-lbl { display: none; } }
   .pl-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 10px; border-radius: 12px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); }
   .pl-bar select.input.sm { width: auto; }
   .pl-sep { width: 1px; height: 22px; background: var(--line-2); margin: 0 4px; }
-  .pl-sp { flex: 1; }
   .pl-out { flex: none; display: flex; align-items: center; gap: 8px; margin-left: auto; white-space: nowrap; }
   .flip { display: inline-flex; transform: scaleX(-1); }
+  .pl-exp { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; }
+  .pl-exp b { font-weight: 600; }
+  .pl-exp small { font-size: var(--fs-xs); color: var(--fg-3); }
+  .pl-exp[aria-current] b::after { content: " · dernier choix"; font-weight: 400; color: var(--fg-3); }
   .pl-body { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 12px; align-items: start; }
   .pl-stage { position: relative; min-width: 0; }
+  .pl-out-chip { position: absolute; top: 10px; left: 10px; z-index: 2; box-shadow: var(--card-sh); }
   .pl-desk { padding: 28px; border-radius: 14px; background: radial-gradient(90% 70% at 50% 0%, color-mix(in srgb, var(--fg) 6%, var(--surface-2)), var(--surface-2)); overflow: auto; height: calc(100dvh - 242px); min-height: 420px; }
   .pl-paper { position: relative; flex: none; margin: 0 auto; background: #fff; box-shadow: 0 24px 50px -22px rgba(0, 0, 0, .55), 0 0 0 1px rgba(0, 0, 0, .08); touch-action: none; }
   .pl-zoom { display: flex; align-items: center; gap: 2px; }

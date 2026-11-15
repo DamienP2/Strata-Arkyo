@@ -13,10 +13,10 @@
   import Dialog from '../../components/Dialog.svelte';
   import NumField from '../../components/NumField.svelte';
   import { withLightTheme, standalone, raster, pdf as toPdf, save } from '../../lib/svgexport';
-  import { familyDash } from '../../lib/pdfkit';
+  import { familyDash, revision } from '../../lib/pdfkit';
   import { PAPERS, type Paper } from '../../lib/sheet';
   import RemoteCursors from '../../components/RemoteCursors.svelte';
-  import { fitText, shareRow, textWidth, resetTextWidths } from '../../lib/fit';
+  import { fitSub, fitText, shareRow, textWidth, resetTextWidths } from '../../lib/fit';
   import { routeAll, rounded, simplify, orthoTo, offsetPath, SP, type Routed, type Req as RouteReq } from '../../lib/cableroute';
   import ProjectLinks from '../../components/ProjectLinks.svelte';
   import ViewPicker from '../../components/ViewPicker.svelte';
@@ -33,6 +33,7 @@
   import { menuKeys } from '../../lib/menukeys';
   import { loadRefs, refById, familyColor, FAMILY_NONE } from '../../lib/catalog.svelte';
   import { rackLines } from '../../lib/racktext.svelte';
+  import { connShort, portChip, nodeLines as synNodeLines } from '../../lib/render';
   import type { ProjectView } from '../../lib/projects';
   import Menu from '../../components/Menu.svelte';
   import Seg, { type SegOption } from '../../components/Seg.svelte';
@@ -43,7 +44,7 @@
   import ShortcutsHelp, { type ShortcutGroup } from '../../components/ShortcutsHelp.svelte';
 
   interface Port { ref: string; label: string; connector: string; signal: string | null; family: string | null; dir: 'in' | 'out' | 'bidir' | 'through'; gender: string | null; variant: string | null; side: 'l' | 'r' }
-  interface SNode { key: string; kind: 'equipment' | 'panel' | 'adapter'; label: string; sub: string; function: string | null; container_id: string | null; location_id: string; ports: Port[] }
+  interface SNode { key: string; kind: 'equipment' | 'panel' | 'adapter'; label: string; sub: string; model?: string; custom?: string | null; tag?: string | null; brand?: string | null; place?: string; function: string | null; container_id: string | null; location_id: string; ports: Port[] }
   interface Far { node: string | null; label: string; sub: string; port: string; connector: string; external?: boolean; location_id?: string | null; resolved?: boolean | null }
   interface Fields { number: string | null; color: string | null; style: string; waypoints: [number, number][]; notes: string | null; tags: string[]; cable_model_id: string | null; harness_id: string | null; length_m: number | null; attach?: boolean; external?: { location_id: string | null; label: string | null } | null }
   interface CableV { id: string; a: string; b: string; rev: number; fields: Fields; a_in_view: boolean; b_in_view: boolean; a_info: Far | null; b_info: Far | null; warnings: string[]; estimate_m: number | null }
@@ -245,7 +246,6 @@
   const left = (n: SNode) => n.ports.filter((p) => p.side === 'l');
   const right = (n: SNode) => n.ports.filter((p) => p.side === 'r');
   // Libellés des ports par ligne : l'entrée et la sortie se partagent la place (mesurée en pixels).
-  const portChip = (p: SNode['ports'][number]) => short(p.connector) + (p.gender === 'M' ? ' M' : p.gender === 'F' ? ' F' : '');
   const portText = (p: SNode['ports'][number]) => p.label;
   const chipWidth = (s: string) => s.length * 6.3 + 12;
   const fitCache = new Map<string, { l: string; r: string }[]>();
@@ -449,7 +449,7 @@
     return { d: `M${x} ${y}H${end}`, t: (s === 'r' ? [x + TAG_GAP, y, s] : [x - TAG_GAP - w, y, s]) as [number, number, 'l' | 'r'], ex: end, ey: y, dx, far, ft, fw: Math.ceil(tw(ft, FAR_F)) + 18 };
   }
   // Port : famille de son signal (à défaut, couleur du connecteur) ; jamais signal.data.color.
-  const portColor = (p: Port | undefined) => (p?.family ? familyColor(p.family, { screen: true }) : refById('connectors', p?.connector)?.data?.color ?? FAMILY_NONE);
+  const portColor = (p: Port | undefined) => familyColor(p?.family, { screen: true });
   const portByRef = (ref: string) => nodeOf(ref)?.ports.find((p) => p.ref === ref);
   // Couleur d'un câble : uniquement la famille de son signal (non modifiable) ; gris neutre
   // quand aucune famille n'est définie.
@@ -457,20 +457,21 @@
   // ----- Nommage (comme les racks) : libellé personnalisé de l'exemplaire, sinon son ID ;
   // marque et modèle en second, avec l'élément. Panels et adaptateurs gardent leur nom. -----
   const instById = $derived(new Map(project.instances.map((i) => [i.id, i])));
-  const artById = $derived(new Map(project.articles.map((a) => [a.id, a])));
   const ctrById = $derived(new Map(project.containers.map((c) => [c.id, c])));
   /** Élément ou emplacement de la vue affichée, et casquettes portées par cet élément. */
   const viewCtr = $derived(syn?.view.startsWith('container:') ? (ctrById.get(syn.view.slice(10)) ?? null) : null);
   const viewName = $derived(syn?.view === 'overview' ? 'Vue générale' : viewCtr?.name ?? syn?.views.locations.find((l) => syn?.view === `location:${l.id}`)?.name ?? '');
   const caps = $derived(viewCtr ? project.containers.filter((c) => c.parent_id === viewCtr!.id) : []);
+  /** Titre et sous-titre d'un nœud : le moteur envoie le nom affiché (`label` = libellé, sinon ID)
+   *  et le modèle (`model`, `brand`) ; libellé, ID et élément sont relus dans le projet pour suivre
+   *  les modifications en direct. Panels et adaptateurs : nom et sous-titre du moteur. */
   function nodeLines(n: SNode): { title: string; id: boolean; sub: string } {
     const inst = n.kind === 'equipment' && n.key.startsWith('i:') ? instById.get(n.key.slice(2)) : undefined;
-    const art = inst ? artById.get(inst.article_id) : undefined;
-    if (!inst || !art) return { title: n.label, id: false, sub: n.sub };
-    const brand = art.item_id ? (project.items[art.item_id]?.brand ?? null) : null;
-    const [main, model] = rackLines({ label: art.label || n.label, custom: inst.label, tag: inst.tag, brand }, 'both');
-    const place = n.container_id ? (ctrById.get(n.container_id)?.name ?? '') : 'Équipement libre';
-    return { title: main, id: !inst.label?.trim() && !!inst.tag && main === inst.tag, sub: [model, place].filter(Boolean).join(' · ') };
+    if (!inst || n.model === undefined) { const [title, sub] = synNodeLines(n); return { title, id: n.kind === 'equipment' && !n.custom?.trim() && !!n.tag && title === n.tag, sub }; }
+    const [main, model] = rackLines({ label: n.model, custom: inst.label, tag: inst.tag, brand: n.brand }, 'both');
+    const custom = !!inst.label?.trim();
+    const place = n.container_id ? (ctrById.get(n.container_id)?.name ?? n.place ?? '') : (n.place || 'Équipement libre');
+    return { title: main, id: !custom && !!inst.tag && main === inst.tag, sub: [model, custom ? inst.tag : '', place].filter(Boolean).join(' · ') };
   }
   const names = $derived(new Map((syn?.nodes ?? []).map((n) => [n.key, nodeLines(n)])));
   const nodeName = (n: SNode) => names.get(n.key)?.title ?? n.label;
@@ -479,7 +480,7 @@
   const portName = (n: SNode, p: Port) => `${nodeName(n)} › ${p.label}${face(n, p)}`;
   const TITLE_ID = `700 15px ${MONO}`, TITLE_L = `650 15px ${SANS}`, SUB_F = `500 11px ${MONO}`;
   const used = $derived(new Set(syn?.cables.flatMap((c) => [c.a, c.b]) ?? []));
-  const short = (c: string) => { const n = refById('connectors', c)?.name ?? c; const s = n.replace(/\s*\/.*$/, ''); return s.length > 9 ? s.split(/\s+/)[0]!.slice(0, 9) : s; };
+  const short = connShort;
   const dups = $derived.by(() => { const seen = new Map<string, number>(); for (const c of syn?.cables ?? []) if (c.fields.number && !c.fields.attach) seen.set(c.fields.number, (seen.get(c.fields.number) ?? 0) + 1); return new Set([...seen].filter(([, n]) => n > 1).map(([x]) => x)); });
   const warnCount = $derived(syn?.cables.filter((c) => c.warnings.length).length ?? 0);
   // Câbles à vérifier : regroupés par constat, chacun nommé (numéro, sinon ses extrémités).
@@ -1516,7 +1517,7 @@
       {:else if canDesign}<!-- « Prendre la main » : action principale, dans l'en-tête de page -->
       {:else}<span class="lockchip other"><Icon name="lock" size="sm" />Lecture seule</span>{/if}
       <button class="btn sm valid" class:ok={issues && !issues.counts.error && !issues.counts.warning} class:bad={issues && (issues.counts.error || issues.counts.warning)} class:on={tab === 'issues'} title="Validation du câblage" onclick={() => { if (narrow) { tab = 'issues'; sideOpen = true; validate(); return; } tab = tab === 'issues' ? 'cable' : 'issues'; if (tab === 'issues') validate(); }}><Icon name={issues && (issues.counts.error || issues.counts.warning) ? 'alert' : 'check'} size="sm" />Validation{#if issues} <span class="mono">{issues.counts.error + issues.counts.warning}</span>{/if}</button>
-      <button class="btn sm" onclick={() => (exp = { format: 'pdf', paper: 'A3', landscape: true, frame: 'all', revision: '', title: 'Synoptique', busy: false })}><Icon name="download" size="sm" />Exporter</button>
+      <button class="btn sm" onclick={() => (exp = { format: 'pdf', paper: 'A3', landscape: true, frame: 'all', revision: revision(project.project), title: 'Synoptique', busy: false })}><Icon name="download" size="sm" />Exporter</button>
       <Menu label="Plus d’actions" iconOnly btnClass="btn sm" bind:open={moreOpen}>
         {#snippet trigger()}<span aria-hidden="true">⋯</span>{/snippet}
           {#if !syn?.overview}
@@ -1652,7 +1653,7 @@
                 <line class="sep" x1="0" x2={NW} y1={HH} y2={HH} />
                 <circle class="nled" cx="16" cy={HH / 2 + 1} r="4.5" />
                 <text class="nt" class:id={nl.id} x="30" y="25">{fontRev >= 0 ? fitText(nl.title, NW - 42, nl.id ? TITLE_ID : TITLE_L) : ''}</text>
-                <text class="ns" x="30" y="42">{fontRev >= 0 ? fitText(nl.sub, NW - 42, SUB_F) : ''}</text>
+                <text class="ns" x="30" y="42">{fontRev >= 0 ? fitSub(nl.sub, NW - 42, SUB_F) : ''}</text>
                 <rect class="drag" width={NW} height={HH} fill="transparent"><title>{nl.title}{nl.sub ? ` · ${nl.sub}` : ''}</title></rect>
                 {#each [left(n), right(n)] as list, si}
                   {#each list as p, i (p.ref)}

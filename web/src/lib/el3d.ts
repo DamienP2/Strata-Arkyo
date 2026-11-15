@@ -7,6 +7,7 @@ import { familyColor, refById } from './catalog.svelte';
 import { modelOf, rackLines } from './racktext.svelte';
 import { accessoryFace, visualOf } from './faceplate';
 import type { El3D } from './rack3d';
+import { groupFamily } from './panel';
 
 const portsCache = new Map<string, Promise<any[]>>();
 function ports(itemId: string | null): Promise<any[]> {
@@ -32,10 +33,10 @@ export async function toEl3D(e: any): Promise<El3D> {
   for (const s of panel?.slots ?? []) {
     const per = panel.per_u, row = Math.floor((s.index - 1) / per) + 1, col = ((s.index - 1) % per) + 1;
     const g = (panel.groups ?? []).find((x: any) => x.row === row && col >= x.start && col < x.start + x.len);
-    slotColors[s.index] = familyColor(s.function ?? g?.function ?? e.function, { screen: false });
+    slotColors[s.index] = familyColor(s.function ?? groupFamily(g) ?? e.function, { screen: false });
   }
   return { id: e.placement.id, label: e.label, tag: e.tag, nature: e.nature, height_u: e.height_u, depth_mm: e.depth_mm, function: e.function, brand: e.brand ?? null, face: e.placement.face, u_start: e.placement.u_start, width: e.placement.width, col: e.placement.col, kind, alu: false, // façades toutes foncées
-    accessory: e.accessory, ports: ps, fnColor: familyColor(e.function, { screen: false }), shelf_id: e.placement.shelf_id ?? null,
+    accessory: e.accessory, ports: ps, famColor: familyColor(e.function, { screen: false }), shelf_id: e.placement.shelf_id ?? null,
     title: rackLines(e, 'both')[0] || e.tag || '', model: modelOf(e), slotColors } as El3D;
 }
 

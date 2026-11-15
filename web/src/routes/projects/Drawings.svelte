@@ -750,6 +750,8 @@
   /* Hauteur utile : 100vh moins barre du haut (52), en-tête de projet (112), barre d'outils (52)
      et marge basse de .ws-main (64). */
   .dw-body { display: grid; grid-template-columns: minmax(0, 1fr) 310px; border-top: 1px solid var(--line); height: calc(100vh - 280px); min-height: 520px; }
+  /* Barre de verrou affichée (49 px : bouton de 30 px + marges) : la zone de travail rétrécit d'autant, la page ne défile pas. */
+  @media (min-width: 1101px) { .dw-main:has(> .lockbar) .dw-body { height: calc(100vh - 329px); } }
   .dw-canvas { position: relative; overflow: hidden; background: var(--surface-2); }
   .dw-svg { width: 100%; height: 100%; display: block; touch-action: none; user-select: none; cursor: default; }
   .dw-svg.cross { cursor: crosshair; }

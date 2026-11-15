@@ -244,7 +244,7 @@ pub(crate) fn load_of(a: &Article, items: &HashMap<String, ItemView>) -> Article
             height_u: Some(acc.height_u() as f64),
             weight_kg: 0.0,
             power_w: 0.0,
-            placed_u: 0.0,
+            ..Default::default()
         },
         (None, Some(it)) => ArticleLoad {
             quantity: q,
@@ -252,7 +252,7 @@ pub(crate) fn load_of(a: &Article, items: &HashMap<String, ItemView>) -> Article
             height_u: it.height_u.filter(|_| it.rackable && a.host.is_none()),
             weight_kg: it.weight_kg.unwrap_or(0.0),
             power_w: it.power_w.unwrap_or(0.0),
-            placed_u: 0.0,
+            ..Default::default()
         },
         _ => ArticleLoad {
             quantity: q,
@@ -263,6 +263,7 @@ pub(crate) fn load_of(a: &Article, items: &HashMap<String, ItemView>) -> Article
 
 /// Charge d'un article avec les U qu'il occupe réellement dans le rack : chaque pose compte sa
 /// hauteur × sa largeur ; les poses sur étagère et les PDU verticaux (0 U) ne comptent pas.
+/// Les exemplaires sans aucune pose (ni en baie ni sur étagère) font les U « à placer ».
 pub(crate) fn placed_load(
     a: &Article,
     items: &HashMap<String, ItemView>,
@@ -277,6 +278,8 @@ pub(crate) fn placed_load(
             .filter(|p| p.article_id == a.id && p.shelf_id.is_none())
             .map(|p| h * p.width.fraction())
             .sum();
+        let posed = placements.iter().filter(|p| p.article_id == a.id).count() as u32;
+        l.pending_u = h * l.quantity.saturating_sub(posed) as f64;
     }
     l
 }

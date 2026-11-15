@@ -80,27 +80,23 @@
   const modulesOf = (a: Article) => view.articles.filter((m) => m.host?.article_id === a.id).sort((x, y) => x.host!.slot - y.host!.slot);
   let chassisOf = $state<Article | null>(null);
 
-  // Statut de pose : pour un rack, un flight-case ou une casquette, où chaque exemplaire
-  // (ou accessoire) est posé dans l'élévation, d'après l'éditeur de racks. Lu pour tous les
-  // éléments rackables de l'emplacement : la jauge Hauteur des cartes compte les U posés.
+  // Statut de pose : pour le rack, flight-case ou casquette ouvert, où chaque exemplaire
+  // (ou accessoire) est posé dans l'élévation, d'après l'éditeur de racks. Les jauges Hauteur
+  // des cartes lisent les totaux du serveur (placed_u, pending_u) sans relire chaque élévation.
   interface Pl { article_id: string; instance_id: string | null; u_start: number; face: string; shelf_id: string | null }
   type RackEl = { placement: Pl; height_u: number; accessory?: { kind: string } | null };
   type RackView = { elements: RackEl[]; pending?: { height_u: number | null; rackable: boolean }[] };
   let racks = $state<Record<string, RackView>>({});
   $effect(() => {
     void view.articles; void view.instances;
-    for (const c of conts.filter((x) => x.rackable)) {
-      api.get<RackView>(`/containers/${c.id}/rack`).then((r) => { racks[c.id] = r; }, () => {});
-    }
+    const c = cont;
+    if (c?.rackable) api.get<RackView>(`/containers/${c.id}/rack`).then((r) => { racks[c.id] = r; }, () => {});
   });
   const rackEls = $derived(cont && racks[cont.id] ? racks[cont.id]!.elements : null);
   /** U posés dans l'élévation (hors matériel posé sur étagère et PDU verticaux) et U restant à placer. */
   function rackUse(c: Container): { placed: number; todo: number } | null {
-    const r = racks[c.id];
-    if (!r) return null;
-    const placed = r.elements.filter((e) => !e.placement.shelf_id && e.accessory?.kind !== 'vertical_pdu').reduce((n, e) => n + e.height_u, 0);
-    const todo = (r.pending ?? []).filter((x) => x.rackable && x.height_u).reduce((n, x) => n + (x.height_u ?? 0), 0);
-    return { placed, todo };
+    const t = c.totals;
+    return t.placed_u == null ? null : { placed: t.placed_u, todo: t.pending_u ?? 0 };
   }
   const fu = (u: number) => nf(u, u % 1 ? 1 : 0);
   const FACE: Record<string, string> = { front: 'avant', rear: 'arrière', side: 'côté' };

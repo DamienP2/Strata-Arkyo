@@ -70,6 +70,7 @@ jobs:
         working-directory: web
         run: |
           npm ci
+          npm run lint:ui
           npm run build
 
       - uses: dtolnay/rust-toolchain@stable

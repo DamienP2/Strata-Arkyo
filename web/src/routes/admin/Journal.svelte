@@ -6,11 +6,11 @@
   import Loading from '../../components/Loading.svelte';
   import EmptyState from '../../components/EmptyState.svelte';
   import { api } from '../../lib/api';
-  import { byDay, timeOf } from '../../lib/format';
+  import { byDay, nf, timeOf } from '../../lib/format';
   import type { Member } from '../../lib/types';
 
   interface Entry { id: number; at: string; actor_id: string | null; action: string; object_type: string; action_label: string; object_label: string; subject: string; detail: string; project_id: string | null; project_name: string | null }
-  interface R { entries: Entry[]; actions: { key: string; label: string }[]; projects: { id: string; name: string }[] }
+  interface R { entries: Entry[]; total?: number; actions: { key: string; label: string }[]; projects: { id: string; name: string }[] }
 
   // Les actions arrivent par pages : « Afficher plus » en demande PAGE de plus, jusqu'à MAX (borne du serveur).
   const PAGE = 200, MAX = 1000;
@@ -29,6 +29,8 @@
   const entries = $derived(r ? r.entries.slice(0, limit) : []);
   const more = $derived(!!r && r.entries.length > limit);
   const capped = $derived(!!r && limit >= MAX && r.entries.length >= MAX);
+  /** Actions qui correspondent aux filtres (compte du serveur ; à défaut, celles reçues). */
+  const total = $derived(r?.total ?? r?.entries.length ?? 0);
   const days = $derived(byDay(entries));
   const filtered = $derived(!!(actor || kind || project || period));
 
@@ -61,7 +63,7 @@
     {#if filtered}<button class="btn sm ghost" onclick={reset}><Icon name="x" size="sm" />Effacer les filtres</button>{/if}
     <span class="tb-gap"></span>
     {#if loading && r}<Loading inline label="Mise à jour du journal" />{/if}
-    {#if r}<span class="muted small">{entries.length} action{entries.length > 1 ? 's' : ''}{more || capped ? ' (les plus récentes)' : ''}</span>{/if}
+    {#if r}<span class="muted small">{#if total > entries.length}{nf(entries.length)} sur {nf(total)} actions (les plus récentes){:else}{nf(entries.length)} action{entries.length > 1 ? 's' : ''}{/if}</span>{/if}
   </div>
   <section class="card tbl-card">
     {#if r === null}<Loading label="Chargement du journal" />
@@ -89,8 +91,8 @@
         </tbody>
       </table>
     </div>
-    {#if more}<div class="tbl-more"><button class="btn sm" onclick={showMore} disabled={loading}>{#if loading}<span class="spin" aria-hidden="true"></span>{/if}Afficher plus ({entries.length} affichées)</button></div>
-    {:else if capped}<div class="muted small tbl-more">Les {MAX} actions les plus récentes : affinez avec les filtres pour remonter plus loin.</div>{/if}
+    {#if more}<div class="tbl-more"><button class="btn sm" onclick={showMore} disabled={loading}>{#if loading}<span class="spin" aria-hidden="true"></span>{/if}Afficher plus ({nf(entries.length)} sur {nf(total)})</button></div>
+    {:else if capped}<div class="muted small tbl-more">Les {nf(MAX)} actions les plus récentes sur {nf(total)} : affinez avec les filtres pour remonter plus loin.</div>{/if}
     {/if}
   </section>
 {/if}

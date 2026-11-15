@@ -4,7 +4,7 @@
   // entrées à gauche, sorties et E/S à droite, un point par port à la couleur de la famille de
   // son signal, le connecteur et son genre (M/F). Aperçu de la fiche équipement.
   import { FAMILY_NONE, familyColor, refById } from '../lib/catalog.svelte';
-  import { fitText, shareRow, textWidth } from '../lib/fit';
+  import { fitSub, fitText, shareRow, textWidth } from '../lib/fit';
   import { SYN, connShort } from '../lib/render';
 
   interface Port { connector_id: string; signal_id: string | null; direction: string; gender: string; quantity: number; label: string | null; variant: string | null }
@@ -52,7 +52,7 @@
     return out;
   });
   const title = $derived(fitText(name || 'Nouvel équipement', NW - 44, '650 15px "Inter Variable", Inter, system-ui, sans-serif'));
-  const sub = $derived(fitText(subtitle, NW - 44, '500 11px "JetBrains Mono", ui-monospace, monospace'));
+  const sub = $derived(fitSub(subtitle, NW - 44, '500 11px "JetBrains Mono", ui-monospace, monospace'));
 </script>
 
 {#snippet port(e: { label: string; p: Port; g: number }, i: number, out: boolean)}

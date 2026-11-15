@@ -20,7 +20,7 @@ export interface El3D {
   id: string; label: string; tag: string | null; nature: string; height_u: number; depth_mm: number | null; function: string | null;
   brand: string | null; face: 'front' | 'rear' | 'rear_inner'; u_start: number; width: 'full' | 'half' | 'third' | 'quarter'; col: number;
   kind: string; // type de face (faceplate.ts)
-  alu: boolean; accessory: any | null; ports: Port3D[]; fnColor: string;
+  alu: boolean; accessory: any | null; ports: Port3D[]; famColor: string;
   shelf_id: string | null;
   /** Nommage commun aux rendus : étiquette blanche = libellé de l'exemplaire, à défaut son ID
    *  (`title`) ; sérigraphie = marque et modèle (`model`). */
@@ -711,7 +711,7 @@ export class RackScene {
       const sw = (OPEN - 0.02) / per;
       for (const s of e.accessory.panel.slots as any[]) {
         const idx = s.index - 1, r = Math.floor(idx / per), c = idx % per;
-        const o = connector(ckind(s.connector), m, e.slotColors?.[s.index] ?? e.fnColor); const k = Math.min(1, (sw * 0.9) / CSIZE[ckind(s.connector)][0]); o.scale.setScalar(k);
+        const o = connector(ckind(s.connector), m, e.slotColors?.[s.index] ?? e.famColor); const k = Math.min(1, (sw * 0.9) / CSIZE[ckind(s.connector)][0]); o.scale.setScalar(k);
         o.position.set(-OPEN / 2 + 0.01 + (c + (s.width ?? 1) / 2) * sw, (rows - 1) / 2 * U - r * U, 0.0018); g.add(o);
       }
     } else {
