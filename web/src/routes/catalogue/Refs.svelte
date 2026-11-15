@@ -1,7 +1,8 @@
 <script lang="ts">
   import Icon from '../../components/Icon.svelte';
   import Dialog from '../../components/Dialog.svelte';
-  import Confirm from '../../components/Confirm.svelte';
+  import SortTh, { type Sort } from '../../components/SortTh.svelte';
+  import Seg from '../../components/Seg.svelte';
   import FieldError from '../../components/FieldError.svelte';
   import ChipPicker from '../../components/ChipPicker.svelte';
   import NumField from '../../components/NumField.svelte';
@@ -11,8 +12,9 @@
   import { api, ApiError } from '../../lib/api';
   import { can } from '../../lib/session.svelte';
   import { toast, fail } from '../../lib/toast.svelte';
+  import { ask } from '../../lib/ask.svelte';
   import { route, navigate } from '../../lib/router.svelte';
-  import { REF_KINDS, refs, refList, refName, loadRefs, type RefItem, type RefPath } from '../../lib/catalog.svelte';
+  import { REF_KINDS, refs, refList, refName, loadRefs, familyColor, FAMILY_NONE, type RefItem, type RefPath } from '../../lib/catalog.svelte';
   import { pl } from '../../lib/format';
 
   const kind = $derived((REF_KINDS.find((k) => k.path === route.path.split('/')[3])?.path ?? 'functions') as RefPath);
@@ -23,16 +25,15 @@
   let editing = $state<{ id: string | null; rev: number; name: string; parent_id: string | null; data: any } | null>(null);
   let errors = $state<Record<string, string>>({});
   let general = $state<string | null>(null);
-  let deleting = $state<RefItem | null>(null);
 
   const DIM_KINDS: [string, string, string][] = [['height_u', 'Hauteur', 'U'], ['width', 'Largeur (fraction)', ''], ['depth_mm', 'Profondeur', 'mm'], ['rear_reserve_mm', 'Réserve arrière', 'mm'], ['cable_length_m', 'Longueur de câble', 'm'], ['bend_radius_mm', 'Rayon de courbure', 'mm']];
   const REDUNDANCY: [string, string][] = [['', 'Aucune'], ['ab', 'A / B'], ['primary_secondary', 'Principal / secours'], ['blue_red', 'Bleu / rouge']];
 
   function blankData(k: RefPath): any {
     switch (k) {
-      case 'functions': return { key: '', color: '#5E626A', cable_prefix: '' };
+      case 'functions': return { key: '', color: FAMILY_NONE, cable_prefix: '' };
       case 'signals': return { color: '#2459E0', function: 'V', prefix: '', suffix: '', impedance_ohm: null, min_bandwidth_mhz: null, connectors: [], ip: false, multicast: false, redundancy: null, default: false };
-      case 'connectors': return { variants: [], symbol: '', color: '#5E626A', functions: [], d_format: false };
+      case 'connectors': return { variants: [], symbol: '', color: FAMILY_NONE, functions: [], d_format: false };
       case 'brands': return { website: null };
       case 'categories': return { color: '', icon: '' };
       case 'types': return { function: 'V', icon: '' };
@@ -44,18 +45,20 @@
     errors = {}; general = null;
     editing = r ? { id: r.id, rev: r.rev, name: r.name, parent_id: r.parent_id, data: structuredClone(r.data) } : { id: null, rev: 0, name: '', parent_id: preset?.parent_id ?? null, data: { ...blankData(kind), ...(preset?.function ? { function: preset.function } : {}) } };
     variants = (editing.data.variants ?? []).join(', ');
+    editOrig = JSON.stringify(editing);
   }
   let variants = $state('');
   $effect(() => { if (editing && kind === 'connectors') editing.data.variants = variants.split(',').map((v) => v.trim()).filter(Boolean); });
 
-  async function save(e: SubmitEvent) {
-    e.preventDefault();
+  let editOrig = '';
+  async function save() {
     errors = {}; general = null;
     const b = editing!;
     try {
       if (b.id) await api.patch(`/catalog/refs/${kind}/${encodeURIComponent(b.id)}`, { rev: b.rev, name: b.name, parent_id: b.parent_id, data: b.data });
       else await api.post(`/catalog/refs/${kind}`, { name: b.name, parent_id: b.parent_id, data: b.data });
-      toast(b.id ? 'Modification enregistrée.' : `${meta.one} ${/^(Fonction|Marque|Catégorie|Phase)/.test(meta.one) ? 'ajoutée' : 'ajouté'}.`);
+      const fem = /^(Fonction|Marque|Catégorie|Phase)/.test(meta.one);
+      toast(`« ${b.name || meta.one} » ${b.id ? (fem ? 'enregistrée' : 'enregistré') : (fem ? 'ajoutée' : 'ajouté')}.`);
       editing = null; await loadRefs(true);
     } catch (x) {
       if (x instanceof ApiError) { errors = Object.fromEntries(x.fields.map((f) => [f.field, f.message])); general = x.message; } else fail(x);
@@ -64,8 +67,9 @@
   async function setActive(r: RefItem, active: boolean) {
     try { await api.patch(`/catalog/refs/${kind}/${encodeURIComponent(r.id)}`, { rev: r.rev, active }); await loadRefs(true); } catch (e) { fail(e); }
   }
-  async function remove() {
-    try { await api.del(`/catalog/refs/${kind}/${encodeURIComponent(deleting!.id)}`); toast('Supprimé.'); deleting = null; await loadRefs(true); } catch (e) { fail(e); deleting = null; }
+  async function remove(r: RefItem) {
+    if (!(await ask({ title: `Supprimer « ${r.name} » ?`, eyebrow: meta.label, text: 'Aucune fiche ne l’utilise. La suppression est définitive ; pour le masquer seulement, désactivez-le.', confirmLabel: 'Supprimer', danger: true, run: () => api.del(`/catalog/refs/${kind}/${encodeURIComponent(r.id)}`) }))) return;
+    toast(`« ${r.name} » supprimé.`); await loadRefs(true);
   }
   async function restoreDims() {
     try { const r = await api.post<{ restored: number }>('/catalog/refs/dimensions/restore'); toast(r.restored ? `${r.restored} préréglage${pl(r.restored)} remis.` : 'Tous les préréglages d’origine sont déjà là.'); await loadRefs(true); } catch (e) { fail(e); }
@@ -93,8 +97,40 @@
   const tq = $derived(typeQuery.trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase());
   const tmatch = (r: RefItem) => !tq || r.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().includes(tq);
 
+  // Listes plates : recherche, filtre « Non utilisés » et tri (nom ou usage).
+  let refQuery = $state('');
+  let unused = $state(false);
+  let sort = $state<Sort>({ key: 'name', dir: 1 });
+  const norm = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const rq = $derived(norm(refQuery.trim()));
+  const rows = $derived.by(() => {
+    const l = list.filter((r) => (!rq || norm(`${r.name} ${detail(r)}`).includes(rq)) && (!unused || !r.uses));
+    return sort.key === 'uses' ? [...l].sort((a, b) => sort.dir * ((a.uses || 0) - (b.uses || 0)) || byName(a, b)) : sort.key === 'name' ? [...l].sort((a, b) => sort.dir * byName(a, b)) : l;
+  });
+  const unusedCount = $derived(list.filter((r) => !r.uses).length);
+  $effect(() => { kind; refQuery = ''; unused = false; });
+
+  // Couleur d'une fonction trop proche d'une autre : deux familles se confondraient sur les câbles.
+  function lab(hex: string): [number, number, number] | null {
+    const m = /^#?([0-9a-f]{6})$/i.exec(hex ?? '');
+    if (!m) return null;
+    const n = parseInt(m[1]!, 16);
+    const lin = (c: number) => { c /= 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+    const [r, g, b] = [lin((n >> 16) & 255), lin((n >> 8) & 255), lin(n & 255)];
+    const f = (t: number) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+    const x = f((r * 0.4124 + g * 0.3576 + b * 0.1805) / 0.95047), y = f(r * 0.2126 + g * 0.7152 + b * 0.0722), z = f((r * 0.0193 + g * 0.1192 + b * 0.9505) / 1.08883);
+    return [116 * y - 16, 500 * (x - y), 200 * (y - z)];
+  }
+  const closeTo = $derived.by(() => {
+    if (!editing || kind !== 'functions') return [];
+    const me = lab(editing.data.color);
+    if (!me) return [];
+    return refList('functions').filter((f) => f.id !== editing!.id && f.data?.key !== 'X').filter((f) => { const o = lab(f.data?.color); return !!o && Math.hypot(me[0] - o[0], me[1] - o[1], me[2] - o[2]) < 18; }).map((f) => f.name);
+  });
+
   pageHead(() => ({ count: plural(list.length, meta.one.toLowerCase(), meta.label.toLowerCase()) }));
-  const sw = (c: string) => (c ? `<span class="role-dot" style="--c:${c}"></span>` : '');
+  /** Pastille de couleur : famille pour les fonctions et les signaux, couleur propre sinon. */
+  const swColor = (r: RefItem): string => kind === 'functions' ? familyColor(r.id, { screen: true }) : kind === 'signals' ? familyColor(r.data?.function, { screen: true }) : r.data?.color ?? '';
   function detail(r: RefItem): string {
     const d = r.data;
     switch (kind) {
@@ -111,9 +147,7 @@
   }
 </script>
 
-<div class="seg" role="tablist" aria-label="Référentiels">
-  {#each REF_KINDS as k}<button role="tab" class:on={k.path === kind} aria-selected={k.path === kind} title={k.help} onclick={() => navigate(`/catalogue/referentiels/${k.path}`)}>{k.label}{#if k.path === 'system-categories'} <Icon name="lock" size="sm" />{/if}</button>{/each}
-</div>
+<div class="ref-tabs"><Seg mode="tabs" label="Référentiels" value={kind} onchange={(v) => navigate(`/catalogue/referentiels/${v}`)} options={REF_KINDS.map((k) => ({ value: k.path, label: k.label, title: k.help, icon: k.path === 'system-categories' ? 'lock' : undefined }))} /></div>
 
 {#if writable && kind !== 'system-categories'}<HeadActions>
   {#if kind === 'dimensions'}<button class="btn" onclick={restoreDims}><Icon name="undo" />Remettre ceux d’origine</button>{/if}
@@ -128,9 +162,9 @@
     {#if writable}
       <span class="tt-act">
         {#if !sub}<button class="btn sm ghost" title="Ajouter un sous-type à « {r.name} »" onclick={() => edit(undefined, { parent_id: r.id, function: fnId })}><Icon name="plus" size="sm" />Sous-type</button>{/if}
-        <label class="toggle-row small" title={r.active ? 'Actif' : 'Inactif'}><input type="checkbox" checked={r.active} onchange={(e) => setActive(r, (e.target as HTMLInputElement).checked)}></label>
-        <button class="btn sm ghost" title="Modifier" onclick={() => edit(r)}><Icon name="pen" size="sm" /></button>
-        <button class="btn sm ghost danger" title={r.uses ? 'Utilisé : désactivez-le plutôt' : 'Supprimer'} disabled={r.uses > 0} onclick={() => (deleting = r)}><Icon name="trash" size="sm" /></button>
+        <label class="toggle-row small" title={r.active ? 'Actif' : 'Inactif'}><input type="checkbox" checked={r.active} aria-label="{r.name} actif" onchange={(e) => setActive(r, (e.target as HTMLInputElement).checked)}></label>
+        <button class="icon-btn sm" title="Modifier {r.name}" aria-label="Modifier {r.name}" onclick={() => edit(r)}><Icon name="pen" size="sm" /></button>
+        <button class="icon-btn sm danger" title={r.uses ? 'Utilisé : désactivez-le plutôt' : `Supprimer ${r.name}`} aria-label="Supprimer {r.name}" disabled={r.uses > 0} onclick={() => remove(r)}><Icon name="trash" size="sm" /></button>
       </span>
     {/if}
     <span class="tt-uses" title="{r.uses || 0} équipement{pl(r.uses || 0)} de ce type">{r.uses || ''}</span>
@@ -139,7 +173,7 @@
 
 {#if kind === 'types'}
   <div class="tt-bar">
-    <label class="search"><Icon name="search" /><input class="input" bind:value={typeQuery} placeholder="Chercher un type…" aria-label="Chercher un type"></label>
+    <label class="search"><Icon name="search" /><input class="input" type="search" bind:value={typeQuery} placeholder="Chercher un type" aria-label="Chercher un type"></label>
     <button class="btn sm ghost" onclick={() => foldAll(!allFolded)}>{allFolded ? 'Tout déplier' : 'Tout replier'}</button>
     <span class="muted small">{list.length} types et sous-types</span>
   </div>
@@ -148,11 +182,11 @@
       {@const gid = g.f?.id ?? '-'}
       {@const shown = g.types.filter((t) => tmatch(t.r) || t.subs.some(tmatch))}
       {#if !tq || shown.length}
-        <section class="card tt-group" style="--c:{g.f?.data.color ?? 'var(--fg-3)'}">
+        <section class="card tt-group" style="--c:{familyColor(g.f?.id, { screen: true })}">
           <header class="tt-head">
             <button class="tt-fold" aria-expanded={!folded[gid] || !!tq} onclick={() => toggleFold(gid)}><Icon name="chevr" size="sm" /></button>
             <i class="tt-dot"></i><b>{g.f?.name ?? 'Sans fonction connue'}</b>{#if g.f}<span class="tt-key mono">{g.f.data.key}</span>{/if}
-            <span class="tt-count">{g.count}</span>
+            <span class="badge">{g.count}</span>
             {#if writable && g.f}<button class="btn sm ghost tt-add" onclick={() => edit(undefined, { function: g.f!.id })}><Icon name="plus" size="sm" />Type</button>{/if}
           </header>
           {#if !folded[gid] || tq}
@@ -168,24 +202,28 @@
     {/each}
   </div>
 {:else}
-<section class="card" style="padding:6px 18px 10px">
+<div class="toolbar">
+  <label class="search"><Icon name="search" /><input class="input" type="search" bind:value={refQuery} placeholder="Chercher dans {meta.label.toLowerCase()}" aria-label="Chercher dans {meta.label.toLowerCase()}"></label>
+  <button class="fchip cxf" class:on={unused} aria-pressed={unused} onclick={() => (unused = !unused)}>Non utilisés <span class="muted mono">{unusedCount}</span></button>
+</div>
+<section class="card tbl-card">
   <div class="tbl-wrap">
     <table class="tbl">
-      <thead><tr><th>Nom</th><th>Détail</th><th class="num">Utilisé par</th><th>État</th><th><span class="sr-only">Actions</span></th></tr></thead>
+      <thead><tr><SortTh label="Nom" key="name" bind:sort /><th>Détail</th><SortTh label="Utilisé par" key="uses" bind:sort cls="num" /><th>État</th><th><span class="sr-only">Actions</span></th></tr></thead>
       <tbody>
-        {#each list as r (r.id)}
+        {#each rows as r (r.id)}
           <tr class:off={!r.active}>
-            <td><div style="display:flex;gap:10px;align-items:center">{@html sw(r.data?.color ?? '')}<b>{r.name}</b>{#if r.protected}<span class="lock-ic" title="Protégé : utilisé par le moteur, non modifiable"><Icon name="lock" size="sm" /></span>{/if}</div></td>
+            <td><div style="display:flex;gap:10px;align-items:center">{#if swColor(r)}<span class="role-dot" style="--c:{swColor(r)}"></span>{/if}<b>{r.name}</b>{#if r.protected}<span class="lock-ic" title="Protégé : utilisé par le moteur, non modifiable"><Icon name="lock" size="sm" /></span>{/if}</div></td>
             <td class="small">{detail(r)}</td>
             <td class="num">{r.uses || '—'}</td>
             <td>{#if r.active}<span class="chip ok">Actif</span>{:else}<span class="chip">Inactif</span>{/if}</td>
-            <td class="num"><div class="dl-actions row-acts">{#if writable && !r.protected}
+            <td class="acts"><div class="dl-actions">{#if writable && !r.protected}
               <button class="btn sm ghost" onclick={() => setActive(r, !r.active)}>{r.active ? 'Désactiver' : 'Activer'}</button>
-              <button class="btn sm ghost" title="Modifier" aria-label="Modifier {r.name}" onclick={() => edit(r)}><Icon name="pen" size="sm" /></button>
-              <button class="btn sm ghost danger" title={r.uses ? 'Utilisé : désactivez-le plutôt' : 'Supprimer…'} aria-label="Supprimer {r.name}" disabled={r.uses > 0} onclick={() => (deleting = r)}><Icon name="trash" size="sm" /></button>
+              <button class="icon-btn sm" title="Modifier {r.name}" aria-label="Modifier {r.name}" onclick={() => edit(r)}><Icon name="pen" size="sm" /></button>
+              <button class="icon-btn sm danger" title={r.uses ? 'Utilisé : désactivez-le plutôt' : `Supprimer ${r.name}`} aria-label="Supprimer {r.name}" disabled={r.uses > 0} onclick={() => remove(r)}><Icon name="trash" size="sm" /></button>
             {/if}</div></td>
           </tr>
-        {:else}<tr><td colspan="5"><EmptyState card={false} icon="list" message="Aucun élément dans ce référentiel." /></td></tr>{/each}
+        {:else}<tr><td colspan="5">{#if list.length}<EmptyState card={false} icon="search" message="Aucun élément ne correspond." hint="Modifiez la recherche ou le filtre." />{:else}<EmptyState card={false} icon="list" message="Aucun élément dans ce référentiel." />{/if}</td></tr>{/each}
       </tbody>
     </table>
   </div>
@@ -194,8 +232,8 @@
 {/if}
 
 {#if editing}
-  <Dialog title={editing.id ? `Modifier « ${editing.name} »` : `Ajouter : ${meta.one.toLowerCase()}`} eyebrow={meta.label} onclose={() => (editing = null)}>
-    <form id="reff" class="stack" onsubmit={save}>
+  <Dialog title={editing.id ? `Modifier « ${editing.name} »` : `Ajouter : ${meta.one.toLowerCase()}`} eyebrow={meta.label} onclose={() => (editing = null)} onsubmit={save} submitLabel={editing.id ? 'Enregistrer' : 'Ajouter'} dirty={() => !!editing && JSON.stringify(editing) !== editOrig}>
+    <div class="stack">
       {#if kind !== 'dimensions'}
         <div class="field"><label for="rf-name">Nom</label><input class="input" class:err={!!errors.name} id="rf-name" bind:value={editing.name} required maxlength="100"><FieldError message={errors.name} /></div>
       {/if}
@@ -203,13 +241,14 @@
         <div class="fg3">
           <div class="field"><label for="rf-key">Clé</label><input class="input mono" id="rf-key" bind:value={editing.data.key} disabled={!!editing.id} maxlength="16" required><FieldError message={errors.key} /></div>
           <div class="field"><label for="rf-pre">Préfixe des câbles</label><input class="input mono" id="rf-pre" bind:value={editing.data.cable_prefix} maxlength="4"><FieldError message={errors.cable_prefix} /></div>
-          <div class="field"><label for="rf-col">Couleur</label><input class="input" type="color" id="rf-col" bind:value={editing.data.color} style="padding:4px"></div>
+          <div class="field"><label for="rf-col">Couleur</label><input class="input" type="color" id="rf-col" bind:value={editing.data.color} aria-describedby={closeTo.length ? 'rf-col-warn' : undefined}></div>
         </div>
+        {#if closeTo.length}<p class="help warn-t" id="rf-col-warn" role="status">Couleur très proche de {closeTo.map((n) => `« ${n} »`).join(', ')} : les câbles de ces familles se confondront. Choisissez une teinte plus distincte.</p>{/if}
       {:else if kind === 'signals'}
         <div class="fg3">
           <div class="field"><label for="rf-fn">Fonction</label><select class="input" id="rf-fn" bind:value={editing.data.function}>{#each refList('functions') as f}<option value={f.id}>{f.name}</option>{/each}</select><FieldError message={errors.function} /></div>
           <div class="field"><label for="rf-pre">Préfixe</label><input class="input mono" id="rf-pre" bind:value={editing.data.prefix} maxlength="4"><FieldError message={errors.prefix} /></div>
-          <div class="field"><label for="rf-col">Couleur</label><input class="input" type="color" id="rf-col" bind:value={editing.data.color} style="padding:4px"></div>
+          <div class="field"><span class="flabel">Couleur</span><span class="sig-fam"><span class="role-dot" style="--c:{familyColor(editing.data.function, { screen: true })}"></span>Celle de la fonction</span></div>
           <NumField id="rf-imp" label="Impédance" unit="Ω" bind:value={editing.data.impedance_ohm} error={errors.impedance_ohm} />
           <NumField id="rf-bw" label="Bande passante minimale" unit="MHz" bind:value={editing.data.min_bandwidth_mhz} error={errors.min_bandwidth_mhz} />
           <div class="field"><label for="rf-red">Redondance</label><select class="input" id="rf-red" value={editing.data.redundancy ?? ''} onchange={(e) => (editing!.data.redundancy = (e.target as HTMLSelectElement).value || null)}>{#each REDUNDANCY as [k, l]}<option value={k}>{l}</option>{/each}</select></div>
@@ -220,16 +259,16 @@
       {:else if kind === 'connectors'}
         <div class="form-grid">
           <div class="field"><label for="rf-var">Variantes</label><input class="input" id="rf-var" bind:value={variants} placeholder="ex. 75 Ω, 50 Ω"><FieldError message={errors.variants} /></div>
-          <div class="field"><label for="rf-col">Couleur</label><input class="input" type="color" id="rf-col" bind:value={editing.data.color} style="padding:4px"></div>
+          <div class="field"><label for="rf-col">Couleur</label><input class="input" type="color" id="rf-col" bind:value={editing.data.color}></div>
         </div>
-        <div class="field"><span class="flabel">Fonctions</span><ChipPicker options={refList('functions').map((f) => ({ id: f.id, name: f.name, color: f.data.color }))} bind:value={editing.data.functions} label="Fonctions" /></div>
+        <div class="field"><span class="flabel">Fonctions</span><ChipPicker options={refList('functions').map((f) => ({ id: f.id, name: f.name, color: familyColor(f.id, { screen: true }) }))} bind:value={editing.data.functions} label="Fonctions" /></div>
         <label class="toggle-row"><input type="checkbox" bind:checked={editing.data.d_format}>Existe en format D (coque standard pour les panels)</label>
       {:else if kind === 'brands'}
-        <div class="field"><label for="rf-web">Site web</label><input class="input mono" id="rf-web" value={editing.data.website ?? ''} oninput={(e) => (editing!.data.website = (e.target as HTMLInputElement).value || null)} placeholder="https://…"><FieldError message={errors.website} /></div>
+        <div class="field"><label for="rf-web">Site web</label><input class="input mono" id="rf-web" value={editing.data.website ?? ''} oninput={(e) => (editing!.data.website = (e.target as HTMLInputElement).value || null)} placeholder="https://"><FieldError message={errors.website} /></div>
       {:else if kind === 'categories'}
         <div class="form-grid">
           <div class="field"><label for="rf-par">Dans la catégorie</label><select class="input" id="rf-par" value={editing.parent_id ?? ''} onchange={(e) => (editing!.parent_id = (e.target as HTMLSelectElement).value || null)}><option value="">— (premier niveau)</option>{#each refList('categories').filter((c) => c.id !== editing!.id) as c}<option value={c.id}>{c.name}</option>{/each}</select><FieldError message={errors.parent_id} /></div>
-          <div class="field"><label for="rf-col">Couleur</label><input class="input" type="color" id="rf-col" value={editing.data.color || '#5E626A'} oninput={(e) => (editing!.data.color = (e.target as HTMLInputElement).value)} style="padding:4px"></div>
+          <div class="field"><label for="rf-col">Couleur</label><input class="input" type="color" id="rf-col" value={editing.data.color || FAMILY_NONE} oninput={(e) => (editing!.data.color = (e.target as HTMLInputElement).value)}></div>
         </div>
       {:else if kind === 'types'}
         <div class="form-grid">
@@ -244,14 +283,8 @@
         </div>
       {/if}
       {#if general && !Object.keys(errors).length}<div class="alert err" role="alert">{general}</div>{/if}
-    </form>
-    {#snippet footer()}<button class="btn ghost" onclick={() => (editing = null)}>Annuler</button><button class="btn primary" type="submit" form="reff">Enregistrer</button>{/snippet}
+    </div>
   </Dialog>
-{/if}
-{#if deleting}
-  <Confirm title="Supprimer « {deleting.name} » ?" eyebrow={meta.label} confirmLabel="Supprimer" danger onconfirm={remove} onclose={() => (deleting = null)}>
-    <p>Aucune fiche ne l’utilise. La suppression est définitive ; pour le masquer seulement, désactivez-le.</p>
-  </Confirm>
 {/if}
 
 <style>
@@ -261,25 +294,24 @@
   .tt-groups { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); gap: 14px; align-items: start; }
   .tt-group { padding: 0; overflow: hidden; }
   .tt-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--c) 5%, var(--surface)); box-shadow: inset 3px 0 0 var(--c); }
-  .tt-head b { font: 650 14.5px var(--display); }
+  .tt-head b { font: 650 var(--fs-md) var(--display); }
+  .ref-tabs { max-width: 100%; overflow-x: auto; }
+  .sig-fam { display: inline-flex; align-items: center; gap: 8px; min-height: 34px; color: var(--fg-2); }
+  .warn-t { color: var(--warn); margin: 0; }
   .tt-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--c); flex: none; }
-  .tt-key { font-size: 11.5px; color: var(--fg-3); letter-spacing: .05em; }
-  .tt-count { min-width: 22px; height: 20px; padding: 0 6px; border-radius: 10px; display: grid; place-items: center; font: 700 11px var(--mono); background: color-mix(in srgb, var(--c) 14%, var(--surface)); color: var(--fg-2); }
+  .tt-key { font-size: var(--fs-2xs); color: var(--fg-3); letter-spacing: .05em; }
   .tt-add { margin-left: auto; }
   .tt-fold { border: 0; background: none; padding: 2px; color: var(--fg-3); display: grid; place-items: center; border-radius: 5px; }
   .tt-fold :global(.ic) { transition: transform .15s; }
   .tt-fold[aria-expanded='true'] :global(.ic) { transform: rotate(90deg); }
   .tt-body { padding: 4px 6px 8px; }
   .tt-row { display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 6px; border-radius: 7px; }
-  .tt-row:hover { background: var(--surface-2); }
+  .tt-row:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
   .tt-row.off .tt-name { opacity: .5; }
   .tt-name { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1; }
-  .tt-name b { font-weight: 600; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .tt-row.sub .tt-name b { font-weight: 500; color: var(--fg-2); }
+  .tt-name b { font-weight: 600; font-size: var(--fs-md); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tt-row.sub .tt-name b { font-weight: 400; color: var(--fg-2); }
   .tt-branch { width: 14px; height: 14px; margin-left: 8px; border-left: 1.5px solid var(--line-2); border-bottom: 1.5px solid var(--line-2); border-bottom-left-radius: 5px; transform: translateY(-4px); flex: none; }
-  .tt-uses { font: 600 11.5px var(--mono); color: var(--fg-3); min-width: 20px; text-align: right; }
-  .tt-act { display: flex; align-items: center; gap: 2px; opacity: 0; transition: opacity .12s; }
-  .tt-row:hover .tt-act, .tt-row:focus-within .tt-act { opacity: 1; }
-  .tt-act .toggle-row input { width: 15px; height: 15px; }
-  @media (hover: none) { .tt-act { opacity: 1; } }
+  .tt-uses { font: 600 var(--fs-2xs) var(--mono); color: var(--fg-3); min-width: 20px; text-align: right; }
+  .tt-act { display: flex; align-items: center; gap: 6px; }
 </style>

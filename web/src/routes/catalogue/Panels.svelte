@@ -3,7 +3,11 @@
   // duplication, suppression ; l'édition ouvre /catalogue/panels/{id}.
   import Icon from '../../components/Icon.svelte';
   import Dialog from '../../components/Dialog.svelte';
-  import Confirm from '../../components/Confirm.svelte';
+  import Loading from '../../components/Loading.svelte';
+  import Seg from '../../components/Seg.svelte';
+  import NumField from '../../components/NumField.svelte';
+  import FieldError from '../../components/FieldError.svelte';
+  import { ask } from '../../lib/ask.svelte';
   import PanelFace from '../../components/PanelFace.svelte';
   import EmptyState from '../../components/EmptyState.svelte';
   import HeadActions from '../../components/HeadActions.svelte';
@@ -21,7 +25,6 @@
   let q = $state('');
   let wiz = $state<PanelData | null>(null);
   let wizErr = $state('');
-  let deleting = $state<Lib | null>(null);
   const writable = $derived(can('catalogue', 'ecriture'));
 
   async function load() { try { list = (await api.get<{ panels: Lib[] }>('/panels')).panels; loaded = true; } catch (e) { fail(e); } }
@@ -32,8 +35,7 @@
   // Bibliothèque vide : la seule action est celle de l'état vide.
   pageHead(() => ({ count: loaded && list.length ? plural(list.length, 'panel') : '' }));
 
-  async function create(e: SubmitEvent) {
-    e.preventDefault();
+  async function create() {
     wizErr = '';
     try {
       const r = await api.post<Lib>('/panels', { panel: wiz });
@@ -42,32 +44,35 @@
     } catch (x) { if (x instanceof ApiError && x.fields.length) wizErr = x.fields[0]!.message; else fail(x); }
   }
   async function dup(t: Lib) { try { const r = await api.post<Lib>(`/panels/${t.id}/duplicate`, {}); toast(`« ${r.panel.name} » créé.`); await load(); } catch (e) { fail(e); } }
-  async function remove() { try { await api.del(`/panels/${deleting!.id}`); toast('Panel supprimé.'); deleting = null; await load(); } catch (e) { fail(e); } }
+  async function remove(t: Lib) {
+    if (!(await ask({ title: `Supprimer « ${t.panel.name} » ?`, eyebrow: 'Panel de brassage', text: 'Le panel quitte la bibliothèque. Les copies déjà posées dans les projets restent en place.', confirmLabel: 'Supprimer', danger: true, run: () => api.del(`/panels/${t.id}`) }))) return;
+    toast(`« ${t.panel.name} » supprimé.`); await load();
+  }
 </script>
 
 <p class="muted" style="max-width:70ch">Panels de brassage du site : hauteur, densité, connecteurs, groupes de ports et libellés. Ajouté à un élément de projet, un panel y est recopié et se modifie sans toucher la bibliothèque.</p>
 {#if writable && list.length}<HeadActions><button class="btn primary" onclick={start}><Icon name="plus" />Nouveau panel</button></HeadActions>{/if}
 
-{#if !loaded}<span class="spin"></span>
+{#if !loaded}<Loading label="Chargement des panels" />
 {:else if !list.length}
   <EmptyState icon="panel" message="La bibliothèque ne compte encore aucun panel.">{#snippet action()}{#if writable}<button class="btn primary" onclick={start}><Icon name="plus" />Nouveau panel</button>{/if}{/snippet}</EmptyState>
 {:else}
-<div class="toolbar" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-  <label class="search" style="flex:1;min-width:220px;max-width:480px"><Icon name="search" /><input class="input" bind:value={q} placeholder="Nom du panel…" aria-label="Rechercher un panel"></label>
+<div class="toolbar">
+  <label class="search" style="flex:1;min-width:220px;max-width:480px"><Icon name="search" /><input class="input" type="search" bind:value={q} placeholder="Nom du panel" aria-label="Rechercher un panel"></label>
 </div>
 {#if !shown.length}
   <EmptyState icon="search" message="Aucun panel ne correspond à cette recherche." />
 {:else}
   <div class="pgrid">
     {#each shown as t (t.id)}
-      <article class="card pcard">
+      <article class="card pn-card">
         <a class="pprev" href="/catalogue/panels/{t.id}" aria-label="Ouvrir {t.panel.name}" style="--h:{t.panel.height_u}">
           <span class="ear"></span><span class="pf"><PanelFace panel={t.panel} /></span><span class="ear"></span>
         </a>
         <div class="pmeta">
           <div><a class="pn" href="/catalogue/panels/{t.id}">{t.panel.name}</a><br><span class="muted small">{t.panel.height_u} U · {t.panel.per_u} par U · {t.panel.groups.length} groupe{t.panel.groups.length > 1 ? 's' : ''} · modifié {relative(t.updated_at)}</span></div>
           <div class="fillv"><span class="mono">{t.stats.used}/{t.stats.total}</span><span class="bar"><i style="width:{t.stats.fill_pct}%"></i></span></div>
-          {#if writable}<div class="dl-actions"><button class="btn sm ghost" title="Dupliquer" aria-label="Dupliquer {t.panel.name}" onclick={() => dup(t)}><Icon name="copy" size="sm" /></button><button class="btn sm ghost danger" title="Supprimer…" aria-label="Supprimer {t.panel.name}" onclick={() => (deleting = t)}><Icon name="trash" size="sm" /></button></div>{/if}
+          {#if writable}<div class="dl-actions"><button class="icon-btn sm" title="Dupliquer {t.panel.name}" aria-label="Dupliquer {t.panel.name}" onclick={() => dup(t)}><Icon name="copy" size="sm" /></button><button class="icon-btn sm danger" title="Supprimer {t.panel.name}" aria-label="Supprimer {t.panel.name}" onclick={() => remove(t)}><Icon name="trash" size="sm" /></button></div>{/if}
         </div>
       </article>
     {/each}
@@ -76,27 +81,20 @@
 {/if}
 
 {#if wiz}
-  <Dialog title="Nouveau panel" eyebrow="Bibliothèque" onclose={() => (wiz = null)}>
-    <form id="pwiz" class="stack" onsubmit={create}>
-      <div class="field"><label for="pw-n">Nom</label><input class="input" id="pw-n" bind:value={wiz.name} required maxlength="100" placeholder="Patch vidéo 16 BNC">{#if wizErr}<span class="ferr">{wizErr}</span>{/if}</div>
-      <div class="field"><span class="flabel">Hauteur</span><div class="seg">{#each [1, 2, 3, 4] as u}<button type="button" class:on={wiz.height_u === u} onclick={() => (wiz!.height_u = u)}>{u} U</button>{/each}</div></div>
-      <div class="field"><span class="flabel">Emplacements par U</span><div class="seg">{#each PER_U as n}<button type="button" class:on={wiz.per_u === n} onclick={() => (wiz!.per_u = n)}>{n}</button>{/each}</div><span class="muted small">{wiz.height_u * wiz.per_u} emplacements · format D possible jusqu’à 16 par U</span></div>
-      <div class="field" style="max-width:220px"><label for="pw-r">Profondeur de câblage arrière (mm)</label><input class="input mono" id="pw-r" type="number" min="30" max="300" step="5" bind:value={wiz.rear_depth_mm}></div>
+  <Dialog title="Nouveau panel" eyebrow="Bibliothèque" onclose={() => (wiz = null)} onsubmit={create} submitLabel="Créer et poser les connecteurs">
+    <div class="stack">
+      <div class="field"><label for="pw-n">Nom</label><input class="input" class:err={!!wizErr} id="pw-n" bind:value={wiz.name} required maxlength="100" placeholder="Patch vidéo 16 BNC" aria-invalid={wizErr ? 'true' : undefined} aria-describedby={wizErr ? 'pw-n-err' : undefined}><FieldError message={wizErr} for="pw-n" /></div>
+      <div class="field"><span class="flabel">Hauteur</span><Seg label="Hauteur" bind:value={wiz.height_u} options={[1, 2, 3, 4].map((u) => ({ value: u, label: `${u} U` }))} /></div>
+      <div class="field"><span class="flabel">Emplacements par U</span><Seg label="Emplacements par U" bind:value={wiz.per_u} options={PER_U.map((n) => ({ value: n, label: String(n) }))} /><span class="help">{wiz.height_u * wiz.per_u} emplacements · format D possible jusqu’à 16 par U</span></div>
+      <div style="max-width:240px"><NumField id="pw-r" label="Profondeur de câblage arrière" unit="mm" min={30} max={300} step={5} bind:value={() => wiz!.rear_depth_mm, (v) => (wiz!.rear_depth_mm = v ?? 80)} /></div>
       <div class="pprev big" style="--h:{wiz.height_u}"><span class="ear"></span><span class="pf"><PanelFace panel={wiz} /></span><span class="ear"></span></div>
-    </form>
-    {#snippet footer()}<button class="btn ghost" onclick={() => (wiz = null)}>Annuler</button><button class="btn primary" type="submit" form="pwiz">Créer et poser les connecteurs</button>{/snippet}
+    </div>
   </Dialog>
-{/if}
-
-{#if deleting}
-  <Confirm title="Supprimer « {deleting.panel.name} » ?" confirmLabel="Supprimer" danger onconfirm={remove} onclose={() => (deleting = null)}>
-    <p>Le panel quitte la bibliothèque. Les copies déjà posées dans les projets restent en place.</p>
-  </Confirm>
 {/if}
 
 <style>
   .pgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); gap: 16px; }
-  .pcard { padding: 14px; display: grid; gap: 12px; }
+  .pn-card { display: grid; gap: 12px; }
   .pprev { display: flex; align-items: stretch; height: calc(var(--h) * 30px); background: linear-gradient(180deg, #363B42, #1D2025); border-radius: 6px; padding: 0 2px; box-shadow: 0 4px 12px rgba(0, 0, 0, .18); }
   .pprev.big { height: calc(var(--h) * 40px); }
   .pprev .pf { flex: 1; min-width: 0; padding: 3px 4px; }
@@ -105,8 +103,7 @@
   .pmeta > div:first-child { flex: 1; min-width: 0; }
   .pn { font-weight: 650; color: var(--fg); text-decoration: none; }
   .pn:hover { text-decoration: underline; }
-  .fillv { display: flex; flex-direction: column; gap: 4px; align-items: flex-end; font-size: 12.5px; }
+  .fillv { display: flex; flex-direction: column; gap: 4px; align-items: flex-end; font-size: var(--fs-sm); }
   .bar { width: 70px; height: 6px; border-radius: 99px; background: color-mix(in srgb, var(--fg) 10%, transparent); overflow: hidden; }
-  .bar i { display: block; height: 100%; background: var(--ok, #22A06B); }
-  .ferr { color: var(--err); font-size: 13px; }
+  .bar i { display: block; height: 100%; background: var(--ok); }
 </style>

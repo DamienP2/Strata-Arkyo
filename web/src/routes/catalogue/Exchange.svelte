@@ -1,6 +1,8 @@
 <script lang="ts">
   import Icon from '../../components/Icon.svelte';
   import Confirm from '../../components/Confirm.svelte';
+  import EmptyState from '../../components/EmptyState.svelte';
+  import Seg from '../../components/Seg.svelte';
   import { api, download, ApiError } from '../../lib/api';
   import { can } from '../../lib/session.svelte';
   import { toast, fail } from '../../lib/toast.svelte';
@@ -89,7 +91,7 @@
       <p class="muted small">Exporté {doc.site ? `par ${doc.site} ` : ''}le {dateTime(doc.exported_at)} · version {doc.engine} de l’application.</p>
       <div style="display:flex;gap:14px;flex-wrap:wrap">{#each SECTIONS as [k, l]}<label class="toggle-row"><input type="checkbox" value={k} bind:group={importSel}>{l}</label>{/each}</div>
       <div class="field"><span class="flabel">Mode</span>
-        <div class="seg"><button class:on={mode === 'merge'} onclick={() => (mode = 'merge')}>Fusionner</button><button class:on={mode === 'replace'} onclick={() => (mode = 'replace')}>Remplacer</button></div>
+        <Seg label="Mode" bind:value={mode} options={[{ value: 'merge', label: 'Fusionner' }, { value: 'replace', label: 'Remplacer' }]} />
         <span class="help">{mode === 'merge' ? 'Ajoute ce qui manque ; pour un élément présent des deux côtés, la version la plus récente l’emporte.' : 'Vide les sections choisies puis reprend le contenu du fichier. Un élément local encore utilisé est gardé.'}</span>
       </div>
       {#if result}
@@ -100,7 +102,7 @@
       {/if}
       {#if error}<div class="alert err">{error}</div>{/if}
       <div class="row-actions">
-        <button class="btn" onclick={() => exchange(true)} disabled={busy || !importSel.length}>Essai à blanc</button>
+        <button class="btn" onclick={() => exchange(true)} disabled={busy || !importSel.length}>{#if busy}<span class="spin" aria-hidden="true"></span>{/if}Essai à blanc</button>
         <button class="btn primary" onclick={() => exchange(false)} disabled={busy || !importSel.length || !result?.dry_run}>{#if busy}<span class="spin"></span>{/if}Appliquer</button>
       </div>
     {:else if error}<div class="alert err">{error}</div>{/if}
@@ -108,10 +110,10 @@
 
   <section class="card">
     <div class="card-head"><div><p class="eyebrow">Retour arrière</p><h2>Instantanés du catalogue</h2></div><span class="muted small">Un état est enregistré avant chaque import ou échange ; les 20 derniers sont gardés.</span></div>
-    <div class="tbl-wrap"><table class="tbl"><tbody>
+    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Date</th><th>Origine</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody>
       {#each snapshots as s (s.id)}
-        <tr><td class="mono" style="white-space:nowrap">{dateTime(s.created_at)}</td><td>{s.reason}<br><span class="muted small">{secList(s.sections)}</span></td><td><div class="dl-actions"><button class="btn sm" onclick={() => (restoring = s)}><Icon name="undo" size="sm" />Restaurer cet état…</button></div></td></tr>
-      {:else}<tr><td class="empty">Aucun instantané pour l’instant.</td></tr>{/each}
+        <tr><td class="mono" style="white-space:nowrap">{dateTime(s.created_at)}</td><td>{s.reason}<br><span class="muted small">{secList(s.sections)}</span></td><td class="acts"><button class="btn sm" onclick={() => (restoring = s)}><Icon name="undo" size="sm" />Restaurer cet état…</button></td></tr>
+      {:else}<tr><td colspan="3"><EmptyState card={false} icon="undo" message="Aucun instantané pour l’instant." hint="Un état est enregistré avant chaque import ou échange." /></td></tr>{/each}
     </tbody></table></div>
   </section>
 {/if}

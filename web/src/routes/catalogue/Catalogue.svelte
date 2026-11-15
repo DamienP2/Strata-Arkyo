@@ -14,6 +14,7 @@
   import RegieTemplates from './RegieTemplates.svelte';
   import PanelPage from './PanelPage.svelte';
   import PageHead from '../../components/PageHead.svelte';
+  import Loading from '../../components/Loading.svelte';
   import { pageSlot } from '../../lib/pagehead.svelte';
   import Printing from './Printing.svelte';
 
@@ -46,13 +47,13 @@
     {#if !folded}<div class="ws-proj"><b>Catalogue</b><span>Propre au site</span></div>{/if}
   {/snippet}
   {#if sub === 'panels' && seg[1]}
-    {#if refs.loaded}{#key seg[1]}<PanelPage id={seg[1]} />{/key}{:else}<span class="spin"></span>{/if}
+    {#if refs.loaded}{#key seg[1]}<PanelPage id={seg[1]} />{/key}{:else}<Loading label="Chargement du catalogue" />{/if}
   {:else if seg.length >= 2 && kind}
-    {#if refs.loaded}<ItemEditor kind={kind.path as ItemPath} id={seg[1] === 'nouveau' ? null : seg[1]!} />{:else}<span class="spin"></span>{/if}
+    {#if refs.loaded}<ItemEditor kind={kind.path as ItemPath} id={seg[1] === 'nouveau' ? null : seg[1]!} />{:else}<Loading label="Chargement du catalogue" />{/if}
   {:else}
     <PageHead ws crumbs={[{ label: 'Catalogue', href: '/catalogue' }, { label: section?.label ?? '' }]} title={section?.label ?? 'Catalogue'} count={pageSlot.count} portal />
     <div class="page">
-      {#if !refs.loaded}<span class="spin"></span>
+      {#if !refs.loaded}<Loading label="Chargement du catalogue" />
       {:else if kind}{#key kind.path}<ItemList kind={kind.path as ItemPath} />{/key}
       {:else if sub === 'referentiels'}<Refs />
       {:else if sub === 'import'}<Import />

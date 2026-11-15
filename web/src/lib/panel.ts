@@ -1,6 +1,6 @@
 // Panels de brassage : mêmes règles que le moteur (crates/strata-domain/src/panel.rs).
 
-import { refById } from './catalog.svelte';
+import { refById, familyColor, FAMILY_NONE } from './catalog.svelte';
 
 export interface PanelSlot {
   index: number; connector: string; variant: string | null; label: string; notes: string | null;
@@ -65,8 +65,10 @@ export function stats(p: PanelData): PanelStats {
 /** Le connecteur existe-t-il en format D, et la densité le permet-elle ? */
 export const dFormatAllowed = (p: PanelData, connector: string) => p.per_u <= D_FORMAT_MAX_PER_U && !!refById('connectors', connector)?.data?.d_format;
 
+/** Couleur d'un emplacement (façade, objet physique : hexadécimal) : famille de signal de l'emplacement,
+ *  sinon couleur du connecteur, sinon la couleur « sans famille ». */
 export function slotColor(s: PanelSlot): string {
-  return (s.function && refById('functions', s.function)?.data?.color) || refById('connectors', s.connector)?.data?.color || 'var(--fg-3)';
+  return (s.function ? familyColor(s.function, { screen: false }) : null) || refById('connectors', s.connector)?.data?.color || FAMILY_NONE;
 }
 
 export function groupAt(p: PanelData, row: number, col: number): PanelGroup | undefined {

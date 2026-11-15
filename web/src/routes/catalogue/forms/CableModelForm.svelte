@@ -26,6 +26,6 @@
     <div class="field"><label for="m-shield">Blindage</label><input class="input" id="m-shield" value={data.shielding ?? ''} oninput={txt('shielding')} placeholder="ex. double tresse"></div>
     <div class="field"><label for="m-jacket">Gaine</label><input class="input" id="m-jacket" value={data.jacket ?? ''} oninput={txt('jacket')} placeholder="ex. PVC, LSZH"></div>
     <div class="field"><label for="m-fire">Classement feu</label><input class="input" id="m-fire" value={data.fire_rating ?? ''} oninput={txt('fire_rating')} placeholder="ex. Cca-s1,d1,a1"></div>
-    <div class="field" style="grid-column:span 2"><label for="m-ds">Fiche technique</label><input class="input mono" class:err={!!err('datasheet_url')} id="m-ds" value={data.datasheet_url ?? ''} oninput={txt('datasheet_url')} placeholder="https://…"><FieldError message={err('datasheet_url')} /></div>
+    <div class="field" style="grid-column:span 2"><label for="m-ds">Fiche technique</label><input class="input mono" class:err={!!err('datasheet_url')} id="m-ds" value={data.datasheet_url ?? ''} oninput={txt('datasheet_url')} placeholder="https://"><FieldError message={err('datasheet_url')} /></div>
   </div>
 </section>
