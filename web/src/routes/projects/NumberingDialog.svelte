@@ -4,11 +4,13 @@
   import { untrack } from 'svelte';
   import Dialog from '../../components/Dialog.svelte';
   import Icon from '../../components/Icon.svelte';
+  import FieldError from '../../components/FieldError.svelte';
   import { api, ApiError } from '../../lib/api';
   import { can } from '../../lib/session.svelte';
   import { toast, fail } from '../../lib/toast.svelte';
   import type { Container, ProjectView } from '../../lib/projects';
   import { pl } from '../../lib/format';
+  import Loading from '../../components/Loading.svelte';
 
   interface Rules { with_rack: boolean; sep1: string; sep2: string; digits: number; template: string | null; top_down: boolean; left_right: boolean }
   let { project, view, selection, onclose, ondone }: { project: ProjectView; view: string; selection: string[]; onclose: () => void; ondone: () => void } = $props();
@@ -21,7 +23,6 @@
   let site = $state<Rules | null>(null);
   let rules = $state<Rules | null>(null);
   let origin = $state<'element' | 'site'>('site');
-  let busy = $state(false);
   let errors = $state<Record<string, string>>({});
   const container = $derived<Container | null>(view.startsWith('container:') ? project.containers.find((c) => c.id === view.slice(10)) ?? null : null);
   const code = $derived(container ? (container.cable_code || container.name.normalize('NFD').replace(/[^A-Za-z0-9]/g, '').slice(0, 4).toUpperCase()) : 'RGA');
@@ -55,7 +56,7 @@
   }
   async function run() {
     if (!rules) return;
-    busy = true; errors = {};
+    errors = {};
     try {
       const body: Record<string, unknown> = { mode, view: scope === 'view' ? view : null };
       if (mode === 'selection' || mode === 'manual' || (mode === 'clear' && selection.length)) body.ids = selection;
@@ -65,24 +66,24 @@
       toast(mode === 'clear' ? `${r.changed} numéro${pl(r.changed)} effacé${pl(r.changed)}.` : r.changed ? `${r.changed} câble${pl(r.changed)} numéroté${pl(r.changed)}.` : 'Aucun câble à numéroter.', r.changed ? 'ok' : 'info');
       ondone();
     } catch (e) { if (e instanceof ApiError && e.fields.length) errors = Object.fromEntries(e.fields.map((f) => [f.field, f.message])); else fail(e); }
-    finally { busy = false; }
   }
 </script>
 
-<Dialog title="Numéroter les câbles" eyebrow={project.project.name} {onclose} wide>
-  {#if !rules}<span class="spin"></span>
+<!-- Pied standard : Entrée valide ; « Effacer » passe en bouton principal danger. -->
+<Dialog title="Numéroter les câbles" eyebrow={project.project.name} {onclose} wide onsubmit={run} submitLabel={mode === 'clear' ? 'Effacer' : 'Numéroter'} danger={mode === 'clear'} submitDisabled={!rules}>
+  {#if !rules}<Loading label="Chargement des règles" />
   {:else}
     <div class="stack">
       <div class="nb-row">
-        <div class="field"><span class="flabel">Portée</span><div class="seg"><button class:on={scope === 'view'} onclick={() => (scope = 'view')}>{container ? container.name : 'Cette vue'}</button><button class:on={scope === 'project'} onclick={() => (scope = 'project')}>Tout le projet</button></div></div>
-        <div class="field"><span class="flabel">Mode</span><div class="seg wrap">
-          {#each [['missing', 'Sans numéro'], ['all', 'Tout renuméroter'], ['selection', `Sélection (${selection.length})`], ['manual', 'Saisie manuelle'], ['clear', 'Effacer']] as [k, l]}
-            <button class:on={mode === k} disabled={(k === 'selection' || k === 'manual') && !selection.length} onclick={() => (mode = k as Mode)}>{l}</button>
+        <div class="field"><span class="flabel">Portée</span><div class="seg" role="group" aria-label="Portée"><button type="button" class:on={scope === 'view'} aria-pressed={scope === 'view'} onclick={() => (scope = 'view')}>{container ? container.name : 'Cette vue'}</button><button type="button" class:on={scope === 'project'} aria-pressed={scope === 'project'} onclick={() => (scope = 'project')}>Tout le projet</button></div></div>
+        <div class="field"><span class="flabel">Mode</span><div class="seg wrap" role="group" aria-label="Mode">
+          {#each [['missing', 'Non numérotés'], ['all', 'Tout renuméroter'], ['selection', `Sélection (${selection.length})`], ['manual', 'Saisie manuelle'], ['clear', 'Effacer']] as [k, l]}
+            <button type="button" class:on={mode === k} aria-pressed={mode === k} disabled={(k === 'selection' || k === 'manual') && !selection.length} onclick={() => (mode = k as Mode)}>{l}</button>
           {/each}
         </div></div>
       </div>
       {#if mode === 'manual'}
-        <div class="field" style="max-width:320px"><label for="nb-first">Premier numéro</label><input class="input mono" id="nb-first" bind:value={first} placeholder="V-0100">{#if errors.first}<span class="ferr">{errors.first}</span>{/if}<span class="help">{selection.length > 1 ? `Les ${selection.length} câbles choisis reçoivent ce numéro, puis les suivants.` : 'Le câble choisi reçoit ce numéro.'}</span></div>
+        <div class="field" style="max-width:320px"><label for="nb-first">Premier numéro</label><input class="input mono" id="nb-first" bind:value={first} placeholder="V-0100" aria-invalid={errors.first ? 'true' : undefined} aria-describedby={errors.first ? 'nb-first-err' : undefined}><FieldError message={errors.first} for="nb-first" /><span class="help">{selection.length > 1 ? `Les ${selection.length} câbles choisis reçoivent ce numéro, puis les suivants.` : 'Le câble choisi reçoit ce numéro.'}</span></div>
       {:else if mode === 'clear'}
         <div class="alert warn"><Icon name="alert" /><span>{selection.length ? (selection.length > 1 ? `Les numéros des ${selection.length} câbles choisis` : 'Le numéro du câble choisi') : `Tous les numéros ${scope === 'view' ? 'de la vue' : 'du projet'}`} seront effacés. Les compteurs ne reculent pas : un numéro n’est jamais réutilisé.</span></div>
       {:else}
@@ -90,27 +91,26 @@
           <div class="nb-h"><span class="lbl-t">Règles</span><span class="muted small">{origin === 'element' ? `propres à ${container?.name}` : 'du site'} · modifiables ici pour cette fois</span></div>
           <div class="nb-row">
             <label class="toggle-row"><input type="checkbox" bind:checked={rules.with_rack} disabled={!!rules.template}>Code de l’élément en tête</label>
-            <div class="field"><span class="flabel">Séparateur 1</span><div class="seg">{#each SEPS as [v, l]}<button class:on={rules.sep1 === v} disabled={!!rules.template && false} onclick={() => (rules!.sep1 = v)}>{l}</button>{/each}</div></div>
-            <div class="field"><span class="flabel">Séparateur 2</span><div class="seg">{#each SEPS as [v, l]}<button class:on={rules.sep2 === v} onclick={() => (rules!.sep2 = v)}>{l}</button>{/each}</div></div>
+            <div class="field"><span class="flabel">Séparateur 1</span><div class="seg" role="group" aria-label="Séparateur 1">{#each SEPS as [v, l]}<button type="button" class:on={rules.sep1 === v} aria-pressed={rules.sep1 === v} onclick={() => (rules!.sep1 = v)}>{l}</button>{/each}</div></div>
+            <div class="field"><span class="flabel">Séparateur 2</span><div class="seg" role="group" aria-label="Séparateur 2">{#each SEPS as [v, l]}<button type="button" class:on={rules.sep2 === v} aria-pressed={rules.sep2 === v} onclick={() => (rules!.sep2 = v)}>{l}</button>{/each}</div></div>
           </div>
           <div class="nb-row">
-            <div class="field" style="max-width:160px"><label for="nb-d">Chiffres (sens compris)</label><input class="input mono" id="nb-d" type="number" min="3" max="10" bind:value={rules.digits}>{#if errors.digits}<span class="ferr">{errors.digits}</span>{/if}</div>
-            <div class="field" style="flex:1"><label for="nb-t">Modèle personnalisé</label><input class="input mono" id="nb-t" bind:value={rules.template} placeholder={'Vide : format standard. Ex. {rack}{sep1}{prefix}{dir}{seq}'}>{#if errors.template}<span class="ferr">{errors.template}</span>{/if}</div>
+            <div class="field" style="max-width:160px"><label for="nb-d">Chiffres (sens compris)</label><input class="input mono" id="nb-d" type="number" min="3" max="10" bind:value={rules.digits} aria-invalid={errors.digits ? 'true' : undefined} aria-describedby={errors.digits ? 'nb-d-err' : undefined}><FieldError message={errors.digits} for="nb-d" /></div>
+            <div class="field" style="flex:1"><label for="nb-t">Modèle personnalisé</label><input class="input mono" id="nb-t" bind:value={rules.template} placeholder={'Vide : format standard. Ex. {rack}{sep1}{prefix}{dir}{seq}'} aria-invalid={errors.template ? 'true' : undefined} aria-describedby={errors.template ? 'nb-t-err' : undefined}><FieldError message={errors.template} for="nb-t" /></div>
           </div>
           <div class="nb-row">
-            <div class="field"><span class="flabel">Ordre vertical</span><div class="seg"><button class:on={rules.top_down} onclick={() => (rules!.top_down = true)}>De haut en bas</button><button class:on={!rules.top_down} onclick={() => (rules!.top_down = false)}>De bas en haut</button></div></div>
+            <div class="field"><span class="flabel">Ordre vertical</span><div class="seg" role="group" aria-label="Ordre vertical"><button type="button" class:on={rules.top_down} aria-pressed={rules.top_down} onclick={() => (rules!.top_down = true)}>De haut en bas</button><button type="button" class:on={!rules.top_down} aria-pressed={!rules.top_down} onclick={() => (rules!.top_down = false)}>De bas en haut</button></div></div>
             <div class="nb-prev"><span class="flabel">Aperçu</span><b class="mono">{preview(rules, 'V', 2, 1)}</b><span class="mono muted">{preview(rules, 'A', 1, 12)} · {preview(rules, 'S', 3, 7)}</span></div>
           </div>
           <div class="row-actions" style="justify-content:flex-start">
-            {#if container && can('projets', 'ecriture')}<button class="btn sm ghost" onclick={() => saveRules('element')}><Icon name="pen" size="sm" />Garder pour {container.name}</button>{/if}
-            {#if can('parametres', 'ecriture')}<button class="btn sm ghost" onclick={() => saveRules('site')}><Icon name="pen" size="sm" />Garder pour le site</button>{/if}
+            {#if container && can('projets', 'ecriture')}<button type="button" class="btn sm ghost" onclick={() => saveRules('element')}><Icon name="pen" size="sm" />Garder pour {container.name}</button>{/if}
+            {#if can('parametres', 'ecriture')}<button type="button" class="btn sm ghost" onclick={() => saveRules('site')}><Icon name="pen" size="sm" />Garder pour le site</button>{/if}
           </div>
           <span class="muted small">Préfixe et suffixe viennent du signal (à défaut, de sa fonction) ; sens 1 entrée, 2 sortie, 3 bidirectionnel. Un compteur par préfixe et par sens ; un numéro déjà pris est sauté et n’est jamais recyclé. Les liaisons entre éléments se numérotent au niveau du projet.</span>
         </section>
       {/if}
     </div>
   {/if}
-  {#snippet footer()}<button class="btn ghost" onclick={onclose}>Annuler</button><button class="btn primary" class:danger-btn={mode === 'clear'} disabled={busy || !rules} onclick={run}>{#if busy}<span class="spin"></span>{/if}{mode === 'clear' ? 'Effacer' : 'Numéroter'}</button>{/snippet}
 </Dialog>
 
 <style>
@@ -120,6 +120,4 @@
   .nb-prev { display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: 12px; background: var(--surface-2); }
   .nb-prev b { font-size: 20px; }
   .seg.wrap { flex-wrap: wrap; }
-  .ferr { color: var(--err); font-size: 13px; }
-  .danger-btn { background: var(--err); color: #fff; }
 </style>
