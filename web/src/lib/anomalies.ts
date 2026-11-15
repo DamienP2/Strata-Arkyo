@@ -6,7 +6,7 @@ export interface Anomaly<T = unknown> {
   /** Type d'anomalie (titre côté serveur) : sert à regrouper. */
   group: string;
   severity: Severity | string;
-  /** Ce dont il s'agit : numéro du câble, à défaut « Câble non numéroté », port, nœud… */
+  /** Ce dont il s'agit : numéro du câble, à défaut ses extrémités, port, nœud… */
   subject: string;
   /** Où le trouver : extrémité connue « Équipement › port », modèle… */
   place?: string | null;
@@ -43,14 +43,20 @@ export const groupLabel = (key: string, n: number) => {
   return p ? `${n} ${n > 1 ? p[1] : p[0]}` : `${key} (${n})`;
 };
 
+/** Un même type d'anomalie sous un seul nom, quel que soit l'écran qui le signale. */
+const ALIASES: Record<string, string> = { 'Extrémité supprimée': 'Extrémité manquante' };
+/** Gravité imposée à un type, pour qu'il ait la même couleur partout (une extrémité manquante
+ *  est une erreur, pas un avertissement). */
+const FORCED: Record<string, Severity> = { 'Extrémité manquante': 'error' };
+
 const RANK: Record<string, number> = { error: 0, warning: 1, info: 2 };
 /** Regroupe en gardant l'ordre de gravité, puis d'apparition. */
 export function groupAnomalies<T>(list: Anomaly<T>[]): AnomalyGroup<T>[] {
   const m = new Map<string, Anomaly<T>[]>();
-  for (const a of list) { const g = m.get(a.group); if (g) g.push(a); else m.set(a.group, [a]); }
+  for (const a of list) { const k = ALIASES[a.group] ?? a.group; const g = m.get(k); if (g) g.push(a); else m.set(k, [a]); }
   return [...m.entries()]
     .map(([key, items]) => {
-      const severity = items.reduce<Severity>((s, i) => ((RANK[i.severity] ?? 2) < RANK[s]! ? (i.severity as Severity) : s), 'info');
+      const severity = FORCED[key] ?? items.reduce<Severity>((s, i) => ((RANK[i.severity] ?? 2) < RANK[s]! ? (i.severity as Severity) : s), 'info');
       return { key, severity, label: groupLabel(key, items.length), items };
     })
     .sort((a, b) => RANK[a.severity]! - RANK[b.severity]!);
