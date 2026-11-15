@@ -39,7 +39,7 @@
           </li>
         {/each}
       </ul>
-      {#if g.items.length > n}<button class="btn sm ghost" type="button" onclick={() => (shown[g.key] = n + STEP * 3)}>Afficher {Math.min(STEP * 3, g.items.length - n)} de plus (reste {g.items.length - n})</button>{/if}
+      {#if g.items.length > n}<div class="ag-more"><button class="btn sm ghost" type="button" onclick={() => (shown[g.key] = n + STEP * 3)}>Afficher plus ({n} sur {g.items.length})</button></div>{/if}
     </details>
   {/each}
 </div>
@@ -52,19 +52,20 @@
   .ag-g summary :global(svg:last-child) { transition: transform .15s; color: var(--fg-3); }
   .ag-g[open] summary :global(svg:last-child) { transform: rotate(90deg); }
   .ag-l { flex: 1; }
-  .ag-all { font-weight: 500; color: var(--accent, #4F6BFF); text-decoration: none; }
+  .ag-all { font-weight: 500; color: var(--accent); text-decoration: none; }
   .ag-all:hover { text-decoration: underline; }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--fg-3); flex: none; }
   .error .dot { background: var(--err); }
-  .warning .dot { background: var(--warn, #B78400); }
+  .warning .dot { background: var(--warn); }
   ul { list-style: none; margin: 0; padding: 0 6px 6px; display: grid; }
-  .ag-it { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) auto; gap: 10px; align-items: baseline; width: 100%; padding: 6px 8px; border: 0; border-radius: 8px; background: none; color: inherit; text-decoration: none; text-align: left; font: inherit; font-size: 14px; cursor: pointer; }
-  .ag-it:hover { background: var(--surface-2); }
+  /* Survol et rayon communs (.ag-it, app.css) ; texte à la taille de la liste. */
+  .ag-it { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) auto; gap: 10px; align-items: baseline; width: 100%; padding: 8px; border: 0; color: inherit; text-decoration: none; text-align: left; font: inherit; cursor: pointer; }
+  :where(button.ag-it) { background: none; }
   .ag-t { min-width: 0; overflow-wrap: anywhere; }
   .ag-it :global(svg) { align-self: center; color: var(--fg-3); }
   .compact .ag-it { grid-template-columns: minmax(0, 1fr) auto; row-gap: 2px; align-items: start; }
   .compact .ag-d { grid-column: 1; }
   .compact .ag-it :global(svg) { grid-row: 1 / span 2; grid-column: 2; }
-  .ag-g > .btn { margin: 0 0 8px 14px; }
+  .ag-more { padding: 0 0 8px 14px; }
   @media (max-width: 720px) { .ag-it { grid-template-columns: minmax(0, 1fr) auto; } .ag-d { grid-column: 1; } .ag-it :global(svg) { grid-row: 1 / span 2; grid-column: 2; } }
 </style>
