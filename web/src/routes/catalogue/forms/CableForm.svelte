@@ -4,15 +4,17 @@
   import FieldError from '../../../components/FieldError.svelte';
   import ConnEnd from './ConnEnd.svelte';
   import { api } from '../../../lib/api';
-  import { refList, refName, type CatalogItem } from '../../../lib/catalog.svelte';
+  import { refList, refName, familyColor, type CatalogItem } from '../../../lib/catalog.svelte';
 
   let { data = $bindable(), err }: { data: any; err: (f: string) => string | undefined } = $props();
 
   let models = $state<CatalogItem[]>([]);
   api.get<{ items: CatalogItem[] }>('/catalog/items?kind=cable-models&limit=1000').then((r) => (models = r.items)).catch(() => {});
 
-  const proposed = $derived(`${refName('connectors', data.left.connector_id)} ${data.left.gender} ↔ ${refName('connectors', data.right.connector_id)} ${data.right.gender}`);
-  const sigOptions = $derived(refList('signals', true).filter((s) => [data.left.connector_id, data.right.connector_id].some((c) => (s.data.connectors ?? []).includes(c))).map((s) => ({ id: s.id, name: s.name, color: s.data.color })));
+  // Genre neutre (N) non écrit : il se confondrait avec le connecteur RF de type N.
+  const end = (e: { connector_id: string; gender: string }) => `${refName('connectors', e.connector_id)}${e.gender && e.gender !== 'N' ? ` ${e.gender}` : ''}`;
+  const proposed = $derived(`${end(data.left)} ↔ ${end(data.right)}`);
+  const sigOptions = $derived(refList('signals', true).filter((s) => [data.left.connector_id, data.right.connector_id].some((c) => (s.data.connectors ?? []).includes(c))).map((s) => ({ id: s.id, name: s.name, color: familyColor(s.data.function, { screen: true }) })));
 
   let lengths = $state((data.lengths_m ?? []).map((l: number) => String(l).replace('.', ',')).join(' ; '));
   $effect(() => { data.lengths_m = lengths.split(/[;\s]+/).map((s: string) => Number(s.replace(',', '.'))).filter((n: number) => !Number.isNaN(n) && n > 0); });
@@ -58,9 +60,9 @@
 <section class="card">
   <h2>Longueurs</h2>
   <div class="form-grid">
-    <div class="field span"><label for="c-len">Longueurs disponibles (m)</label><input class="input mono" id="c-len" bind:value={lengths} placeholder="ex. 1 ; 3 ; 5 ; 10" list="c-len-list"><datalist id="c-len-list">{#each dims as d}<option value={String(d).replace('.', ',')}></option>{/each}</datalist><FieldError message={err('lengths_m')} /></div>
+    <div class="field span"><label for="c-len">Longueurs disponibles</label><div class="unit-in"><input class="input mono" id="c-len" bind:value={lengths} placeholder="ex. 1 ; 3 ; 5 ; 10" list="c-len-list" aria-describedby="c-len-help"><span class="u">m</span></div><span class="help" id="c-len-help">Séparées par des points-virgules.</span><datalist id="c-len-list">{#each dims as d}<option value={String(d).replace('.', ',')}></option>{/each}</datalist><FieldError message={err('lengths_m')} /></div>
     <NumField id="c-min" label="Sur mesure : minimum" unit="m" bind:value={data.custom_min_m} error={err('custom_min_m')} />
     <NumField id="c-max" label="Sur mesure : maximum" unit="m" bind:value={data.custom_max_m} error={err('custom_max_m')} />
-    <div class="field span"><label for="c-notes">Notes</label><textarea class="input" id="c-notes" rows="3" style="height:auto;padding:12px 14px" value={data.notes ?? ''} oninput={(e) => (data.notes = (e.target as HTMLTextAreaElement).value || null)}></textarea></div>
+    <div class="field span"><label for="c-notes">Notes</label><textarea class="input" id="c-notes" rows="3" value={data.notes ?? ''} oninput={(e) => (data.notes = (e.target as HTMLTextAreaElement).value || null)}></textarea></div>
   </div>
 </section>

@@ -4,7 +4,9 @@
   import ChipPicker from '../../../components/ChipPicker.svelte';
   import FieldError from '../../../components/FieldError.svelte';
   import SynNode from '../../../components/SynNode.svelte';
-  import { refList, refById, refName, FACES, WIDTHS } from '../../../lib/catalog.svelte';
+  import Seg from '../../../components/Seg.svelte';
+  import Loading from '../../../components/Loading.svelte';
+  import { refList, refById, refName, familyColor, FACES, WIDTHS } from '../../../lib/catalog.svelte';
   import { nf } from '../../../lib/format';
   import { VISUALS, visualOf, decor, ALU } from '../../../lib/faceplate';
   import { api } from '../../../lib/api';
@@ -12,7 +14,7 @@
   let { data = $bindable(), err }: { data: any; err: (f: string) => string | undefined } = $props();
 
   const dims = (k: string) => refList('dimensions', true).filter((d) => d.data.kind === k).map((d) => d.data.value as number);
-  const fnOptions = $derived(refList('functions', true).map((f) => ({ id: f.id, name: f.name, color: f.data.color })));
+  const fnOptions = $derived(refList('functions', true).map((f) => ({ id: f.id, name: f.name, color: familyColor(f.id, { screen: true }) })));
   const phaseOptions = $derived(refList('phases', true).map((p) => ({ id: p.id, name: p.name })));
   const types = $derived(refList('types', true));
   const topTypes = $derived(types.filter((t) => !t.parent_id));
@@ -73,15 +75,29 @@
   let tab = $state<Tab>((() => { try { return (sessionStorage.getItem('fiche-tab') as Tab) || 'general'; } catch { return 'general'; } })());
   $effect(() => { try { sessionStorage.setItem('fiche-tab', tab); } catch { /* indisponible */ } });
   const tabErr = (t: (typeof TABS)[number]) => t.fields.some((f) => !!err(f));
+  /** Navigation au clavier dans les onglets (flèches, Début, Fin). */
+  function tabKey(e: KeyboardEvent) {
+    const i = TABS.findIndex((t) => t.id === tab);
+    const n = e.key === 'ArrowRight' ? i + 1 : e.key === 'ArrowLeft' ? i - 1 : e.key === 'Home' ? 0 : e.key === 'End' ? TABS.length - 1 : null;
+    if (n == null) return;
+    e.preventDefault();
+    tab = TABS[(n + TABS.length) % TABS.length]!.id;
+    ((e.currentTarget as HTMLElement).querySelector(`[data-tab="${tab}"]`) as HTMLElement | null)?.focus();
+  }
   const tabCount = (t: Tab) => t === 'ports' ? totalPorts : t === 'modules' ? (data.modular?.role === 'host' ? data.modular.slots : data.modular?.role === 'component' ? 1 : 0) : t === 'docs' ? data.documents.length : t === 'options' ? Number(!!data.dmx) + Number(!!data.ip) : 0;
 
   // ----- Aperçu de la façade aux vraies proportions (19″ = 482,6 mm, 1 U = 44,45 mm) -----
   const vis = $derived(visualOf({ visual: data.visual, type_id: data.type_id, label: data.name ?? '' }));
   const hu = $derived(data.format.kind === 'rack' ? Math.max(0.5, Number(data.format.height_u) || 1) : 1);
-  const fpW = $derived(Math.min(560, (230 * 482.6) / (44.45 * hu)));
+  // Largeur disponible dans la carte : l'aperçu se réduit sur un écran étroit au lieu de déborder.
+  let headW = $state(0);
+  const fpW = $derived(Math.max(120, Math.min(560, headW ? headW - 48 : 560, (230 * 482.6) / (44.45 * hu))));
   const fpH = $derived((fpW * 44.45 * hu) / 482.6);
   const frac = $derived(({ full: 1, half: 0.5, third: 1 / 3, quarter: 0.25 } as Record<string, number>)[data.format.width ?? 'full'] ?? 1);
-  const fnColor0 = $derived(refById('functions', data.functions[0])?.data?.color ?? 'var(--fg-3)');
+  // Façade (objet physique, sombre fixe) : couleur de famille en hexadécimal, comme dans les racks.
+  const fnColor0 = $derived(familyColor(data.functions[0], { screen: false }));
+  // Cote inconnue : le moteur stocke 0, le champ reste vide (liaisons de Profondeur, Longueur, Largeur, Hauteur).
+  const freeDims = $derived(data.format.kind === 'free' && [data.format.length_mm, data.format.width_mm, data.format.height_mm].every((v: number) => Number(v) > 0));
   const inCount = $derived(countOf(true)), outCount = $derived(countOf(false));
 
   // ----- Modulaire : châssis (reçoit des modules) ou module (occupe des emplacements) -----
@@ -118,7 +134,7 @@
 </script>
 
 <!-- En-tête : façade aux vraies proportions et chiffres clés -->
-<section class="card fhead">
+<section class="card fhead" bind:clientWidth={headW}>
   <div class="fh-face">
     {#if data.format.kind === 'rack'}
       <div class="fp-big" style="width:{fpW}px;height:{fpH}px;--u:{fpH / hu}px">
@@ -126,11 +142,11 @@
       </div>
       <span class="muted small">Façade {nf(hu, hu % 1 ? 1 : 0)} U{frac < 1 ? ` · ${data.format.width === 'half' ? '1/2' : data.format.width === 'third' ? '1/3' : '1/4'} largeur` : ''} · {VISUALS.find(([k]) => k === vis)?.[1] ?? 'Générique'}{data.visual ? '' : ' (automatique)'}</span>
     {:else}
-      <div class="fp-free"><Icon name="box" /><span>Hors rack{data.format.length_mm ? ` · ${nf(data.format.length_mm)} × ${nf(data.format.width_mm)} × ${nf(data.format.height_mm)} mm` : ''}</span></div>
+      <div class="fp-free"><Icon name="box" /><span>Hors rack{freeDims ? ` · ${nf(data.format.length_mm)} × ${nf(data.format.width_mm)} × ${nf(data.format.height_mm)} mm` : ' · dimensions non renseignées'}</span></div>
     {/if}
   </div>
   <dl class="fh-facts">
-    <div><dt>Format</dt><dd>{data.format.kind === 'rack' ? `${nf(hu, hu % 1 ? 1 : 0)} U · ${data.format.depth_mm ? `${nf(data.format.depth_mm)} mm` : 'prof. ?'}` : 'Hors rack'}</dd></div>
+    <div><dt>Format</dt><dd>{data.format.kind === 'rack' ? `${nf(hu, hu % 1 ? 1 : 0)} U · ${data.format.depth_mm ? `${nf(data.format.depth_mm)} mm` : 'profondeur non renseignée'}` : 'Hors rack'}</dd></div>
     <div><dt>Poids</dt><dd>{data.weight_kg != null ? `${nf(data.weight_kg, 1)} kg` : '—'}</dd></div>
     <div><dt>Conso.</dt><dd>{data.power_w != null ? `${nf(data.power_w)} W` : '—'}{data.dual_psu ? ' · 2 alim.' : ''}</dd></div>
     <div><dt>Ports</dt><dd>{inCount} entrée{inCount > 1 ? 's' : ''} · {outCount} sortie{outCount > 1 ? 's' : ''}</dd></div>
@@ -138,10 +154,12 @@
   </dl>
 </section>
 
-<div class="ftabs" role="tablist" aria-label="Sections de la fiche">
-  {#each TABS as t}
-    <button type="button" role="tab" aria-selected={tab === t.id} class:on={tab === t.id} class:bad={tabErr(t)} onclick={() => (tab = t.id)}>{t.label}{#if tabCount(t.id)}<span class="tc">{tabCount(t.id)}</span>{/if}{#if tabErr(t)}<i class="te" title="Champ à corriger"></i>{/if}</button>
-  {/each}
+<div class="ftabs-wrap">
+  <div class="seg ftabs" role="tablist" aria-label="Sections de la fiche" tabindex="-1" onkeydown={tabKey}>
+    {#each TABS as t}
+      <button type="button" role="tab" data-tab={t.id} aria-selected={tab === t.id} tabindex={tab === t.id ? 0 : -1} class:on={tab === t.id} class:bad={tabErr(t)} onclick={() => (tab = t.id)}>{t.label}{#if tabCount(t.id)}<span class="muted mono">{tabCount(t.id)}</span>{/if}{#if tabErr(t)}<i class="te" title="Champ à corriger" aria-label="Champ à corriger"></i>{/if}</button>
+    {/each}
+  </div>
 </div>
 
 {#if tab === 'general'}
@@ -157,18 +175,18 @@
     <div class="field span"><span class="flabel">Phases</span><ChipPicker options={phaseOptions} bind:value={data.phases} label="Phases" /></div>
     <div class="field"><label for="e-tags">Mots-clés</label><input class="input" id="e-tags" bind:value={tags} placeholder="séparés par des virgules"></div>
     <div class="field" style="justify-content:flex-end"><label class="toggle-row"><input type="checkbox" checked={data.active !== false} onchange={(e) => (data.active = (e.target as HTMLInputElement).checked)}>Fiche active (proposée dans les projets)</label></div>
-    <div class="field span"><label for="e-notes">Notes</label><textarea class="input" id="e-notes" rows="3" style="height:auto;padding:12px 14px" value={data.notes ?? ''} oninput={(e) => (data.notes = (e.target as HTMLTextAreaElement).value || null)}></textarea></div>
+    <div class="field span"><label for="e-notes">Notes</label><textarea class="input" id="e-notes" rows="3" value={data.notes ?? ''} oninput={(e) => (data.notes = (e.target as HTMLTextAreaElement).value || null)}></textarea></div>
   </div>
 </section>
 
 {:else if tab === 'format'}
 <section class="card">
-  <div class="card-head"><h2>Format</h2><div class="seg"><button type="button" class:on={data.format.kind === 'rack'} onclick={() => setFormat('rack')}>Rack 19″</button><button type="button" class:on={data.format.kind === 'free'} onclick={() => setFormat('free')}>Hors rack</button></div></div>
+  <div class="card-head"><h2>Format</h2><Seg label="Format" value={data.format.kind} onchange={(v) => setFormat(v as 'rack' | 'free')} options={[{ value: 'rack', label: 'Rack 19″' }, { value: 'free', label: 'Hors rack' }]} /></div>
   {#if data.format.kind === 'rack'}
     <div class="fg4" style="margin-top:16px">
       <NumField id="e-u" label="Hauteur" unit="U" bind:value={data.format.height_u} suggestions={dims('height_u')} error={err('format.height_u')} required />
-      <div class="field"><span class="flabel">Largeur</span><div class="seg">{#each WIDTHS as [k, l]}<button type="button" class:on={data.format.width === k} onclick={() => (data.format.width = k)}>{l}</button>{/each}</div></div>
-      <NumField id="e-depth" label="Profondeur" unit="mm" bind:value={data.format.depth_mm} suggestions={dims('depth_mm')} error={err('format.depth_mm')} />
+      <div class="field"><span class="flabel" id="e-width-l">Largeur</span><div class="seg" role="group" aria-labelledby="e-width-l">{#each WIDTHS as [k, l]}<button type="button" class:on={data.format.width === k} aria-pressed={data.format.width === k} onclick={() => (data.format.width = k)}>{l}</button>{/each}</div></div>
+      <NumField id="e-depth" label="Profondeur" unit="mm" bind:value={() => Number(data.format.depth_mm) || null, (v) => (data.format.depth_mm = v ?? 0)} suggestions={dims('depth_mm')} error={err('format.depth_mm')} />
       <NumField id="e-rear" label="Réserve arrière" unit="mm" bind:value={data.format.rear_reserve_mm} suggestions={dims('rear_reserve_mm')} error={err('format.rear_reserve_mm')} help="Place pour les câbles derrière l’appareil." />
     </div>
     <div class="vis-row">
@@ -177,13 +195,13 @@
           <option value="">Automatique · {VISUALS.find(([k]) => k === visualOf({ type_id: data.type_id, label: data.name ?? '' }))?.[1] ?? 'Générique'}</option>
           {#each VISUALS as [k, l]}<option value={k}>{l}</option>{/each}
         </select>
-        <span class="help">Façade dessinée dans les vues réelle et 3D (aperçu en haut de la fiche). Automatique : d’après le type, puis le nom ; pour un moniteur, le nombre d’écrans vient du nom (Dual, Triple, 4×…).</span></div>
+        <span class="help">Façade dessinée dans les vues réelle et 3D (aperçu en haut de la fiche). Automatique : d’après le type, puis le nom ; pour un moniteur, le nombre d’écrans vient du nom (Dual, Triple, 4×).</span></div>
     </div>
   {:else}
     <div class="fg3" style="margin-top:16px">
-      <NumField id="e-l" label="Longueur" unit="mm" bind:value={data.format.length_mm} error={err('format.length_mm')} />
-      <NumField id="e-w" label="Largeur" unit="mm" bind:value={data.format.width_mm} error={err('format.width_mm')} />
-      <NumField id="e-h" label="Hauteur" unit="mm" bind:value={data.format.height_mm} error={err('format.height_mm')} />
+      <NumField id="e-l" label="Longueur" unit="mm" bind:value={() => Number(data.format.length_mm) || null, (v) => (data.format.length_mm = v ?? 0)} error={err('format.length_mm')} />
+      <NumField id="e-w" label="Largeur" unit="mm" bind:value={() => Number(data.format.width_mm) || null, (v) => (data.format.width_mm = v ?? 0)} error={err('format.width_mm')} />
+      <NumField id="e-h" label="Hauteur" unit="mm" bind:value={() => Number(data.format.height_mm) || null, (v) => (data.format.height_mm = v ?? 0)} error={err('format.height_mm')} />
     </div>
   {/if}
 </section>
@@ -202,29 +220,27 @@
 </section>
 
 {:else if tab === 'ports'}
-{#snippet group(p: any, i: number, inSide: boolean)}
-  <div class="pg" class:on={hl === i} style="--c:{refById('signals', p.signal_id)?.data?.color ?? refById('connectors', p.connector_id)?.data?.color ?? 'var(--fg-3)'}" role="group" aria-label="Groupe de ports {i + 1}"
+{#snippet group(p: any, i: number)}
+  <div class="pg" class:on={hl === i} style="--c:{familyColor(refById('signals', p.signal_id)?.data?.function, { screen: true })}" role="group" aria-label="Groupe de ports {i + 1}"
     onmouseenter={() => (hl = i)} onfocusin={() => (hl = i)}>
     <div class="pg-row">
-      <input class="input mono pg-q" type="number" min="1" max="1024" bind:value={p.quantity} aria-label="Nombre de ports" title="Nombre de ports">
+      <input class="input sm mono pg-q" type="number" min="1" max="1024" bind:value={p.quantity} aria-label="Nombre de ports" title="Nombre de ports">
       <span class="pg-x">×</span>
-      <select class="input pg-conn" class:err={!!err(`ports[${i}].connector_id`)} bind:value={p.connector_id} aria-label="Connecteur" onchange={() => { p.variant = null; if (p.signal_id && !sigsFor(p.connector_id).some((s) => s.id === p.signal_id)) p.signal_id = null; }}>{#each connectors as c}<option value={c.id}>{c.name}</option>{/each}</select>
-      <div class="seg pg-g" aria-label="Genre"><button type="button" class:on={p.gender === 'F'} onclick={() => (p.gender = 'F')} title="Femelle">F</button><button type="button" class:on={p.gender === 'M'} onclick={() => (p.gender = 'M')} title="Mâle">M</button></div>
-      <button type="button" class="icon-btn sm pg-del" title="Retirer ce groupe" aria-label="Retirer ce groupe" onclick={() => { removePort(i); hl = null; }}><Icon name="x" size="sm" /></button>
+      <select class="input sm pg-conn" class:err={!!err(`ports[${i}].connector_id`)} bind:value={p.connector_id} aria-label="Connecteur" onchange={() => { p.variant = null; if (p.signal_id && !sigsFor(p.connector_id).some((s) => s.id === p.signal_id)) p.signal_id = null; }}>{#each connectors as c}<option value={c.id}>{c.name}</option>{/each}</select>
+      <div class="seg pg-g" role="group" aria-label="Genre"><button type="button" class:on={p.gender === 'F'} aria-pressed={p.gender === 'F'} onclick={() => (p.gender = 'F')} title="Femelle">F</button><button type="button" class:on={p.gender === 'M'} aria-pressed={p.gender === 'M'} onclick={() => (p.gender = 'M')} title="Mâle">M</button></div>
+      <button type="button" class="icon-btn sm" title="Retirer ce groupe" aria-label="Retirer ce groupe" onclick={() => { removePort(i); hl = null; }}><Icon name="x" size="sm" /></button>
     </div>
     <div class="pg-row">
       <i class="pg-dot"></i>
-      <select class="input" class:err={!!err(`ports[${i}].signal_id`)} value={p.signal_id ?? ''} aria-label="Signal" onchange={(e) => (p.signal_id = (e.target as HTMLSelectElement).value || null)}><option value="">Signal —</option>{#each sigsFor(p.connector_id) as s}<option value={s.id}>{s.name}</option>{/each}</select>
-      {#if variantsOf(p.connector_id).length}<select class="input pg-var" value={p.variant ?? ''} aria-label="Variante" onchange={(e) => (p.variant = (e.target as HTMLSelectElement).value || null)}><option value="">Variante —</option>{#each variantsOf(p.connector_id) as v}<option value={v}>{v}</option>{/each}</select>{/if}
+      <select class="input sm" class:err={!!err(`ports[${i}].signal_id`)} value={p.signal_id ?? ''} aria-label="Signal" title="Signal" onchange={(e) => (p.signal_id = (e.target as HTMLSelectElement).value || null)}><option value="">Signal : aucun</option>{#each sigsFor(p.connector_id) as s}<option value={s.id}>{s.name}</option>{/each}</select>
+      {#if variantsOf(p.connector_id).length}<select class="input sm pg-var" value={p.variant ?? ''} aria-label="Variante du connecteur" title="Variante du connecteur" onchange={(e) => (p.variant = (e.target as HTMLSelectElement).value || null)}><option value="">Variante : aucune</option>{#each variantsOf(p.connector_id) as v}<option value={v}>Variante {v}</option>{/each}</select>{/if}
     </div>
     <div class="pg-row">
-      <input class="input" value={p.label ?? ''} aria-label="Libellé" placeholder={inSide ? 'Libellé, ex. SDI IN' : 'Libellé, ex. PGM OUT'} oninput={(e) => (p.label = (e.target as HTMLInputElement).value || null)}>
-      <select class="input pg-face" bind:value={p.face} aria-label="Face" title="Face">{#each FACES as [k, l]}<option value={k}>{l}</option>{/each}</select>
-      {#if inSide}
-        <button type="button" class="btn sm ghost" title="Passer en sortie" onclick={() => (p.direction = 'out')}>Sortie →</button>
-      {:else}
-        <div class="seg pg-g" aria-label="Sens"><button type="button" class:on={p.direction === 'out'} onclick={() => (p.direction = 'out')} title="Sortie">Sortie</button><button type="button" class:on={p.direction === 'bidir'} onclick={() => (p.direction = 'bidir')} title="Bidirectionnel (entrée-sortie)">E/S</button><button type="button" onclick={() => (p.direction = 'in')} title="Passer en entrée">← Entrée</button></div>
-      {/if}
+      <input class="input sm" value={p.label ?? ''} aria-label="Libellé" placeholder={p.direction === 'in' ? 'Libellé, ex. SDI IN' : 'Libellé, ex. PGM OUT'} oninput={(e) => (p.label = (e.target as HTMLInputElement).value || null)}>
+    </div>
+    <div class="pg-row">
+      <select class="input sm pg-face" bind:value={p.face} aria-label="Face" title="Face">{#each FACES as [k, l]}<option value={k}>{l}</option>{/each}</select>
+      <div class="seg pg-g" role="group" aria-label="Sens"><button type="button" class:on={p.direction === 'in'} aria-pressed={p.direction === 'in'} onclick={() => (p.direction = 'in')} title="Entrée">Entrée</button><button type="button" class:on={p.direction === 'bidir'} aria-pressed={p.direction === 'bidir'} onclick={() => (p.direction = 'bidir')} title="Bidirectionnel (entrée-sortie)">E/S</button><button type="button" class:on={p.direction === 'out'} aria-pressed={p.direction === 'out'} onclick={() => (p.direction = 'out')} title="Sortie">Sortie</button></div>
     </div>
   </div>
 {/snippet}
@@ -234,7 +250,7 @@
   <div class="ports3" role="presentation" onmouseleave={() => (hl = null)}>
     <div class="pcol">
       <div class="pcol-h"><b>Entrées</b><span class="muted small tnum">{countOf(true)}</span><button type="button" class="btn sm" onclick={() => addPort('in')}><Icon name="plus" size="sm" />Entrée</button></div>
-      {#each side(true) as { p, i } (i)}{@render group(p, i, true)}{:else}<p class="pcol-empty">Aucune entrée.</p>{/each}
+      {#each side(true) as { p, i } (i)}{@render group(p, i)}{:else}<p class="pcol-empty">Aucune entrée.</p>{/each}
     </div>
     <div class="pprev">
       <SynNode name={data.name} subtitle={[refName('brands', data.brand_id), data.reference].filter(Boolean).join(' · ')} fn={data.functions[0] ?? null} ports={data.ports} {hl} />
@@ -242,7 +258,7 @@
     </div>
     <div class="pcol">
       <div class="pcol-h"><b>Sorties et E/S</b><span class="muted small tnum">{countOf(false)}</span><button type="button" class="btn sm" onclick={() => addPort('out')}><Icon name="plus" size="sm" />Sortie</button><button type="button" class="btn sm" onclick={() => addPort('bidir')}><Icon name="plus" size="sm" />E/S</button></div>
-      {#each side(false) as { p, i } (i)}{@render group(p, i, false)}{:else}<p class="pcol-empty">Aucune sortie.</p>{/each}
+      {#each side(false) as { p, i } (i)}{@render group(p, i)}{:else}<p class="pcol-empty">Aucune sortie.</p>{/each}
     </div>
   </div>
   <FieldError message={err('ports')} />
@@ -250,11 +266,7 @@
 {:else if tab === 'modules'}
 <section class="card">
   <div class="card-head"><div><h2>Équipement modulaire</h2><span class="muted small">Un châssis reçoit des modules (cartes, convertisseurs) dans ses emplacements ; un module occupe un ou plusieurs emplacements d’un châssis.</span></div></div>
-  <div class="seg role-seg">
-    <button type="button" class:on={!data.modular} onclick={() => setRole('none')}>Équipement simple</button>
-    <button type="button" class:on={data.modular?.role === 'host'} onclick={() => setRole('host')}>Châssis · reçoit des modules</button>
-    <button type="button" class:on={data.modular?.role === 'component'} onclick={() => setRole('component')}>Module · se glisse dans un châssis</button>
-  </div>
+  <div class="role-seg"><Seg label="Rôle modulaire" value={data.modular?.role ?? 'none'} onchange={(v) => setRole(v as 'none' | 'host' | 'component')} options={[{ value: 'none', label: 'Équipement simple' }, { value: 'host', label: 'Châssis · reçoit des modules' }, { value: 'component', label: 'Module · se glisse dans un châssis' }]} /></div>
   {#if data.modular?.role === 'host'}
     <div class="fg4" style="margin-top:16px"><NumField id="e-slots" label="Emplacements" bind:value={data.modular.slots} min={1} max={40} step={1} error={err('modular.slots')} help="De 1 à 40." /></div>
     <div class="chassis-h"><b>Composition par défaut</b><span class="muted small">Proposée quand le châssis est ajouté à un projet. Cliquez un emplacement libre pour y glisser un module.</span></div>
@@ -277,8 +289,8 @@
     <FieldError message={err('modular')} />
     {#if pickSlot != null}
       <div class="comp-pick">
-        <div class="cp-h"><b>Module pour l’emplacement {pickSlot}</b><input class="input" placeholder="Rechercher un module…" bind:value={compQ} aria-label="Rechercher un module"><button type="button" class="btn sm ghost" onclick={() => (pickSlot = null)}>Fermer</button></div>
-        {#if comps === null}<span class="spin"></span>
+        <div class="cp-h"><b>Module pour l’emplacement {pickSlot}</b><input class="input" type="search" placeholder="Rechercher un module" bind:value={compQ} aria-label="Rechercher un module"><button type="button" class="btn sm ghost" onclick={() => (pickSlot = null)}>Fermer</button></div>
+        {#if comps === null}<Loading label="Chargement des modules" inline />
         {:else}
           {#each comps.filter((c) => !compQ.trim() || `${c.name} ${c.reference ?? ''}`.toLowerCase().includes(compQ.trim().toLowerCase())).slice(0, 60) as c (c.id)}
             {@const ok = fits(pickSlot, c.slots)}
@@ -303,7 +315,7 @@
     <div class="stack" style="gap:8px;margin-top:10px">
       <span class="flabel">Modes</span>
       {#each data.dmx.modes as mo, i}
-        <div class="fg3"><input class="input" bind:value={mo.name} placeholder="Nom du mode (Standard, Étendu…)" aria-label="Nom du mode {i + 1}"><NumField id="e-dm{i}" label="Canaux" bind:value={mo.channels} /><button type="button" class="btn sm ghost danger" style="align-self:end" onclick={() => (data.dmx.modes = data.dmx.modes.filter((_: unknown, j: number) => j !== i))}><Icon name="trash" size="sm" />Retirer</button></div>
+        <div class="fg3"><input class="input" bind:value={mo.name} placeholder="Nom du mode, ex. Standard, Étendu" aria-label="Nom du mode {i + 1}"><NumField id="e-dm{i}" label="Canaux" bind:value={mo.channels} /><button type="button" class="btn sm ghost danger" style="align-self:end" onclick={() => (data.dmx.modes = data.dmx.modes.filter((_: unknown, j: number) => j !== i))}><Icon name="trash" size="sm" />Retirer</button></div>
       {/each}
       <button type="button" class="btn sm" style="justify-self:start" onclick={addMode}><Icon name="plus" size="sm" />Ajouter un mode</button>
     </div>
@@ -311,10 +323,10 @@
 </section>
 
 <section class="card">
-  <div class="card-head"><div><h2>Flux IP (SMPTE ST 2110…)</h2><span class="muted small">Chaque sortie de flux reçoit un groupe multicast dans le plan d’adressage du projet. Essence déduite de la famille du signal : vidéo, audio ou données annexes.</span></div><label class="toggle-row"><input type="checkbox" bind:checked={ipOn}>Émet ou reçoit des flux IP</label></div>
+  <div class="card-head"><div><h2>Flux IP (SMPTE ST 2110)</h2><span class="muted small">Chaque sortie de flux reçoit un groupe multicast dans le plan d’adressage du projet. Essence déduite de la famille du signal : vidéo, audio ou données annexes.</span></div><label class="toggle-row"><input type="checkbox" bind:checked={ipOn}>Émet ou reçoit des flux IP</label></div>
   {#if ipOn && data.ip}
     <div class="stack" style="gap:8px;margin-top:12px">
-      <div class="seg" style="justify-self:start"><button type="button" class:on={data.ip.control === 'out_of_band'} onclick={() => (data.ip.control = 'out_of_band')}>Contrôle hors bande</button><button type="button" class:on={data.ip.control === 'in_band'} onclick={() => (data.ip.control = 'in_band')}>Contrôle dans la bande</button></div>
+      <Seg label="Contrôle" bind:value={data.ip.control} options={[{ value: 'out_of_band', label: 'Contrôle hors bande' }, { value: 'in_band', label: 'Contrôle dans la bande' }]} />
       {#each data.ip.flows as f, i}
         <div class="fg4">
           <div class="field"><label for="e-fs{i}">Signal</label><select class="input" id="e-fs{i}" bind:value={f.signal_id}>{#each signals as sg}<option value={sg.id}>{sg.name}</option>{/each}</select></div>
@@ -333,12 +345,12 @@
   <div class="card-head"><h2>Documents</h2><button type="button" class="btn sm" onclick={addDoc}><Icon name="plus" size="sm" />Ajouter un lien</button></div>
   <div class="stack" style="margin-top:12px">
     {#each data.documents as d, i}
-      <div style="display:grid;grid-template-columns:1fr 2fr auto;gap:10px">
+      <div class="doc-row">
         <input class="input" bind:value={d.title} placeholder="Titre, ex. Manuel" aria-label="Titre du document">
-        <input class="input mono" class:err={!!err(`documents[${i}]`)} bind:value={d.url} placeholder="https://…" aria-label="Lien du document">
-        <button type="button" class="btn sm ghost danger" title="Retirer" onclick={() => (data.documents = data.documents.filter((_: unknown, j: number) => j !== i))}><Icon name="x" size="sm" /></button>
+        <input class="input mono" class:err={!!err(`documents[${i}]`)} bind:value={d.url} placeholder="https://" aria-label="Lien du document">
+        <button type="button" class="icon-btn sm danger" title="Retirer ce document" aria-label="Retirer ce document" onclick={() => (data.documents = data.documents.filter((_: unknown, j: number) => j !== i))}><Icon name="x" size="sm" /></button>
       </div>
-    {:else}<p class="muted small">Manuel, fiche technique, page du fabricant…</p>{/each}
+    {:else}<p class="muted small">Aucun document : manuel, fiche technique, page du fabricant.</p>{/each}
     <FieldError message={err('documents')} />
   </div>
 </section>
@@ -348,21 +360,21 @@
   .ports3 { display: grid; grid-template-columns: minmax(300px, 1fr) minmax(330px, auto) minmax(300px, 1fr); gap: 18px; align-items: start; margin-top: 14px; }
   .pcol { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
   .pcol-h { display: flex; align-items: center; gap: 8px; min-height: 30px; }
-  .pcol-h b { font: 650 14px var(--display); }
+  .pcol-h b { font: 650 var(--fs-lg) var(--display); }
   .pcol-h .muted { margin-right: auto; }
   .pcol-empty { color: var(--fg-3); font-size: 13px; padding: 14px; border-radius: 9px; border: 1px dashed var(--line-2); text-align: center; }
   .pprev { position: sticky; top: 70px; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 4px; }
   .pg { display: flex; flex-direction: column; gap: 6px; padding: 8px 8px 8px 12px; border-radius: 10px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line), inset 3px 0 0 var(--c); transition: box-shadow .12s, background .12s; }
   .pg.on { background: color-mix(in srgb, var(--c) 6%, var(--surface)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 45%, var(--line)), inset 3px 0 0 var(--c); }
   .pg-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
-  .pg-row > .input { flex: 1 1 0; min-width: 0; height: 30px; font-size: 13px; }
-  .pg .pg-q { flex: 0 0 58px; text-align: right; }
+  .pg-row { flex-wrap: wrap; }
+  .pg-row > .input { flex: 1 1 0; min-width: 0; }
+  .pg .pg-q { flex: 0 0 64px; text-align: right; }
+  .pg .pg-conn { min-width: 110px; }
   .pg-x { color: var(--fg-3); font-size: 13px; }
   .pg .pg-face { flex: 0 0 104px; }
   .pg .pg-var { flex: 0 1 120px; }
   .pg-g { flex: none; }
-  .pg-g button { height: 24px; padding: 0 8px; font-size: 12px; }
-  .pg-del { flex: none; width: 26px; height: 26px; }
   .pg-dot { flex: none; width: 9px; height: 9px; margin: 0 3px 0 1px; border-radius: 50%; border: 2px solid var(--c); background: var(--node-bg, var(--surface)); }
   @media (max-width: 1280px) {
     .ports3 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
@@ -373,24 +385,26 @@
   /* En-tête */
   .fhead { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 28px; align-items: center; }
   .fh-face { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
-  .fp-big { position: relative; flex: none; border-radius: 6px; background: linear-gradient(90deg, #2A2E34, #3A3F46 6%, #30353B 50%, #3A3F46 94%, #2A2E34); box-shadow: 0 0 0 6px #1d2126, 0 12px 26px -14px rgba(0, 0, 0, .6); }
+  .fp-big { position: relative; flex: none; max-width: 100%; border-radius: 6px; background: linear-gradient(90deg, #2A2E34, #3A3F46 6%, #30353B 50%, #3A3F46 94%, #2A2E34); box-shadow: 0 0 0 6px #1d2126, 0 12px 26px -14px rgba(0, 0, 0, .6); }
   .fp-big .ritem { position: absolute; top: 0; font-size: 13px; }
   .fp-free { display: flex; align-items: center; gap: 10px; padding: 18px 22px; border-radius: 12px; background: var(--surface-2); color: var(--fg-2); }
   .fh-facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px 18px; margin: 0; }
   .fh-facts div { display: flex; flex-direction: column; gap: 2px; }
   .fh-facts dt { font: 600 11.5px var(--font); letter-spacing: .05em; text-transform: uppercase; color: var(--fg-3); }
-  .fh-facts dd { margin: 0; font-weight: 600; font-size: 14.5px; }
-  @media (max-width: 900px) { .fhead { grid-template-columns: minmax(0, 1fr); } .fp-big { max-width: 100%; } }
-  /* Onglets */
-  .ftabs { display: flex; gap: 4px; flex-wrap: wrap; padding: 4px; border-radius: 12px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); position: sticky; top: 8px; z-index: 5; }
-  .ftabs button { display: inline-flex; align-items: center; gap: 7px; padding: 8px 14px; border: 0; border-radius: 9px; background: none; font: inherit; font-weight: 600; font-size: 14px; color: var(--fg-3); cursor: pointer; }
-  .ftabs button:hover { color: var(--fg); background: var(--surface-2); }
-  .ftabs button.on { color: var(--fg); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line-2); }
-  .ftabs .tc { font: 600 11px var(--mono); padding: 1px 6px; border-radius: 99px; background: var(--sunken, var(--surface-2)); color: var(--fg-2); }
+  .fh-facts dd { margin: 0; font-weight: 600; font-size: var(--fs-md); }
+  .fh-face { min-width: 0; max-width: 100%; }
+  @media (max-width: 900px) { .fhead { grid-template-columns: minmax(0, 1fr); } }
+  /* Onglets : modèle .seg, collés en haut de la zone */
+  .ftabs-wrap { position: sticky; top: 8px; z-index: 5; }
+  .ftabs { flex-wrap: wrap; height: auto; max-width: 100%; }
+  .ftabs button { gap: 6px; }
   .ftabs .te { width: 7px; height: 7px; border-radius: 50%; background: var(--err); }
   .ftabs button.bad { color: var(--err); }
+  .doc-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto; gap: 10px; align-items: center; }
+  @media (max-width: 860px) { .doc-row { grid-template-columns: minmax(0, 1fr) auto; } .doc-row > .mono { grid-column: 1; } }
   /* Modulaire */
-  .role-seg { margin-top: 14px; flex-wrap: wrap; }
+  .role-seg { margin-top: 14px; }
+  .role-seg :global(.seg) { flex-wrap: wrap; height: auto; max-width: 100%; }
   .chassis-h { display: flex; flex-direction: column; gap: 2px; margin: 18px 0 8px; }
   .chassis { display: grid; grid-template-columns: repeat(var(--n), minmax(26px, 1fr)); gap: 3px; padding: 10px; border-radius: 8px; background: linear-gradient(180deg, #2b3036, #1c2025); box-shadow: inset 0 0 0 1px #000; }
   .card-slot { position: relative; height: 150px; display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 6px 2px; border: 0; border-radius: 3px; background: repeating-linear-gradient(180deg, #121519 0 6px, #171b20 6px 12px); box-shadow: inset 0 0 0 1px #000; color: #8f98a3; font: inherit; cursor: pointer; }
@@ -402,7 +416,7 @@
   .cs-x { border: 0; background: rgba(0, 0, 0, .35); color: #fff; border-radius: 4px; width: 22px; height: 22px; display: grid; place-items: center; cursor: pointer; }
   .comp-pick { margin-top: 12px; display: grid; gap: 6px; padding: 12px; border-radius: 12px; background: var(--surface-2); max-height: 360px; overflow: auto; }
   .cp-h { display: flex; gap: 8px; align-items: center; }
-  .cp-h .input { flex: 1; height: 34px; }
+  .cp-h .input { flex: 1; }
   .cp-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 8px 10px; border: 0; border-radius: 9px; background: var(--surface); text-align: left; font: inherit; color: inherit; cursor: pointer; }
   .cp-row:hover:not(:disabled) { box-shadow: inset 0 0 0 1.5px var(--accent); }
   .cp-row:disabled { opacity: .5; cursor: default; }

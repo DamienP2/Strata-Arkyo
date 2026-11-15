@@ -1,6 +1,7 @@
 <script lang="ts">
   // Import d'équipements depuis un tableur : fichier, colonnes, valeurs inconnues, essai à blanc, import.
   import Icon from '../../components/Icon.svelte';
+  import Seg from '../../components/Seg.svelte';
   import { api, ApiError } from '../../lib/api';
   import { can } from '../../lib/session.svelte';
   import { toast, fail } from '../../lib/toast.svelte';
@@ -83,11 +84,11 @@
   <div class="bar"><i style="width:{step * 20}%"></i></div>
 
   {#if step === 1}
-    <p class="muted">Déposez un tableur : CSV (UTF-8 ou Windows-1252, séparateur deviné), Excel (.xlsx, .xls) ou OpenDocument (.ods). La première ligne doit porter les en-têtes ; les colonnes sont reconnues même avec d’autres noms (« Désignation », « Fabricant », « Conso (W) »…). Rien n’est écrit avant la dernière étape.</p>
+    <p class="muted">Déposez un tableur : CSV (UTF-8 ou Windows-1252, séparateur deviné), Excel (.xlsx, .xls) ou OpenDocument (.ods). La première ligne doit porter les en-têtes ; les colonnes sont reconnues même avec d’autres noms (« Désignation », « Fabricant », « Conso (W) »). Rien n’est écrit avant la dernière étape.</p>
     <button type="button" class="drop" class:on={dragging} onclick={() => input?.click()}
       ondragover={(e) => { e.preventDefault(); dragging = true; }} ondragleave={() => (dragging = false)}
       ondrop={(e) => { e.preventDefault(); dragging = false; const f = e.dataTransfer?.files[0]; if (f) send(f); }}>
-      {#if busy}<span class="spin"></span>Lecture du fichier…{:else}<Icon name="upload" /><b>Choisir un fichier</b><span class="muted">ou le glisser ici · 20 Mo et 5 000 lignes au plus</span>{/if}
+      {#if busy}<span class="spin"></span>Lecture du fichier{:else}<Icon name="upload" /><b>Choisir un fichier</b><span class="muted">ou le glisser ici · 20 Mo et 5 000 lignes au plus</span>{/if}
     </button>
     <input type="file" accept=".csv,.txt,.tsv,.xlsx,.xlsm,.xls,.ods" bind:this={input} hidden onchange={() => { const f = input?.files?.[0]; if (f) send(f); }}>
     <p class="muted small">Astuce : un export du catalogue (« Export et échange ») se réimporte tel quel.</p>
@@ -102,7 +103,7 @@
               <td><b>{h || `Colonne ${i + 1}`}</b></td>
               <td class="small muted">{a.preview.slice(0, 3).map((r) => r[i]).filter(Boolean).join(' · ') || '—'}</td>
               <td>
-                <select class="input" class:err={!!mapping[i] && (dupMap.get(mapping[i]!) ?? 0) > 1} style="height:38px" value={mapping[i] ?? ''} onchange={(e) => (mapping[i] = (e.target as HTMLSelectElement).value || null)} aria-label="Champ pour {h}">
+                <select class="input" class:err={!!mapping[i] && (dupMap.get(mapping[i]!) ?? 0) > 1} value={mapping[i] ?? ''} onchange={(e) => (mapping[i] = (e.target as HTMLSelectElement).value || null)} aria-label="Champ pour {h}">
                   <option value="">Ignorer</option>{#each a.fields as f}<option value={f.field}>{f.label}</option>{/each}
                 </select>
                 {#if a.matches[i]?.field && a.matches[i]?.field === mapping[i]}<span class="help">Reconnu à {Math.round(a.matches[i]!.score * 100)} %</span>{/if}
@@ -121,13 +122,13 @@
       <p class="muted">Ces valeurs du fichier ne correspondent à aucun élément des référentiels. Associez-les à un élément existant, créez-les{canCreateRefs ? '' : ' (demande le droit « Paramètres et site : écriture »)'}, ou ignorez-les.</p>
       {#each LOOKUPS as l}
         {#if unknown[l.key]?.length}
-          <h3 style="font-size:17px;margin-top:6px">{l.label}</h3>
+          <h3 style="font-size:var(--fs-lg);margin-top:6px">{l.label}</h3>
           <div class="tbl-wrap"><table class="tbl"><tbody>
             {#each unknown[l.key]! as v}
               <tr>
                 <td><b>« {v.value} »</b><br><span class="muted small">{v.rows} ligne{v.rows > 1 ? 's' : ''}</span></td>
                 <td style="width:50%">
-                  <select class="input" style="height:38px" bind:value={choice[l.key]![v.value]} aria-label="Que faire de {v.value}">
+                  <select class="input" bind:value={choice[l.key]![v.value]} aria-label="Que faire de {v.value}">
                     <option value="ignore">Ignorer la valeur</option>
                     {#if v.can_create && canCreateRefs}<option value="create">Créer « {v.value} »</option>{/if}
                     <optgroup label="Associer à">{#each refList(l.ref) as r}<option value="map:{r.id}">{r.name}{v.suggestion?.id === r.id ? ' (suggéré)' : ''}</option>{/each}</optgroup>
@@ -140,7 +141,7 @@
       {/each}
     {/if}
     <div class="field"><span class="flabel">Si un équipement existe déjà (même référence, ou même nom et même marque)</span>
-      <div class="seg">{#each [['skip', 'Garder l’existant'], ['update', 'Le mettre à jour'], ['create', 'Créer quand même']] as [k, l]}<button class:on={strategy === k} onclick={() => (strategy = k as typeof strategy)}>{l}</button>{/each}</div>
+      <Seg label="Équipement existant" bind:value={strategy} options={[{ value: 'skip', label: 'Garder l’existant' }, { value: 'update', label: 'Le mettre à jour' }, { value: 'create', label: 'Créer quand même' }]} />
       <span class="help">« Mettre à jour » ne remplace que les colonnes importées ; les ports et le reste de la fiche sont gardés.</span>
     </div>
     {#if error}<div class="alert err">{error}</div>{/if}
@@ -177,9 +178,9 @@
 </section>
 
 <style>
-  .drop { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; min-height: 180px; border: 2px dashed var(--line-2); border-radius: 18px; background: var(--surface-2); color: var(--fg); font-size: 16px; }
+  .drop { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; min-height: 180px; border: 2px dashed var(--line-2); border-radius: var(--r-md); background: var(--surface-2); color: var(--fg); font-size: var(--fs-lg); }
   .drop.on, .drop:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, var(--surface-2)); }
   .drop :global(.ic) { width: 28px; height: 28px; }
   details summary { cursor: pointer; padding: 6px 0; }
-  .fig b { font-size: 44px; }
+  .fig b { font-size: var(--fs-3xl); }
 </style>

@@ -3,6 +3,7 @@
   import Icon from '../../components/Icon.svelte';
   import Confirm from '../../components/Confirm.svelte';
   import PageHead from '../../components/PageHead.svelte';
+  import Loading from '../../components/Loading.svelte';
   import { api, ApiError } from '../../lib/api';
   import { can } from '../../lib/session.svelte';
   import { toast, fail } from '../../lib/toast.svelte';
@@ -55,7 +56,7 @@
         ? await api.put<{ item: CatalogItem; duplicates: Duplicate[] }>(`/catalog/items/${id}`, { rev: item!.rev, data })
         : await api.post<{ item: CatalogItem; duplicates: Duplicate[] }>('/catalog/items', { kind, data });
       duplicates = r.duplicates;
-      toast(id ? 'Fiche enregistrée.' : 'Fiche créée.');
+      toast(id ? `« ${data.name || meta.one} » enregistré.` : `« ${data.name || meta.one} » créé.`);
       if (!id) { saved = JSON.stringify(data); navigate(`/catalogue/${kind}/${r.item.id}`, true); return; }
       item = r.item; data = structuredClone(r.item.data); saved = JSON.stringify(data);
     } catch (e) {
@@ -67,21 +68,21 @@
   async function remove() {
     try {
       const r = await api.post<{ deleted: number; kept: unknown[] }>('/catalog/items/delete', { ids: [id] });
-      if (r.deleted) { toast('Fiche supprimée.'); saved = JSON.stringify(data); navigate(`/catalogue/${kind}`); } else toast('Fiche gardée : elle est encore utilisée.', 'warn');
+      if (r.deleted) { toast(`« ${item?.name ?? meta.one} » supprimé.`); saved = JSON.stringify(data); navigate(`/catalogue/${kind}`); } else toast('Fiche gardée : elle est encore utilisée.', 'warn');
     } catch (e) { fail(e); } finally { deleting = false; }
   }
   async function duplicate() {
     try { const r = await api.post<{ item: CatalogItem }>(`/catalog/items/${id}/duplicate`); toast('Fiche dupliquée : vous modifiez la copie.'); navigate(`/catalogue/${kind}/${r.item.id}`); } catch (e) { fail(e); }
   }
-  function leave(e: BeforeUnloadEvent) { if (dirty) e.preventDefault(); }
-  // Changer de page (lien, menu, « Annuler ») avec des modifications : on demande.
+  // Changer de page (lien, menu, « Annuler ») ou fermer l'onglet avec des modifications : on demande.
   $effect(() => registerLeaveGuard(() => dirty));
+  // Téléphone : la barre d'enregistrement s'efface pendant la saisie, pour ne pas cacher le champ au-dessus du clavier.
+  let typing = $state(false);
+  function focusIn(e: FocusEvent) { typing = !!(e.target as HTMLElement).closest?.('input:not([type=checkbox]):not([type=radio]),textarea,select'); }
 </script>
 
-<svelte:window onbeforeunload={leave} />
-
 {#if data}
-  <div class="editor">
+  <div class="editor" onfocusin={focusIn} onfocusout={() => (typing = false)}>
     <PageHead crumbs={[{ label: 'Catalogue', href: '/catalogue' }, { label: meta.label, href: `/catalogue/${kind}` }, { label: id ? (item?.name ?? 'Fiche') : 'Nouvelle fiche' }]} title={data.name || (id ? item?.name ?? '' : meta.newLabel)}>
       {#snippet info()}{#if item}Modifiée {relative(item.updated_at)} · révision {item.rev}{/if}{/snippet}
       {#snippet actions()}{#if id && writable}<button class="btn" onclick={duplicate}><Icon name="copy" />Dupliquer</button><button class="btn ghost danger act-danger" onclick={() => (deleting = true)}><Icon name="trash" />Supprimer…</button>{/if}{/snippet}
@@ -101,17 +102,21 @@
     </fieldset>
 
     {#if writable}
-      <div class="savebar">
+      <div class="savebar" class:typing>
         <span class="grow" class:has-err={!!general}>{#if general}<span style="color:var(--err)">{general}</span>{:else if dirty}Modifications non enregistrées.{:else}Rien à enregistrer.{/if}</span>
         <a class="btn ghost" href="/catalogue/{kind}">{dirty ? 'Annuler' : 'Retour à la liste'}</a>
         <button class="btn primary" onclick={save} disabled={saving || (!dirty && !!id)}>{#if saving}<span class="spin"></span>{/if}{id ? 'Enregistrer' : 'Créer la fiche'}</button>
       </div>
     {/if}
   </div>
-{:else}<span class="spin"></span>{/if}
+{:else}<Loading label="Chargement de la fiche" />{/if}
 
 {#if deleting}
   <Confirm title="Supprimer cette fiche ?" eyebrow={meta.one} confirmLabel="Supprimer" danger onconfirm={remove} onclose={() => (deleting = false)}>
     <p>{usedBy.length ? 'Elle est encore utilisée : elle sera gardée.' : 'La suppression est définitive.'}</p>
   </Confirm>
 {/if}
+
+<style>
+  @media (max-width: 860px) and (pointer: coarse) { .savebar.typing { display: none; } }
+</style>

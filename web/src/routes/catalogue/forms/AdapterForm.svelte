@@ -1,6 +1,7 @@
 <script lang="ts">
   import Icon from '../../../components/Icon.svelte';
   import FieldError from '../../../components/FieldError.svelte';
+  import NumField from '../../../components/NumField.svelte';
   import ConnEnd from './ConnEnd.svelte';
   import { refList } from '../../../lib/catalog.svelte';
   let { data = $bindable(), err }: { data: any; err: (f: string) => string | undefined } = $props();
@@ -21,13 +22,18 @@
   <div class="stack" style="margin-top:16px">
     <ConnEnd id="a-in" label="Entrée" bind:value={data.input} error={err('input')} />
     {#each data.outputs as o, i}
-      <div style="display:grid;grid-template-columns:1fr 90px auto;gap:10px;align-items:end">
+      <div class="out-row">
         <ConnEnd id="a-out-{i}" label="Sortie {i + 1}" bind:value={data.outputs[i]} error={err(`outputs[${i}]`)} />
-        <div class="field"><label for="a-q-{i}">Nombre</label><input class="input mono" id="a-q-{i}" type="number" min="1" bind:value={o.quantity}></div>
-        <button type="button" class="btn sm ghost danger" title="Retirer" disabled={data.outputs.length < 2} onclick={() => (data.outputs = data.outputs.filter((_: unknown, j: number) => j !== i))} style="margin-bottom:4px"><Icon name="x" size="sm" /></button>
+        <NumField id="a-q-{i}" label="Nombre" min={1} step={1} bind:value={() => o.quantity, (v) => (o.quantity = Math.max(1, Math.round(v ?? 1)))} />
+        <button type="button" class="icon-btn danger" title="Retirer la sortie {i + 1}" aria-label="Retirer la sortie {i + 1}" disabled={data.outputs.length < 2} onclick={() => (data.outputs = data.outputs.filter((_: unknown, j: number) => j !== i))}><Icon name="x" size="sm" /></button>
       </div>
     {/each}
     <FieldError message={err('outputs')} />
-    <div class="field"><label for="a-notes">Notes</label><textarea class="input" id="a-notes" rows="3" style="height:auto;padding:12px 14px" value={data.notes ?? ''} oninput={(e) => (data.notes = (e.target as HTMLTextAreaElement).value || null)}></textarea></div>
+    <div class="field"><label for="a-notes">Notes</label><textarea class="input" id="a-notes" rows="3" value={data.notes ?? ''} oninput={(e) => (data.notes = (e.target as HTMLTextAreaElement).value || null)}></textarea></div>
   </div>
 </section>
+
+<style>
+  .out-row { display: grid; grid-template-columns: minmax(0, 1fr) 110px auto; gap: 10px; align-items: end; }
+  @media (max-width: 860px) { .out-row { grid-template-columns: minmax(0, 1fr) auto; } .out-row > :first-child { grid-column: 1 / -1; } }
+</style>

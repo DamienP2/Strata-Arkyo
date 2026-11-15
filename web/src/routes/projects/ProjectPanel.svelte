@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { ask } from '../../lib/ask.svelte';
   // Panel posé dans un projet : copie propre au projet, modifiée sans toucher la bibliothèque.
   import { untrack } from 'svelte';
   import Dialog from '../../components/Dialog.svelte';
@@ -36,13 +35,9 @@
       else fail(e);
     }
   }
-  async function close() {
-    if (editor?.isDirty() && !(await ask({ title: 'Fermer sans enregistrer ?', text: 'Les modifications du panel seront perdues.', confirmLabel: 'Fermer sans enregistrer', danger: true }))) return;
-    onclose();
-  }
 </script>
 
-<Dialog title={panel?.name ?? 'Panel'} {eyebrow} onclose={close} xl>
+<Dialog title={panel?.name ?? 'Panel'} {eyebrow} {onclose} xl dirty={() => editor?.isDirty() ?? false}>
   {#if panel}
     <PanelEditor bind:this={editor} initial={panel} {readonly} onsave={save}>
       {#snippet actions()}{#if can('catalogue', 'ecriture')}<button class="btn ghost" onclick={toLibrary} title="Copier ce panel dans la bibliothèque du site"><Icon name="copy" size="sm" />Ajouter à la bibliothèque</button>{/if}{/snippet}
