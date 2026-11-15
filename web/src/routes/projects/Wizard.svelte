@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from 'svelte';
   import { modal } from '../../lib/modal';
   // Assistant de création (section 7.3) : une question par étape, récapitulatif, puis
   // création du projet, de l'emplacement et de l’élément.
@@ -6,6 +7,7 @@
   import Ill from '../../components/Ill.svelte';
   import NumField from '../../components/NumField.svelte';
   import FieldError from '../../components/FieldError.svelte';
+  import Seg from '../../components/Seg.svelte';
   import { api, ApiError } from '../../lib/api';
   import { navigate } from '../../lib/router.svelte';
   import { toast } from '../../lib/toast.svelte';
@@ -18,7 +20,7 @@
     regie: 'car' as Regie, name: '', external: true, client: '',
     planning_start: today, planning_end: '', shoot_start: '', shoot_end: '', venue: '', location: '', description: '', service_type: '',
   });
-  let cname = $state('Baie 1');
+  let cname = $state('Rack 1');
   let c = $state(blankContainer('rack'));
   let step = $state(0);
   let busy = $state(false);
@@ -96,15 +98,23 @@
     ['container', 'Élément', `${cname} · ${CONTAINER_KINDS[c.kind].label}${c.rackable ? ` · ${c.height_u} U` : ''}`],
     ['description', 'Description', d.description || '—'],
   ] as [Step, string, string][]);
-  // Dix étapes de saisie : on ne ferme jamais sans le demander.
+  // Fermeture (croix, Échap, fond) : on ne demande que si la saisie a commencé, comme Dialog.
+  const initial = JSON.stringify({ d: $state.snapshot(d), cname: 'Rack 1', c: blankContainer('rack') });
+  const dirty = () => JSON.stringify({ d, cname, c }) !== initial;
   let asking = $state(false);
+  let askEl = $state<HTMLButtonElement>();
+  $effect(() => { if (asking) askEl?.focus(); });
+  function requestClose() { if (busy) return; if (dirty()) asking = true; else onclose(); }
+  // Second Échap ou « Continuer la saisie » : retour à l'étape en cours.
+  async function resume() { asking = false; await tick(); document.querySelector<HTMLElement>('.wz-body :is(input,textarea,select)')?.focus(); }
+  /** Champ en erreur : aria-invalid et aria-describedby vers le message (FieldError `for`). */
+  const inv = (key: string, id: string) => ({ 'aria-invalid': errors[key] ? true : undefined, 'aria-describedby': errors[key] ? `${id}-err` : undefined });
 </script>
 
-<div class="modal" role="presentation" use:modal={{ close: onclose, ask: () => (asking = true) }}>
+<div class="modal" role="presentation" use:modal={{ close: onclose, locked: () => busy, dirty, ask: () => (asking ? resume() : (asking = true)) }}>
   <div class="dialog" role="dialog" aria-modal="true" aria-label="Nouveau projet">
     <div class="wz-head">
-      <div class="row"><span class="eyebrow">Nouveau projet · étape {step + 1} sur {STEPS.length}</span><button class="icon-btn sm" onclick={() => (asking = true)} aria-label="Fermer"><Icon name="x" /></button></div>
-      {#if asking}<div class="wz-ask" role="alertdialog" aria-label="Abandonner le projet ?"><span>Abandonner la création ? La saisie sera perdue.</span><button type="button" class="btn sm ghost" onclick={() => (asking = false)}>Continuer</button><button type="button" class="btn sm danger-btn" onclick={onclose}>Abandonner</button></div>{/if}
+      <div class="row"><span class="eyebrow">Nouveau projet · étape {step + 1} sur {STEPS.length}</span><button type="button" class="icon-btn sm" disabled={busy} onclick={requestClose} aria-label="Fermer (Échap)" title="Fermer (Échap)"><Icon name="x" /></button></div>
       <div class="bar"><i style="width:{(100 * (step + 1)) / STEPS.length}%"></i></div>
     </div>
     <form class="wz-body" onsubmit={(e) => { e.preventDefault(); if (cur === 'recap') create(); else next(); }}>
@@ -112,51 +122,51 @@
         <h2>Quel type de régie ?</h2>
         <div class="choices">
           {#each Object.entries(REGIE) as [k, r]}
-            <button type="button" class="choice" class:on={d.regie === k} onclick={() => (d.regie = k as Regie)}>
+            <button type="button" class="choice" class:on={d.regie === k} aria-pressed={d.regie === k} onclick={() => (d.regie = k as Regie)}>
               <span class="ch-vis"><Ill kind={r.ill} /></span><b>{r.label}</b>
             </button>
           {/each}
         </div>
-        <p class="muted small">Modifiable ensuite dans la fiche du projet.</p>
+        <p class="muted small">Modifiable ensuite dans la vue d’ensemble du projet.</p>
       {:else if cur === 'name'}
         <h2>Comment s’appelle-t-il ?</h2>
-        <div class="field"><label for="wz-name">Nom du projet</label><input class="input" id="wz-name" bind:value={d.name} oninput={checkName} maxlength="120" autocomplete="off" placeholder="Ex. Finale Coupe Atlantique">
-          {#if taken}<span class="help err">Un projet porte déjà ce nom.</span>{:else if d.name.trim()}<span class="help ok">Nom disponible.</span>{/if}<FieldError message={errors.name} /></div>
+        <div class="field"><label for="wz-name">Nom du projet</label><input class="input" id="wz-name" bind:value={d.name} oninput={checkName} maxlength="120" autocomplete="off" placeholder="Ex. Finale Coupe Atlantique" {...inv('name', 'wz-name')}>
+          {#if taken}<span class="help err">Un projet porte déjà ce nom.</span>{:else if d.name.trim()}<span class="help ok">Nom disponible.</span>{/if}<FieldError message={errors.name} for="wz-name" /></div>
       {:else if cur === 'client'}
         <h2>Pour quel client ?</h2>
-        <div class="seg" style="align-self:flex-start"><button type="button" class:on={!d.external} onclick={() => (d.external = false)}>Projet interne</button><button type="button" class:on={d.external} onclick={() => (d.external = true)}>Client externe</button></div>
-        {#if d.external}<div class="field"><label for="wz-client">Nom du client</label><input class="input" id="wz-client" bind:value={d.client} list="wz-clients" maxlength="120"><datalist id="wz-clients">{#each clients as cl}<option value={cl}></option>{/each}</datalist><FieldError message={errors.client} /></div>{/if}
+        <Seg label="Client" bind:value={d.external} options={[{ value: false, label: 'Projet interne' }, { value: true, label: 'Client externe' }]} class="wz-seg" />
+        {#if d.external}<div class="field"><label for="wz-client">Nom du client</label><input class="input" id="wz-client" bind:value={d.client} list="wz-clients" maxlength="120" {...inv('client', 'wz-client')}><datalist id="wz-clients">{#each clients as cl}<option value={cl}></option>{/each}</datalist><FieldError message={errors.client} for="wz-client" /></div>{/if}
       {:else if cur === 'planning'}
         <h2>Période de préparation</h2>
         <p class="muted">Conception, commandes, câblage en atelier.</p>
         <div class="form-grid">
-          <div class="field"><label for="wz-ps">Début</label><input class="input" type="date" id="wz-ps" bind:value={d.planning_start} min={today}><FieldError message={errors.planning_start} /></div>
-          <div class="field"><label for="wz-pe">Fin</label><input class="input" type="date" id="wz-pe" bind:value={d.planning_end} min={d.planning_start || today}><FieldError message={errors.planning_end} /></div>
+          <div class="field"><label for="wz-ps">Début</label><input class="input" type="date" id="wz-ps" bind:value={d.planning_start} min={today} {...inv('planning_start', 'wz-ps')}><FieldError message={errors.planning_start} for="wz-ps" /></div>
+          <div class="field"><label for="wz-pe">Fin</label><input class="input" type="date" id="wz-pe" bind:value={d.planning_end} min={d.planning_start || today} {...inv('planning_end', 'wz-pe')}><FieldError message={errors.planning_end} for="wz-pe" /></div>
         </div>
       {:else if cur === 'dates'}
         <h2>Période d’exploitation</h2>
         <p class="muted">Tournage, événement ou mise en service : un seul jour si début et fin sont identiques.</p>
         <div class="form-grid">
-          <div class="field"><label for="wz-ss">Début</label><input class="input" type="date" id="wz-ss" bind:value={d.shoot_start} min={today}><FieldError message={errors.shoot_start} /></div>
-          <div class="field"><label for="wz-se">Fin</label><input class="input" type="date" id="wz-se" bind:value={d.shoot_end} min={d.shoot_start || today}><FieldError message={errors.shoot_end} /></div>
+          <div class="field"><label for="wz-ss">Début</label><input class="input" type="date" id="wz-ss" bind:value={d.shoot_start} min={today} {...inv('shoot_start', 'wz-ss')}><FieldError message={errors.shoot_start} for="wz-ss" /></div>
+          <div class="field"><label for="wz-se">Fin</label><input class="input" type="date" id="wz-se" bind:value={d.shoot_end} min={d.shoot_start || today} {...inv('shoot_end', 'wz-se')}><FieldError message={errors.shoot_end} for="wz-se" /></div>
         </div>
       {:else if cur === 'venue'}
         <h2>Où se passe-t-il ?</h2>
         <div class="form-grid">
-          <div class="field"><label for="wz-venue">Lieu</label><input class="input" id="wz-venue" bind:value={d.venue} placeholder="Ex. Arena Loire, Nantes"></div>
-          <div class="field"><label for="wz-tp">Type de projet</label><input class="input" id="wz-tp" bind:value={d.service_type} list="wz-tps" placeholder="Sport, concert, TV…"><datalist id="wz-tps">{#each ['Sport', 'Concert', 'Plateau TV', 'Conférence', 'Théâtre', 'Studio'] as t}<option value={t}></option>{/each}</datalist></div>
+          <div class="field"><label for="wz-venue">Lieu</label><input class="input" id="wz-venue" bind:value={d.venue} placeholder="Ex. Arena Loire, Nantes" {...inv('venue', 'wz-venue')}><FieldError message={errors.venue} for="wz-venue" /></div>
+          <div class="field"><label for="wz-tp">Type de projet</label><input class="input" id="wz-tp" bind:value={d.service_type} list="wz-tps" placeholder="Ex. Sport, concert, TV"><datalist id="wz-tps">{#each ['Sport', 'Concert', 'Plateau TV', 'Conférence', 'Théâtre', 'Studio'] as t}<option value={t}></option>{/each}</datalist></div>
         </div>
       {:else if cur === 'location'}
         <h2>Premier emplacement</h2>
-        <p class="muted">Un emplacement regroupe des éléments : la régie, le bord du terrain, la cabine commentateurs… Son code entre dans la numérotation des câbles.</p>
-        <div class="field"><label for="wz-loc">Nom</label><input class="input" id="wz-loc" bind:value={d.location} maxlength="120" placeholder="Ex. Car régie CR-2"><FieldError message={errors.location ?? errors['location.name']} /></div>
+        <p class="muted">Un emplacement regroupe des éléments : la régie, le bord du terrain ou la cabine commentateurs. Son code entre dans la numérotation des câbles.</p>
+        <div class="field"><label for="wz-loc">Nom</label><input class="input" id="wz-loc" bind:value={d.location} maxlength="120" placeholder="Ex. Car régie CR-2" aria-invalid={errors.location || errors['location.name'] ? true : undefined} aria-describedby={errors.location || errors['location.name'] ? 'wz-loc-err' : undefined}><FieldError message={errors.location ?? errors['location.name']} for="wz-loc" /></div>
       {:else if cur === 'container'}
         <h2>Premier élément</h2>
         <div class="choices" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr))">
-          {#each Object.entries(CONTAINER_KINDS).filter(([, v]) => !v.hidden) as [k, v]}<button type="button" class="choice" class:on={c.kind === k} onclick={() => setKind(k as ContainerKind)}><b style="font-size:17px">{v.label}</b></button>{/each}
+          {#each Object.entries(CONTAINER_KINDS).filter(([, v]) => !v.hidden) as [k, v]}<button type="button" class="choice" class:on={c.kind === k} aria-pressed={c.kind === k} onclick={() => setKind(k as ContainerKind)}><b style="font-size:17px">{v.label}</b></button>{/each}
         </div>
         <div class="form-grid">
-          <div class="field"><label for="wz-cn">Nom</label><input class="input" id="wz-cn" bind:value={cname} maxlength="120"><FieldError message={errors.cname} /></div>
+          <div class="field"><label for="wz-cn">Nom</label><input class="input" id="wz-cn" bind:value={cname} maxlength="120" {...inv('cname', 'wz-cn')}><FieldError message={errors.cname} for="wz-cn" /></div>
           <div class="field" style="justify-content:flex-end;gap:8px">
             <label class="toggle-row"><input type="checkbox" bind:checked={c.rackable}>Rackable (19″)</label>
             {#if CONTAINER_KINDS[c.kind].mobile}<label class="toggle-row"><input type="checkbox" bind:checked={c.wheels}>Roulettes</label>{/if}
@@ -173,7 +183,7 @@
         </div>
       {:else if cur === 'description'}
         <h2>Une description ?</h2>
-        <div class="field"><label for="wz-desc">Description (facultative)</label><textarea class="input" id="wz-desc" rows="4" style="height:auto;padding:12px 14px" bind:value={d.description}></textarea></div>
+        <div class="field"><label for="wz-desc">Description (facultative)</label><textarea class="input" id="wz-desc" rows="4" bind:value={d.description}></textarea></div>
       {:else}
         <h2>Récapitulatif</h2>
         <div class="recap">
@@ -183,16 +193,25 @@
       {/if}
       <button type="submit" hidden aria-hidden="true" tabindex="-1"></button>
     </form>
-    <div class="wz-foot">
-      <button class="btn ghost" onclick={() => (step = Math.max(0, step - 1))} disabled={step === 0}><Icon name="chevl" size="sm" />Retour</button>
-      {#if cur === 'recap'}<button class="btn primary" onclick={create} disabled={busy}>{#if busy}<span class="spin"></span>{/if}Créer le projet</button>
-      {:else}<button class="btn primary" onclick={next}>Continuer<Icon name="chevr" size="sm" /></button>{/if}
-    </div>
+    {#if asking}
+      <div class="wz-foot wz-ask" role="alertdialog" aria-label="Fermer sans enregistrer ?">
+        <span>Fermer sans enregistrer ? Ce qui n’a pas été enregistré sera perdu.</span>
+        <button type="button" class="btn ghost" bind:this={askEl} onclick={resume}>Continuer la saisie</button>
+        <button type="button" class="btn primary danger" onclick={onclose}>Fermer sans enregistrer</button>
+      </div>
+    {:else}
+      <div class="wz-foot">
+        <button type="button" class="btn ghost" onclick={() => (step = Math.max(0, step - 1))} disabled={step === 0 || busy}><Icon name="chevl" size="sm" />Retour</button>
+        {#if cur === 'recap'}<button type="button" class="btn primary" onclick={create} disabled={busy}>{#if busy}<span class="spin" aria-hidden="true"></span>{/if}Créer le projet</button>
+        {:else}<button type="button" class="btn primary" onclick={next}>Continuer<Icon name="chevr" size="sm" /></button>{/if}
+      </div>
+    {/if}
   </div>
 </div>
 
 <style>
-  .wz-ask { display: flex; gap: 8px; align-items: center; margin-top: 10px; padding: 8px 10px; border-radius: 10px; background: color-mix(in srgb, var(--err) 12%, transparent); }
-  .wz-ask span { flex: 1; font-size: 13px; }
-  .danger-btn { background: var(--err); color: #fff; }
+  /* Demande de fermeture : même pied que Dialog (texte, « Continuer la saisie », danger plein en taille M). */
+  .wz-ask { gap: 8px; align-items: center; }
+  .wz-ask span { flex: 1; font-size: var(--fs-md); color: var(--fg-2); }
+  .wz-body :global(.wz-seg) { align-self: flex-start; }
 </style>

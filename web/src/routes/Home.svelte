@@ -4,9 +4,11 @@
   import Ill from '../components/Ill.svelte';
   import Vu from '../components/Vu.svelte';
   import Avatar from '../components/Avatar.svelte';
+  import StatusChip from '../components/StatusChip.svelte';
+  import EmptyState from '../components/EmptyState.svelte';
   import { api } from '../lib/api';
   import { session, can } from '../lib/session.svelte';
-  import { nf, relative } from '../lib/format';
+  import { nf, relative, COMPLETION_HELP } from '../lib/format';
   import { STATUS, STATUS_ORDER, REGIE, fdate, urgency, type Project, type Status } from '../lib/projects';
 
   interface Dash {
@@ -44,8 +46,8 @@
       <h1 class="display">Bonjour {first}.</h1>
       <p class="lead">{lead}{#if dash?.next}{' '}Le plus proche, <a class="ilink" href="/projets/{dash.next.project.id}">{dash.next.project.name}</a>, démarre {fdate(dash.next.project.shoot_start ?? dash.next.project.commissioning, { weekday: 'long', day: 'numeric', month: 'long' })}.{/if}</p>
       <div class="head-actions">
-        {#if can('projets', 'ecriture')}<a class="btn primary" href="/projets?nouveau=1"><Icon name="plus" />Nouveau projet</a>{/if}
         {#if can('projets', 'lecture')}<a class="btn" href="/projets">Tous les projets</a>{/if}
+        {#if can('projets', 'ecriture')}<a class="btn primary" href="/projets?nouveau=1"><Icon name="plus" />Nouveau projet</a>{/if}
       </div>
     </header>
     {#if dash?.next}
@@ -57,7 +59,7 @@
         <span class="next-sub">{n.project.client ?? 'Projet interne'}{n.project.venue ? ` · ${n.project.venue}` : ''}</span>
         <span class="next-meta">
           <span><span class="lbl-t">Exploitation</span><b>{fdate(n.project.shoot_start ?? n.project.commissioning, { weekday: 'short', day: 'numeric' })} → {fdate(n.project.shoot_end ?? n.project.shoot_start ?? n.project.commissioning, { weekday: 'short', day: 'numeric', month: 'short' })}</b></span>
-          <span><span class="lbl-t">Fiche · {n.completion} %</span><Vu value={n.completion} n={24} /></span>
+          <span title={COMPLETION_HELP}><span class="lbl-t">Avancement · {n.completion} %</span><Vu value={n.completion} n={24} /></span>
           <span></span>
         </span>
       </a>
@@ -66,21 +68,21 @@
         <span class="next-top"><span class="lbl-t">État du site</span></span>
         <span class="next-name">Strata Arkyo {site.version}</span>
         <span class="next-sub">{site.available ? `La version ${site.available} est prête à installer.` : 'L’application est à jour.'}</span>
-        <span class="next-meta" style="grid-template-columns:1fr"><span><span class="lbl-t">Dernière sauvegarde</span><b>{relative(site.lastBackup)}</b></span></span>
+        <span class="next-meta one"><span><span class="lbl-t">Dernière sauvegarde</span><b>{relative(site.lastBackup)}</b></span></span>
       </a>
     {/if}
   </section>
 
   {#if dash}
     <section class="figs">
-      <a class="fig" href="/projets"><span class="lbl-t">Projets actifs</span><span><b>{dash.projects_active}<small>/{dash.projects_total}</small></b><span class="fig-s">en préparation, prêts ou en cours</span></span></a>
+      <a class="fig card link" href="/projets"><span class="lbl-t">Projets actifs</span><span><b>{dash.projects_active}<small>/{dash.projects_total}</small></b><span class="fig-s">en préparation, prêts ou en cours</span></span></a>
       {#if dash.tasks_total}
         <div class="fig"><span class="lbl-t">Tâches terminées</span><span><b>{dash.tasks_pct}<small>%</small></b><span class="fig-s">{dash.tasks_done} sur {dash.tasks_total} tâche{dash.tasks_total > 1 ? 's' : ''}</span></span><span class="fig-v"><Vu value={dash.tasks_pct} n={14} cls="acc" /></span></div>
       {:else}
         <div class="fig"><span class="lbl-t">Tâches</span><span><span class="fig-none">Aucune tâche</span><span class="fig-s">dans les projets en cours</span></span></div>
       {/if}
-      <div class="fig"><span class="lbl-t">Complétion des fiches</span><span><b>{dash.completion_avg}<small>%</small></b><span class="fig-s">en moyenne sur {dash.projects_total} projet{dash.projects_total > 1 ? 's' : ''}</span></span><span class="fig-v"><Vu value={dash.completion_avg} n={14} cls={dash.completion_avg >= 80 ? 'ok' : ''} /></span></div>
-      {#if catalog != null}<a class="fig" href="/catalogue"><span class="lbl-t">Catalogue</span><span><b>{nf(catalog)}</b><span class="fig-s">fiches d’équipement</span></span></a>{/if}
+      <div class="fig" title={COMPLETION_HELP}><span class="lbl-t">Avancement des projets</span><span><b>{dash.completion_avg}<small>%</small></b><span class="fig-s">en moyenne sur {dash.projects_total} projet{dash.projects_total > 1 ? 's' : ''}</span></span><span class="fig-v"><Vu value={dash.completion_avg} n={14} cls={dash.completion_avg >= 80 ? 'ok' : ''} /></span></div>
+      {#if catalog != null}<a class="fig card link" href="/catalogue"><span class="lbl-t">Catalogue</span><span><b>{nf(catalog)}</b><span class="fig-s">fiches d’équipement</span></span></a>{/if}
     </section>
 
     <div class="cols">
@@ -91,22 +93,22 @@
             {@const dt = new Date(u.date + 'T12:00:00')}
             <a class="urow" href="/projets/{u.project.id}">
               <span class="r-date"><b>{dt.getDate()}</b><span>{dt.toLocaleDateString('fr-FR', { month: 'short' })}</span></span>
-              <span class="r-main"><b>{u.project.name}</b><span>{u.project.client ?? 'Projet interne'}{u.project.venue ? ` · ${u.project.venue}` : ''} · fiche {u.completion} %</span></span>
+              <span class="r-main"><b>{u.project.name}</b><span>{u.project.client ?? 'Projet interne'}{u.project.venue ? ` · ${u.project.venue}` : ''} · avancement {u.completion} %</span></span>
               <span class="r-j" style="color:{urgency(u.days)}">J-{u.days}</span>
             </a>
-          {:else}<p class="empty">Rien de prévu dans les 30 prochains jours.</p>{/each}
+          {:else}<EmptyState card={false} icon="cal" message="Rien de prévu dans les 30 prochains jours." />{/each}
         </div>
       </section>
       <section class="card">
         <div class="card-head"><h2>Activité récente</h2></div>
         <div class="rows">
           {#each dash.recent as r (r.project.id)}
-            <a class="urow" href="/projets/{r.project.id}" style="grid-template-columns:auto minmax(0,1fr) auto">
+            <a class="urow recent" href="/projets/{r.project.id}">
               <Avatar name={r.project.name} color={STATUS[r.project.status].color} size="sm" />
               <span class="r-main"><b>{r.project.name}</b><span>modifié {relative(r.project.updated_at)}</span></span>
-              <span class="chip st" style="--c:{STATUS[r.project.status].color};font-size:13px"><i class="dot"></i>{STATUS[r.project.status].label}</span>
+              <StatusChip status={r.project.status} />
             </a>
-          {:else}<p class="empty">Aucune activité.</p>{/each}
+          {:else}<EmptyState card={false} icon="clock" message="Aucune activité récente." />{/each}
         </div>
       </section>
     </div>
@@ -120,3 +122,8 @@
     {/if}
   {/if}
 </div>
+
+<style>
+  .next-meta.one { grid-template-columns: minmax(0, 1fr); }
+  .urow.recent { grid-template-columns: auto minmax(0, 1fr) auto; }
+</style>

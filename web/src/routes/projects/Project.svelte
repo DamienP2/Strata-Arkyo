@@ -5,8 +5,12 @@
   import type { SecGroup } from '../../components/SecNav.svelte';
   import Avatar from '../../components/Avatar.svelte';
   import Icon from '../../components/Icon.svelte';
+  import PageHead, { type Crumb } from '../../components/PageHead.svelte';
+  import EmptyState from '../../components/EmptyState.svelte';
+  import Loading from '../../components/Loading.svelte';
+  import { pageSlot } from '../../lib/pagehead.svelte';
   import { api, ApiError } from '../../lib/api';
-  import { can } from '../../lib/session.svelte';
+  import { can, session } from '../../lib/session.svelte';
   import { toast, fail } from '../../lib/toast.svelte';
   import { route, navigate } from '../../lib/router.svelte';
   import { join, live } from '../../lib/live.svelte';
@@ -50,6 +54,8 @@
     });
   });
   const presence = $derived(live.presence[`project:${id}`] ?? view?.presence ?? []);
+  // Les autres membres présents (un même compte ouvert dans plusieurs onglets ne compte qu'une fois).
+  const others = $derived([...new Map(presence.filter((m) => m.id !== session.me?.account.id).map((m) => [m.id, m])).values()]);
 
   const groups = $derived<SecGroup[]>([{ label: 'Projet', items: [
     { key: '', label: 'Vue d’ensemble', href: `/projets/${id}`, icon: 'grid' },
@@ -79,6 +85,13 @@
     dessins: 'Schémas de principe, implantations vidéo et audio, plans de feu avec adressage DMX.',
   };
   const section = $derived(groups.flatMap((g) => g.items.map((i) => ({ ...i, group: g.label }))).find((i) => i.key === sub));
+  // Fil d'Ariane : Projets › nom du projet › groupe de la section (le titre porte la section).
+  // Le groupe « Projet » (Vue d'ensemble, Inventaire, Tâches) répéterait le nom : il est omis.
+  const crumbs = $derived<Crumb[]>(view ? [
+    { label: 'Projets', href: '/projets' },
+    sub ? { label: view.project.name, href: `/projets/${id}`, current: false } : { label: view.project.name },
+    ...(sub && section?.group && section.group !== 'Projet' ? [{ label: section.group, current: false }] : []),
+  ] : []);
 
   async function setStatus(s: Status) {
     if (!view) return;
@@ -93,12 +106,31 @@
 </script>
 
 {#if gone}
-  <div class="page"><h1 class="display">Projet introuvable</h1><p class="lead">Il a peut-être été supprimé. <a class="ilink" href="/projets">Revenir aux projets</a>.</p></div>
+  <div class="page">
+    <PageHead crumbs={[{ label: 'Projets', href: '/projets' }, { label: 'Projet introuvable' }]} title="Projet introuvable" />
+    <EmptyState icon="folder" message="Ce projet n’existe pas ou plus." hint="Il a peut-être été supprimé par un autre membre.">{#snippet action()}<a class="btn primary" href="/projets">Revenir aux projets</a>{/snippet}</EmptyState>
+  </div>
 {:else if view && p}
   {#snippet statusSelect()}
     <label class="st-select sm" style="--c:{STATUS[p.status].color}"><i class="dot"></i>
       <select value={p.status} aria-label="Statut du projet" disabled={!can('projets', 'ecriture')} onchange={(e) => setStatus((e.target as HTMLSelectElement).value as Status)}>{#each STATUS_ORDER as s}<option value={s}>{STATUS[s].label}</option>{/each}</select>
     </label>
+  {/snippet}
+  {#snippet meta()}
+    <span class="hm">
+      {#if days != null && days >= 0 && !['done', 'cancelled'].includes(p.status)}<span class="tally" style="--c:{urgency(days)}" title="Jours avant l’exploitation">J-{days}</span>{/if}
+      <span class="hm-it"><span class="lbl-t">Exploitation</span>{period(p)}</span>
+      {#if p.venue}<span class="hm-it hide-m"><span class="lbl-t">Lieu</span>{p.venue}</span>{/if}
+      <span class="hm-it hide-m"><span class="lbl-t">Client</span>{p.client ?? 'Projet interne'}</span>
+      {#if others.length}
+        {@const label = `${others.length + 1} personnes connectées`}
+        {@const help = `Aussi sur ce projet : ${others.map((m) => m.name).join(', ')}. Leurs modifications s’affichent sans recharger la page.`}
+        <span class="hm-live" title={help}>
+          <span class="presence" aria-hidden="true">{#each others as m (m.id)}<Avatar name={m.name} color={m.color} size="sm" />{/each}</span>
+          <span class="chip">{label}<span class="sr-only"> : {help}</span></span>
+        </span>
+      {/if}
+    </span>
   {/snippet}
   <Workspace {groups} active={sub} label="Sections du projet" store="projet" context={p.name}>
     {#snippet mobileExtra()}
@@ -118,20 +150,7 @@
       {/if}
     {/snippet}
     {#snippet top()}
-      <header class="ws-top">
-        <div class="ws-top-main">
-          <span class="ws-crumb">{section?.group ?? 'Projet'}</span>
-          <h1>{section?.label ?? 'Section'}</h1>
-          {#if DESC[sub]}<p class="ws-desc">{DESC[sub]}</p>{/if}
-        </div>
-        <div class="ws-top-meta">
-          {#if days != null && days >= 0 && !['done', 'cancelled'].includes(p.status)}<span class="tally" style="--c:{urgency(days)}">J-{days}</span>{/if}
-          <span class="meta"><span class="mk">Exploitation</span>{period(p)}</span>
-          {#if p.venue}<span class="meta hide-m"><span class="mk">Lieu</span>{p.venue}</span>{/if}
-          <span class="meta hide-m"><span class="mk">Client</span>{p.client ?? 'Projet interne'}</span>
-          {#if presence.length}<span class="presence" title="Présents sur ce projet">{#each presence as m (m.id)}<Avatar name={m.name} color={m.color} size="sm" />{/each}</span><span class="mode live"><i></i><span>En direct</span></span>{/if}
-        </div>
-      </header>
+      <PageHead ws portal {crumbs} title={section?.label ?? 'Section introuvable'} count={pageSlot.count} desc={DESC[sub] ?? ''} info={meta} />
     {/snippet}
     <div class="page">
     {#if sub === ''}<Overview bind:view reload={load} />
@@ -150,14 +169,18 @@
     {:else if sub === 'historique'}<History projectId={id} />
     {:else if sub === 'racks'}<Racks {view} />
     {:else if sub === 'mobilier'}<Furniture {view} reload={load} />
-    {:else}<p class="lead">Section introuvable.</p>{/if}
+    {:else}<EmptyState icon="search" message="Cette section n’existe pas." hint="Choisissez une section dans la barre latérale.">{#snippet action()}<a class="btn" href="/projets/{id}">Vue d’ensemble</a>{/snippet}</EmptyState>{/if}
     </div>
   </Workspace>
-{:else}<span class="spin"></span>{/if}
+{:else}<Loading label="Chargement du projet" />{/if}
 
 <style>
-  /* En-tête : chaque information porte son étiquette (ce ne sont pas des liens). */
-  .meta { display: inline-flex; align-items: baseline; gap: 6px; color: var(--fg-2); cursor: default; }
-  .mk { font: 600 10px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--fg-3); }
-  .ws-desc { margin: 2px 0 0; max-width: 640px; font-size: 13px; line-height: 1.35; color: var(--fg-3); }
+  /* Méta de l'en-tête : chaque information porte son libellé (.lbl-t, Inter 11,5 px) ; ce ne sont pas des liens. */
+  .hm { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 6px 14px; min-height: 26px; }
+  @media (max-width: 860px) { .hm { justify-content: flex-start; } }
+  .hm-it { display: inline-flex; align-items: baseline; gap: 6px; color: var(--fg-2); cursor: default; }
+  .hm-it :global(.lbl-t) { line-height: 1; }
+  .hm-live { display: inline-flex; align-items: center; gap: 8px; cursor: default; }
+  .hm-live .presence { padding: 0 0 0 6px; }
+  .hm-live .presence :global(.av) { margin-left: -6px; }
 </style>

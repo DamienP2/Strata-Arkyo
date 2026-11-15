@@ -3,6 +3,8 @@
   // positions lissées, curseur masqué après 5 s d'inactivité, couleur propre à chacun.
   import { onDestroy } from 'svelte';
   import { join, onRemote, live, type PresenceMember } from '../lib/live.svelte';
+  import { initials } from '../lib/format';
+  import { avatarColor } from '../lib/color';
 
   let { room, toScreen, selections = $bindable({}) }: {
     room: string;
@@ -42,7 +44,7 @@
   {/each}
 </div>
 {#if others.length > 1}
-  <div class="rc-who" title="Sur cette vue">{#each others as o (o.id)}<span style="--c:{o.color}">{o.name.split(' ').map((x) => x[0]).join('').slice(0, 2)}</span>{/each}</div>
+  <div class="rc-who" role="group" aria-label="Sur cette vue">{#each others as o (o.id)}<span style="--c:{avatarColor(o.color)}" title="{o.name} est sur cette vue">{initials(o.name)}</span>{/each}</div>
 {/if}
 
 <style>
@@ -50,5 +52,5 @@
   .cur { position: absolute; left: 0; top: 0; transition: transform 90ms linear; display: flex; align-items: flex-start; gap: 2px; }
   .cur span { margin-top: 12px; background: var(--c); color: #fff; font: 600 11px var(--font); padding: 1px 6px; border-radius: 6px; white-space: nowrap; }
   .rc-who { position: absolute; right: 10px; top: 10px; display: flex; gap: 4px; z-index: 6; pointer-events: none; }
-  .rc-who span { width: 24px; height: 24px; border-radius: 50%; background: var(--c); color: #fff; font: 700 10px var(--font); display: grid; place-items: center; box-shadow: 0 0 0 2px var(--surface); }
+  .rc-who span { width: 24px; height: 24px; border-radius: 50%; background: var(--c); color: #fff; font: 650 var(--fs-2xs) var(--font); display: grid; place-items: center; box-shadow: 0 0 0 2px var(--surface); pointer-events: auto; cursor: default; }
 </style>

@@ -12,6 +12,6 @@
 {#if on}<div class="act" role="progressbar" aria-label="Enregistrement en cours"></div>{/if}
 
 <style>
-  .act { position: fixed; left: 0; right: 0; top: 0; height: 3px; z-index: 9999; background: linear-gradient(90deg, transparent, var(--accent, #4F6BFF), transparent); background-size: 40% 100%; background-repeat: no-repeat; animation: act 1s linear infinite; pointer-events: none; }
+  .act { position: fixed; left: 0; right: 0; top: 0; height: 3px; z-index: 9999; background: linear-gradient(90deg, transparent, var(--accent), transparent); background-size: 40% 100%; background-repeat: no-repeat; animation: act 1s linear infinite; pointer-events: none; }
   @keyframes act { from { background-position: -40% 0; } to { background-position: 140% 0; } }
 </style>

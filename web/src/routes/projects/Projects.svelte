@@ -6,16 +6,20 @@
   import StatusChip from '../../components/StatusChip.svelte';
   import Wizard from './Wizard.svelte';
   import Dialog from '../../components/Dialog.svelte';
+  import Seg from '../../components/Seg.svelte';
+  import SortTh, { type Sort } from '../../components/SortTh.svelte';
+  import Loading from '../../components/Loading.svelte';
   import { api } from '../../lib/api';
   import { can } from '../../lib/session.svelte';
   import { fail } from '../../lib/toast.svelte';
-  import { pl } from '../../lib/format';
+  import { pl, COMPLETION_HELP } from '../../lib/format';
   import { route, navigate } from '../../lib/router.svelte';
   import { STATUS, STATUS_ORDER, REGIE, keyDate, daysBetween, fdate, period, urgency, type ProjectSummary, type Status, type Regie } from '../../lib/projects';
 
   // Recherche, tri et filtres mémorisés sur cet appareil.
   const saved = (() => { try { return JSON.parse(localStorage.getItem('sa-projects') ?? '{}'); } catch { return {}; } })();
-  let f = $state<{ q: string; st: Status[]; regie: Regie[]; sort: 'updated' | 'name' | 'date'; view: 'cards' | 'list' }>({ q: '', st: [], regie: [], sort: 'updated', view: 'cards', ...saved });
+  // `sort` : tri des cartes (Récents, Date, A → Z) ; `lsort` : colonne triée de la vue liste (aucune : récents d'abord).
+  let f = $state<{ q: string; st: Status[]; regie: Regie[]; sort: 'updated' | 'name' | 'date'; view: 'cards' | 'list'; lsort: Sort }>({ q: '', st: [], regie: [], sort: 'updated', view: 'cards', lsort: { key: '', dir: 1 }, ...saved });
   $effect(() => { const v = JSON.stringify(f); try { localStorage.setItem('sa-projects', v); } catch { /* indisponible */ } });
 
   let projects = $state<ProjectSummary[]>([]);
@@ -28,10 +32,16 @@
   const list = $derived.by(() => {
     const q = norm(f.q.trim());
     let l = projects.filter((p) => (!f.st.length || f.st.includes(p.status)) && (!f.regie.length || f.regie.includes(p.regie)) && (!q || norm([p.name, p.client, p.venue, p.service_type, p.description].filter(Boolean).join(' ')).includes(q)));
-    l = f.sort === 'name' ? [...l].sort((a, b) => a.name.localeCompare(b.name, 'fr'))
-      : f.sort === 'date' ? [...l].sort((a, b) => (keyDate(a) ?? '9999').localeCompare(keyDate(b) ?? '9999'))
-      : [...l].sort((a, b) => b.updated_at.localeCompare(a.updated_at));
-    return l;
+    const by = f.view === 'list' ? f.lsort : { key: f.sort === 'updated' ? '' : f.sort, dir: 1 };
+    const cmp: Record<string, (a: ProjectSummary, b: ProjectSummary) => number> = {
+      name: (a, b) => a.name.localeCompare(b.name, 'fr'),
+      // Sans date, en fin de liste quel que soit le sens.
+      date: (a, b) => (keyDate(a) ?? '') === (keyDate(b) ?? '') ? 0 : !keyDate(a) ? 1 : !keyDate(b) ? -1 : by.dir * keyDate(a)!.localeCompare(keyDate(b)!),
+      completion: (a, b) => a.completion - b.completion,
+    };
+    const c = cmp[by.key];
+    if (!c) return [...l].sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+    return [...l].sort(by.key === 'date' ? c : (a, b) => by.dir * c(a, b));
   });
   const groups = $derived(STATUS_ORDER.map((s) => ({ s, items: list.filter((p) => p.status === s) })).filter((g) => g.items.length));
   const filters = $derived(f.st.length + f.regie.length);
@@ -64,11 +74,11 @@
   </PageHead>
 
   {#if loading || projects.length}
-  <div class="pj-bar">
+  <div class="pj-bar card compact">
     <div class="pj-row">
-      <label class="search pj-search"><Icon name="search" /><input class="input" bind:value={f.q} placeholder="Nom, client, lieu, type de projet…" aria-label="Rechercher un projet"></label>
-      <div class="seg" aria-label="Tri">{#each [['updated', 'Récents'], ['date', 'Date'], ['name', 'A → Z']] as [k, l]}<button class:on={f.sort === k} onclick={() => (f.sort = k as typeof f.sort)}>{l}</button>{/each}</div>
-      <div class="seg" aria-label="Affichage"><button class:on={f.view === 'cards'} onclick={() => (f.view = 'cards')} title="Cartes"><Icon name="grid" size="sm" /></button><button class:on={f.view === 'list'} onclick={() => (f.view = 'list')} title="Liste"><Icon name="list" size="sm" /></button></div>
+      <label class="search pj-search"><Icon name="search" /><input class="input" bind:value={f.q} placeholder="Nom, client, lieu ou type de projet" aria-label="Rechercher un projet"></label>
+      {#if f.view === 'cards'}<Seg label="Tri" bind:value={f.sort} options={[{ value: 'updated', label: 'Récents' }, { value: 'date', label: 'Date' }, { value: 'name', label: 'A → Z' }]} />{/if}
+      <Seg label="Affichage" iconOnly bind:value={f.view} options={[{ value: 'cards', label: 'Cartes', icon: 'grid' }, { value: 'list', label: 'Liste', icon: 'list' }]} />
     </div>
     <button class="btn sm pj-ftoggle" aria-expanded={filtersOpen} aria-controls="pj-filters" onclick={() => (filtersOpen = !filtersOpen)}><Icon name="sliders" size="sm" />Filtres{filters ? ` (${filters})` : ''}<Icon name="chevd" size="sm" /></button>
     <div class="pj-row pj-filters" id="pj-filters" class:open={filtersOpen}>
@@ -85,27 +95,27 @@
   </div>
   {/if}
 
-  {#if loading}<span class="spin"></span>
+  {#if loading}<Loading label="Chargement des projets" />
   {:else if !groups.length}
     {#if projects.length}<EmptyState icon="search" message="Aucun projet ne correspond à ces critères." hint="Modifiez la recherche ou effacez les filtres." />
     {:else}<EmptyState icon="folder" message="Aucun projet pour l’instant." hint="L’assistant vous guide étape par étape.">{#snippet action()}{#if can('projets', 'ecriture')}<button class="btn primary" onclick={() => (wizard = true)}><Icon name="plus" />Créer le premier projet</button>{/if}{/snippet}</EmptyState>{/if}
   {:else if f.view === 'list'}
-    <section class="card" style="padding-top:6px">
+    <section class="card tbl-card">
       <div class="tbl-wrap"><table class="tbl pj-tbl">
-        <thead><tr><th>Projet</th><th>Statut</th><th>Régie</th><th>Client · lieu</th><th>Exploitation</th><th class="num">Échéance</th><th>Fiche</th></tr></thead>
+        <thead><tr><SortTh label="Projet" key="name" bind:sort={f.lsort} /><th>Statut</th><th>Régie</th><th>Client · lieu</th><th>Exploitation</th><SortTh label="Échéance" key="date" bind:sort={f.lsort} cls="num" /><SortTh label="Avancement" key="completion" bind:sort={f.lsort} /></tr></thead>
         <tbody>
           {#each list as p (p.id)}
             {@const kd = keyDate(p)}
             {@const d = kd ? daysBetween(today, kd) : null}
             {@const act = !['done', 'cancelled'].includes(p.status)}
             <tr class="click" onclick={() => navigate(`/projets/${p.id}`)}>
-              <td><a href="/projets/{p.id}" class="pj-name" onclick={(e) => e.stopPropagation()}>{p.name}</a>{#if p.service_type}<span class="muted small">&nbsp;· {p.service_type}</span>{/if}</td>
+              <td><a href="/projets/{p.id}" class="cell-link" onclick={(e) => e.stopPropagation()}>{p.name}</a>{#if p.service_type}<span class="muted small">&nbsp;· {p.service_type}</span>{/if}</td>
               <td><StatusChip status={p.status} /></td>
               <td>{REGIE[p.regie].label}</td>
               <td class="pj-cl" title={subOf(p)}>{subOf(p) || '—'}</td>
               <td class="tnum">{period(p)}</td>
               <td class="num">{#if act && d != null && d >= 0}<span class="tally" style="--c:{urgency(d)}">J-{d}</span>{:else if act && d != null}<span class="muted small">passée</span>{:else}<span class="muted small">—</span>{/if}</td>
-              <td style="width:150px"><Vu value={p.completion} n={16} cls={p.completion >= 80 ? 'ok' : ''} /> <span class="muted small tnum">{p.completion} %</span></td>
+              <td class="pj-av" title={COMPLETION_HELP}><Vu value={p.completion} n={16} cls={p.completion >= 80 ? 'ok' : ''} /> <span class="muted small tnum">{p.completion} %</span></td>
             </tr>
           {/each}
         </tbody>
@@ -121,11 +131,11 @@
               {@const kd = keyDate(p)}
               {@const d = kd ? daysBetween(today, kd) : null}
               {@const act = !['done', 'cancelled'].includes(p.status)}
-              <a class="pcard pj-card" class:off={!act} href="/projets/{p.id}" style="--c:{STATUS[p.status].color};text-decoration:none">
+              <a class="card link pj-card" class:off={!act} href="/projets/{p.id}" style="--c:{STATUS[p.status].color}">
                 <span class="pj-top"><span class="pj-ico" title={REGIE[p.regie].label}><Icon name={REGIE_ICON[p.regie]} size="sm" /></span><span class="pj-kind">{REGIE[p.regie].label}{#if p.service_type}{' · '}{p.service_type}{/if}</span>
                   <span class="pc-j">{#if act && d != null && d >= 0}<span class="tally" style="--c:{urgency(d)}">J-{d}</span>{:else if !act}<span class="tally off">{p.status === 'done' ? 'Livré' : 'Annulé'}</span>{/if}</span></span>
                 <span class="pc-body"><b class="pc-name" title={p.name}>{p.name}</b>{#if subOf(p)}<span class="pc-sub" title={subOf(p)}>{subOf(p)}</span>{/if}
-                  <span class="pc-foot"><span><span class="lbl-t">Exploitation</span><b>{kd ? fdate(kd, { day: 'numeric', month: 'short', year: 'numeric' }) : 'à fixer'}</b></span><span><span class="lbl-t">Fiche · {p.completion} %</span><Vu value={p.completion} n={20} cls={p.completion >= 80 ? 'ok' : ''} /></span></span></span>
+                  <span class="pc-foot"><span><span class="lbl-t">Exploitation</span><b>{kd ? fdate(kd, { day: 'numeric', month: 'short', year: 'numeric' }) : 'à fixer'}</b></span><span title={COMPLETION_HELP}><span class="lbl-t">Avancement · {p.completion} %</span><Vu value={p.completion} n={20} cls={p.completion >= 80 ? 'ok' : ''} /></span></span></span>
               </a>
             {/each}
           </div>
@@ -139,15 +149,15 @@
   <Dialog title="Importer « {imp.name} »" eyebrow="Projet" onclose={() => (imp = null)}>
     <p class="small">{Object.entries(imp.counts).filter(([k]) => ['containers', 'articles', 'instances', 'cables', 'drawings', 'plan_maps', 'net_vlans'].includes(k)).map(([k, v]) => `${v} ${({ containers: `élément${pl(v)}`, articles: `ligne${pl(v)} de matériel`, instances: `exemplaire${pl(v)}`, cables: `câble${pl(v)}`, drawings: `page${pl(v)} de dessin`, plan_maps: `plan${pl(v)}`, net_vlans: 'VLAN' } as Record<string, string>)[k]}`).join(' · ')}</p>
     <p class="small">{imp.catalog} fiche{pl(imp.catalog)} du catalogue jointe{pl(imp.catalog)} : seules les manquantes sont ajoutées, aucune fiche existante n’est modifiée.</p>
-    {#each imp.warnings as w}<p class="small" style="color:var(--warn,#B78400)">{w}</p>{/each}
+    {#each imp.warnings as w}<p class="small pj-warn">{w}</p>{/each}
     {#if imp.exists}<p class="small"><b>Ce projet existe déjà ici.</b> Remplacer le remet dans l’état du fichier (l’état actuel est gardé dans un point de restauration) ; Copie crée un nouveau projet « (copie) ».</p>{/if}
-    {#snippet footer()}<button class="btn" onclick={() => (imp = null)}>Annuler</button>{#if imp?.exists}<button class="btn" disabled={importing} onclick={() => runImport('replace')}>Remplacer</button>{/if}<button class="btn primary" disabled={importing} onclick={() => runImport(imp?.exists ? 'copy' : 'replace')}>{imp?.exists ? 'Copie' : 'Importer'}</button>{/snippet}
+    {#snippet footer()}<button class="btn ghost" onclick={() => (imp = null)}>Annuler</button>{#if imp?.exists}<button class="btn" disabled={importing} onclick={() => runImport('replace')}>Remplacer</button>{/if}<button class="btn primary" disabled={importing} onclick={() => runImport(imp?.exists ? 'copy' : 'replace')}>{imp?.exists ? 'Copie' : 'Importer'}</button>{/snippet}
   </Dialog>
 {/if}
 {#if wizard}<Wizard {clients} onclose={() => (wizard = false)} />{/if}
 
 <style>
-  .pj-bar { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border-radius: 12px; background: var(--surface); box-shadow: 0 0 0 1px var(--line), 0 1px 2px rgba(0, 0, 0, .04); }
+  .pj-bar { display: flex; flex-direction: column; gap: 10px; }
   .pj-row { display: flex; align-items: center; gap: 8px 10px; flex-wrap: wrap; min-width: 0; }
   .pj-search { flex: 1 1 320px; max-width: none; }
   .pj-lbl { font: 600 12.5px/1 var(--font); color: var(--fg-2); margin-right: 4px; }
@@ -164,15 +174,15 @@
   }
   .pj-groups { display: flex; flex-direction: column; gap: 28px; }
   .pj-group { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-  .pj-group :global(.group-h .chip.st) { font: 650 17px/1 var(--display); }
   .pj-group .proj-grid { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
-  .pj-group :global(.pcard) { border-radius: 12px; box-shadow: 0 0 0 1px var(--line), 0 1px 2px rgba(0, 0, 0, .04); }
-  .pj-card { border-top: 3px solid var(--c); }
+  /* Carte cliquable commune (.card.link) : la couleur du statut est un liseré en tête, pas une bordure. */
+  .pj-card { display: flex; flex-direction: column; padding: 0; overflow: hidden; min-width: 0; }
+  .pj-card::before { content: ""; flex: none; height: 3px; background: var(--c); }
   .pj-top { display: flex; align-items: center; gap: 9px; padding: 12px 14px 0; min-width: 0; }
   .pj-ico { flex: none; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; background: color-mix(in srgb, var(--c) 14%, var(--surface)); color: var(--c); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 30%, transparent); }
   .pj-kind { flex: 1; min-width: 0; font-size: 12.5px; font-weight: 600; color: var(--fg-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pj-top .pc-j { position: static; flex: none; }
-  .pcard.off .pj-ico { filter: grayscale(1); opacity: .6; }
+  .pj-card.off .pj-ico { filter: grayscale(1); opacity: .6; }
   .pj-group :global(.pc-name), .pj-group :global(.pc-sub) { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: normal; }
   .pj-group :global(.pc-name) { font-size: 17px; line-height: 1.2; }
   .pj-group :global(.pc-body) { flex: 1; padding: 10px 14px 14px; gap: 3px; }
@@ -180,8 +190,8 @@
   .pj-group :global(.pc-sub) { font-size: 13px; }
   .pj-group :global(.pc-foot) { margin-top: 10px; padding-top: 10px; gap: 14px; }
   .pj-group :global(.pc-foot b) { font-size: 13px; }
-  .pj-name { font-weight: 650; color: var(--fg); text-decoration: none; }
-  .pj-name:hover { color: var(--accent); }
+  .pj-av { width: 150px; }
+  .pj-warn { color: var(--warn); }
   .pj-cl { color: var(--fg-2); max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pj-tbl td { white-space: nowrap; }
 </style>
