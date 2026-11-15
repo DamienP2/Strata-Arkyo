@@ -232,7 +232,7 @@
   .ws-num > .mono:not(b) { font-size: 20px; color: var(--fg-3); }
   .ws-fams { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
   .fam { display: grid; gap: 4px; padding: 12px; border-radius: 14px; background: var(--surface-2); }
-  .fam.empty { opacity: .7; }
+  .fam.empty { opacity: .7; color: var(--fg-3); }
   .fam b { font-size: 18px; }
   .bar { display: block; height: 6px; border-radius: 99px; background: color-mix(in srgb, var(--fg) 10%, transparent); overflow: hidden; }
   .bar.big { height: 10px; }

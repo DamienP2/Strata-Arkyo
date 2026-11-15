@@ -5,6 +5,7 @@
   // exemplaire une fois par nature) ; liens ; adressage DMX. Enregistrement automatique.
   import { untrack, onDestroy } from 'svelte';
   import Icon from '../../components/Icon.svelte';
+  import Dialog from '../../components/Dialog.svelte';
   import EmptyState from '../../components/EmptyState.svelte';
   import HeadActions from '../../components/HeadActions.svelte';
   import Loading from '../../components/Loading.svelte';
@@ -266,6 +267,8 @@
   let draft = $state<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   let lineDraft = $state<[number, number][]>([]);
   let linkFrom = $state<Anchor | null>(null);
+  /** Saisie d'un texte dans une boîte de l'application (remplace window.prompt). */
+  let textAsk = $state<{ title: string; eyebrow: string; label: string; submit: string; value: string; required: boolean; done: (t: string) => void } | null>(null);
   let hover = $state<[number, number] | null>(null);
   let drag: { ids: string[]; x0: number; y0: number; orig: Map<string, El>; resize?: boolean } | null = null;
   let pan: { x: number; y: number; px: number; py: number } | null = null;
@@ -295,8 +298,9 @@
     const sp: [number, number] = [snapV(p[0]), snapV(p[1])];
     if (placing) { await placeEquipment(placing, sp); return; }
     if (tool === 'text') {
-      const t = prompt('Texte :'); setTool('select');
-      if (t?.trim()) add({ id: uid(), type: 'text', x: sp[0], y: sp[1], w: 0, rot: 0, text: t, size: 4, color: null, bold: false });
+      setTool('select');
+      textAsk = { title: 'Poser un texte', eyebrow: 'Dessin', label: 'Texte', submit: 'Poser', value: '', required: true,
+        done: (t) => { if (t) add({ id: uid(), type: 'text', x: sp[0], y: sp[1], w: 0, rot: 0, text: t, size: 4, color: null, bold: false }); } };
     } else if (tool === 'rect' || tool === 'ellipse' || tool === 'zone' || tool === 'image') {
       draft = { x0: sp[0], y0: sp[1], x1: sp[0], y1: sp[1] }; svgEl.setPointerCapture(e.pointerId);
     } else if (tool === 'line') {
@@ -331,7 +335,8 @@
       const x = Math.min(d.x0, d.x1), y = Math.min(d.y0, d.y1), w = Math.abs(d.x1 - d.x0) || 30, h = Math.abs(d.y1 - d.y0) || 20;
       if (tool === 'rect') add({ id: uid(), type: 'rect', x, y, w, h, rot: 0, stroke: '#15171A', fill: null, width: 0.5, radius: 0 });
       if (tool === 'ellipse') add({ id: uid(), type: 'ellipse', x, y, w, h, rot: 0, stroke: '#15171A', fill: null, width: 0.5 });
-      if (tool === 'zone') { const label = prompt('Nom de la zone :') ?? ''; add({ id: uid(), type: 'zone', x, y, w, h, label, color: '#3A7BD5' }); }
+      if (tool === 'zone') textAsk = { title: 'Nouvelle zone', eyebrow: 'Dessin', label: 'Nom de la zone (facultatif)', submit: 'Créer la zone', value: '', required: false,
+        done: (label) => add({ id: uid(), type: 'zone', x, y, w, h, label, color: '#3A7BD5' }) };
       if (tool === 'image') pickImage({ x, y, w, h });
       setTool('select');
     }
@@ -717,6 +722,11 @@
   </div>
 {/if}
 
+{#if textAsk}
+  <Dialog title={textAsk.title} eyebrow={textAsk.eyebrow} onclose={() => (textAsk = null)} onsubmit={() => { const a = textAsk!; textAsk = null; a.done(a.value.trim()); }} submitLabel={textAsk.submit} submitDisabled={textAsk.required && !textAsk.value.trim()}>
+    <div class="field"><label for="ta-in">{textAsk.label}</label><input class="input" id="ta-in" bind:value={textAsk.value} maxlength="200" autocomplete="off"></div>
+  </Dialog>
+{/if}
 {#if help}<ShortcutsHelp title="Raccourcis des dessins" groups={SHORTCUTS} onclose={() => (help = false)} />{/if}
 
 <style>

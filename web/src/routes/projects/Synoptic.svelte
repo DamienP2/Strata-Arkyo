@@ -11,6 +11,7 @@
   import Confirm from '../../components/Confirm.svelte';
   import NumberingDialog from './NumberingDialog.svelte';
   import Dialog from '../../components/Dialog.svelte';
+  import NumField from '../../components/NumField.svelte';
   import { withLightTheme, standalone, raster, pdf as toPdf, save } from '../../lib/svgexport';
   import { familyDash } from '../../lib/pdfkit';
   import { PAPERS, type Paper } from '../../lib/sheet';
@@ -1935,7 +1936,7 @@
             {#if c.fields.external && !c.fields.external.location_id}<ProjectLinks {pid} cable={c.id} />{/if}
             <div class="sh2">
               <div class="field"><span class="flabel">Couleur</span><span class="cat-col"><i style="background:{cableColor(c)}"></i>{refById('functions', portByRef(c.a)?.family ?? portByRef(c.b)?.family)?.name ?? 'Famille non définie'}</span><span class="help">Donnée par la famille du signal.</span></div>
-              <div class="field"><label for="cl">Longueur réelle</label><div class="unit-in"><input class="input mono" id="cl" type="number" min="0" step="0.5" value={c.fields.length_m ?? ''} disabled={!mine} placeholder={c.estimate_m ? `≈ ${nf(c.estimate_m, 1)}` : 'À saisir'} onchange={(e) => { const v = (e.target as HTMLInputElement).value; patchSel({ length_m: v === '' ? null : Number(v) }); }}><span class="u">m</span></div></div>
+              <NumField id="cl" label="Longueur réelle" unit="m" min={0} step={0.5} value={c.fields.length_m ?? null} disabled={!mine} placeholder={c.estimate_m ? `≈ ${nf(c.estimate_m, 1)}` : 'À saisir'} onchange={(v) => patchSel({ length_m: v })} />
             </div>
             <div class="field"><label for="ch">Faisceau</label><select class="input" id="ch" disabled={!mine} value={c.fields.harness_id ?? ''} onchange={(e) => { const v = (e.target as HTMLSelectElement).value; if (v === '+') { newHarness = { name: '', color: '#2459E0' }; } else assign(v || null); }}><option value="">Aucun</option>{#each syn.harnesses as h}<option value={h.id}>{h.name}</option>{/each}{#if mine}<option value="+">+ Nouveau faisceau</option>{/if}</select></div>
             {#if !c.fields.external}

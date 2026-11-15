@@ -25,14 +25,14 @@ export const ITEM_KINDS: { path: ItemPath; kind: CatalogItem['kind']; label: str
 export const pathOf = (kind: CatalogItem['kind']) => ITEM_KINDS.find((k) => k.kind === kind)!.path;
 
 export const REF_KINDS: { path: RefPath; label: string; one: string; help: string }[] = [
-  { path: 'functions', label: 'Fonctions', one: 'Fonction', help: 'Grandes familles métier (vidéo, audio…). La clé sert aux numéros de câble.' },
+  { path: 'functions', label: 'Fonctions', one: 'Fonction', help: 'Grandes familles métier, comme la vidéo ou l’audio. La clé sert aux numéros de câble.' },
   { path: 'signals', label: 'Signaux', one: 'Signal', help: 'Types de signaux, leurs connecteurs compatibles et leur préfixe de numérotation.' },
   { path: 'connectors', label: 'Connecteurs', one: 'Connecteur', help: 'Connecteurs disponibles sur les ports et les câbles.' },
   { path: 'brands', label: 'Marques', one: 'Marque', help: 'Fabricants du matériel.' },
   { path: 'categories', label: 'Catégories', one: 'Catégorie', help: 'Classement libre des équipements, sur un ou plusieurs niveaux, que vous gérez entièrement.' },
   { path: 'types', label: 'Types', one: 'Type', help: 'Types d’équipement, avec un niveau de sous-type qui hérite de la fonction.' },
   { path: 'phases', label: 'Phases', one: 'Phase', help: 'Étapes de la production où le matériel intervient.' },
-  { path: 'dimensions', label: 'Dimensions', one: 'Préréglage', help: 'Valeurs proposées dans les formulaires : hauteurs, profondeurs, longueurs de câble…' },
+  { path: 'dimensions', label: 'Dimensions', one: 'Préréglage', help: 'Valeurs proposées dans les formulaires : hauteurs, profondeurs et longueurs de câble.' },
   { path: 'system-categories', label: 'Catégories système', one: 'Catégorie système', help: 'Catégories protégées, fixées par l’application et utilisées par le moteur (calculs, numérotation) : elles ne se modifient pas. Pour votre propre classement, utilisez les Catégories.' },
 ];
 
@@ -111,6 +111,8 @@ export function blank(kind: CatalogItem['kind']): any {
 export function summary(i: CatalogItem): string {
   const d = i.data;
   const n = (v: number | null | undefined, u: string) => (v == null ? '' : `${String(v).replace('.', ',')} ${u}`);
+  // Genre du connecteur : M ou F seulement ; N (neutre, sans genre) ne s'écrit pas.
+  const gen = (g: string | null | undefined) => (g && g !== 'N' ? ' ' + g : '');
   switch (i.kind) {
     case 'equipment': {
       const f = d.format?.kind === 'rack' ? `${String(d.format.height_u).replace('.', ',')} U${d.format.width && d.format.width !== 'full' ? ' · ' + WIDTHS.find((w) => w[0] === d.format.width)?.[1] : ''}` : 'Hors rack';
@@ -118,10 +120,10 @@ export function summary(i: CatalogItem): string {
       return [f, n(d.weight_kg, 'kg'), n(d.power_w, 'W'), ports ? `${ports} port${ports > 1 ? 's' : ''}` : ''].filter(Boolean).join(' · ');
     }
     case 'cable':
-      return [refName('connectors', d.left?.connector_id) + ' ' + (d.left?.gender ?? '') + ' ↔ ' + refName('connectors', d.right?.connector_id) + ' ' + (d.right?.gender ?? ''), (d.lengths_m ?? []).map((l: number) => String(l).replace('.', ',') + ' m').join(', ')].filter(Boolean).join(' · ');
+      return [refName('connectors', d.left?.connector_id) + gen(d.left?.gender) + ' ↔ ' + refName('connectors', d.right?.connector_id) + gen(d.right?.gender), (d.lengths_m ?? []).map((l: number) => String(l).replace('.', ',') + ' m').join(', ')].filter(Boolean).join(' · ');
     case 'cable_model':
       return [n(d.impedance_ohm, 'Ω'), n(d.bandwidth_mhz, 'MHz'), n(d.diameter_mm, 'mm')].filter(Boolean).join(' · ');
     case 'adapter':
-      return `${refName('connectors', d.input?.connector_id)} ${d.input?.gender ?? ''} → ${(d.outputs ?? []).map((o: any) => `${o.quantity > 1 ? o.quantity + ' × ' : ''}${refName('connectors', o.connector_id)} ${o.gender}`).join(', ')}`;
+      return `${refName('connectors', d.input?.connector_id)}${gen(d.input?.gender)} → ${(d.outputs ?? []).map((o: any) => `${o.quantity > 1 ? o.quantity + ' × ' : ''}${refName('connectors', o.connector_id)}${gen(o.gender)}`).join(', ')}`;
   }
 }

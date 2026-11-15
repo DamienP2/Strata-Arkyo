@@ -24,7 +24,7 @@ export interface ModalOptions {
 const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]):not([type=hidden]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
 const visible = (x: HTMLElement) => x.offsetParent !== null || x.getClientRects().length > 0;
 const focusables = (b: HTMLElement) => [...b.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((x) => visible(x) && x.getAttribute('tabindex') !== '-1');
-const isDanger = (x: Element) => x.matches('.danger, .danger-btn');
+const isDanger = (x: Element) => x.matches('.danger');
 
 /** Champ qui ne compte pas comme une saisie (recherche, filtre) : `type=search` ou `[data-no-dirty]`. */
 export function ignoredInput(t: EventTarget | null): boolean {

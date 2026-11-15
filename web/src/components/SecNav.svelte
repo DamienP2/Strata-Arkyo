@@ -60,8 +60,8 @@
   .snb.on::before { content: ""; position: absolute; left: 0; top: 7px; bottom: 7px; width: 3px; height: auto; border-radius: 0 3px 3px 0; background: var(--accent); box-shadow: none; }
   .snb:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
   .snb .badge { margin-left: auto; }
-  /* Menu mobile : entrées de 44px (cible tactile ; l'!important répond à celui de refine.css:102, à retirer en F2). */
-  :global(.sn-panel) .snb { display: flex; width: 100%; height: 44px !important; padding: 0 12px !important; font-size: var(--fs-md, 13.5px) !important; border-radius: var(--r-sm, 8px) !important; }
+  /* Menu mobile : entrées de 44px (cible tactile). */
+  :global(.sn-panel) .snb { display: flex; width: 100%; height: 44px; padding: 0 12px; font-size: var(--fs-md, 13.5px); border-radius: var(--r-sm, 8px); }
   /* Bouton du menu mobile : reprend l'ancien résumé du <details> (.sn-pick summary). */
   .subnav :global(.sn-sum) { display: flex; align-items: center; gap: 10px; width: 100%; height: auto; min-height: 56px; padding: 6px 14px 6px 16px; border: 0; border-radius: 16px; background: var(--surface); box-shadow: var(--e1); color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
   .subnav :global(.sn-sum:hover) { background: var(--surface); }

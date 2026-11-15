@@ -132,6 +132,8 @@
 
   // ----- Assistant de carte -----
   let wiz = $state<{ name: string; kind: Kind; from: number; to: number } | null>(null);
+  /** Saisie d'un texte dans une boîte de l'application (remplace window.prompt). */
+  let textAsk = $state<{ title: string; eyebrow: string; label: string; submit: string; value: string; required: boolean; done: (t: string) => void } | null>(null);
   let wizErr = $state<ApiError | null>(null);
   async function createMap() {
     if (!wiz) return;
@@ -324,8 +326,10 @@
       write(() => api.post<{ id: string }>(`/projects/${pid}/plans/${mapId}/objects`, { floor_id: floor!.id, kind: 'point', x: Math.round(w[0]), y: Math.round(w[1]), z: 300, label: `Point ${(d?.objects.filter((o) => o.kind === 'point').length ?? 0) + 1}`, ports: 4, signal_id: null, connector_id: null })).then((r) => { if (r) { sel = r.id; side = 'sel'; } });
       tool = 'select';
     } else if (tool === 'text') {
-      const t = prompt('Texte à poser :'); tool = 'select';
-      if (t?.trim()) write(() => api.post<{ id: string }>(`/projects/${pid}/plans/${mapId}/objects`, { floor_id: floor!.id, kind: 'text', x: Math.round(w[0]), y: Math.round(w[1]), text: t, size: Math.round(Math.max(100, 14 / k)) }));
+      tool = 'select';
+      const fl = floor!, x = Math.round(w[0]), y = Math.round(w[1]), size = Math.round(Math.max(100, 14 / k));
+      textAsk = { title: 'Poser un texte', eyebrow: 'Plan', label: 'Texte', submit: 'Poser', value: '', required: true,
+        done: (t) => { if (t) write(() => api.post<{ id: string }>(`/projects/${pid}/plans/${mapId}/objects`, { floor_id: fl.id, kind: 'text', x, y, text: t, size })); } };
     } else if (tool === 'measure') {
       draft = [...draft, ortho(w, draft.at(-1) ?? null)];
     } else if (tool === 'calib') {
@@ -775,6 +779,12 @@
       </div>
     </div>
   {/if}
+{/if}
+
+{#if textAsk}
+  <Dialog title={textAsk.title} eyebrow={textAsk.eyebrow} onclose={() => (textAsk = null)} onsubmit={() => { const a = textAsk!; textAsk = null; a.done(a.value.trim()); }} submitLabel={textAsk.submit} submitDisabled={textAsk.required && !textAsk.value.trim()}>
+    <div class="field"><label for="ta-in">{textAsk.label}</label><input class="input" id="ta-in" bind:value={textAsk.value} maxlength="200" autocomplete="off"></div>
+  </Dialog>
 {/if}
 
 {#if wiz}

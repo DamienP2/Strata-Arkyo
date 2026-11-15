@@ -1,6 +1,6 @@
 /* Compléments propres à l'application (au-delà de la maquette). */
 a { color: inherit; }
-.topnav a, .menu-links a, a.word, a.btn, a.crumb, a.next, a.fig { text-decoration: none; }
+.topnav a,.menu-links a,a.word,a.btn,a.next,a.fig{ text-decoration: none; }
 
 /* Écrans d'accueil hors session : connexion, premier compte, mot de passe temporaire */
 .gate { height: 100%; overflow: auto; display: grid; place-items: center; padding: 32px 16px; }
@@ -56,20 +56,12 @@ a { color: inherit; }
 .ws-main:has(.savebar) { padding-bottom: 0; scroll-padding-bottom: 88px; }
 .savebar { position: sticky; bottom: 12px; z-index: 30; display: flex; gap: 10px; align-items: center; padding: 12px 14px 12px 20px; border-radius: 18px; background: var(--surface); box-shadow: var(--e3), 0 -14px 22px -10px var(--bg); outline: 1px solid var(--line); }
 .savebar .grow { flex: 1; min-width: 0; font-size: 14px; color: var(--fg-3); }
-.ports-tbl td, .ports-tbl th { padding-right: 8px; }
-.ports-tbl .input, .ports-tbl select.input { height: var(--btn-h-sm); border-radius: var(--btn-r-sm); font-size: 13px; padding: 0 9px; }
-.ports-tbl select.input { padding-right: 26px; background-position: calc(100% - 14px) 52%, calc(100% - 9px) 52%; }
-.ports-tbl .qty { width: 70px; }
-.ports-tbl select[aria-label="Face"] { min-width: 112px; }
-.ports-tbl select[aria-label="Genre"] { min-width: 64px; }
-.ports-tbl select[aria-label="Variante"] { min-width: 90px; }
 .dup-list { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
 .unit-in { position: relative; }
 .unit-in .input { padding-right: 48px; }
 .unit-in .u { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); font: 600 12.5px var(--mono); color: var(--fg-3); pointer-events: none; }
 .toggle-row { display: flex; align-items: center; gap: 10px; font: 400 13.5px/1.4 var(--font); color: var(--fg); cursor: pointer; }
 .toggle-row.small { font-size: 12.5px; }
-.cmp { display: inline-flex; align-items: center; gap: 6px; }
 #app { height: 100%; }
 .show-m { display: none; }
 @media (max-width: 860px) {
@@ -83,7 +75,7 @@ a { color: inherit; }
 .urow:last-child { border-bottom: 0; }
 .urow:hover, .ag-it:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 .ag-it { border-radius: var(--r-sm); }
-a.pcard, a.cont { color: var(--fg); }
+a.cont{ color: var(--fg); }
 .pmeta { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center; color: var(--fg-2); font-size: 13.5px; }
 .sw { width: 10px; height: 10px; border-radius: 3px; background: var(--c); display: inline-block; }
 
