@@ -15,8 +15,8 @@
   import { familyDash } from '../../lib/pdfkit';
   import { PAPERS, type Paper } from '../../lib/sheet';
   import RemoteCursors from '../../components/RemoteCursors.svelte';
-  import { fitText, shareRow, textWidth } from '../../lib/fit';
-  import { routeAll, rounded, simplify, orthoTo, offsetPath, type Routed, type Req as RouteReq } from '../../lib/cableroute';
+  import { fitText, shareRow, textWidth, resetTextWidths } from '../../lib/fit';
+  import { routeAll, rounded, simplify, orthoTo, offsetPath, SP, type Routed, type Req as RouteReq } from '../../lib/cableroute';
   import ProjectLinks from '../../components/ProjectLinks.svelte';
   import ViewPicker from '../../components/ViewPicker.svelte';
   import AnomalyGroups from '../../components/AnomalyGroups.svelte';
@@ -130,6 +130,7 @@
   const issueList = $derived<Anomaly<Issue>[]>((issues?.issues ?? []).map((i) => ({ group: i.title, severity: i.severity, subject: i.subject, place: i.place, detail: i.detail, src: i })));
   let armed = $state<Port[]>([]);
   // Barre de câblage : nombre de câbles, tracé automatique ou multipoint, style, câbles parallèles.
+  const STYLES = [['orthogonal', 'Orthogonal'], ['rounded', 'Arrondi'], ['arrow', 'Flèche']] as const;
   type CabPrefs = { count: 'simple' | 'multiple'; mode: 'auto' | 'multipoint'; style: 'orthogonal' | 'rounded' | 'arrow'; parallel: 'stacked' | 'spread'; askModel: boolean };
   let cab = $state<CabPrefs>({ count: 'simple', mode: 'auto', style: 'rounded', parallel: 'stacked', askModel: true, ...(() => { try { return JSON.parse(localStorage.getItem('syn-cab') ?? '{}'); } catch { return {}; } })() });
   $effect(() => { const v = JSON.stringify(cab); try { localStorage.setItem('syn-cab', v); } catch { /* indisponible */ } });
@@ -139,14 +140,7 @@
   /** Style par défaut des prochains câbles ; appliqué aussi aux câbles sélectionnés. */
   async function setStyle(st: CabPrefs['style']) {
     cab.style = st;
-    const ids = [...new Set([...(sel ? [sel] : []), ...multi])];
-    const list = (syn?.cables ?? []).filter((c) => ids.includes(c.id) && c.fields.style !== st);
-    if (!list.length || !mine) return;
-    try {
-      for (const c of list) await api.patch(`/cables/${c.id}`, { rev: c.rev, ...c.fields, style: st });
-      toast(`Style appliqué à ${list.length} câble${list.length > 1 ? 's' : ''}.`);
-      await load();
-    } catch (e) { fail(e); await load(); }
+    await styleSel(st);
   }
   let mouse = $state<[number, number] | null>(null);
   let confirmReplace = $state<{ body: object; n: number } | null>(null);
@@ -273,9 +267,24 @@
     return [p.side === 'l' ? at.x : at.x + NW, at.y + HH + i * PS + PS / 2 + 4, p.side];
   }
   // Étiquette d'extrémité : connecteur près du port, puis numéro (« — » s'il manque).
-  const MONO_S = "600 9.5px 'JetBrains Mono', monospace", MONO_N = "700 11px 'JetBrains Mono', monospace";
+  // Polices identiques à celles du CSS (var(--mono), var(--font)) : la mesure correspond au rendu.
+  const MONO = "'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace", SANS = "'Inter Variable', Inter, ui-sans-serif, system-ui, sans-serif";
+  const MONO_S = `600 9.5px ${MONO}`, MONO_N = `700 11px ${MONO}`, MONO_D = `italic 500 11px ${MONO}`, FAR_F = `600 11px ${SANS}`;
+  // Les polices web arrivent après le premier rendu : on remesure une fois chargées.
+  let fontRev = $state(0);
+  if (typeof document !== 'undefined' && document.fonts) {
+    const again = () => { resetTextWidths(); fontRev++; };
+    Promise.all([MONO_S, MONO_N, MONO_D, FAR_F, `700 12px ${MONO}`].map((f) => document.fonts.load(f, 'IEC C19 — 0123'))).then(again, again);
+    document.fonts.addEventListener?.('loadingdone', again);
+    onDestroy(() => document.fonts.removeEventListener?.('loadingdone', again));
+  }
+  /** Largeur mesurée, recalculée quand les polices changent. */
+  const tw = (t: string, f: string) => (fontRev >= 0 ? textWidth(t, f) : 0);
   const connOf = (c: CableV) => short(portByRef(c.a)?.connector ?? portByRef(c.b)?.connector ?? c.a_info?.connector ?? '');
-  const tagW = (c: CableV) => textWidth(connOf(c), MONO_S) + 14 + (c.fields.number ? textWidth(c.fields.number, MONO_N) + 8 : 14);
+  // Étiquette : bande 10 px, connecteur, 6 px, numéro (ou « — »), 8 px de marge à droite.
+  const TAG_L = 10, TAG_SEP = 6, TAG_R = 8;
+  const connW = (c: CableV) => tw(connOf(c), MONO_S);
+  const tagW = (c: CableV) => Math.ceil(TAG_L + connW(c) + TAG_SEP + (c.fields.number ? tw(c.fields.number, MONO_N) : tw('—', MONO_D)) + TAG_R);
   const boxes = $derived(syn ? nodes.map((n) => { const p = pos[n.key] ?? { x: 0, y: 0 }; return [p.x - 6, p.y - 8, p.x + NW + 6, p.y + nodeH(n) + 8]; }) : []);
   // Routage global : couloirs attribués à tous les câbles de la vue à la fois (aucun
   // chevauchement, écart constant, faisceaux parallèles, nœuds contournés).
@@ -286,7 +295,7 @@
       if (!c.a_in_view || !c.b_in_view || hiddenFam.has(famOf(c))) continue;
       const A = portXY(c.a), B = portXY(c.b); if (!A || !B) continue;
       if (liveWps(c).length) { const P = cablePts(c); if (P) fixed.push(P); continue; } // tracé posé à la main : obstacle
-      reqs.push({ id: c.id, a: { x: A[0], y: A[1], side: A[2] }, b: { x: B[0], y: B[1], side: B[2] }, out: tagW(c) + TAG_GAP * 2 + 12 });
+      reqs.push({ id: c.id, a: { x: A[0], y: A[1], side: A[2] }, b: { x: B[0], y: B[1], side: B[2] }, out: tagW(c) + TAG_GAP * 2 + 12, tag: TAG_GAP + tagW(c) / 2 });
     }
     return routeAll(reqs, boxes as [number, number, number, number][], fixed);
   });
@@ -346,7 +355,7 @@
     const A = portXY(c.a), B = portXY(c.b);
     if (!A || !B) return null;
     const w = tagW(c);
-    const tagAt = (sd: 'l' | 'r', x: number, y: number) => (sd === 'r' ? [x + TAG_GAP, y] : [x - TAG_GAP - w, y]) as [number, number];
+    const tagAt = (sd: 'l' | 'r', x: number, y: number) => (sd === 'r' ? [x + TAG_GAP, y, sd] : [x - TAG_GAP - w, y, sd]) as [number, number, 'l' | 'r'];
     const st = c.fields.style;
     if (st === 'arrow') {
       // Flèche (comme Arkyo) : pas de trait de bout en bout, un renvoi à chaque extrémité
@@ -368,7 +377,8 @@
     const [x, y, s] = P, far = c.a_in_view ? c.b_info : c.a_info;
     const dx = s === 'r' ? 1 : -1, w = tagW(c);
     const end = x + dx * (w + TAG_GAP * 2 + 60);
-    return { d: `M${x} ${y}H${end}`, t: (s === 'r' ? [x + TAG_GAP, y] : [x - TAG_GAP - w, y]) as [number, number], ex: end, ey: y, dx, far };
+    const ft = fitText(`${far?.external ? '↗' : '→'} ${far ? (far.external ? far.label : `${far.label} › ${far.port}`) : 'Extrémité supprimée'}`, 260, FAR_F);
+    return { d: `M${x} ${y}H${end}`, t: (s === 'r' ? [x + TAG_GAP, y, s] : [x - TAG_GAP - w, y, s]) as [number, number, 'l' | 'r'], ex: end, ey: y, dx, far, ft, fw: Math.ceil(tw(ft, FAR_F)) + 18 };
   }
   const portColor = (p: Port | undefined) => (p?.family ? fnColor(p.family) : refById('connectors', p?.connector)?.data?.color ?? '#8A919B');
   const portByRef = (ref: string) => nodeOf(ref)?.ports.find((p) => p.ref === ref);
@@ -956,6 +966,71 @@
     const apply = async (fields: Fields) => { const cur = findCable(a, b); if (cur) await api.patch(`/cables/${cur.id}`, { rev: cur.rev, ...fields }); };
     try { await api.patch(`/cables/${c.id}`, { rev: c.rev, ...after }); push({ label, undo: () => apply(before), redo: () => apply(after) }); await load(); } catch (e) { fail(e); await load(); }
   }
+  // ----- Style et tracé de la sélection (simple ou multiple) -----
+  const selIds = () => [...new Set([...(sel ? [sel] : []), ...multi])];
+  const selCables = () => { const ids = selIds(); return (syn?.cables ?? []).filter((c) => ids.includes(c.id) && !c.fields.attach); };
+  /** Câble tracé en trait entre deux ports de la vue (le seul qu'on puisse regrouper). */
+  const drawn = (c: CableV) => c.a_in_view && c.b_in_view && !c.fields.attach && !c.fields.external && c.fields.style !== 'arrow';
+  /** Modifie plusieurs câbles en une seule étape d'annulation. */
+  async function patchMany(list: CableV[], f: Partial<Fields>, label: string) {
+    const items = list.filter((c) => (Object.keys(f) as (keyof Fields)[]).some((k) => JSON.stringify(c.fields[k] ?? null) !== JSON.stringify(f[k] ?? null)))
+      .map((c) => ({ a: c.a, b: c.b, before: { ...c.fields }, after: { ...c.fields, ...f } }));
+    if (!items.length || !mine) return;
+    lastAction = Date.now();
+    const apply = async (pick: 'before' | 'after') => { for (const it of items) { const cur = findCable(it.a, it.b); if (cur) await api.patch(`/cables/${cur.id}`, { rev: cur.rev, ...it[pick] }); } };
+    try { await apply('after'); push({ label, undo: () => apply('before'), redo: () => apply('after') }); if (items.length > 1) toast(`${label[0]!.toUpperCase()}${label.slice(1)} : ${items.length} câbles.`); } catch (e) { fail(e); }
+    await load();
+  }
+  /** Style du tracé (orthogonal, arrondi, flèche) appliqué à tous les câbles sélectionnés. */
+  async function styleSel(st: CabPrefs['style']) { await patchMany(selCables(), { style: st }, 'style du tracé'); }
+  /** Câbles à regrouper : la sélection ; pour un seul câble, ceux qui relient les mêmes équipements. */
+  function groupOf(): CableV[] {
+    const cs = selCables().filter(drawn);
+    if (selIds().length !== 1 || !cs[0]) return cs;
+    const na = nodeOf(cs[0].a)?.key, nb = nodeOf(cs[0].b)?.key;
+    return (syn?.cables ?? []).filter((x) => drawn(x) && !hiddenFam.has(famOf(x)) && ((nodeOf(x.a)?.key === na && nodeOf(x.b)?.key === nb) || (nodeOf(x.a)?.key === nb && nodeOf(x.b)?.key === na)));
+  }
+  /** Regroupé : tous suivent un même chemin, décalé en parallèle (comme la pose « Écarté ») ;
+      chaque câble garde sa sortie de port et rejoint son port d'arrivée par le dernier tronçon vertical. */
+  async function regroupSel() {
+    const cs = groupOf();
+    if (cs.length < 2) { toast('Regrouper demande au moins deux câbles tracés en trait entre deux équipements de la vue.', 'info'); return; }
+    const ends = cs.map((c) => ({ c, A: portXY(c.a), B: portXY(c.b) })).filter((e): e is { c: CableV; A: [number, number, 'l' | 'r']; B: [number, number, 'l' | 'r'] } => !!e.A && !!e.B);
+    const d2 = (p: readonly [number, number, ...unknown[]], q: readonly [number, number, ...unknown[]]) => Math.hypot(p[0] - q[0], p[1] - q[1]);
+    const r0 = ends[0]!;
+    // Orientation commune : chaque câble part du côté où part le premier.
+    const o = ends.map((e) => (d2(e.B, r0.A) + d2(e.A, r0.B) < d2(e.A, r0.A) + d2(e.B, r0.B) ? { c: e.c, S: e.B, T: e.A, flip: true } : { c: e.c, S: e.A, T: e.B, flip: false }))
+      .sort((u, v) => u.S[1] - v.S[1] || u.S[0] - v.S[0]);
+    const lead = o[0]!;
+    let P0 = cablePts(lead.c); if (!P0) return;
+    P0 = simplify(lead.flip ? [...P0].reverse() : P0);
+    const sgn = lead.S[2] === 'r' ? 1 : -1;
+    // Écart constant d'un câble à l'autre (comme les tracés automatiques) ; la sortie et
+    // l'arrivée de chaque câble restent à la hauteur de ses ports.
+    const list = o.map(({ c, S, T, flip }, i) => {
+      const off = (i ? offsetPath(P0!, i * SP * sgn) : P0!.map((q) => [...q] as [number, number]));
+      const n = off.length;
+      off[0] = [S[0], S[1]];
+      if (n >= 3 && off[1]![0] === off[2]![0]) off[1] = [off[1]![0], S[1]];
+      if (n >= 3 && off[n - 3]![0] === off[n - 2]![0]) off[n - 2] = [off[n - 2]![0], T[1]];
+      off[n - 1] = [T[0], T[1]];
+      let pts: [number, number][] = [off[0]!];
+      for (const q of off.slice(1)) pts = orthoTo(pts, q);
+      pts = simplify(pts);
+      if (flip) pts.reverse();
+      return { id: c.id, way: pts.slice(1, -1) };
+    });
+    await setWaypoints(list, `tracé regroupé (${list.length} câbles)`);
+  }
+  /** Unique : chaque câble reprend son tracé automatique, indépendant des autres. */
+  async function uniqueSel() {
+    const cs = selCables().filter((c) => c.fields.waypoints?.length);
+    if (!cs.length) { toast('Les câbles choisis suivent déjà leur tracé automatique.', 'info'); return; }
+    await setWaypoints(cs.map((c) => ({ id: c.id, way: [] })), cs.length > 1 ? `tracés uniques (${cs.length} câbles)` : 'tracé automatique');
+  }
+  /** État affiché des choix de la sélection. */
+  const selStyle = (cs: CableV[]) => (cs.length && cs.every((c) => c.fields.style === cs[0]!.fields.style) ? cs[0]!.fields.style : null);
+  const selRoute = (cs: CableV[]) => { const d = cs.filter(drawn); return !d.length ? null : d.every((c) => !c.fields.waypoints?.length) ? 'unique' : d.length > 1 && d.every((c) => c.fields.waypoints?.length) ? 'grouped' : null; };
   /** Rebranche une extrémité sur un autre port (le câble garde son numéro et ses réglages). */
   async function rewireCable(id: string, end: 'a' | 'b', to: string) {
     const c = syn?.cables.find((x) => x.id === id); if (!c || c.fields.attach || c.fields.external) return;
@@ -988,7 +1063,7 @@
   }
 
   // ----- Menus contextuels -----
-  interface CtxItem { label: string; act?: () => void; danger?: boolean; sep?: boolean; disabled?: boolean }
+  interface CtxItem { label: string; act?: () => void; danger?: boolean; sep?: boolean; disabled?: boolean; choices?: { label: string; on: boolean; act: () => void; title?: string }[] }
   let ctx = $state<{ x: number; y: number; title?: string; items: CtxItem[] } | null>(null);
   function contextMenu(e: MouseEvent) {
     e.preventDefault();
@@ -1009,7 +1084,8 @@
           { label: n > 1 ? 'Numéroter la sélection…' : 'Numéroter…', act: () => (numbering = true) },
           ...(c.fields.number && n === 1 ? [{ label: 'Effacer le numéro', act: () => patchCable(c, { number: null }, 'effacement du numéro') }] : []),
           ...(ids.some((id) => syn!.cables.find((x) => x.id === id)?.fields.waypoints?.length) ? [{ label: n > 1 ? 'Repasser les tracés en automatique' : 'Repasser le tracé en automatique', act: () => setWaypoints(ids.filter((id) => syn!.cables.find((x) => x.id === id)?.fields.waypoints?.length).map((id) => ({ id, way: [] })), 'tracé automatique') }] : []),
-          { label: 'Style : orthogonal', act: () => setStyle('orthogonal') }, { label: 'Style : arrondi', act: () => setStyle('rounded') }, { label: 'Style : flèche (renvoi)', act: () => setStyle('arrow') },
+          { label: 'Style', sep: true, choices: STYLES.map(([k2, l]) => ({ label: l, on: selStyle(selCables()) === k2, act: () => styleSel(k2) })) },
+          { label: 'Tracé', choices: [{ label: 'Regroupé', on: selRoute(selCables()) === 'grouped', act: regroupSel, title: n > 1 ? 'Les câbles choisis suivent un même chemin parallèle' : 'Regroupe ce câble avec ceux qui relient les mêmes équipements' }, { label: 'Unique', on: selRoute(selCables()) === 'unique', act: uniqueSel, title: 'Chaque câble reprend son tracé automatique' }] },
           { label: 'Type de câble…', act: () => askModel(ids) },
           { label: n > 1 ? `Supprimer les ${n} câbles` : 'Supprimer le câble', danger: true, sep: true, act: () => (confirmDelete = true) },
         ] : [{ label: 'Propriétés', act: () => {} }]),
@@ -1235,7 +1311,7 @@
   // tracé décalé en parallèle de l'écart de leurs ports : un faisceau qui ne converge pas sur
   // le pointeur et ne se croise pas. La pose suit exactement la même géométrie.
   /** Sortie horizontale d'un port, au-delà de l'étiquette du câble (connecteur et numéro). */
-  const outOf = (ref?: string) => Math.ceil((textWidth(short(portByRef(ref ?? '')?.connector ?? ''), MONO_S) + 28 + TAG_GAP * 2 + 12) / 10) * 10;
+  const outOf = (ref?: string) => Math.ceil((tw(short(portByRef(ref ?? '')?.connector ?? ''), MONO_S) + TAG_L + TAG_SEP + tw('—', MONO_D) + TAG_R + TAG_GAP * 2 + 12) / 10) * 10;
   const stubOf = (P: [number, number, 'l' | 'r'], ref?: string): [number, number] => [P[0] + (P[2] === 'r' ? outOf(ref) : -outOf(ref)), P[1]];
   /** Chemin de référence depuis un port, par les points de passage, jusqu'à `end`. */
   function refPath(P: [number, number, 'l' | 'r'], way: [number, number][], end: [number, number], ref?: string): [number, number][] {
@@ -1366,7 +1442,7 @@
                 {@const [x1, y1] = ovCenter(l.a)}
                 {@const [x2, y2] = ovCenter(l.b)}
                 <line class="ov-line" class:ext={l.external > 0} x1={x1} y1={y1} x2={x2} y2={y2} style="stroke-width:{Math.min(14, 2 + l.cables.length)}" />
-                <g class="ov-count" transform="translate({(x1 + x2) / 2} {(y1 + y2) / 2})"><rect x="-38" y="-14" width="76" height="28" rx="14" /><text y="5" text-anchor="middle">{l.cables.length} câble{l.cables.length > 1 ? 's' : ''}</text></g>
+                {@const ct = `${l.cables.length} câble${l.cables.length > 1 ? 's' : ''}`}{@const cw2 = Math.ceil(tw(ct, `700 12px ${MONO}`)) + 28}<g class="ov-count" transform="translate({(x1 + x2) / 2} {(y1 + y2) / 2})"><rect x={-cw2 / 2} y="-14" width={cw2} height="28" rx="14" /><text y="5" text-anchor="middle">{ct}</text></g>
               {/each}
             </g>
             {#each ov.locations as l (l.id)}
@@ -1398,7 +1474,7 @@
                 {#if s}
                   <g class="cable stub" data-cable={c.id} data-family={cabFam(c)} class:off={hiddenFam.has(famOf(c))} class:sel={multi.has(c.id) || sel === c.id} class:hl={hl.cables.has(c.id)} class:warn={c.warnings.length > 0} style="--c:{cableColor(c)}" role="button" tabindex="-1" onclick={(e) => pickCable(c.id, e)} onkeydown={() => {}}>
                     <path class="case" d={s.d} /><path class="vis" d={s.d} /><path class="hit" d={s.d} />
-                    <g class="far" transform="translate({s.dx > 0 ? s.ex + 4 : s.ex - 4} {s.ey - 11})"><rect x={s.dx > 0 ? 0 : -190} width="190" height="22" rx="6" /><text x={s.dx > 0 ? 8 : -182} y="15">{s.far?.external ? '↗' : '→'} {(s.far ? (s.far.external ? s.far.label : `${s.far.label} › ${s.far.port}`) : 'Extrémité supprimée').slice(0, 30)}</text></g>
+                    <g class="far" transform="translate({s.dx > 0 ? s.ex + 4 : s.ex - 4} {s.ey - 11})"><rect x={s.dx > 0 ? 0 : -s.fw} width={s.fw} height="22" rx="6" /><text x={s.dx > 0 ? 9 : -s.fw + 9} y="15">{s.ft}</text></g>
                   </g>
                 {/if}
               {/if}
@@ -1457,20 +1533,28 @@
               {/if}
             {/each}
           </g>
+          <!-- Renvois des câbles en flèche, sous toutes les étiquettes (alertes jamais masquées). -->
+          <g class="renvois">
+            {#each syn.cables.filter((x) => !x.fields.attach && x.a_in_view && x.b_in_view && x.fields.style === 'arrow') as c (c.id)}
+              {@const g = cPath(c)}
+              {#if g?.renvoi}{#each g.renvoi as r}{@const ft = fontRev >= 0 ? fitText(r.far, 240, FAR_F) : ''}{@const fw = Math.ceil(tw(ft, FAR_F)) + 20}<g class="far renvoi-l" class:off={hiddenFam.has(famOf(c))} style="--c:{cableColor(c)}" data-cable={c.id} role="button" tabindex="-1" onclick={(e) => pickCable(c.id, e)} onkeydown={() => {}} transform="translate({r.dx > 0 ? r.ex + 4 : r.ex - 4} {r.ey - 11})"><rect x={r.dx > 0 ? 0 : -fw} width={fw} height="22" rx="6" /><text x={r.dx > 0 ? 10 : -fw + 10} y="15">{ft}</text></g>{/each}{/if}
+            {/each}
+          </g>
           <g class="tags">
             {#each syn.cables.filter((x) => !x.fields.attach) as c (c.id)}
               {@const both = c.a_in_view && c.b_in_view}
               {@const g = both ? cPath(c) : null}
               {@const s = both ? null : stub(c)}
-              {@const cw = textWidth(connOf(c), MONO_S)}
-              {#if g?.renvoi}{#each g.renvoi as r}{@const fw = Math.min(220, textWidth(r.far, '600 11px Inter') + 18)}<g class="far renvoi-l" class:off={hiddenFam.has(famOf(c))} style="--c:{cableColor(c)}" data-cable={c.id} role="button" tabindex="-1" onclick={(e) => pickCable(c.id, e)} onkeydown={() => {}} transform="translate({r.dx > 0 ? r.ex + 4 : r.ex - 4} {r.ey - 11})"><rect x={r.dx > 0 ? 0 : -fw} width={fw} height="22" rx="6" /><text x={r.dx > 0 ? 9 : -fw + 9} y="15">{fitText(r.far, 202, '600 11px Inter')}</text></g>{/each}{/if}
+              {@const cw = connW(c)}{@const w = tagW(c)}
+              
               {#each (g ? [g.t1, g.t2] : s ? [s.t] : []) as t}
                 <g class="lbl" data-cable={c.id} class:off={hiddenFam.has(famOf(c))} class:none={!c.fields.number} class:dup={!!c.fields.number && dups.has(c.fields.number)} class:sel={multi.has(c.id) || sel === c.id} class:hl={hl.cables.has(c.id)} style="--c:{cableColor(c)}" transform="translate({t[0]} {t[1] - 9})" role="button" tabindex="-1" onclick={(e) => pickCable(c.id, e)} onkeydown={() => {}}>
-                  <rect class="tag" width={tagW(c)} height="18" rx="4" />
+                  <rect class="tag" width={w} height="18" rx="4" />
                   <rect class="bandc" x="3.5" y="3.5" width="3" height="11" rx="1" />
-                  <text class="tconn" x="10" y="12.5">{connOf(c)}</text>
-                  {#if c.fields.number}<text x={cw + 16} y="13">{c.fields.number}</text>{:else}<text class="tnone" x={cw + 16} y="13">—</text>{/if}
-                  {#if (c.fields.number && dups.has(c.fields.number)) || c.warnings.length}<g class="dupm" transform="translate({tagW(c) + 4} 0)"><path d="M8 1l7.5 14h-15z" /><text x="8" y="13.5" text-anchor="middle">!</text><title>{[...(c.fields.number && dups.has(c.fields.number) ? ['Numéro en double'] : []), ...c.warnings].join(' · ')}</title></g>{/if}
+                  <text class="tconn" x={TAG_L} y="12.5">{connOf(c)}</text>
+                  {#if c.fields.number}<text x={TAG_L + cw + TAG_SEP} y="13">{c.fields.number}</text>{:else}<text class="tnone" x={TAG_L + cw + TAG_SEP} y="13">—</text>{/if}
+                  <!-- Alerte : juste après la pilule, sans chevaucher le texte. -->
+                  {#if (c.fields.number && dups.has(c.fields.number)) || c.warnings.length}<g class="dupm" transform="translate({w + 4} 1)"><path d="M8 1l7.5 14h-15z" /><text x="8" y="13.5" text-anchor="middle">!</text><title>{[...(c.fields.number && dups.has(c.fields.number) ? ['Numéro en double'] : []), ...c.warnings].join(' · ')}</title></g>{/if}
                 </g>
               {/each}
             {/each}
@@ -1479,7 +1563,7 @@
             {@const d = a.data}
             {@const fam = d.font === 'mono' ? 'var(--mono)' : d.font === 'serif' ? 'Georgia, serif' : 'var(--font)'}
             <g class="alabel" class:sel={selAnn === a.id} data-ann={a.id}>
-              {#if d.pill}<rect x={d.x - 8} y={d.y - d.size} width={d.text.length * d.size * 0.58 + 16} height={d.size * 1.45} rx={d.size * 0.72} fill={d.color === '#15171A' ? 'var(--fg)' : d.color} opacity="0.14" />{/if}
+              {#if d.pill}<rect x={d.x - 8} y={d.y - d.size} width={Math.ceil(tw(d.text, `${d.italic ? 'italic ' : ''}${d.bold ? 700 : 400} ${d.size}px ${d.font === 'mono' ? MONO : d.font === 'serif' ? 'Georgia, serif' : SANS}`)) + 16} height={d.size * 1.45} rx={d.size * 0.72} fill={d.color === '#15171A' ? 'var(--fg)' : d.color} opacity="0.14" />{/if}
               <text x={d.x} y={d.y} fill={d.color === '#15171A' ? 'var(--fg)' : d.color} style="font-family:{fam};font-size:{d.size}px;font-weight:{d.bold ? 700 : 400};font-style:{d.italic ? 'italic' : 'normal'};text-decoration:{d.underline ? 'underline' : 'none'}">{d.text}</text>
             </g>
           {/each}
@@ -1535,7 +1619,7 @@
       {#if ctx}
         <div class="ctx" style="left:{Math.min(ctx.x, stageW - 250)}px;top:{Math.min(ctx.y, stageH - 40 - ctx.items.length * 34)}px" role="menu">
           {#if ctx.title}<div class="ctx-t">{ctx.title}</div>{/if}
-          {#each ctx.items as it}{#if it.sep}<hr />{/if}<button role="menuitem" class:danger={it.danger} disabled={it.disabled} onclick={() => { const f = it.act; ctx = null; f?.(); }}>{it.label}</button>{/each}
+          {#each ctx.items as it}{#if it.sep}<hr />{/if}{#if it.choices}<div class="ctx-row" role="group" aria-label={it.label}><span>{it.label}</span><div class="seg">{#each it.choices as ch}<button role="menuitemradio" aria-checked={ch.on} class:on={ch.on} title={ch.title} onclick={() => { ctx = null; ch.act(); }}>{ch.label}</button>{/each}</div></div>{:else}<button role="menuitem" class:danger={it.danger} disabled={it.disabled} onclick={() => { const f = it.act; ctx = null; f?.(); }}>{it.label}</button>{/if}{/each}
         </div>
       {/if}</div>
 
@@ -1644,7 +1728,9 @@
             <p class="muted small" style="margin:0">Ctrl ou Maj + clic pour en ajouter ou en retirer.</p>
             {#if mine}
               <div class="field"><label for="mh">Faisceau</label><select class="input" id="mh" onchange={(e) => { const v = (e.target as HTMLSelectElement).value; if (v === '+') newHarness = { name: '', color: '#2459E0' }; else assign(v || null); (e.target as HTMLSelectElement).value = '~'; }}><option value="~">Ranger dans…</option><option value="">Aucun faisceau</option>{#each syn.harnesses as h}<option value={h.id}>{h.name}</option>{/each}<option value="+">+ Nouveau faisceau…</option></select></div>
-              <div class="field"><span class="flabel">Style du tracé</span><div class="seg">{#each [['orthogonal', 'Orthogonal'], ['rounded', 'Arrondi'], ['arrow', 'Flèche']] as [k2, l]}<button onclick={() => setStyle(k2 as CabPrefs['style'])}>{l}</button>{/each}</div></div>
+              {@const cs = selCables()}
+              <div class="field"><span class="flabel">Style du tracé</span><div class="seg">{#each STYLES as [k2, l]}<button class:on={selStyle(cs) === k2} onclick={() => styleSel(k2)}>{l}</button>{/each}</div></div>
+              <div class="field"><span class="flabel">Tracé</span><div class="seg"><button class:on={selRoute(cs) === 'grouped'} disabled={cs.filter(drawn).length < 2} title="Les câbles choisis suivent un même chemin parallèle" onclick={regroupSel}>Regroupé</button><button class:on={selRoute(cs) === 'unique'} title="Chaque câble reprend son tracé automatique" onclick={uniqueSel}>Unique</button></div><span class="help">Regroupé : un faisceau parallèle sur le chemin du premier câble. Unique : tracés automatiques indépendants.</span></div>
               <button class="btn sm" onclick={() => askModel([...multi])}>Type de câble…</button>
               <button class="btn sm primary" onclick={() => (numbering = true)}><Icon name="hash" size="sm" />Numéroter la sélection</button>
               <button class="btn sm ghost danger" onclick={() => (confirmDelete = true)}><Icon name="trash" size="sm" />Supprimer les {multi.size} câbles</button>{/if}
@@ -1675,7 +1761,8 @@
             </div>
             <div class="field"><label for="ch">Faisceau</label><select class="input" id="ch" disabled={!mine} value={c.fields.harness_id ?? ''} onchange={(e) => { const v = (e.target as HTMLSelectElement).value; if (v === '+') { newHarness = { name: '', color: '#2459E0' }; } else assign(v || null); }}><option value="">Aucun</option>{#each syn.harnesses as h}<option value={h.id}>{h.name}</option>{/each}{#if mine}<option value="+">+ Nouveau faisceau…</option>{/if}</select></div>
             {#if !c.fields.external}
-              <div class="field"><span class="flabel">Style du tracé</span><div class="seg">{#each [['orthogonal', 'Orthogonal'], ['rounded', 'Arrondi'], ['arrow', 'Flèche']] as [k2, l]}<button class:on={c.fields.style === k2} disabled={!mine} onclick={() => patchSel({ style: k2 })}>{l}</button>{/each}</div></div>
+              <div class="field"><span class="flabel">Style du tracé</span><div class="seg">{#each STYLES as [k2, l]}<button class:on={c.fields.style === k2} disabled={!mine} onclick={() => styleSel(k2)}>{l}</button>{/each}</div></div>
+              {#if drawn(c)}{@const grp = groupOf().length}<div class="field"><span class="flabel">Tracé</span><div class="seg"><button class:on={!!c.fields.waypoints?.length && grp > 1} disabled={!mine || grp < 2} title={grp < 2 ? 'Aucun autre câble entre ces deux équipements' : `Regroupe ce câble avec les ${grp - 1} autre${grp > 2 ? 's' : ''} câble${grp > 2 ? 's' : ''} entre ces deux équipements`} onclick={regroupSel}>Regroupé{grp > 1 ? ` (${grp})` : ''}</button><button class:on={!c.fields.waypoints?.length} disabled={!mine} title="Tracé automatique indépendant" onclick={uniqueSel}>Unique</button></div></div>{/if}
               <div class="field"><label for="cm">Type de câble</label>
                 <select class="input" id="cm" disabled={!mine} value={c.fields.cable_model_id ?? ''} onfocus={loadModels} onchange={(e) => patchSel({ cable_model_id: (e.target as HTMLSelectElement).value || null })}>
                   <option value="">Non défini</option>{#if c.fields.cable_model_id && !models?.some((m) => m.id === c.fields.cable_model_id)}<option value={c.fields.cable_model_id}>Type choisi</option>{/if}
@@ -2024,6 +2111,8 @@
   .ctx button:hover:not(:disabled) { background: var(--surface-2); }
   .ctx button:disabled { opacity: .4; cursor: default; }
   .ctx button.danger { color: var(--err); }
+  .ctx-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 4px 4px 10px; font-size: 14px; }
+  .ctx .ctx-row .seg button { padding: 5px 9px; font-size: 12.5px; border-radius: 6px; text-align: center; }
   .ctx hr { border: 0; border-top: 1px solid var(--line); margin: 4px 2px; }
   /* Modèle de câble et raccourcis */
   .mlist { display: grid; gap: 6px; max-height: 50vh; overflow: auto; }
