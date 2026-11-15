@@ -7,6 +7,7 @@
   import FieldError from '../../components/FieldError.svelte';
   import KindIll from '../../components/KindIll.svelte';
   import Icon from '../../components/Icon.svelte';
+  import Seg from '../../components/Seg.svelte';
   import { api, ApiError } from '../../lib/api';
   import { toast } from '../../lib/toast.svelte';
   import { CONTAINER_KINDS, ELEMENT_FAMILIES, ELEMENT_HINTS, U_PRESETS, blankContainer, type Container, type ContainerData, type ContainerKind, type DeskPosition, type ProjectView } from '../../lib/projects';
@@ -29,8 +30,9 @@
     if (!named) name = `${CONTAINER_KINDS[k].label} ${view.containers.filter((x) => x.kind === k).length + 1}`;
     step = 'form';
   }
-  async function save(e: SubmitEvent) {
-    e.preventDefault(); errors = {}; general = null;
+  // La boîte suit elle-même l'envoi (bouton bloqué, indicateur) pendant que save() attend.
+  async function save() {
+    errors = {}; general = null;
     const { id: _i, project_id: _p, position: _o, rev: _r, totals: _t, ...data } = $state.snapshot(c) as Container;
     const body = { ...data, name, location_id: loc };
     try {
@@ -47,7 +49,8 @@
 
 {#snippet hint(id: string, list: string[])}<datalist {id}>{#each list as v}<option value={v}></option>{/each}</datalist>{/snippet}
 
-<Dialog title={container ? `Modifier ${container.name}` : step === 'type' ? 'Ajouter un élément' : `Nouveau : ${K.label}`} eyebrow={view.project.name} {onclose} wide>
+<Dialog title={container ? `Modifier ${container.name}` : step === 'type' ? 'Nouvel élément' : `Nouveau : ${K.label}`} eyebrow={view.project.name} {onclose} wide
+  onsubmit={step === 'form' ? save : undefined} submitLabel={container ? 'Enregistrer' : 'Ajouter l’élément'} footer={step === 'type' ? typeFoot : undefined}>
   {#if step === 'type'}
     <div class="gal">
       {#each ELEMENT_FAMILIES as f (f.key)}
@@ -65,15 +68,15 @@
       {/each}
     </div>
   {:else}
-    <form id="contf" class="stack" onsubmit={save}>
+    <div class="stack">
       <div class="kind-bar">
         <KindIll kind={c.kind} size={60} />
         <div><b>{K.label}</b><span class="muted small">{K.help}</span></div>
         {#if !container}<button type="button" class="btn sm ghost" onclick={() => (step = 'type')}><Icon name="undo" size="sm" />Changer de type</button>{/if}
       </div>
       <div class="fg3">
-        <div class="field"><label for="c-name">Nom</label><input class="input" class:err={!!errors.name} id="c-name" bind:value={name} oninput={() => (named = true)} required maxlength="120"><FieldError message={errors.name} /></div>
-        <div class="field"><label for="c-loc">Emplacement</label><select class="input" id="c-loc" bind:value={loc}>{#each view.locations as l}<option value={l.id}>{l.name}</option>{/each}</select><FieldError message={errors.location_id} /></div>
+        <div class="field"><label for="c-name">Nom</label><input class="input" class:err={!!errors.name} id="c-name" bind:value={name} oninput={() => (named = true)} required maxlength="120" aria-invalid={!!errors.name} aria-describedby={errors.name ? 'c-name-err' : undefined}><FieldError for="c-name" message={errors.name} /></div>
+        <div class="field"><label for="c-loc">Emplacement</label><select class="input" class:err={!!errors.location_id} id="c-loc" bind:value={loc} aria-invalid={!!errors.location_id} aria-describedby={errors.location_id ? 'c-loc-err' : undefined}>{#each view.locations as l}<option value={l.id}>{l.name}</option>{/each}</select><FieldError for="c-loc" message={errors.location_id} /></div>
         <div class="field"><label for="c-code">Code câble</label><input class="input mono" id="c-code" bind:value={c.cable_code} maxlength="5" placeholder="Tiré du nom"><span class="help">5 caractères : majuscules et chiffres.</span></div>
       </div>
 
@@ -84,7 +87,7 @@
           <div class="fg4">
             <NumField id="w-r" label="Rangées" bind:value={w.rows} min={1} max={12} step={1} error={errors['wall.rows']} />
             <NumField id="w-c" label="Colonnes" bind:value={w.cols} min={1} max={16} step={1} error={errors['wall.cols']} />
-            <div class="field" style="grid-column:span 2"><label for="w-s">Support</label><input class="input" id="w-s" list="h-sup" value={w.support ?? ''} oninput={(e) => (w.support = (e.target as HTMLInputElement).value || null)} placeholder="Structure alu, pieds…">{@render hint('h-sup', ELEMENT_HINTS.support!)}</div>
+            <div class="field span2"><label for="w-s">Support</label><input class="input" id="w-s" list="h-sup" value={w.support ?? ''} oninput={(e) => (w.support = (e.target as HTMLInputElement).value || null)} placeholder="Ex. structure alu, pieds">{@render hint('h-sup', ELEMENT_HINTS.support!)}</div>
           </div>
           <div class="wall-prev" style="--r:{w.rows || 1};--c:{w.cols || 1}">{#each Array((w.rows || 1) * (w.cols || 1)) as _}<i></i>{/each}</div>
           <span class="muted small">Ajoutez les écrans à l’élément, puis placez-les sur la grille depuis l’inventaire.</span>
@@ -96,18 +99,18 @@
           {#each d.positions ?? [] as p, i (p.id)}
             <div class="post">
               <span class="post-n mono">{i + 1}</span>
-              <input class="input" list="h-roles" bind:value={p.role} placeholder="Rôle (réalisateur, scripte…)" aria-label="Rôle du poste {i + 1}" required>
+              <input class="input" list="h-roles" bind:value={p.role} placeholder="Rôle (ex. réalisateur, scripte)" aria-label="Rôle du poste {i + 1}" required>
               <input class="input" bind:value={p.name} placeholder="Personne prévue (facultatif)" aria-label="Personne du poste {i + 1}">
               {#if c.kind === 'desk'}<button type="button" class="icon-btn sm" aria-label="Retirer le poste {i + 1}" onclick={() => (c.details.positions = d.positions!.filter((x: DeskPosition) => x !== p))}><Icon name="x" size="sm" /></button>{/if}
             </div>
           {/each}
           {@render hint('h-roles', ELEMENT_HINTS.roles!)}
-          {#if c.kind === 'desk' && (d.positions?.length ?? 0) < 24}<button type="button" class="btn sm ghost" style="justify-self:start" onclick={addPost}><Icon name="plus" size="sm" />Ajouter un poste</button>{/if}
+          {#if c.kind === 'desk' && (d.positions?.length ?? 0) < 24}<button type="button" class="btn sm ghost add-post" onclick={addPost}><Icon name="plus" size="sm" />Ajouter un poste</button>{/if}
           <FieldError message={errors.positions} />
         </div>
       {:else if c.kind === 'zone'}
         <div class="spec"><span class="lbl-t">Emplacement libre</span><div class="fg3">
-          <div class="field"><label for="z-s">Surface</label><input class="input" id="z-s" list="h-surf" value={d.surface ?? ''} oninput={txt('surface')} placeholder="Table, sol, loge…">{@render hint('h-surf', ELEMENT_HINTS.surface!)}</div>
+          <div class="field"><label for="z-s">Surface</label><input class="input" id="z-s" list="h-surf" value={d.surface ?? ''} oninput={txt('surface')} placeholder="Ex. table, sol, loge">{@render hint('h-surf', ELEMENT_HINTS.surface!)}</div>
           <NumField id="z-a" label="Superficie" unit="m²" bind:value={c.details.area_m2!} error={errors.area_m2} />
         </div></div>
       {:else if c.kind === 'camera_position'}
@@ -119,12 +122,12 @@
       {:else if c.kind === 'rf_mast'}
         <div class="spec"><span class="lbl-t">Mât HF</span><div class="fg3">
           <NumField id="m-h" label="Hauteur" unit="m" bind:value={c.details.mast_height_m!} error={errors.mast_height_m} />
-          <div class="field" style="grid-column:span 2"><label for="m-f">Fréquences</label><input class="input mono" id="m-f" value={d.frequencies ?? ''} oninput={txt('frequencies')} placeholder="606,100 · 614,350 MHz…"></div>
+          <div class="field span2"><label for="m-f">Fréquences</label><input class="input mono" id="m-f" value={d.frequencies ?? ''} oninput={txt('frequencies')} placeholder="Ex. 606,100 · 614,350 MHz"></div>
         </div></div>
       {:else if c.kind === 'power'}
         <div class="spec"><span class="lbl-t">Énergie</span><div class="fg3">
           <NumField id="p-k" label="Puissance" unit="kVA" bind:value={c.details.power_kva!} error={errors.power_kva} />
-          <div class="field"><span class="flabel">Phases</span><div class="seg">{#each [[1, 'Mono'], [3, 'Tri']] as [v, l]}<button type="button" class:on={d.phases === v} onclick={() => (c.details.phases = v as number)}>{l}</button>{/each}</div></div>
+          <div class="field"><span class="flabel">Phases</span><Seg label="Phases" value={c.details.phases ?? null} onchange={(v) => (c.details.phases = v)} options={[{ value: 1, label: 'Mono' }, { value: 3, label: 'Tri' }]} /></div>
           <div class="field"><label for="p-o">Sortie</label><input class="input" id="p-o" list="h-out" value={d.outlet ?? ''} oninput={txt('outlet')}>{@render hint('h-out', ELEMENT_HINTS.outlet!)}</div>
         </div></div>
       {:else if c.kind === 'external_feed'}
@@ -150,7 +153,7 @@
         </div></div>
       {/if}
 
-      <div style="display:flex;gap:18px;flex-wrap:wrap">
+      <div class="toggles">
         {#if K.canRack}<label class="toggle-row"><input type="checkbox" bind:checked={c.rackable}>Rackable (19″)</label>{/if}
         {#if K.mobile}<label class="toggle-row"><input type="checkbox" bind:checked={c.wheels}>Roulettes</label>{/if}
       </div>
@@ -168,15 +171,17 @@
         <NumField id="c-mkg" label="Poids maximum" unit="kg" bind:value={c.max_weight_kg} error={errors.max_weight_kg} />
         <NumField id="c-mw" label="Puissance maximum" unit="W" bind:value={c.max_power_w} error={errors.max_power_w} />
       </div>
-      <div class="field"><label for="c-notes">Notes</label><textarea class="input" id="c-notes" rows="2" style="height:auto;padding:12px 14px" value={c.notes ?? ''} oninput={(e) => (c.notes = (e.target as HTMLTextAreaElement).value || null)}></textarea></div>
-      {#if general}<div class="alert err">{general}</div>{/if}
-    </form>
+      <div class="field"><label for="c-notes">Notes</label><textarea class="input" id="c-notes" rows="2" value={c.notes ?? ''} oninput={(e) => (c.notes = (e.target as HTMLTextAreaElement).value || null)}></textarea></div>
+      {#if general}<div class="alert err" role="alert">{general}</div>{/if}
+    </div>
   {/if}
-  {#snippet footer()}<button class="btn ghost" onclick={onclose}>Annuler</button>{#if step === 'form'}<button class="btn primary" type="submit" form="contf">{container ? 'Enregistrer' : 'Ajouter l’élément'}</button>{/if}{/snippet}
 </Dialog>
+{#snippet typeFoot()}<button type="button" class="btn ghost" onclick={onclose}>Annuler</button>{/snippet}
 
 <style>
   .gal { display: grid; gap: 18px; }
+  .toggles { display: flex; gap: 18px; flex-wrap: wrap; }
+  .add-post { justify-self: start; }
   .gal-h { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; margin-bottom: 8px; }
   .gal-g { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
   .kc { display: grid; justify-items: center; gap: 4px; padding: 12px 10px; border-radius: 16px; border: 1.5px solid var(--line); background: var(--surface); cursor: pointer; font: inherit; color: inherit; text-align: center; transition: border-color .15s, transform .15s, box-shadow .15s; }
@@ -186,6 +191,7 @@
   .kind-bar { display: flex; gap: 14px; align-items: center; padding: 10px 14px; border-radius: 16px; background: var(--surface-2); }
   .kind-bar > div { display: flex; flex-direction: column; flex: 1; }
   .spec { display: grid; gap: 10px; padding: 14px; border-radius: 16px; border: 1.5px dashed var(--line); }
+  .span2 { grid-column: span 2; }
   .post { display: grid; grid-template-columns: auto 1fr 1fr auto; gap: 8px; align-items: center; }
   .post-n { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; background: var(--fg); color: var(--bg); }
   .wall-prev { display: grid; grid-template-columns: repeat(var(--c), 1fr); gap: 4px; max-width: 360px; padding: 8px; border-radius: 10px; background: #15181C; }
