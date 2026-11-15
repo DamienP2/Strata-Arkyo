@@ -68,3 +68,6 @@ export function byDay<T extends { at: string }>(list: T[]): { key: string; title
 export function initials(name: string): string {
   return name.split(/[\s.@_-]+/).filter(Boolean).slice(0, 2).map((p) => p[0]!.toUpperCase()).join('');
 }
+
+/** Infobulle du pourcentage d'avancement d'un projet (le mot « fiche » reste réservé au catalogue). */
+export const COMPLETION_HELP = 'Part des informations du projet renseignées : client, lieu, description, type de projet, périodes de préparation et d’exploitation, au moins un emplacement, un élément et du matériel.';
