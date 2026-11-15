@@ -7,6 +7,7 @@
   import Dialog from '../../components/Dialog.svelte';
   import Desk3D from '../../components/Desk3D.svelte';
   import Racks from './Racks.svelte';
+  import AddArticle from './AddArticle.svelte';
   import { api } from '../../lib/api';
   import { can } from '../../lib/session.svelte';
   import { toast, fail } from '../../lib/toast.svelte';
@@ -111,6 +112,9 @@
     const c = confirmDel!; confirmDel = null;
     try { await api.del(`/containers/${c.id}`); toast('Casquette supprimée.'); sel = null; await reload(); } catch (e) { fail(e); }
   }
+  // « Ajouter du matériel » : sur la casquette sélectionnée, sinon sur le mobilier lui-même.
+  let adding = $state(false);
+  const addTo = $derived(selC ?? desk);
   const num = (v: string) => (v.trim() === '' ? null : Number(v));
 </script>
 
@@ -137,7 +141,7 @@
         <button class="btn sm" onclick={() => navigate(`/projets/${pid}/mobilier/${desk.id}`)}><Icon name="layers" size="sm" />Retour au mobilier</button>
       {:else}
         <div class="seg" role="group" aria-label="Vue"><button class:on={mode === 'plan'} onclick={() => (mode = 'plan')}>Plan</button><button class:on={mode === '3d'} onclick={() => (mode = '3d')}><Icon name="case" size="sm" />3D</button></div>
-        {#if writable}<button class="btn sm primary" onclick={addCasquette}><Icon name="plus" size="sm" />Ajouter une casquette</button>{/if}
+        {#if writable}<button class="btn sm" onclick={() => (adding = true)} title="Ajouter du matériel {selC ? 'dans la casquette sélectionnée' : 'au mobilier'}"><Icon name="box" size="sm" />Ajouter du matériel</button><button class="btn sm primary" onclick={addCasquette}><Icon name="plus" size="sm" />Ajouter une casquette</button>{/if}
       {/if}
     </div>
     {#if equip && casq.some((c) => c.id === equip)}
@@ -216,6 +220,8 @@
     {/if}
   </div>
 {/if}
+
+{#if adding && addTo}<AddArticle {view} container={addTo} locationId={addTo.location_id} onclose={() => (adding = false)} ondone={async () => { await reload(); await loadRacks(); }} />{/if}
 
 {#if confirmDel}
   <Confirm title="Supprimer « {confirmDel.name} » ?" eyebrow="Casquette" confirmLabel="Supprimer" danger onconfirm={delCasquette} onclose={() => (confirmDel = null)}>

@@ -236,15 +236,6 @@
     queue.set(i.id, next);
   }
   const pct = (v: number, max: number | null | undefined) => (max ? (v / max) * 100 : 0);
-  /** Dépassements d'un élément, en clair : « 14 U de matériel pour 6 U disponibles ». */
-  function overs(c: Container): string[] {
-    const t = c.totals;
-    return [
-      t.over_u && `${nf(t.used_u, t.used_u % 1 ? 1 : 0)} U de matériel pour ${c.height_u} U disponibles`,
-      t.over_weight && `${nf(t.weight_kg, 1)} kg pour ${nf(c.max_weight_kg ?? 0)} kg admis`,
-      t.over_power && `${nf(t.power_w)} W pour ${nf(c.max_power_w ?? 0)} W admis`,
-    ].filter(Boolean) as string[];
-  }
   /** Blocs de la mini-baie : chaque article rackable, de bas en haut, à l'échelle. */
   function blocks(c: Container) {
     const total = c.height_u ?? 1;
@@ -304,15 +295,14 @@
               {#if c.rackable}<span class="mini-rack" class:case={c.kind !== 'rack'}>{#each blocks(c) as b}<i style="height:{b.h}%;--c:{b.color}"></i>{/each}</span>{:else}<span class="kind-vis"><KindIll kind={c.kind} size={78} /></span>{/if}
             </span>
             <span class="cont-info">
-              <span class="cont-top"><span class="chip">{CONTAINER_KINDS[c.kind].label}</span>{#if c.wheels}<span class="chip">Roulettes</span>{/if}{#if t.over_weight || t.over_power || t.over_u}<span class="chip err"><Icon name="alert" />Dépassement</span>{/if}</span>
+              <span class="cont-top"><span class="chip">{CONTAINER_KINDS[c.kind].label}</span>{#if c.wheels}<span class="chip">Roulettes</span>{/if}</span>
               <b class="cont-name">{c.name}</b>
               <span class="mono small muted">{c.cable_code} · {specLine(c)}</span>
               <span class="meters">
-                {#if c.rackable}<span class="meter" class:err={t.over_u}><span>Hauteur</span><span class="mono">{nf(t.used_u, t.used_u % 1 ? 1 : 0)} / {c.height_u} U</span><Vu value={pct(t.used_u, t.total_u)} mode="load" n={24} /></span>{/if}
-                <span class="meter" class:err={t.over_weight}><span>Poids</span><span class="mono">{nf(t.weight_kg, 1)}{c.max_weight_kg ? ` / ${nf(c.max_weight_kg)}` : ''} kg</span>{#if c.max_weight_kg}<Vu value={pct(t.weight_kg, c.max_weight_kg)} mode="load" n={24} />{/if}</span>
-                <span class="meter" class:err={t.over_power}><span>Conso</span><span class="mono">{nf(t.power_w)}{c.max_power_w ? ` / ${nf(c.max_power_w)}` : ''} W</span>{#if c.max_power_w}<Vu value={pct(t.power_w, c.max_power_w)} mode="load" n={24} />{/if}</span>
+                {#if c.rackable}<span class="meter"><span>Hauteur</span><span class="mono">{nf(t.used_u, t.used_u % 1 ? 1 : 0)} / {c.height_u} U</span><Vu value={pct(t.used_u, t.total_u)} mode="load" n={24} /></span>{/if}
+                <span class="meter"><span>Poids</span><span class="mono">{nf(t.weight_kg, 1)}{c.max_weight_kg ? ` / ${nf(c.max_weight_kg)}` : ''} kg</span>{#if c.max_weight_kg}<Vu value={pct(t.weight_kg, c.max_weight_kg)} mode="load" n={24} />{/if}</span>
+                <span class="meter"><span>Conso</span><span class="mono">{nf(t.power_w)}{c.max_power_w ? ` / ${nf(c.max_power_w)}` : ''} W</span>{#if c.max_power_w}<Vu value={pct(t.power_w, c.max_power_w)} mode="load" n={24} />{/if}</span>
               </span>
-              {#each overs(c) as o}<span class="over small">Dépassement : {o}</span>{/each}
             </span>
           </button>
         {/each}
@@ -335,9 +325,6 @@
           <WallView wall={cont.details.wall} screens={gearOf(cont)} {writable} onsave={(w) => saveDetails(cont, { ...cont.details, wall: w })} />
         {:else if (cont?.kind === 'desk' || cont?.kind === 'operator_position') && cont.details?.positions?.length}
           <DeskView positions={cont.details.positions} gear={gearOf(cont)} {writable} onsave={(ps) => saveDetails(cont, { ...cont.details, positions: ps })} />
-        {/if}
-        {#if cont && (cont.totals.over_u || cont.totals.over_weight || cont.totals.over_power)}
-          <div class="alert err" style="margin-top:12px"><Icon name="alert" /><span><b>Dépassement : {[cont.totals.over_u && 'hauteur', cont.totals.over_weight && 'poids', cont.totals.over_power && 'consommation'].filter(Boolean).join(', ')}.</b> {overs(cont).map((o) => o.charAt(0).toUpperCase() + o.slice(1)).join(' ; ')}.</span></div>
         {/if}
         <div class="tbl-wrap"><table class="tbl inv-tbl">
           <thead><tr><th class="c-id">ID</th><th>Libellé</th><th>Statut</th><th></th></tr></thead>
@@ -442,7 +429,6 @@
 {#if panelOf}<ProjectPanel article={panelOf} readonly={!writable} eyebrow="Panel du projet" onclose={() => (panelOf = null)} ondone={reload} />{/if}
 
 <style>
-  .over { color: var(--err); font-weight: 600; }
   /* Onglet d’emplacement actif : texte blanc plein sur le fond primaire (contraste lisible). */
   .loc-list .loc.on, .loc-list .loc.on .ln b, .loc-list .loc.on .ln .small { color: #fff; opacity: 1; }
   .menu-wrap { position: relative; }
