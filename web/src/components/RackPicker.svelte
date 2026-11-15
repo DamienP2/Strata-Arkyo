@@ -5,25 +5,30 @@
   import Icon from './Icon.svelte';
   import { CONTAINER_KINDS, type ProjectView } from '../lib/projects';
   import { nf, pl } from '../lib/format';
+  import { outside } from '../lib/outside';
 
   let { view, value, onpick }: { view: ProjectView; value: string; onpick: (v: string) => void } = $props();
   let open = $state(false);
-  let root = $state<HTMLDivElement>(null!);
+  let btn = $state<HTMLButtonElement>();
   const racks = $derived(view.containers.filter((c) => c.rackable && c.kind !== 'casquette'));
   const groups = $derived(view.locations.map((l) => ({ l, list: racks.filter((c) => c.location_id === l.id) })).filter((g) => g.list.length));
   const cur = $derived(racks.find((c) => c.id === value) ?? null);
   const locOf = (v: string) => view.locations.find((l) => l.id === v.split(':')[1]);
   const label = $derived(cur ? cur.name : value.startsWith('tout:') ? `Tous les racks · ${locOf(value)?.name ?? ''}` : 'Tous les racks');
   const allN = $derived(value.startsWith('tout:') ? groups.find((g) => g.l.id === value.split(':')[1])?.list.length ?? 0 : racks.length);
-  const sub = $derived(cur ? `${view.locations.find((l) => l.id === cur.location_id)?.name ?? ''} · ${CONTAINER_KINDS[cur.kind].label} · ${cur.height_u} U` : `${allN} élément${pl(allN)} côte à côte`);
+  const sub = $derived(cur ? `${view.locations.find((l) => l.id === cur.location_id)?.name ?? ''} · ${CONTAINER_KINDS[cur.kind].label} · ${cur.height_u} U` : `${allN} rack${pl(allN)} côte à côte`);
   const pct = (c: (typeof racks)[number]) => (c.height_u ? Math.min(100, (c.totals.used_u / c.height_u) * 100) : 0);
   function pick(v: string) { open = false; onpick(v); }
+  /** Échap ferme le sélecteur seulement (pas la sélection de l'écran derrière) et rend le focus au bouton. */
+  function key(e: KeyboardEvent) {
+    if (e.key !== 'Escape' || !open) return;
+    e.preventDefault(); e.stopPropagation();
+    open = false; btn?.focus();
+  }
 </script>
 
-<svelte:window onpointerdown={(e) => { if (open && root && !root.contains(e.target as Node)) open = false; }} onkeydown={(e) => { if (e.key === 'Escape') open = false; }} />
-
-<div class="rp" bind:this={root}>
-  <button class="rp-btn" aria-haspopup="listbox" aria-expanded={open} onclick={() => (open = !open)}>
+<div class="rp" use:outside={() => { if (open) open = false; }} onkeydown={key} role="presentation">
+  <button class="rp-btn" bind:this={btn} aria-haspopup="listbox" aria-expanded={open} onclick={() => (open = !open)}>
     <span class="rp-ic"><Icon name={cur ? 'server' : 'grid'} size="sm" /></span>
     <span class="rp-t"><b>{label}</b><small>{sub}</small></span>
     <Icon name="chevd" size="sm" />
@@ -31,11 +36,11 @@
   {#if open}
     <div class="rp-pop" role="listbox" aria-label="Éléments rackables">
       {#if racks.length > 1}
-        <button role="option" aria-selected={value === 'tout'} class="rp-all" class:on={value === 'tout'} onclick={() => pick('tout')}><Icon name="grid" size="sm" /><span><b>Tous les racks côte à côte</b><small>{racks.length} élément{racks.length > 1 ? "s" : ""}, tous emplacements</small></span></button>
+        <button role="option" aria-selected={value === 'tout'} class="rp-all" class:on={value === 'tout'} onclick={() => pick('tout')}><Icon name="grid" size="sm" /><span><b>Tous les racks côte à côte</b><small>{racks.length} rack{pl(racks.length)}, tous emplacements</small></span></button>
       {/if}
       {#each groups as g (g.l.id)}
         <div class="rp-g">
-          <div class="rp-gh"><span class="code mono">{g.l.code || '—'}</span><b>{g.l.name}</b>{#if g.list.length > 1}<button class="rp-gall" class:on={value === `tout:${g.l.id}`} onclick={() => pick(`tout:${g.l.id}`)}>Toutes ({g.list.length})</button>{/if}</div>
+          <div class="rp-gh"><span class="code mono">{g.l.code || '—'}</span><span class="eyebrow">{g.l.name}</span>{#if g.list.length > 1}<button class="rp-gall" class:on={value === `tout:${g.l.id}`} aria-pressed={value === `tout:${g.l.id}`} title="Tous les racks de {g.l.name} côte à côte" onclick={() => pick(`tout:${g.l.id}`)}>Tous <span class="muted mono">{g.list.length}</span></button>{/if}</div>
           {#each g.list as c (c.id)}
             <button role="option" aria-selected={value === c.id} class="rp-it" class:on={value === c.id} onclick={() => pick(c.id)}>
               <span class="rp-n"><b>{c.name}</b><small>{CONTAINER_KINDS[c.kind].label}</small></span>
@@ -51,9 +56,10 @@
 
 <style>
   .rp { position: relative; }
-  .rp-btn { display: flex; align-items: center; gap: 10px; min-width: 280px; max-width: 420px; height: 44px; padding: 0 12px 0 6px; border: 0; border-radius: 10px; background: var(--btn-bg, var(--surface)); box-shadow: inset 0 0 0 1px var(--btn-edge, var(--line-2)); color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
+  .rp-btn { display: flex; align-items: center; gap: 10px; min-width: 280px; max-width: 420px; height: 40px; padding: 0 12px 0 5px; border: 0; border-radius: var(--btn-r, 8px); background: var(--btn-bg, var(--surface)); box-shadow: inset 0 0 0 1px var(--btn-edge, var(--line-2)); color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
   .rp-btn:hover { background: var(--btn-bg-h, var(--surface-2)); }
-  .rp-ic { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 8px; background: var(--surface-3); color: var(--fg-2); flex: none; }
+  .rp-btn:focus-visible, .rp-all:focus-visible, .rp-it:focus-visible, .rp-gall:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .rp-ic { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 8px; background: var(--surface-3); color: var(--fg-2); flex: none; }
   .rp-t { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.15; }
   .rp-t b { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .rp-t small { font-size: 12px; color: var(--fg-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -65,9 +71,9 @@
   .rp-all small, .rp-n small { font-size: 12px; color: var(--fg-3); }
   .rp-g { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
   .rp-gh { display: flex; align-items: center; gap: 8px; padding: 4px 10px 6px; }
-  .rp-gh b { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--fg-2); }
+  .rp-gh .eyebrow { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .rp-gh .code { font-size: 11px; padding: 2px 6px; border-radius: 5px; background: var(--surface-3); color: var(--fg-2); }
-  .rp-gall { margin-left: auto; height: 24px; padding: 0 8px; border: 0; border-radius: 6px; background: var(--surface-2); color: var(--fg-2); font: 600 12px var(--font); cursor: pointer; }
+  .rp-gall { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px; border: 0; border-radius: 6px; background: var(--surface-2); color: var(--fg-2); font: 600 12px var(--font); cursor: pointer; flex: none; }
   .rp-gall:hover, .rp-gall.on { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--fg); }
   .rp-n { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.2; }
   .rp-n b { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

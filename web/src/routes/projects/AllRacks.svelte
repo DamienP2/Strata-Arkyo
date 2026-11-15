@@ -4,11 +4,12 @@
   // dans la même baie, il change simplement de position. La main est prise le temps du geste.
   import Icon from '../../components/Icon.svelte';
   import PanelFace from '../../components/PanelFace.svelte';
+  import Seg from '../../components/Seg.svelte';
   import { api } from '../../lib/api';
   import { can } from '../../lib/session.svelte';
   import { toast, fail } from '../../lib/toast.svelte';
   import { navigate } from '../../lib/router.svelte';
-  import { refById } from '../../lib/catalog.svelte';
+  import { familyColor } from '../../lib/catalog.svelte';
   import { ALU, decor, accFace, visualOf } from '../../lib/faceplate';
   import { rackLines } from '../../lib/racktext.svelte';
   import type { Accessory, ProjectView } from '../../lib/projects';
@@ -35,12 +36,13 @@
   $effect(() => { racks.length; loadAll(); });
 
   const cols = (w: string) => ({ full: 1, half: 2, third: 3, quarter: 4 } as Record<string, number>)[w] ?? 1;
-  const fnColor = (f: string | null) => (f ? (refById('functions', f)?.data?.color ?? 'var(--fg-3)') : 'var(--fg-3)');
+  const famColor = (f: string | null) => familyColor(f, { screen: true });
+  const withRacks = $derived(view.locations.filter((l) => view.containers.some((c) => c.rackable && c.kind !== 'casquette' && c.location_id === l.id)));
   const typeOf = (e: El) => (e.nature === 'accessory' ? accFace(e as any) : visualOf(e));
   const panelOf = (e: El) => (e.accessory?.kind === 'panel' ? e.accessory.panel : null);
   function style(e: El) {
     const n = cols(e.placement.width), l = (100 * e.placement.col) / n, w = 100 / n;
-    return `--c:${fnColor(e.function)};bottom:calc(${e.placement.u_start - 1} * var(--u) + 1px);height:calc(${e.height_u} * var(--u) - 2px);left:calc(${l}% + 2px);width:calc(${w}% - 4px)`;
+    return `--c:${famColor(e.function)};bottom:calc(${e.placement.u_start - 1} * var(--u) + 1px);height:calc(${e.height_u} * var(--u) - 2px);left:calc(${l}% + 2px);width:calc(${w}% - 4px)`;
   }
 
   // ----- Glisser-déposer -----
@@ -93,14 +95,15 @@
 
 <div class="all-tool">
   <RackPicker {view} value={loc ? `tout:${loc}` : 'tout'} onpick={(v) => navigate(`/projets/${view.project.id}/racks/${v.replace(':', '/')}`)} />
-  {#if view.locations.filter((l) => view.containers.some((c) => c.rackable && c.kind !== 'casquette' && c.location_id === l.id)).length > 1}
-    <div class="seg" role="group" aria-label="Emplacement">
-      <button class:on={!loc} onclick={() => navigate(`/projets/${view.project.id}/racks/tout`)}>Tous</button>
-      {#each view.locations.filter((l) => view.containers.some((c) => c.rackable && c.kind !== 'casquette' && c.location_id === l.id)) as l (l.id)}<button class:on={loc === l.id} onclick={() => navigate(`/projets/${view.project.id}/racks/tout/${l.id}`)}>{l.name}</button>{/each}
-    </div>
+  {#if withRacks.length > 1}
+    <!-- Filtre d'emplacement : des liens (l'emplacement choisi est dans l'adresse). -->
+    <nav class="seg ar-locs" aria-label="Emplacement">
+      <a href="/projets/{view.project.id}/racks/tout" class:on={!loc} aria-current={!loc ? 'page' : undefined}>Tous</a>
+      {#each withRacks as l (l.id)}<a href="/projets/{view.project.id}/racks/tout/{l.id}" class:on={loc === l.id} aria-current={loc === l.id ? 'page' : undefined}>{l.name}</a>{/each}
+    </nav>
   {/if}
-  <div class="seg" role="group" aria-label="Face"><button class:on={face === 'front'} onclick={() => (face = 'front')}>Avant</button><button class:on={face === 'rear'} onclick={() => (face = 'rear')}>Arrière</button></div>
-  <div class="seg" role="group" aria-label="Taille"><button class:on={scale === 18} onclick={() => (scale = 18)}>S</button><button class:on={scale === 24} onclick={() => (scale = 24)}>M</button><button class:on={scale === 32} onclick={() => (scale = 32)}>L</button></div>
+  <Seg label="Face" bind:value={face} options={[{ value: 'front', label: 'Avant' }, { value: 'rear', label: 'Arrière' }]} />
+  <Seg label="Taille" bind:value={scale} options={[{ value: 18, label: 'S', title: 'Petite taille' }, { value: 24, label: 'M', title: 'Taille moyenne' }, { value: 32, label: 'L', title: 'Grande taille' }]} />
   <span class="muted small">{#if canDesign}Glissez un équipement vers un autre rack : il change d’élément dans l’inventaire.{:else}Lecture seule.{/if}</span>
   {#if busy}<span class="spin"></span>{/if}
 </div>
@@ -112,7 +115,7 @@
     <div class="ar-col">
       <div class="ar-head"><b>{c.name}</b><span class="muted small">{view.locations.find((l) => l.id === c.location_id)?.name} · {units} U</span>
         {#if r?.lock && !r.lock.mine}<span class="chip warn"><Icon name="lock" />{r.lock.account_name}</span>{/if}
-        <a class="btn sm ghost" href="/projets/{view.project.id}/racks/{c.id}" title="Ouvrir ce rack"><Icon name="arrowr" size="sm" /></a></div>
+        <a class="icon-btn sm" href="/projets/{view.project.id}/racks/{c.id}" aria-label="Ouvrir le rack {c.name}" title="Ouvrir ce rack"><Icon name="arrowr" size="sm" /></a></div>
       <div class="rack" style="--units:{units};--u:{scale}px;--bw:{Math.round(scale * 10.86) - 22}px">
         <div class="rack-scale">{#each Array(units) as _, i}<span>{units - i}</span>{/each}</div>
         <div class="rack-body" role="grid" tabindex="-1" aria-label="Élévation de {c.name}" class:target={over?.cid === c.id}
@@ -120,7 +123,7 @@
           ondragleave={() => { if (over?.cid === c.id) over = null; }}
           ondrop={(ev) => { ev.preventDefault(); if (drag) dropOn(c.id, uAt(ev, ev.currentTarget as HTMLElement, units)); }}>
           {#each (r?.elements ?? []).filter((e) => e.placement.face === face && !e.placement.shelf_id) as e (e.placement.id)}
-            <div class="ritem {e.nature === 'accessory' ? 'acc' : ''} {ALU.has(typeOf(e)) ? 'alu' : ''} {e.height_u <= 1 ? 'u1' : ''} {e.placement.width !== 'full' ? `half c${e.placement.col}` : ''}" class:dragged={drag?.e === e}
+            <div class="ritem {e.nature === 'accessory' ? 'acc' : ''} {ALU.has(typeOf(e)) ? 'alu' : ''} {e.height_u <= 1 ? 'u1' : ''} {e.placement.width !== 'full' ? `half c${e.placement.col}` : ''}" class:dragged={drag?.e === e} class:draggable={canDesign && !busy}
               style={style(e)} role="button" tabindex="0" draggable={canDesign && !busy} title="{e.custom ? `${e.custom} · ` : ''}{e.tag ? `${e.tag} · ` : ''}{e.label} · U{e.placement.u_start}"
               ondragstart={(ev) => { drag = { from: c.id, e }; ev.dataTransfer?.setData('text/plain', e.placement.id); }} ondragend={() => { drag = null; over = null; }}>
               {#if e.nature !== 'accessory'}<i class="led"></i>{/if}<span class="rl" class:two={!!rackLines(e)[1]}>{#if rackLines(e)[0]}<b class="rn" class:id={!!e.tag && rackLines(e)[0] === e.tag}>{rackLines(e)[0]}</b>{/if}{#if rackLines(e)[1]}<small>{rackLines(e)[1]}</small>{/if}</span>{#if panelOf(e)}<span class="pdec"><PanelFace panel={panelOf(e)!} /></span>{:else}<span class="dec">{@html decor(typeOf(e))}</span>{/if}
@@ -147,6 +150,10 @@
   .ar-head .muted { margin-right: auto; white-space: nowrap; }
   .rack-body.target { outline: 2px dashed var(--accent); outline-offset: 2px; }
   .ritem.dragged { opacity: .35; }
-  .ritem[draggable='true'] { cursor: grab; }
+  /* Liens du filtre d'emplacement : même aspect que les boutons d'une commande segmentée. */
+  .ar-locs a { display: inline-flex; align-items: center; height: var(--btn-h-sm, 30px); padding: 0 11px; border-radius: var(--btn-r-sm, 7px); font-size: var(--fs-ctl-sm, 13px); font-weight: 550; color: var(--fg-2); text-decoration: none; white-space: nowrap; }
+  .ar-locs a:hover { color: var(--fg); }
+  .ar-locs a.on { background: var(--key-bg); color: var(--fg); font-weight: 650; box-shadow: var(--key); }
+  .ar-locs a:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
   .pdec { flex: 1 1 0; min-width: 0; align-self: stretch; display: block; padding: 2px 0; margin-left: 8px; }
 </style>

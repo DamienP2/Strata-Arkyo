@@ -1,9 +1,12 @@
 <script lang="ts">
   // Châssis d'un projet : ses emplacements, les modules qui y sont glissés (avec leur repère),
-  // ajout d'un module du catalogue dans un emplacement libre, retrait d'un module.
+  // ajout d'un module du catalogue dans un emplacement libre, suppression d'un module (il quitte
+  // l'inventaire : confirmation, puis notification avec Annuler qui le recrée au même emplacement).
   import Dialog from '../../components/Dialog.svelte';
   import Icon from '../../components/Icon.svelte';
+  import Loading from '../../components/Loading.svelte';
   import { api } from '../../lib/api';
+  import { ask } from '../../lib/ask.svelte';
   import { toast, fail } from '../../lib/toast.svelte';
   import type { Article, ProjectView } from '../../lib/projects';
 
@@ -33,10 +36,18 @@
     try { await api.post(`/articles/${host.id}/modules`, { item_id: c.id, slot: pick }); toast(`${c.name} glissé dans l’emplacement ${pick}.`); pick = null; q = ''; await ondone(); }
     catch (e) { fail(e); } finally { busy = false; }
   }
+  /** Supprime le module : l'article quitte l'inventaire (son ID et ses câbles avec lui). */
   async function remove(a: Article) {
-    busy = true;
-    try { await api.del(`/articles/${a.id}`); toast('Module retiré du châssis.'); await ondone(); }
-    catch (e) { fail(e); } finally { busy = false; }
+    const slot = a.host!.slot, item = a.item_id, tag = tagOf(a);
+    const ok = await ask({
+      title: `Supprimer le module « ${a.label} » ?`, eyebrow: `Châssis ${host.label} · emplacement ${slot}`,
+      text: `Le module${tag ? ` ${tag}` : ''} est supprimé de l’inventaire, pas seulement sorti du châssis : ses câbles perdent cette extrémité. Annuler juste après le recrée au même emplacement, avec un nouvel ID.`,
+      confirmLabel: 'Supprimer le module', danger: true,
+      run: () => api.del(`/articles/${a.id}`),
+    });
+    if (!ok) return;
+    toast(`Module « ${a.label} » supprimé.`, 'ok', item ? { run: async () => { await api.post(`/articles/${host.id}/modules`, { item_id: item, slot }); await ondone(); } } : undefined);
+    try { await ondone(); } catch (e) { fail(e); }
   }
 </script>
 
@@ -50,7 +61,7 @@
           <span class="n">{slot}{o.w > 1 ? `–${slot + o.w - 1}` : ''}</span>
           <span class="nm">{o.a.label}</span>
           <span class="tg mono">{tagOf(o.a)}</span>
-          {#if writable}<button class="x" aria-label="Retirer {o.a.label}" disabled={busy} onclick={() => remove(o.a)}><Icon name="x" size="sm" /></button>{/if}
+          {#if writable}<button class="icon-btn xs x" aria-label="Supprimer le module {o.a.label}" title="Supprimer le module" disabled={busy} onclick={() => remove(o.a)}><Icon name="trash" size="sm" /></button>{/if}
         </div>
       {:else if !o}
         <button class="cs" class:on={pick === slot} disabled={!writable} onclick={() => openPick(slot)} title="Emplacement {slot} libre"><span class="n">{slot}</span>{#if writable}<span class="plus">+</span>{/if}</button>
@@ -60,8 +71,8 @@
   <p class="muted small" style="margin:10px 0 0">Les ports des modules s’ajoutent au châssis dans le synoptique (« S3 · SDI IN »). Chaque module garde son ID, son numéro de série et son poids.</p>
   {#if pick != null}
     <div class="pickr">
-      <div class="ph"><b>Emplacement {pick}</b><input class="input" placeholder="Rechercher un module…" bind:value={q} aria-label="Rechercher un module"></div>
-      {#if comps === null}<span class="spin"></span>
+      <div class="ph"><b>Emplacement {pick}</b><input class="input" type="search" placeholder="Nom ou référence du module" bind:value={q} aria-label="Rechercher un module" data-no-dirty></div>
+      {#if comps === null}<Loading inline label="Chargement des modules" />
       {:else}
         {#each comps.filter((c) => !q.trim() || `${c.name} ${c.reference ?? ''}`.toLowerCase().includes(q.trim().toLowerCase())).slice(0, 80) as c (c.id)}
           {@const ok = fits(pick, c.slots)}
@@ -70,25 +81,28 @@
       {/if}
     </div>
   {/if}
-  {#snippet footer()}<button class="btn primary" onclick={onclose}>Fermer</button>{/snippet}
+  {#snippet footer()}<button class="btn ghost" onclick={onclose}>Fermer</button>{/snippet}
 </Dialog>
 
 <style>
   .chassis { display: grid; grid-template-columns: repeat(var(--n), minmax(24px, 1fr)); gap: 3px; padding: 10px; border-radius: 8px; background: linear-gradient(180deg, #2b3036, #1c2025); box-shadow: inset 0 0 0 1px #000; overflow-x: auto; }
   .cs { position: relative; height: 170px; display: flex; flex-direction: column; align-items: center; justify-content: space-between; gap: 4px; padding: 6px 2px; border: 0; border-radius: 3px; background: repeating-linear-gradient(180deg, #121519 0 6px, #171b20 6px 12px); box-shadow: inset 0 0 0 1px #000; color: #8f98a3; font: inherit; cursor: pointer; min-width: 0; }
   .cs:hover:not(:disabled), .cs.on { box-shadow: inset 0 0 0 1.5px var(--accent); }
-  .cs:disabled { cursor: default; }
+  .cs:disabled { cursor: not-allowed; }
+  .cs:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   .cs.full { cursor: default; background: linear-gradient(90deg, #4a515a, #5d6570 40%, #444b54); color: #fff; box-shadow: inset 0 0 0 1px #000, inset 0 1px 0 rgba(255, 255, 255, .25); }
   .n { font: 600 10px var(--mono); }
   .plus { font-size: 18px; line-height: 1; opacity: .7; }
   .nm { flex: 1; min-height: 0; writing-mode: vertical-rl; transform: rotate(180deg); font-size: 11.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tg { font-size: 9px; padding: 1px 3px; border-radius: 2px; background: #f4f4f0; color: #15171a; max-width: 100%; overflow: hidden; }
-  .x { border: 0; background: rgba(0, 0, 0, .35); color: #fff; border-radius: 4px; width: 22px; height: 22px; display: grid; place-items: center; cursor: pointer; }
+  /* Façade sombre fixe : le bouton garde un fond sombre et un pictogramme clair. */
+  .x { background: rgba(0, 0, 0, .35); color: #fff; }
+  .x:hover:not(:disabled) { background: color-mix(in srgb, var(--err) 70%, #000); color: #fff; }
   .pickr { margin-top: 12px; display: grid; gap: 6px; padding: 12px; border-radius: 12px; background: var(--surface-2); max-height: 320px; overflow: auto; }
   .ph { display: flex; gap: 10px; align-items: center; }
-  .ph .input { flex: 1; height: 34px; }
+  .ph .input { flex: 1; }
   .pr { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 8px 10px; border: 0; border-radius: 9px; background: var(--surface); text-align: left; font: inherit; color: inherit; cursor: pointer; }
   .pr:hover:not(:disabled) { box-shadow: inset 0 0 0 1.5px var(--accent); }
-  .pr:disabled { opacity: .5; cursor: default; }
+  .pr:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   .w { font-size: 11.5px; color: var(--fg-3); }
 </style>

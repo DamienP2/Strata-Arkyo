@@ -4,11 +4,12 @@
   import Icon from './Icon.svelte';
   import { CONTAINER_KINDS, type ContainerKind } from '../lib/projects';
   import { pl } from '../lib/format';
+  import { outside } from '../lib/outside';
 
   interface Views { containers: { id: string; name: string; location_id: string; kind: string }[]; locations: { id: string; name: string; code: string }[] }
   let { views, value, onpick }: { views: Views; value: string; onpick: (v: string) => void } = $props();
   let open = $state(false);
-  let root = $state<HTMLDivElement>(null!);
+  let btn = $state<HTMLButtonElement>();
   const groups = $derived(views.locations.map((l) => ({ l, list: views.containers.filter((c) => c.location_id === l.id) })));
   const [kind, id] = $derived(value.split(':') as [string, string | undefined]);
   const cur = $derived(kind === 'container' ? views.containers.find((c) => c.id === id) : null);
@@ -16,12 +17,16 @@
   const label = $derived(kind === 'overview' ? 'Vue générale' : cur ? cur.name : `${curLoc?.name ?? ''} · tout l’emplacement`);
   const sub = $derived(kind === 'overview' ? 'Liaisons entre les emplacements' : cur ? `${curLoc?.name ?? ''} · ${CONTAINER_KINDS[cur.kind as ContainerKind]?.label ?? ''}` : `${groups.find((g) => g.l.id === id)?.list.length ?? 0} élément${pl(groups.find((g) => g.l.id === id)?.list.length ?? 0)} de l’emplacement`);
   function pick(v: string) { open = false; onpick(v); }
+  /** Échap ferme le sélecteur seulement (pas la sélection du synoptique derrière) et rend le focus au bouton. */
+  function key(e: KeyboardEvent) {
+    if (e.key !== 'Escape' || !open) return;
+    e.preventDefault(); e.stopPropagation();
+    open = false; btn?.focus();
+  }
 </script>
 
-<svelte:window onpointerdown={(e) => { if (open && root && !root.contains(e.target as Node)) open = false; }} onkeydown={(e) => { if (e.key === 'Escape') open = false; }} />
-
-<div class="vp" bind:this={root}>
-  <button class="vp-btn" aria-haspopup="listbox" aria-expanded={open} onclick={() => (open = !open)}>
+<div class="vp" use:outside={() => { if (open) open = false; }} onkeydown={key} role="presentation">
+  <button class="vp-btn" bind:this={btn} aria-haspopup="listbox" aria-expanded={open} onclick={() => (open = !open)}>
     <span class="vp-ic"><Icon name={kind === 'overview' ? 'map' : kind === 'location' ? 'layers' : 'server'} size="sm" /></span>
     <span class="vp-t"><b>{label}</b><small>{sub}</small></span>
     <Icon name="chevd" size="sm" />
@@ -31,8 +36,8 @@
       <button role="option" aria-selected={kind === 'overview'} class="vp-it top" class:on={kind === 'overview'} onclick={() => pick('overview')}><Icon name="map" size="sm" /><span><b>Vue générale</b><small>Liaisons entre les emplacements</small></span></button>
       {#each groups as g (g.l.id)}
         <div class="vp-g">
-          <div class="vp-gh"><span class="code mono">{g.l.code || '—'}</span><b>{g.l.name}</b></div>
-          <button role="option" aria-selected={value === `location:${g.l.id}`} class="vp-it" class:on={value === `location:${g.l.id}`} onclick={() => pick(`location:${g.l.id}`)}><Icon name="layers" size="sm" /><span><b>Tout l’emplacement</b><small>{g.list.length} élément{g.list.length > 1 ? 's' : ''}</small></span></button>
+          <div class="vp-gh"><span class="code mono">{g.l.code || '—'}</span><span class="eyebrow">{g.l.name}</span></div>
+          <button role="option" aria-selected={value === `location:${g.l.id}`} class="vp-it" class:on={value === `location:${g.l.id}`} onclick={() => pick(`location:${g.l.id}`)}><Icon name="layers" size="sm" /><span><b>Tout l’emplacement</b><small>{g.list.length} élément{pl(g.list.length)}</small></span></button>
           {#each g.list as c (c.id)}
             <button role="option" aria-selected={value === `container:${c.id}`} class="vp-it sub" class:on={value === `container:${c.id}`} onclick={() => pick(`container:${c.id}`)}><span><b>{c.name}</b><small>{CONTAINER_KINDS[c.kind as ContainerKind]?.label ?? ''}</small></span></button>
           {/each}
@@ -44,8 +49,9 @@
 
 <style>
   .vp { position: relative; }
-  .vp-btn { display: flex; align-items: center; gap: 10px; min-width: 260px; max-width: 380px; height: 40px; padding: 0 12px 0 5px; border: 0; border-radius: 9px; background: var(--btn-bg, var(--surface)); box-shadow: inset 0 0 0 1px var(--btn-edge, var(--line-2)); color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
+  .vp-btn { display: flex; align-items: center; gap: 10px; min-width: 260px; max-width: 380px; height: 40px; padding: 0 12px 0 5px; border: 0; border-radius: var(--btn-r, 8px); background: var(--btn-bg, var(--surface)); box-shadow: inset 0 0 0 1px var(--btn-edge, var(--line-2)); color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
   .vp-btn:hover { background: var(--btn-bg-h, var(--surface-2)); }
+  .vp-btn:focus-visible, .vp-it:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .vp-ic { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 7px; background: var(--surface-3); color: var(--fg-2); flex: none; }
   .vp-t { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.15; }
   .vp-t b { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -60,6 +66,6 @@
   .vp-it.on { background: color-mix(in srgb, var(--accent) 16%, transparent); box-shadow: inset 2px 0 0 var(--accent); }
   .vp-g { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
   .vp-gh { display: flex; align-items: center; gap: 8px; padding: 4px 10px 4px; }
-  .vp-gh b { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--fg-2); }
+  .vp-gh .eyebrow { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .vp-gh .code { font-size: 11px; padding: 2px 6px; border-radius: 5px; background: var(--surface-3); color: var(--fg-2); }
 </style>

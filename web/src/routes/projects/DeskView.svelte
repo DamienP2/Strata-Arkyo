@@ -2,6 +2,7 @@
   // Pupitre (ou poste opérateur) : chaque poste reçoit le matériel de l'élément qui lui
   // revient. Un exemplaire n'appartient qu'à un poste ; chaque affectation s'enregistre aussitôt.
   import Icon from '../../components/Icon.svelte';
+  import { toast } from '../../lib/toast.svelte';
   import type { DeskPosition } from '../../lib/projects';
 
   interface Gear { id: string; tag: string; label: string }
@@ -13,8 +14,15 @@
     if (!id) return;
     onsave(positions.map((x) => (x.id === p.id ? { ...x, instance_ids: [...x.instance_ids, id] } : x)));
   }
-  function unassign(p: DeskPosition, id: string) {
-    onsave(positions.map((x) => (x.id === p.id ? { ...x, instance_ids: x.instance_ids.filter((i) => i !== id) } : x)));
+  /** Retire un exemplaire du poste : notification avec Annuler (réaffecté au même poste). */
+  async function unassign(p: DeskPosition, id: string) {
+    const ok = await onsave(positions.map((x) => (x.id === p.id ? { ...x, instance_ids: x.instance_ids.filter((i) => i !== id) } : x)));
+    if (!ok) return;
+    const g = gearOf(id);
+    toast(`« ${g?.tag ?? g?.label ?? 'Exemplaire'} » retiré du poste ${p.role || ''}`.trimEnd() + '.', 'ok', { run: async () => {
+      if (owner.has(id)) return false;
+      return (await onsave(positions.map((x) => (x.id === p.id ? { ...x, instance_ids: [...x.instance_ids, id] } : x)))) ? undefined : false;
+    } });
   }
 </script>
 
@@ -26,10 +34,10 @@
         <ul>
           {#each p.instance_ids as id (id)}
             {@const g = gearOf(id)}
-            <li><span class="mono small">{g?.tag ?? '—'}</span><span class="dv-l">{g?.label ?? 'Exemplaire retiré de l’élément'}</span>{#if writable}<button class="icon-btn sm" aria-label="Retirer du poste" onclick={() => unassign(p, id)}><Icon name="x" size="sm" /></button>{/if}</li>
+            <li><span class="mono small">{g?.tag ?? '—'}</span><span class="dv-l">{g?.label ?? 'Exemplaire retiré de l’élément'}</span>{#if writable}<button class="icon-btn sm" aria-label="Retirer {g?.tag ?? 'cet exemplaire'} du poste" title="Retirer du poste" onclick={() => unassign(p, id)}><Icon name="x" size="sm" /></button>{/if}</li>
           {:else}<li class="muted small">Rien d’affecté</li>{/each}
         </ul>
-        {#if writable && free.length}<select class="input" aria-label="Affecter du matériel au poste {p.role}" onchange={(e) => { const s = e.target as HTMLSelectElement; assign(p, s.value); s.value = ''; }}><option value="">+ Affecter…</option>{#each free as g}<option value={g.id}>{g.tag} · {g.label}</option>{/each}</select>{/if}
+        {#if writable && free.length}<select class="input sm" aria-label="Affecter du matériel au poste {p.role}" onchange={(e) => { const s = e.target as HTMLSelectElement; assign(p, s.value); s.value = ''; }}><option value="">+ Affecter du matériel</option>{#each free as g}<option value={g.id}>{g.tag} · {g.label}</option>{/each}</select>{/if}
       </section>
     {/each}
   </div>
@@ -41,10 +49,10 @@
   .dv-desk { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; padding: 12px; border-radius: 16px 16px 30px 30px; background: linear-gradient(180deg, var(--surface-2), color-mix(in srgb, var(--fg) 8%, var(--surface-2))); border-bottom: 6px solid color-mix(in srgb, var(--fg) 18%, transparent); }
   .dv-post { min-width: 0; padding: 12px; border-radius: 12px; background: var(--surface); display: grid; gap: 8px; align-content: start; box-shadow: 0 1px 0 var(--line); }
   .dv-h { display: flex; gap: 8px; align-items: center; }
-  .dv-n { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 10.5px; background: var(--fg); color: var(--bg); flex: none; }
+  .dv-n { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; background: var(--fg); color: var(--bg); flex: none; }
   ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; min-width: 0; }
   li { display: flex; gap: 8px; align-items: center; font-size: 13.5px; min-width: 0; }
   li .mono { flex: none; }
   .dv-l { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  select { height: 36px; font-size: 13.5px; }
+  select { width: 100%; }
 </style>
