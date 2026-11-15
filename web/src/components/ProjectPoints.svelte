@@ -16,25 +16,30 @@
   let busy = $state(false);
   async function load() { try { const r = await api.get<{ points: Pt[]; interval_h: number }>(`/projects/${pid}/points`); points = r.points; interval = r.interval_h; } catch (e) { fail(e); } }
   $effect(() => { pid; load(); });
-  async function take() { busy = true; try { await api.post(`/projects/${pid}/points`, { label: label || null }); label = ''; toast('Point de restauration créé.'); await load(); } catch (e) { fail(e); } finally { busy = false; } }
+  const nameOf = (p: Pt) => p.label ?? (p.auto ? 'Point automatique' : 'Point manuel');
+  async function take() { if (busy) return; busy = true; try { await api.post(`/projects/${pid}/points`, { label: label || null }); toast(label ? `Point « ${label} » ajouté.` : 'Point de restauration ajouté.'); label = ''; await load(); } catch (e) { fail(e); } finally { busy = false; } }
   async function restore(p: Pt) {
-    if (!(await ask({ title: 'Restaurer ce point ?', eyebrow: new Date(p.created_at).toLocaleString('fr-FR'), text: `Le projet revient dans l’état du ${new Date(p.created_at).toLocaleString('fr-FR')}. L’état actuel est d’abord gardé dans un point.`, confirmLabel: 'Restaurer' }))) return;
-    busy = true; try { await api.post(`/points/${p.id}/restore`); toast('Projet restauré.'); await load(); onrestored?.(); } catch (e) { fail(e); } finally { busy = false; }
+    const when = new Date(p.created_at).toLocaleString('fr-FR');
+    if (!(await ask({ title: 'Restaurer ce point ?', eyebrow: when, text: `Le projet revient dans l’état du ${when}. L’état actuel est d’abord gardé dans un point.`, confirmLabel: 'Restaurer', run: () => api.post(`/points/${p.id}/restore`) }))) return;
+    toast('Projet restauré.'); await load(); onrestored?.();
   }
-  async function remove(p: Pt) { if (!(await ask({ title: 'Supprimer ce point de restauration ?', confirmLabel: 'Supprimer', danger: true }))) return; try { await api.post(`/points/${p.id}/delete`); await load(); } catch (e) { fail(e); } }
+  async function remove(p: Pt) {
+    if (!(await ask({ title: `Supprimer « ${nameOf(p)} » ?`, text: `Point du ${dateTime(p.created_at)}. Il ne pourra plus servir à restaurer le projet.`, confirmLabel: 'Supprimer', danger: true, run: () => api.post(`/points/${p.id}/delete`) }))) return;
+    toast(`« ${nameOf(p)} » supprimé.`); await load();
+  }
   const ko = (n: number) => `${Math.max(1, Math.round(n / 1024))} Ko`;
 </script>
 
 <section class="card pts">
   <div class="card-head"><div><h2>Points de restauration</h2><span class="muted small">Automatiques {interval === 1 ? 'chaque heure' : interval === 24 ? 'chaque jour' : `toutes les ${interval} h`} si le projet a changé (48 gardés) ; manuels gardés jusqu’à suppression.</span></div>
     <button class="btn sm ghost" onclick={() => download(`/projects/${pid}/export`)}><Icon name="download" size="sm" />Exporter le projet</button></div>
-  {#if writable}<div class="new"><input class="input" bind:value={label} maxlength="120" placeholder="Libellé (facultatif) : avant tournage, livraison…" aria-label="Libellé du point"><button class="btn sm primary" disabled={busy} onclick={take}><Icon name="plus" size="sm" />Créer un point</button></div>{/if}
+  {#if writable}<form class="new" onsubmit={(e) => { e.preventDefault(); take(); }}><input class="input sm" bind:value={label} maxlength="120" placeholder="Avant tournage, livraison" aria-label="Libellé du point (facultatif)"><button class="btn sm primary" type="submit" disabled={busy}>{#if busy}<span class="spin" aria-hidden="true"></span>{:else}<Icon name="plus" size="sm" />{/if}Ajouter un point</button></form>{/if}
   {#each points as p (p.id)}
-    <div class="pt"><span class="chip sm">{p.auto ? 'auto' : 'manuel'}</span><span class="t"><b>{p.label ?? (p.auto ? 'Point automatique' : 'Point manuel')}</b><span class="muted small">{dateTime(p.created_at)} · {relative(p.created_at)} · {ko(p.size)}</span></span>
-      {#if writable}<button class="btn sm" disabled={busy} onclick={() => restore(p)}>Restaurer</button>{/if}
-      <button class="icon-btn sm" title="Télécharger ce point (fichier du projet)" aria-label="Télécharger ce point" onclick={() => download(`/points/${p.id}/download`)}><Icon name="download" size="sm" /></button>
+    <div class="pt"><span class="chip">{p.auto ? 'auto' : 'manuel'}</span><span class="t"><b>{nameOf(p)}</b><span class="muted small">{dateTime(p.created_at)} · {relative(p.created_at)} · {ko(p.size)}</span></span>
+      {#if writable}<button class="btn sm" onclick={() => restore(p)}>Restaurer</button>{/if}
+      <button class="icon-btn sm" title="Télécharger ce point (fichier du projet)" aria-label="Télécharger ce point (fichier du projet)" onclick={() => download(`/points/${p.id}/download`)}><Icon name="download" size="sm" /></button>
       <!-- La corbeille est tenue à l'écart de « Restaurer » pour éviter le mauvais clic. -->
-      {#if writable}<span class="pt-sep" aria-hidden="true"></span><button class="icon-btn sm" title="Supprimer ce point de restauration" aria-label="Supprimer ce point de restauration" onclick={() => remove(p)}><Icon name="trash" size="sm" /></button>{/if}
+      {#if writable}<span class="pt-sep" aria-hidden="true"></span><button class="icon-btn sm danger" title="Supprimer « {nameOf(p)} »" aria-label="Supprimer « {nameOf(p)} »" onclick={() => remove(p)}><Icon name="trash" size="sm" /></button>{/if}
     </div>
   {:else}<p class="muted small">Aucun point pour l’instant.</p>{/each}
 </section>
@@ -46,5 +51,4 @@
   .pt-sep { width: 1px; height: 22px; margin: 0 8px; background: var(--line); }
   .pt { display: flex; gap: 10px; align-items: center; padding: 6px 0; border-top: 1px solid var(--line); }
   .t { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-  .chip.sm { font-size: 11px; padding: 1px 7px; border-radius: 99px; background: var(--surface-2); font-weight: 600; }
 </style>

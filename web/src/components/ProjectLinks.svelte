@@ -24,17 +24,21 @@
   async function link() {
     try { const r = await api.post<{ warnings: string[] }>(`/projects/${pid}/links`, { cable_id: cable, remote_project: proj, remote_cable: port }); toast(r.warnings.length ? `Lien créé. ${r.warnings.join(' ')}` : 'Lien créé.', r.warnings.length ? 'warn' : 'ok'); proj = ''; port = ''; await load(); } catch (e) { fail(e); }
   }
-  async function unlink(l: L) { if (!(await ask({ title: 'Défaire ce lien entre projets ?', confirmLabel: 'Défaire le lien', danger: true }))) return; try { await api.post(`/projects/${pid}/links/delete`, { id: l.id }); await load(); } catch (e) { fail(e); } }
+  async function unlink(l: L) {
+    const other = l.remote.project_name ?? 'l’autre projet';
+    if (!(await ask({ title: 'Défaire ce lien entre projets ?', text: `Le port externe ne sera plus relié à ${other}.`, confirmLabel: 'Défaire le lien', danger: true, run: () => api.post(`/projects/${pid}/links/delete`, { id: l.id }) }))) return;
+    toast(`Lien avec ${other} défait.`); await load();
+  }
 </script>
 
 {#snippet row(l: L)}
   <div class="pl">
     <div class="pl-t">
-      {#if !cable}<span class="small"><b class="mono">{l.local?.number ?? '—'}</b> {l.local?.label ?? 'Extrémité disparue'}</span>{/if}
+      {#if !cable}<span class="small">{#if l.local?.number}<b class="mono">{l.local.number}</b>{:else}<span class="muted">non numéroté</span>{/if} {l.local?.label ?? 'Extrémité disparue'}</span>{/if}
       <span class="small">↔ <a class="ilink" href="/projets/{l.remote.project_id}/synoptique">{l.remote.project_name ?? 'Projet'}</a> › <b class="mono">{l.remote.port?.number ?? ''}</b> {l.remote.port?.label ?? 'Extrémité disparue'}</span>
       {#each l.warnings as w}<span class="warn small"><Icon name="alert" size="sm" />{w}</span>{/each}
     </div>
-    {#if canDesign}<button class="icon-btn sm" aria-label="Défaire le lien" onclick={() => unlink(l)}><Icon name="x" size="sm" /></button>{/if}
+    {#if canDesign}<button class="icon-btn sm danger" aria-label="Défaire le lien" title="Défaire le lien" onclick={() => unlink(l)}><Icon name="x" size="sm" /></button>{/if}
   </div>
 {/snippet}
 
@@ -46,8 +50,8 @@
       {:else if canDesign}
         {#if !d.candidates.length}<p class="muted small" style="margin:0">Aucun port externe libre dans les autres projets.</p>
         {:else}
-          <select class="input" bind:value={proj} aria-label="Projet"><option value="">Projet…</option>{#each d.candidates as c}<option value={c.project_id}>{c.project_name}</option>{/each}</select>
-          {#if proj}<select class="input" bind:value={port} aria-label="Port externe"><option value="">Port externe…</option>{#each ports as p}<option value={p.cable_id}>{p.number ? `${p.number} · ` : ''}{p.label}</option>{/each}</select>{/if}
+          <select class="input sm" bind:value={proj} aria-label="Projet"><option value="">Choisir un projet</option>{#each d.candidates as c}<option value={c.project_id}>{c.project_name}</option>{/each}</select>
+          {#if proj}<select class="input sm" bind:value={port} aria-label="Port externe"><option value="">Choisir un port externe</option>{#each ports as p}<option value={p.cable_id}>{p.number ? `${p.number} · ` : ''}{p.label}</option>{/each}</select>{/if}
           <button class="btn sm" disabled={!port} onclick={link}><Icon name="syn" size="sm" />Lier</button>
         {/if}
       {:else}<p class="muted small" style="margin:0">Aucun lien.</p>{/if}
@@ -65,6 +69,6 @@
   .pl { display: flex; gap: 8px; align-items: flex-start; padding: 6px 0; border-top: 1px solid var(--line); }
   .box .pl { border-top: 0; }
   .pl-t { flex: 1; display: grid; gap: 2px; min-width: 0; }
-  .warn { color: var(--warn, #B78400); display: inline-flex; gap: 4px; align-items: center; }
+  .warn { color: var(--warn); display: inline-flex; gap: 4px; align-items: center; }
   .links { margin-top: 20px; }
 </style>
