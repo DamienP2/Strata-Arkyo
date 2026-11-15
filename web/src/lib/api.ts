@@ -31,7 +31,20 @@ export function onUnauthenticated(f: Listener) { unauthenticated.push(f); }
 // d'activité en haut de l'écran.
 const inflight = new Map<string, Promise<unknown>>();
 export const activity = { count: 0, listeners: new Set<(n: number) => void>() };
-const bump = (d: number) => { activity.count += d; activity.listeners.forEach((f) => f(activity.count)); };
+
+/** État des écritures, pour l'indicateur SaveState : en cours, dernière en échec, date de la dernière. */
+export interface WriteState { pending: number; failed: boolean; at: number }
+let writes: WriteState = { pending: 0, failed: false, at: 0 };
+const writeSubs = new Set<(s: WriteState) => void>();
+/** Store (contrat Svelte, `$saving`) des écritures de l'onglet : `$saving.pending > 0` pendant un enregistrement. */
+export const saving = {
+  subscribe(fn: (s: WriteState) => void): () => void { fn(writes); writeSubs.add(fn); return () => { writeSubs.delete(fn); }; },
+};
+const bump = (d: number, failed?: boolean) => {
+  activity.count += d; activity.listeners.forEach((f) => f(activity.count));
+  writes = { pending: activity.count, failed: failed ?? writes.failed, at: d < 0 ? Date.now() : writes.at };
+  writeSubs.forEach((f) => f(writes));
+};
 
 function request<T>(method: string, path: string, body?: unknown, raw?: BodyInit, rawType?: string): Promise<T> {
   if (method === 'GET' || raw !== undefined) return send<T>(method, path, body, raw, rawType);
@@ -39,7 +52,8 @@ function request<T>(method: string, path: string, body?: unknown, raw?: BodyInit
   const same = inflight.get(key);
   if (same) return same as Promise<T>;
   bump(1);
-  const p = send<T>(method, path, body, raw, rawType).finally(() => { inflight.delete(key); bump(-1); });
+  let failed = true;
+  const p = send<T>(method, path, body, raw, rawType).then((v) => { failed = false; return v; }).finally(() => { inflight.delete(key); bump(-1, failed); });
   inflight.set(key, p);
   return p;
 }

@@ -8,11 +8,21 @@ function sync() {
   route.query = new URLSearchParams(location.search);
 }
 
-/** Écrans avec des modifications non enregistrées : on demande avant d'en partir. */
+/** Écrans avec des modifications non enregistrées : on demande avant d'en partir (changement
+ *  d'écran, retour arrière, fermeture ou rechargement de l'onglet). Un écran n'a qu'à écrire
+ *  `$effect(() => registerLeaveGuard(() => dirty))` : la fonction renvoyée retire la garde. */
 const guards = new Set<() => boolean>();
 export const leave = $state<{ to: string | null }>({ to: null });
-export function registerLeaveGuard(dirty: () => boolean): () => void { guards.add(dirty); return () => guards.delete(dirty); }
-const blocked = () => [...guards].some((g) => g());
+export function registerLeaveGuard(dirty: () => boolean): () => void { guards.add(dirty); return () => { guards.delete(dirty); }; }
+/** Une garde signale-t-elle des modifications non enregistrées ? */
+export const blocked = () => [...guards].some((g) => g());
+
+// Gestionnaire unique de fermeture d'onglet : le navigateur affiche sa propre question.
+addEventListener('beforeunload', (e) => {
+  if (!blocked()) return;
+  e.preventDefault();
+  e.returnValue = '';
+});
 /** Quitter quand même (choix fait dans la fenêtre de confirmation). */
 export function leaveAnyway() { const to = leave.to; leave.to = null; if (to) { guards.clear(); navigate(to); } }
 

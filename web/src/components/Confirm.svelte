@@ -1,20 +1,14 @@
 <script lang="ts">
+  // Confirmation à corps riche (préférer ask() pour un simple texte) : Annuler + verbe, bloquée pendant l'envoi.
   import type { Snippet } from 'svelte';
   import Dialog from './Dialog.svelte';
-  let { title, eyebrow = '', confirmLabel, danger = false, onconfirm, onclose, children }:
-    { title: string; eyebrow?: string; confirmLabel: string; danger?: boolean; onconfirm: () => Promise<void> | void; onclose: () => void; children: Snippet } = $props();
-  let busy = $state(false);
-  async function go() { busy = true; try { await onconfirm(); } finally { busy = false; } }
+  let { title, eyebrow = '', confirmLabel, cancelLabel = 'Annuler', danger = false, onconfirm, onclose, children }:
+    { title: string; eyebrow?: string; confirmLabel: string;
+      /** Libellé du bouton de renoncement (« Annuler », « Continuer la saisie »…). */
+      cancelLabel?: string; danger?: boolean; onconfirm: () => Promise<unknown> | unknown; onclose: () => void; children: Snippet } = $props();
 </script>
 
-<Dialog {title} {eyebrow} {onclose}>
+<!-- Pendant l'envoi, Annuler, Échap et le fond sont bloqués ; en cas d'échec, l'erreur est affichée et la boîte reste ouverte. -->
+<Dialog {title} {eyebrow} {onclose} onsubmit={() => onconfirm()} submitLabel={confirmLabel} {cancelLabel} {danger}>
   {@render children()}
-  {#snippet footer()}
-    <button class="btn ghost" onclick={onclose}>Annuler</button>
-    <button class="btn primary" class:danger-btn={danger} disabled={busy} onclick={go}>{#if busy}<span class="spin"></span>{/if}{confirmLabel}</button>
-  {/snippet}
 </Dialog>
-
-<style>
-  .danger-btn { background: var(--err); color: #fff; }
-</style>

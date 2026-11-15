@@ -80,7 +80,7 @@ export const ELEMENT_FAMILIES: { key: ElementFamily; label: string; help: string
 ];
 /** Types d'éléments : libellé, famille, rackable par défaut, mobile (roulettes possibles). */
 export const CONTAINER_KINDS: Record<ContainerKind, { label: string; family: ElementFamily; rackable: boolean; mobile: boolean; canRack?: boolean; hidden?: boolean; help: string }> = {
-  rack: { label: 'Baie 19″', family: 'contenants', rackable: true, mobile: false, canRack: true, help: 'Baie fixe ou sur roulettes' },
+  rack: { label: 'Rack 19″', family: 'contenants', rackable: true, mobile: false, canRack: true, help: 'Rack fixe ou sur roulettes' },
   flight_case: { label: 'Flight-case', family: 'contenants', rackable: true, mobile: true, canRack: true, help: 'Rack de tournée' },
   hard_case: { label: 'Valise rigide', family: 'contenants', rackable: true, mobile: true, canRack: true, help: 'Petit rack de transport' },
   waterproof_case: { label: 'Valise étanche', family: 'contenants', rackable: false, mobile: true, help: 'Matériel en mousse' },
@@ -111,8 +111,11 @@ export const ELEMENT_HINTS: Record<string, string[]> = {
   display_kind: ['Écran LED', 'Écran géant', 'Moniteur public', 'Vidéoprojecteur'],
   roles: ['Réalisateur', 'Scripte', 'Truquiste', 'Ingé son', 'Vision', 'Ralentis', 'Graphiste', 'Coordinateur', 'Commentateur', 'Intercom'],
 };
-export const TASK_STATUS: Record<TaskStatus, { label: string; chip: string }> = {
-  todo: { label: 'À faire', chip: 'info' }, in_progress: { label: 'En cours', chip: 'accent' }, done: { label: 'Terminé', chip: 'ok' }, validated: { label: 'Validé', chip: 'ok' },
+/** Statut de tâche : ton de pastille (`chip`, vide = neutre) et, pour « En cours », un point
+ *  `dot` de la couleur du projet en cours (--st-cours), comme StatusChip :
+ *  `<span class="chip {s.chip}">{#if s.dot}<i class="dot" style="--c:{s.dot}"></i>{/if}{s.label}</span>`. */
+export const TASK_STATUS: Record<TaskStatus, { label: string; chip: string; dot?: string }> = {
+  todo: { label: 'À faire', chip: 'info' }, in_progress: { label: 'En cours', chip: '', dot: 'var(--st-cours)' }, done: { label: 'Terminé', chip: 'ok' }, validated: { label: 'Validé', chip: 'ok' },
 };
 export const PRIORITY: Record<Priority, { label: string; chip: string }> = {
   low: { label: 'Basse', chip: 'info' }, normal: { label: 'Normale', chip: 'info' }, high: { label: 'Haute', chip: 'warn' }, urgent: { label: 'Urgente', chip: 'err' },

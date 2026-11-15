@@ -5,6 +5,8 @@
   import Avatar from './Avatar.svelte';
   import PasswordDialog from './PasswordDialog.svelte';
   import CommandPalette from './CommandPalette.svelte';
+  import Menu from './Menu.svelte';
+  import { modalOpen } from '../lib/modal';
   import { session, can } from '../lib/session.svelte';
   import { route, navigate } from '../lib/router.svelte';
   import { isDark, toggleTheme, theme } from '../lib/theme.svelte';
@@ -36,41 +38,44 @@
     session.me = null;
     navigate('/', true);
   }
-  function outside(e: MouseEvent) {
-    if (userOpen && !(e.target as Element).closest('.user-zone')) userOpen = false;
+  // Échap ne ferme que le niveau le plus haut : palette et boîtes (modal.ts), menu du compte
+  // (Menu.svelte), puis le menu latéral mobile. Ctrl+K est ignoré quand une boîte est ouverte :
+  // la palette ne navigue pas sous une saisie en cours.
+  function key(e: KeyboardEvent) {
+    if (e.key === 'Escape' && menuOpen && !modalOpen()) { e.stopPropagation(); menuOpen = false; return; }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+      if (!paletteOpen && modalOpen()) return;
+      e.preventDefault(); paletteOpen = !paletteOpen;
+    }
   }
 </script>
 
-<svelte:window onclick={outside} onkeydown={(e) => { if (e.key === 'Escape') { userOpen = false; menuOpen = false; } if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); paletteOpen = !paletteOpen; } }} />
+<svelte:window onkeydown={key} />
 <CommandPalette bind:open={paletteOpen} />
 
 <div class="app">
   <header class="mast">
-    <button class="icon-btn menu-btn" aria-label="Ouvrir le menu" onclick={() => (menuOpen = true)}><Icon name="menu" /></button>
+    <button class="icon-btn menu-btn" aria-label="Ouvrir le menu" title="Ouvrir le menu" aria-expanded={menuOpen} onclick={() => (menuOpen = true)}><Icon name="menu" /></button>
     <a class="word" href="/" aria-label="Strata Arkyo, accueil"><Brand /></a>
     <nav class="topnav" aria-label="Navigation principale">
       {#each links as l}<a href={l.href} class:on={top === l.key} aria-current={top === l.key ? 'page' : undefined}>{l.label}</a>{/each}
     </nav>
     <div class="top-right">
       <button class="icon-btn" aria-label="Rechercher (Ctrl+K)" title="Rechercher (Ctrl+K)" onclick={() => (paletteOpen = true)}><Icon name="search" /></button>
-      <button class="icon-btn" aria-label={dark ? 'Passer en thème clair' : 'Passer en thème sombre'} onclick={toggleTheme}><Icon name={dark ? 'sun' : 'moon'} /></button>
-      <div class="user-zone" style="position:relative">
-        <button class="av-btn" aria-label="Mon compte" aria-expanded={userOpen} onclick={() => (userOpen = !userOpen)}><Avatar name={me.account.name} color={me.role.color} /></button>
-        {#if userOpen}
-          <div class="user-menu" role="menu">
-            <div class="who"><b>{me.account.name}</b><span>{me.role.name} · {me.account.email}</span></div>
-            <button role="menuitem" onclick={() => { pwOpen = true; userOpen = false; }}><Icon name="lock" />Changer mon mot de passe</button>
-            <button role="menuitem" onclick={logout}><Icon name="arrowr" />Se déconnecter</button>
-          </div>
-        {/if}
-      </div>
+      <button class="icon-btn" aria-label={dark ? 'Passer en thème clair' : 'Passer en thème sombre'} title={dark ? 'Passer en thème clair' : 'Passer en thème sombre'} onclick={toggleTheme}><Icon name={dark ? 'sun' : 'moon'} /></button>
+      <Menu label="Mon compte" iconOnly btnClass="av-btn" class="user-zone" menuClass="user-menu" bind:open={userOpen}>
+        {#snippet trigger()}<Avatar name={me.account.name} color={me.role.color} />{/snippet}
+        <div class="who"><b>{me.account.name}</b><span>{me.role.name} · {me.account.email}</span></div>
+        <button type="button" role="menuitem" onclick={() => (pwOpen = true)}><Icon name="lock" />Changer mon mot de passe</button>
+        <button type="button" role="menuitem" onclick={logout}><Icon name="arrowr" />Se déconnecter</button>
+      </Menu>
     </div>
   </header>
   <main id="view" class:wsv={wsView} tabindex="-1">{@render children()}</main>
 </div>
 
 <aside class="sidebar" class:open={menuOpen} aria-label="Menu" aria-hidden={!menuOpen}>
-  <div class="menu-top"><span class="word"><Brand /></span><button class="icon-btn" aria-label="Fermer le menu" onclick={() => (menuOpen = false)}><Icon name="x" /></button></div>
+  <div class="menu-top"><span class="word"><Brand /></span><button class="icon-btn" aria-label="Fermer le menu (Échap)" title="Fermer le menu (Échap)" onclick={() => (menuOpen = false)}><Icon name="x" /></button></div>
   <nav class="menu-links" aria-label="Menu principal">
     {#each links as l}<a href={l.href} class:on={top === l.key}>{l.label}</a>{/each}
   </nav>

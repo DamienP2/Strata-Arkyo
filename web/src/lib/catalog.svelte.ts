@@ -1,6 +1,7 @@
 // Référentiels et fiches du catalogue, tels que les renvoie /api/catalog.
 
 import { api } from './api';
+import { isDark } from './theme.svelte';
 
 export type RefPath = 'functions' | 'signals' | 'connectors' | 'brands' | 'system-categories' | 'categories' | 'types' | 'phases' | 'dimensions';
 export type ItemPath = 'equipment' | 'cables' | 'cable-models' | 'adapters';
@@ -54,9 +55,38 @@ export function loadRefs(force = false): Promise<void> {
 export const refList = (k: RefPath, activeOnly = false) => (refs.byKind[k] ?? []).filter((r) => !activeOnly || r.active);
 export const refName = (k: RefPath, id: string | null | undefined) => (id ? refs.byKind[k]?.find((r) => r.id === id)?.name ?? id : '');
 export const refById = (k: RefPath, id: string | null | undefined) => (id ? refs.byKind[k]?.find((r) => r.id === id) : undefined);
-/** Couleur d'une fonction (par sa clé) ou d'un signal. */
+// ----- Couleur de famille de signal : source unique (charte § 2.4) -----
+
+/** Couleur des éléments sans famille (et de la famille « Autres », X), à l'écran comme sur papier. */
+export const FAMILY_NONE = '#8A919B';
+/** Familles fournies (clé du référentiel Fonctions) → jeton d'écran propre au thème (strates.css).
+ *  RF a la clé R mais le jeton --sig-f ; Flux IP (F) n'a pas encore de jeton (décision produit). */
+const FAMILY_TOKEN: Record<string, string> = { V: '--sig-v', A: '--sig-a', L: '--sig-l', C: '--sig-c', P: '--sig-p', N: '--sig-n', S: '--sig-s', I: '--sig-i', R: '--sig-f' };
+/** Couleurs papier des familles fournies, si le référentiel n'est pas chargé. */
+const FAMILY_PAPER: Record<string, string> = { V: '#2459E0', A: '#0E8550', L: '#B78400', C: '#7A44C9', P: '#CF3A2F', N: '#0A8797', S: '#BD3489', R: '#D06006', I: '#69788C', F: '#1F3DF0', X: FAMILY_NONE };
+
+/** Couleur d'une famille de signal (clé du référentiel Fonctions). Le support est obligatoire,
+ *  pour qu'aucun `var()` ne parte dans un PDF :
+ *  - `{ screen: true }` (écran) : `var(--sig-x)` pour une famille fournie, qui suit le thème ; pour une
+ *    famille créée par l'utilisateur, son hexadécimal, éclairci en thème sombre
+ *    (`color-mix(in srgb, hex 75%, #fff)`). À poser en `--c` sur un point, un trait ou une bande,
+ *    jamais sur du texte.
+ *  - `{ screen: false }` (papier, PDF, SVG exporté, canvas 3D) : l'hexadécimal du référentiel.
+ *  Sans famille (clé vide ou X) ou famille inconnue : FAMILY_NONE (jamais undefined). */
+export function familyColor(key: string | null | undefined, opts: { screen: boolean }): string {
+  if (!key || key === 'X') return FAMILY_NONE;
+  const hex: string | undefined = refById('functions', key)?.data?.color || FAMILY_PAPER[key];
+  if (!opts.screen) return hex ?? FAMILY_NONE;
+  const token = FAMILY_TOKEN[key];
+  if (token) return `var(${token})`;
+  if (!hex) return FAMILY_NONE;
+  return isDark() ? `color-mix(in srgb, ${hex} 75%, #fff)` : hex;
+}
+
+/** @deprecated Utiliser familyColor(clé, { screen: true }) à l'écran, familyColor(clé, { screen: false }) sur papier.
+ *  Alias gardé le temps de la migration : renvoie l'hexadécimal (rendus et exports), FAMILY_NONE sans famille. */
 export function fnColor(key: string | null | undefined): string {
-  return refById('functions', key)?.data?.color ?? 'var(--fg-3)';
+  return familyColor(key, { screen: false });
 }
 
 /** Nouvelle fiche vide, conforme au modèle du moteur. */
