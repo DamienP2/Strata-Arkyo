@@ -133,14 +133,14 @@ async function graphics(c: Ctx, key: string, pages: string[] | undefined): Promi
     return out;
   }
   if (key === 'plan_racks') {
-    // Planche d'élévations enregistrée : rendue par le composant de l'écran, hors de la vue.
+    // Planches enregistrées : rendues par le composant de l'écran, hors de la vue.
     const st = await get<{ data: any }>(c, `/projects/${pid}/settings/rack_sheet`);
     const sheet = st.data; if (!sheet?.pages?.length) return [];
     const { default: SheetPage } = await import('../components/SheetPage.svelte');
     const { pageSize, normalize } = await import('./sheet');
-    const { loadCtx, shotsFor } = await import('./sheetctx');
+    const { loadCtx, shotsFor, synIds } = await import('./sheetctx');
     normalize(sheet);
-    const ctx = await loadCtx(c.view);
+    const ctx = await loadCtx(c.view, synIds(sheet));
     const site = await get<{ name: string }>(c, '/site');
     const info = { project: c.view.project.name, client: c.view.project.client ?? 'Projet interne', venue: c.view.project.venue ?? '', site: site.name, date: new Date().toLocaleDateString('fr-FR'), locations: Object.fromEntries(c.view.locations.map((l) => [l.id, { name: l.name, code: l.code }])) };
     const host = document.createElement('div'); host.style.cssText = 'position:absolute;left:-100000px;top:0;width:2000px'; document.body.appendChild(host);
@@ -154,7 +154,7 @@ async function graphics(c: Ctx, key: string, pages: string[] | undefined): Promi
         const svg = host.querySelector('svg') as SVGSVGElement;
         const [w, h] = pageSize(sheet);
         const clone = await withLightTheme(() => standalone(svg, [0, 0, w, h]));
-        out.push({ title: `Élévations · feuille ${i + 1}`, r: clone, w, h, own: true });
+        out.push({ title: `Planches · feuille ${i + 1}`, r: clone, w, h, own: true });
         unmount(comp); host.innerHTML = '';
       }
     } finally { host.remove(); }
@@ -221,7 +221,7 @@ export async function build(view: ProjectView, defs: DocDef[], opts: DocOpt[], d
   // Tableaux enchaînés : une section courte suit la précédente sur la même page (même format).
   let flow: { paper: PaperKey; landscape: boolean; y: number } | null = null;
   const start = async (paper: PaperKey, landscape: boolean) => { flow = null; if (!doc) doc = await newDoc(paper, landscape); else addPage(doc, paper, landscape); return doc; };
-  // Page au format propre (feuille d'élévations, avec son cadre et son cartouche).
+  // Page au format propre (feuille des planches, avec son cadre et son cartouche).
   const startOwn = async (w: number, h: number): Promise<Doc> => { flow = null; if (!doc) doc = await newDocMm(w, h); else doc.addPage([w, h], w > h ? 'landscape' : 'portrait'); markFramed(doc); return doc; };
   const fmtLabel = (paper: PaperKey, landscape: boolean) => `${paper} ${landscape ? 'paysage' : 'portrait'}`;
   const table = async (title: string, paper: PaperKey, landscape: boolean, cols: Col[], rows: string[][]) => {

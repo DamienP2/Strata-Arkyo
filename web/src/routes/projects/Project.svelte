@@ -58,7 +58,7 @@
   ] }, { label: 'Conception', items: [
     { key: 'racks', label: 'Racks', href: `/projets/${id}/racks`, icon: 'server' },
     { key: 'mobilier', label: 'Mobilier', href: `/projets/${id}/mobilier`, icon: 'layers' },
-    { key: 'planche', label: 'Planche d’élévations', href: `/projets/${id}/planche`, icon: 'sheet' },
+    { key: 'planche', label: 'Planches', href: `/projets/${id}/planche`, icon: 'sheet' },
     { key: 'synoptique', label: 'Synoptique', href: `/projets/${id}/synoptique`, icon: 'syn' },
     { key: 'cables', label: 'Liste des câbles', href: `/projets/${id}/cables`, icon: 'cable' },
     { key: 'reseau', label: 'Réseau', href: `/projets/${id}/reseau`, icon: 'network' },
@@ -74,7 +74,7 @@
   ] }]);
   // Une ligne sous le titre des pages dont le rôle n'est pas évident d'après leur nom.
   const DESC: Record<string, string> = {
-    planche: 'Les élévations des racks et du mobilier mises en page sur des feuilles, pour l’impression ou l’export.',
+    planche: 'Les élévations des racks et du mobilier, et les synoptiques, mis en page sur des feuilles pour l’impression ou l’export.',
     plans: 'Les éléments du projet placés sur le site, avec les liaisons tracées et leurs longueurs réelles.',
     dessins: 'Schémas de principe, implantations vidéo et audio, plans de feu avec adressage DMX.',
   };
