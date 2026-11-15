@@ -18,8 +18,8 @@
   .toast { pointer-events: auto; }
   .t-undo { flex: none; border: 0; background: none; color: inherit; font: 700 var(--fs-ctl-sm, 13px) var(--font); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; padding: 0 2px; border-radius: 4px; }
   .t-undo:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
-  /* Le toast est une plaque d'encre : la fermeture (.icon-btn.xs) y reprend la couleur du texte. */
-  .t-x { margin-left: 2px; color: inherit; }
+  /* Le toast est une plaque d'encre : la fermeture (.icon-btn.xs) y reprend la couleur du texte (.toast .icon-btn, harmonie.css). */
+  .t-x { margin-left: 2px; }
   .t-x:hover:not(:disabled) { color: inherit; background: color-mix(in srgb, currentColor 14%, transparent); box-shadow: none; }
   .t-x:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
 </style>

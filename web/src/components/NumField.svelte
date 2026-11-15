@@ -1,8 +1,11 @@
 <script lang="ts">
   // Champ numérique avec unité, valeurs proposées (préréglages) et message d'erreur.
   import FieldError from './FieldError.svelte';
-  let { id, label, value = $bindable(null), unit = '', step = 'any', min, max, suggestions = [], error, help, required = false }:
-    { id: string; label: string; value: number | null; unit?: string; step?: string | number; min?: number; max?: number; suggestions?: number[]; error?: string | null; help?: string; required?: boolean } = $props();
+  let { id, label, value = $bindable(null), unit = '', step = 'any', min, max, suggestions = [], error, help, required = false, disabled = false, placeholder, onchange }:
+    { id: string; label: string; value: number | null; unit?: string; step?: string | number; min?: number; max?: number; suggestions?: number[]; error?: string | null; help?: string; required?: boolean;
+      disabled?: boolean; placeholder?: string;
+      /** Appelé à la validation du champ (événement change : sortie du champ ou Entrée), avec la valeur lue. */
+      onchange?: (value: number | null) => void } = $props();
   let text = $state(value == null ? '' : String(value).replace('.', ','));
   $effect(() => {
     const cur = text.trim() === '' ? null : Number(text.replace(',', '.').replace(/\s/g, ''));
@@ -21,7 +24,7 @@
 <div class="field">
   <label for={id}>{label}</label>
   <div class="unit-in">
-    <input class="input mono" class:err={!!error} {id} inputmode="decimal" value={text} oninput={input} list={suggestions.length ? `${id}-list` : undefined} {required} data-step={step} data-min={min} data-max={max} autocomplete="off" aria-invalid={error ? 'true' : undefined} aria-describedby={described}>
+    <input class="input mono" class:err={!!error} {id} inputmode="decimal" value={text} oninput={input} onchange={() => onchange?.(value)} {disabled} {placeholder} list={suggestions.length ? `${id}-list` : undefined} {required} data-step={step} data-min={min} data-max={max} autocomplete="off" aria-invalid={error ? 'true' : undefined} aria-describedby={described}>
     {#if unit}<span class="u">{unit}</span>{/if}
   </div>
   {#if suggestions.length}<datalist id="{id}-list">{#each suggestions as s}<option value={String(s).replace('.', ',')}></option>{/each}</datalist>{/if}

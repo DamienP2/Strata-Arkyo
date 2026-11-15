@@ -11,8 +11,6 @@
 .logo{width:24px;height:24px}
 .topnav{padding:3px;background:none;box-shadow:none;gap:2px}
 .topnav :is(a,button){height:30px;padding:0 12px;font-size:13.5px;border-radius:8px}
-.topnav :is(a,button).on{background:var(--surface-3);color:var(--fg);box-shadow:inset 0 0 0 1px var(--line);font-weight:650}
-.topnav :is(a,button).on::before{display:none}
 .av{width:28px;height:28px;font-size:11.5px}
 .av.sm{width:24px;height:24px;font-size:11.5px;letter-spacing:0}
 #view{padding:20px 28px 64px;padding-left:max(28px,env(safe-area-inset-left,0px));padding-right:max(28px,env(safe-area-inset-right,0px))}
@@ -39,9 +37,7 @@ select.input{padding-right:30px;background-position:calc(100% - 16px) 52%,calc(1
 .chip{height:22px;padding:0 8px;font-size:12px;gap:5px}
 .tally{height:22px;font-size:11.5px;padding:0 8px 0 7px;border-radius:6px;gap:6px}
 .tally::before{width:6px;height:6px}
-.mode{height:24px;font-size:12px;padding:0 9px}
 .field{gap:5px}
-.field .help{font-size:12.5px}
 .stepper{padding:2px;border-radius:9px}
 .stepper button{width:26px;height:26px;border-radius:7px;font-size:15px}
 .stepper span{min-width:26px;font-size:13px}
@@ -63,7 +59,6 @@ select.input{padding-right:30px;background-position:calc(100% - 16px) 52%,calc(1
 .kv{font-size:13.5px;gap:6px 14px}
 .alert{font-size:13px;padding:10px 12px;border-radius:9px}
 .alert .ic{width:17px;height:17px}
-.empty{font-size:13.5px;padding:18px 0}
 .pmeta{font-size:13.5px}
 .user-menu{border-radius:12px}
 .user-menu button,.user-menu a{height:36px;font-size:13.5px;border-radius:8px}
@@ -86,9 +81,8 @@ select.input{padding-right:30px;background-position:calc(100% - 16px) 52%,calc(1
 
 /* Barre de sections horizontale (encore utilisée sur mobile et à quelques endroits) */
 .sn-group{border-radius:10px;padding:6px 6px 5px;gap:4px;box-shadow:0 0 0 1px var(--line)}
-.subnav :is(a,button){height:30px;padding:0 10px;font-size:13px;border-radius:7px}
 /* Hors du panneau mobile (entrées de 44 px, cible tactile) */
-.snb:not(.sn-panel .snb){height:30px!important;padding:0 10px!important;font-size:13px!important;border-radius:7px!important}
+.snb:not(.sn-panel .snb){height:30px;padding:0 10px;font-size:13px;border-radius:7px}
 
 /* ---------- Espace de travail : barre latérale ---------- */
 #view.wsv{padding:0;overflow:hidden;display:flex;flex-direction:column}
@@ -134,12 +128,6 @@ select.input{padding-right:30px;background-position:calc(100% - 16px) 52%,calc(1
 .ws.folded .ws-fold .ic{transform:scaleX(-1)}
 .ws-mob{display:none}
 .ws-top{position:sticky;top:0;z-index:15;display:flex;align-items:center;justify-content:space-between;gap:10px 20px;flex-wrap:wrap;min-height:56px;padding:9px 28px;margin:0 -28px 18px;background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
-.ws-top-main{display:flex;flex-direction:column;gap:1px;min-width:0}
-.ws-crumb{font:600 10px/1.2 var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--fg-3)}
-.ws-top h1{font-size:21px;letter-spacing:-.02em;line-height:1.15}
-.ws-top-meta{display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px;font-size:13px;color:var(--fg-2)}
-.ws-top-meta .presence{padding:0 0 0 6px}
-.ws-top-meta .presence .av{margin-left:-6px}
 .ws-main>*{flex-shrink:0}
 .ws-main>.page{flex:1 0 auto;margin:0;width:100%}
 @media (max-width:860px){
@@ -148,8 +136,6 @@ select.input{padding-right:30px;background-position:calc(100% - 16px) 52%,calc(1
   .ws-main{padding:12px 14px 64px}
   .ws-mob{display:block;margin-bottom:10px}
   .ws-top{position:static;min-height:0;margin:0 0 12px;padding:0 2px 10px;background:none;backdrop-filter:none}
-  .ws-top-main{display:none}
-  .ws-top-meta{font-size:12.5px;gap:4px 10px}
   #view{padding:16px 14px 64px}
 }
 /* Pages sans barre de titre dans un espace de travail (éditeur de fiche, panel) */
@@ -163,8 +149,8 @@ select.input{padding-right:30px;background-position:calc(100% - 16px) 52%,calc(1
 .ritem:has(.mwrap) .dec{flex:1 1 auto;justify-content:center;padding:0;height:100%}
 /* Le texte d'un moniteur s'affiche comme un UMD : bandeau centré en bas de l'image. */
 .ritem:has(.mwrap) .rl{position:absolute;z-index:1;left:50%;bottom:3px;transform:translateX(-50%);max-width:94%;white-space:nowrap;flex-wrap:nowrap;padding:1px 7px;border-radius:2px;background:rgba(6,7,9,.86);flex-direction:row!important;align-items:baseline!important;gap:6px!important}
-.ritem:has(.mwrap) .rl .rn{font-size:9.5px;color:#EEF0F3}
-.ritem:has(.mwrap) .rl small{font-size:9px;color:#8EE6A8}
+.ritem:has(.mwrap) .rl .rn{font-size:11px;color:#EEF0F3}
+.ritem:has(.mwrap) .rl small{font-size:11px;color:#8EE6A8}
 .ritem.u1:has(.mwrap) .rl{left:8px;bottom:auto;top:50%;transform:translateY(-50%);max-width:34%;white-space:normal;flex-wrap:wrap}
 .ritem:has(.mwrap) .led{display:none}
 .dec .mwrap{container-type:size;display:flex;align-items:center;justify-content:center;gap:6px;flex:1 1 auto;width:100%;height:100%;min-width:0;padding:2px 0;box-sizing:border-box}
@@ -178,9 +164,9 @@ select.input{padding-right:30px;background-position:calc(100% - 16px) 52%,calc(1
 .ritem.alu .rl{background:rgba(0,0,0,.32)}
 .ritem:not(.u1) .rl.two{flex-direction:column;align-items:flex-start;gap:1px}
 .ritem .rl:empty{display:none}
-.ritem .rl .rn{font:600 10.5px/1.2 var(--font);letter-spacing:.01em;color:var(--fp-ink);overflow-wrap:anywhere;text-overflow:clip;max-width:100%}
-.ritem .rl .rn.id{font:700 10.5px/1.2 var(--mono);letter-spacing:.04em}
-.ritem .rl small{font:500 9.5px/1.2 var(--font);color:var(--fp-mute);overflow-wrap:anywhere;max-width:100%}
+.ritem .rl .rn{font:600 11px/1.2 var(--font);letter-spacing:.01em;color:var(--fp-ink);overflow-wrap:anywhere;text-overflow:clip;max-width:100%}
+.ritem .rl .rn.id{font:700 11px/1.2 var(--mono);letter-spacing:.04em}
+.ritem .rl small{font:500 11px/1.2 var(--font);color:var(--fp-mute);overflow-wrap:anywhere;max-width:100%}
 .ritem.acc .rl{background:none;padding:0}
 .ritem.acc .rl .rn{font-weight:500;color:var(--fp-mute)}
 /* Barre de laçage : barre ronde sur fond ajouré */
@@ -334,15 +320,13 @@ select.input.sm{padding-right:26px;background-position:calc(100% - 14px) 52%,cal
 }
 @container (max-width:150px){ .dec .d-knob,.dec .d-pwr,.dec .lcd{display:none} .dec .d-ports{width:52px} }
 /* Symboles plats : pas de relief, de reflet ni de halo sur les décors. */
-.dec .knob{background:#3A4047;box-shadow:inset 0 0 0 1.5px #8E959D}
-.dec .handle{background:#A9B0B8;box-shadow:none}
 .dec .lcd,.dec .lcd.amb,.dec .d-tc,.dec .d-blcd{text-shadow:none;box-shadow:inset 0 0 0 1px rgba(0,0,0,.5)}
-.dec .d-pwr,.dec .pwr{box-shadow:inset 0 0 0 1.6px #A9B0B8}
+.dec .d-pwr{box-shadow:inset 0 0 0 1.6px #A9B0B8}
 .dec .d-xkeys{filter:none}
 .ritem .led{box-shadow:none}
 /* Boutons plus fins : petites tailles, traits de 1 px, gris discrets. */
-.dec .d-pwr,.dec .pwr{width:8px;max-width:8px;box-shadow:inset 0 0 0 1.2px #8E959D}
-.dec .d-knob,.dec .knob{width:max(8px,20cqh);max-width:11px;background:#2A2E34;box-shadow:inset 0 0 0 1px #7A828B}
+.dec .d-pwr{width:8px;max-width:8px;box-shadow:inset 0 0 0 1.2px #8E959D}
+.dec .d-knob{width:max(8px,20cqh);max-width:11px;background:#2A2E34;box-shadow:inset 0 0 0 1px #7A828B}
 .dec .d-joy{width:max(10px,30cqh);max-width:16px;background:radial-gradient(circle,#7A828B 0 20%,#121417 23% 64%,#2A2E34 67%)}
 .dec .d-recbtn{width:max(7px,18cqh);max-width:10px}
 .dec .d-trans{gap:3px}

@@ -87,7 +87,7 @@ export const CONTAINER_KINDS: Record<ContainerKind, { label: string; family: Ele
   furniture: { label: 'Meuble / armoire', family: 'contenants', rackable: false, mobile: false, help: 'Meuble, armoire, étagère ; casquettes possibles' },
   monitor_wall: { label: 'Mur d’écrans', family: 'regie', rackable: false, mobile: false, help: 'Grille d’écrans et sources affichées' },
   desk: { label: 'Mobilier', family: 'regie', rackable: false, mobile: false, help: 'Pupitre, console : postes et casquettes rackables' },
-  operator_position: { label: 'Poste opérateur', family: 'regie', rackable: false, mobile: false, help: 'Commentateur, HF, intercom…' },
+  operator_position: { label: 'Poste opérateur', family: 'regie', rackable: false, mobile: false, help: 'Commentateur, HF ou intercom' },
   casquette: { label: 'Casquette', family: 'regie', rackable: true, mobile: false, canRack: true, hidden: true, help: 'Bloc rackable posé sur un mobilier' },
   zone: { label: 'Emplacement libre', family: 'terrain', rackable: false, mobile: false, help: 'Table, sol ou loge, sans rack' },
   camera_position: { label: 'Position caméra', family: 'terrain', rackable: false, mobile: false, help: 'Caméra, support et liaison' },

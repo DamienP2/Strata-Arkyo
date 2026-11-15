@@ -252,7 +252,7 @@
   .grp { margin: 14px 0 2px; }
   .doc { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 8px 10px; border-radius: 12px; box-shadow: inset 0 0 0 1px var(--line); }
   .doc.off { opacity: .6; }
-  .doc.empty { background: var(--surface-2); }
+  .doc.empty { background: var(--surface-2); color: var(--fg-3); }
   .doc.err { box-shadow: inset 0 0 0 1px var(--err); }
   .inc { min-width: 220px; }
   .pr { flex: 1; min-width: 140px; }
