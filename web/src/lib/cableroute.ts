@@ -7,13 +7,20 @@
 
 export type Side = 'l' | 'r';
 export interface End { x: number; y: number; side: Side }
-export interface Req { id: string; a: End; b: End; out: number }
+/** `out` : sortie horizontale souhaitée (étiquette comprise) ; `tag` : distance du port au
+ *  milieu de l'étiquette, où un écart de quelques pixels entre deux ports se cache. */
+export interface Req { id: string; a: End; b: End; out: number; tag?: number }
 export type Box = [number, number, number, number];
 export interface Routed { d: string; pts: [number, number][] }
 
 export const SP = 10; // écart entre deux câbles parallèles
 /** Marge autour d'un nœud : un segment qui part d'un port ne « traverse » pas son propre nœud. */
 const PAD = 8;
+/** Écart vertical (px) entre deux ports en face l'un de l'autre sous lequel le câble arrive
+ *  droit : le petit décalage passe sous l'étiquette au lieu de faire un décrochement. */
+const JOG = 7;
+/** Écart horizontal minimal entre une sortie et une entrée pour un tracé en 3 segments. */
+const MIN_GAP = 2 * SP;
 
 interface V { x: number; y0: number; y1: number; id: string }
 interface H { y: number; x0: number; x1: number; id: string }
@@ -47,13 +54,16 @@ export function routeAll(reqs: Req[], boxes: Box[], fixed: [number, number][][] 
   };
 
   // 1. Passages directs : sortie à droite vers une entrée plus à droite, dans l'espace libre
-  //    entre les deux. On les regroupe par colonne de départ (même x de sortie).
-  const direct: { r: Req; ax: number; ay: number; bx: number; by: number; lo: number; hi: number }[] = [];
+  //    entre les deux. On les regroupe par colonne de départ (même x de sortie). Quand la
+  //    place manque pour la sortie d'étiquette complète, on la raccourcit (tracé en 3
+  //    segments) plutôt que de partir en boucle.
+  const direct: { r: Req; ax: number; ay: number; bx: number; by: number; lo: number; hi: number; tag: number }[] = [];
   const rest: Req[] = [];
   for (const r of reqs) {
     const [A, B] = r.a.side === 'l' && r.b.side === 'r' ? [r.b, r.a] : [r.a, r.b];
-    const lo0 = A.x + r.out, hi0 = B.x - r.out;
-    if (A.side === 'r' && B.side === 'l' && hi0 - lo0 >= 0) direct.push({ r, ax: A.x, ay: A.y, bx: B.x, by: B.y, lo: lo0, hi: hi0 });
+    let lo0 = A.x + r.out, hi0 = B.x - r.out;
+    if (hi0 < lo0) { lo0 = A.x + SP; hi0 = B.x - SP; }
+    if (A.side === 'r' && B.side === 'l' && B.x - A.x >= MIN_GAP) direct.push({ r, ax: A.x, ay: A.y, bx: B.x, by: B.y, lo: lo0, hi: hi0, tag: r.tag ?? 0 });
     else rest.push(r);
   }
   const groups = new Map<number, typeof direct>();
@@ -62,14 +72,20 @@ export function routeAll(reqs: Req[], boxes: Box[], fixed: [number, number][][] 
     // Ordre des couloirs : les câbles qui montent à gauche (départ croissant), ceux qui
     // descendent à droite (départ croissant = couloir le plus à droite) : un faisceau reste
     // parallèle et ne se croise pas.
-    const up = g.filter((c) => c.by < c.ay).sort((a, b) => a.ay - b.ay || a.by - b.by);
-    const down = g.filter((c) => c.by >= c.ay).sort((a, b) => b.ay - a.ay || b.by - a.by);
-    const flat = g.filter((c) => Math.abs(c.by - c.ay) < 1);
-    const ordered = [...up, ...down.filter((c) => !flat.includes(c))];
+    const flat = g.filter((c) => Math.abs(c.by - c.ay) <= JOG);
+    const up = g.filter((c) => c.by < c.ay && !flat.includes(c)).sort((a, b) => a.ay - b.ay || a.by - b.by);
+    const down = g.filter((c) => c.by >= c.ay && !flat.includes(c)).sort((a, b) => b.ay - a.ay || b.by - a.by);
+    const ordered = [...up, ...down];
     for (const c of flat) {
-      // Même hauteur : un trait droit, si rien ne le gêne.
-      if (!hHitsNode(c.ay, c.ax + PAD, c.bx - PAD) && !hClash(c.ay, c.ax, c.bx, c.r.id)) { addH(c.ay, c.ax, c.bx, c.r.id); out.set(c.r.id, path([[c.ax, c.ay], [c.bx, c.by]])); }
-      else ordered.push(c);
+      // Même hauteur, ou presque : un trait droit, si rien ne le gêne. Un écart de quelques
+      // pixels passe sous l'étiquette d'arrivée (aucun décrochement visible).
+      const ylo = lo(c.ay, c.by), yhi = hi(c.ay, c.by);
+      const free = (y: number) => !hHitsNode(y, c.ax + PAD, c.bx - PAD) && !hClash(y, c.ax, c.bx, c.r.id);
+      if (free(ylo) && free(yhi)) {
+        addH(c.ay, c.ax, c.bx, c.r.id); if (c.by !== c.ay) addH(c.by, c.ax, c.bx, c.r.id);
+        const jx = c.tag && c.bx - c.tag > c.ax + c.tag ? c.bx - c.tag : Math.round((c.ax + c.bx) / 2);
+        out.set(c.r.id, path(c.by === c.ay ? [[c.ax, c.ay], [c.bx, c.by]] : [[c.ax, c.ay], [jx, c.ay], [jx, c.by], [c.bx, c.by]]));
+      } else ordered.push(c);
     }
     // Le faisceau prend ses couloirs au milieu de l'espace libre entre les deux nœuds (et non
     // contre le nœud de départ) ; s'ils sont pris, on s'écarte du milieu, d'un côté puis de l'autre.
@@ -102,6 +118,13 @@ export function routeAll(reqs: Req[], boxes: Box[], fixed: [number, number][][] 
       const x = start + dir * k * SP;
       if (!vHitsNode(x, ya, yb) && !vClash(x, ya, yb, id) && !hHitsNode(e.y, e.x + dir * PAD, x) && !hClash(e.y, e.x + dir * PAD, x, id)) return x;
     }
+    // Aucun couloir sans croisement : un couloir libre quand même (croiser vaut mieux que
+    // superposer plusieurs câbles sur le même trait), en partant au plus près du port.
+    const near0 = dir > 0 ? Math.ceil((e.x + SP) / SP) * SP : Math.floor((e.x - SP) / SP) * SP;
+    for (let k = 0; k < 120; k++) {
+      const x = near0 + dir * k * SP;
+      if (!vHitsNode(x, ya, yb) && !vClash(x, ya, yb, id) && !hHitsNode(e.y, e.x + dir * PAD, x)) return x;
+    }
     return e.x + dir * outD;
   };
   const track = (xa: number, xb: number, base: number, dir: number, id: string): number => {
@@ -111,6 +134,54 @@ export function routeAll(reqs: Req[], boxes: Box[], fixed: [number, number][][] 
     }
     return base;
   };
+  /** Couloir vertical libre à partir de `from` (vers l'extérieur du port), ou null. */
+  const laneFree = (e: End, from: number, ya: number, yb: number, id: string, n = 60): number | null => {
+    const dir = e.side === 'r' ? 1 : -1;
+    const start = dir > 0 ? Math.ceil(from / SP) * SP : Math.floor(from / SP) * SP;
+    for (let k = 0; k < n; k++) {
+      const x = start + dir * k * SP;
+      if (!vHitsNode(x, ya, yb) && !vClash(x, ya, yb, id) && !hHitsNode(e.y, e.x + dir * PAD, x) && !hClash(e.y, e.x + dir * PAD, x, id)) return x;
+    }
+    return null;
+  };
+  // 2a. Tracés simples avant tout détour par un couloir horizontal :
+  //  - même côté (deux sorties à droite, par exemple) : un seul couloir vertical au-delà du
+  //    port le plus en dehors, en « C » (3 segments) ;
+  //  - entrée derrière la sortie : un couloir horizontal entre les deux ports (en « S »), et
+  //    non sous ou au-dessus des deux (boucle).
+  //  Les câbles à la plus petite amplitude passent à l'intérieur (boucles imbriquées).
+  const simple = [...rest].sort((p, q) => Math.abs(p.a.y - p.b.y) - Math.abs(q.a.y - q.b.y));
+  rest.length = 0;
+  for (const r of simple) {
+    const { a, b } = r;
+    if (a.side === b.side) {
+      const dir = a.side === 'r' ? 1 : -1;
+      const far = dir > 0 ? hi(a.x, b.x) : lo(a.x, b.x);
+      const x = laneFree({ x: far, y: a.y, side: a.side }, far + dir * r.out, a.y, b.y, r.id);
+      if (x != null && !hHitsNode(a.y, a.x + dir * PAD, x) && !hHitsNode(b.y, b.x + dir * PAD, x) && !hClash(a.y, a.x, x, r.id) && !hClash(b.y, b.x, x, r.id)) {
+        addV(x, a.y, b.y, r.id); addH(a.y, a.x, x, r.id); addH(b.y, b.x, x, r.id);
+        out.set(r.id, path([[a.x, a.y], [x, a.y], [x, b.y], [b.x, b.y]]));
+        continue;
+      }
+    } else if (Math.abs(a.y - b.y) >= 4 * SP) {
+      const [A, B] = a.side === 'r' ? [a, b] : [b, a];
+      const yMin = lo(A.y, B.y), yMax = hi(A.y, B.y), mid = (yMin + yMax) / 2;
+      const ys: number[] = [];
+      for (let y = Math.ceil((yMin + 2 * SP) / SP) * SP; y <= yMax - 2 * SP; y += SP) ys.push(y);
+      ys.sort((p, q) => Math.abs(p - mid) - Math.abs(q - mid));
+      let done = false;
+      for (const y of ys) {
+        const xa = laneFree(A, A.x + r.out, A.y, y, r.id, 30), xb = xa == null ? null : laneFree(B, B.x - r.out, B.y, y, r.id, 30);
+        if (xa == null || xb == null || hHitsNode(y, lo(xa, xb), hi(xa, xb)) || hClash(y, xa, xb, r.id)) continue;
+        addV(xa, A.y, y, r.id); addV(xb, B.y, y, r.id); addH(A.y, A.x, xa, r.id); addH(B.y, B.x, xb, r.id); addH(y, xa, xb, r.id);
+        const P: [number, number][] = [[A.x, A.y], [xa, A.y], [xa, y], [xb, y], [xb, B.y], [B.x, B.y]];
+        out.set(r.id, path(A === a ? P : P.reverse()));
+        done = true; break;
+      }
+      if (done) continue;
+    }
+    rest.push(r);
+  }
   // Côté du détour (dessous ou dessus) : le plus court des deux couloirs libres de nœuds.
   const plan = rest.map((r) => {
     const xa = r.a.x + (r.a.side === 'r' ? r.out : -r.out), xb = r.b.x + (r.b.side === 'r' ? r.out : -r.out);

@@ -20,6 +20,9 @@ export function textWidth(text: string, font = PORT_FONT): number {
   return w;
 }
 
+/** Oublie les mesures (à appeler quand une police web vient d'arriver). */
+export function resetTextWidths(): void { cache.clear(); }
+
 /** Raccourcit `text` pour tenir dans `max` pixels, en gardant le numéro final (« IN… 12 »). */
 export function fitText(text: string, max: number, font = PORT_FONT): string {
   if (max <= 0) return '';
