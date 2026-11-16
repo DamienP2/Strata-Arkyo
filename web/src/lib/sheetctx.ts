@@ -73,6 +73,34 @@ function keyOf(it: SheetItem, ctx: Ctx, w: number, h: number, v: string) {
   return JSON.stringify([it.kind, it.container_id, v, v === '3d' ? it.cam : null, it.doors, it.sides, w, h, (src as any)?.c?.rev, els]);
 }
 
+/** Recadre une image sans fond sur ce qui est dessiné (pixels non transparents), avec une
+ *  petite marge : la caméra laisse du vide autour de l'objet, qui deviendrait de la marge sur la
+ *  feuille. L'image recadrée est ensuite posée « contenue » dans son cadre. */
+async function trimPng(url: string): Promise<string> {
+  if (!url) return url;
+  const img = new Image();
+  img.src = url;
+  try { await img.decode(); } catch { return url; }
+  const W = img.naturalWidth, H = img.naturalHeight;
+  if (!W || !H) return url;
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const g = cv.getContext('2d', { willReadFrequently: true }); if (!g) return url;
+  g.drawImage(img, 0, 0);
+  const a = g.getImageData(0, 0, W, H).data;
+  let x0 = W, y0 = H, x1 = -1, y1 = -1;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    if (a[(y * W + x) * 4 + 3]! > 8) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  }
+  if (x1 < 0) return url;
+  const pad = Math.round(Math.max(x1 - x0, y1 - y0) * 0.02);
+  x0 = Math.max(0, x0 - pad); y0 = Math.max(0, y0 - pad); x1 = Math.min(W - 1, x1 + pad); y1 = Math.min(H - 1, y1 + pad);
+  const w = x1 - x0 + 1, h = y1 - y0 + 1;
+  if (w >= W - 2 && h >= H - 2) return url;
+  const out = document.createElement('canvas'); out.width = w; out.height = h;
+  out.getContext('2d')!.drawImage(cv, x0, y0, w, h, 0, 0, w, h);
+  return out.toDataURL('image/png');
+}
+
 /** Image PNG sans fond d'une vue d'un élément au format de son cadre sur la feuille : la vue 3D
  *  (angle enregistré), ou une élévation (avant, arrière, côté) quand la baie est en rendu 3D. */
 export function shot3D(it: SheetItem, ctx: Ctx, k: number, v = '3d'): Promise<string> {
@@ -94,7 +122,8 @@ export function shot3D(it: SheetItem, ctx: Ctx, k: number, v = '3d'): Promise<st
     await build3D(scene, it, ctx);
     if (v !== '3d') { if (v === 'side') scene.setSides(false); scene.frame(v as 'front' | 'rear' | 'side'); }
     else if (saved?.length === 6) scene.setPose(saved);
-    const url = scene.snapshot();
+    // Recadrage seulement pour la vue 3D libre : les élévations restent à l'échelle des U.
+    const url = v === '3d' ? await trimPng(scene.snapshot()) : scene.snapshot();
     cache.set(key, url);
     return url;
   });
