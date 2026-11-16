@@ -8,6 +8,8 @@ import type { Rendered } from './render';
 export type Paper = 'A4' | 'A3' | 'A2' | 'A1' | 'A0';
 export type Face = 'front' | 'rear' | 'rear_inner';
 export type RackView = 'front' | 'rear' | 'side' | '3d';
+/** Coin d'un dessin saisi pour le redimensionner. */
+export type Corner = 'nw' | 'ne' | 'sw' | 'se';
 export type DeskView = 'front' | 'side' | 'top' | '3d' | 'casq';
 export const PAPERS: Record<Paper, [number, number]> = {
   A4: [210, 297], A3: [297, 420], A2: [420, 594], A1: [594, 841], A0: [841, 1189],
@@ -19,12 +21,22 @@ export const DESK_VIEWS: Record<DeskView, string> = { front: 'Face', side: 'Côt
 /** Rendu des élévations d'une baie, comme sur la page Racks. */
 export type RackRender = 'real' | 'schematic' | '3d';
 export const RACK_RENDERS: Record<RackRender, string> = { real: 'Réel', schematic: 'Schématique', '3d': '3D' };
-/** Synoptique : mm papier par unité du dessin à l'échelle propre 1 ; plus petit facteur
- *  permis (le plus petit texte du synoptique, le connecteur des ports à 8,5 unités comme à
- *  l'écran, reste à 6 pt au moins : 8,5 × 0,25 × 1,02 = 2,17 mm). */
+/** Synoptique : mm papier par unité du dessin à l'échelle propre 1 ; plus petit facteur permis
+ *  (un grand synoptique doit pouvoir tenir sur la feuille). Sous `SYN_LEGIBLE`, le plus petit
+ *  texte (le connecteur des ports, 8,5 unités comme à l'écran) passe sous 6 pt : signalé. */
 export const SYN_MM = 0.25;
-export const SYN_MIN = 1.02;
+export const SYN_MIN = 0.05;
+export const SYN_TEXT = 8.5;
 export const ZOOM_MIN = 0.25, ZOOM_MAX = 4;
+/** Plus petit corps lisible à l'impression (pt) ; 1 pt = 0,3528 mm. */
+export const MIN_PT = 6;
+const PT_MM = 25.4 / 72;
+/** Corps du plus petit texte d'un dessin sur la feuille, en points (synoptique : il suit l'échelle
+ *  propre) ; null quand le dessin garde ses textes à 6 pt au moins quelle que soit l'échelle
+ *  (baies et mobilier : un libellé qui ne tient pas à 6 pt n'est pas dessiné). */
+export const minTextPt = (it: SheetItem): number | null => (it.kind === 'synoptic' ? (SYN_TEXT * SYN_MM * zoomOf(it)) / PT_MM : null);
+/** Échelle propre à partir de laquelle le texte d'un synoptique atteint 6 pt. */
+export const SYN_LEGIBLE = (MIN_PT * PT_MM) / (SYN_TEXT * SYN_MM);
 
 export interface SheetItem {
   id: string; kind: 'rack' | 'desk' | 'synoptic' | 'location' | 'reserved'; x: number; y: number;

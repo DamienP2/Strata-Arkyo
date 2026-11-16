@@ -3,7 +3,7 @@
 import { api } from './api';
 import type { ProjectView } from './projects';
 import { boxSpec, deskSpec, toEl3D } from './el3d';
-import { synopticSvg, type Rendered } from './render';
+import { synFontsReady, synopticSvg, type Rendered } from './render';
 import { groupLayout, shotKey, shotViews, type Ctx, type DeskData, type RackData, type Sheet, type SheetItem } from './sheet';
 import type { RackScene } from './rack3d';
 
@@ -14,9 +14,13 @@ export const synViews = (view: ProjectView) => view.containers.filter((c) => c.r
 /** Synoptiques utilisés par une planche. */
 export const synIds = (s: Sheet | null) => [...new Set((s?.pages ?? []).flatMap((p) => p.items.filter((i) => i.kind === 'synoptic' && i.container_id).map((i) => i.container_id!)))];
 
-/** Synoptique d'un élément, dessiné en SVG au rendu de l'écran (null s'il n'a aucun port). */
+/** Synoptique d'un élément : le même dessin que l'écran Synoptique (lib/render), cadré sur tout
+ *  son contenu ; null s'il n'a aucun port. Les polices de l'écran sont chargées avant la mesure. */
 export async function loadSyn(pid: string, cid: string): Promise<Rendered | null> {
-  try { return synopticSvg(await api.get<any>(`/projects/${pid}/synoptic?view=${encodeURIComponent(`container:${cid}`)}`)); } catch { return null; }
+  try {
+    const [data] = await Promise.all([api.get<any>(`/projects/${pid}/synoptic?view=${encodeURIComponent(`container:${cid}`)}`), synFontsReady()]);
+    return synopticSvg(data);
+  } catch { return null; }
 }
 
 export async function loadCtx(view: ProjectView, syns: string[] = []): Promise<Ctx> {

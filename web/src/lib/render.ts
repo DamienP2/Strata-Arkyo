@@ -7,8 +7,8 @@
 import { FAMILY_NONE, familyColor, refById } from './catalog.svelte';
 import { rackLines } from './racktext.svelte';
 import { routeAll, rounded, type Req as RouteReq } from './cableroute';
-import { fitSub, fitText, shareRow, textWidth } from './fit';
-import { FONT, HEX, SVG_MONO, SVG_SANS, familyDash } from './pdfkit';
+import { fitSub, fitText, resetTextWidths, shareRow, textWidth } from './fit';
+import { HEX, SVG_SANS, familyDash } from './pdfkit';
 
 const esc = (s: unknown) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const F = SVG_SANS;
@@ -175,16 +175,33 @@ export function mapFloorSvg(d: { floors: any[]; objects: any[]; liaisons: any[];
   return { svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${x0} ${y0} ${W} ${H}" width="${W}" height="${H}">${out.join('')}</svg>`, w: W, h: H };
 }
 
-// ----- Synoptique (10) : une vue d'élément, au rendu de l'écran -----
+// ----- Synoptique (10) : une vue d'élément, le même dessin que l'écran -----
 
 /** Géométrie des nœuds, la même à l'écran (synoptique, aperçu de la fiche) et dans les exports :
  *  largeur, en-tête, pas des ports, écart entre le port et l'étiquette du câble. */
 export const SYN = { NW: 270, HH: 52, PS: 28, TAG_GAP: 26 } as const;
-/** Polices des nœuds (comme le CSS de l'écran) : titre 15, sous-titre 11 mono, port 12, connecteur 8,5 mono. */
-const SANS_CSS = "'Inter Variable', Inter, system-ui, sans-serif", MONO_CSS = "'JetBrains Mono', ui-monospace, monospace";
-const MONO_S = `600 9.5px ${MONO_CSS}`, MONO_N = `700 11px ${MONO_CSS}`, FAR_F = `600 11px ${SANS_CSS}`;
-const TITLE_F = `650 15px ${SANS_CSS}`, SUB_F = `500 11px ${MONO_CSS}`;
+/** Polices de mesure, celles du CSS de l'écran Synoptique (var(--font), var(--mono)) : mêmes
+ *  largeurs, donc mêmes étiquettes, mêmes sorties de câble et même routage qu'à l'écran. */
+const SANS_CSS = "'Inter Variable', Inter, ui-sans-serif, system-ui, sans-serif", MONO_CSS = "'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace";
+const FONTS = {
+  connector: `600 9.5px ${MONO_CSS}`, number: `700 11px ${MONO_CSS}`, none: `italic 500 11px ${MONO_CSS}`, far: `600 11px ${SANS_CSS}`,
+  title: `650 15px ${SANS_CSS}`, titleId: `700 15px ${MONO_CSS}`, sub: `500 11px ${MONO_CSS}`, zone: `700 15px ${SANS_CSS}`,
+} as const;
+/** Polices dessinées : la police incorporée au PDF d'abord (svg2pdf prend la première connue),
+ *  puis la police web de l'écran, pour que la planche affichée ressemble à l'écran. */
+const SF = "Inter, 'Inter Variable', Helvetica, Arial, sans-serif", SM = "JetBrainsMono, 'JetBrains Mono', Courier, monospace";
 const TAG_L = 10, TAG_SEP = 6, TAG_R = 8;
+/** Couleurs de l'écran en thème clair, sur papier blanc : fond et contour des nœuds, séparateur,
+ *  avertissement ; petits textes gris en #333 comme l'export de l'écran. */
+const P = { bg: '#FFFFFF', edge: '#CEC9BF', sep: '#E1DDD5', warn: '#975500', warnFg: '#FCFBF9' } as const;
+
+/** Attend les polices web mesurées (au premier rendu, elles peuvent manquer) et vide le cache des
+ *  largeurs : sans elles, étiquettes et routage différeraient de l'écran. */
+export async function synFontsReady(): Promise<void> {
+  if (typeof document === 'undefined' || !document.fonts) return;
+  try { await Promise.all([...Object.values(FONTS), `600 12px ${SANS_CSS}`].map((f) => document.fonts.load(f, 'IEC C19 — 0123'))); } catch { /* polices indisponibles : repli */ }
+  resetTextWidths();
+}
 
 /** Nom court d'un connecteur (« BNC », « XLR 3 ») : un nom trop long est abrégé par ses
  *  initiales (« DisplayPort » → « DP », « Mini DisplayPort » → « Mini DP »), jamais coupé. */
@@ -213,6 +230,7 @@ export function nodeLines(n: { kind?: string; label: string; sub: string; model?
 
 type SynNodeData = { key: string; kind: string; label: string; sub: string; function: string | null; ports: any[]; model?: string; custom?: string | null; tag?: string | null; brand?: string | null; place?: string };
 type Pos = Record<string, { x: number; y: number }>;
+type End = [number, number, 'l' | 'r'];
 /** Disposition automatique de l'écran : sources, panels et adaptateurs, destinations, chaque
  *  famille repliée en sous-colonnes au-delà de 1 400 unités de haut. */
 function synLayout(nodes: SynNodeData[], nh: (n: SynNodeData) => number): Pos {
@@ -231,48 +249,63 @@ function synLayout(nodes: SynNodeData[], nh: (n: SynNodeData) => number): Pos {
   }
   return out;
 }
+/** Contour d'étiquette : la couleur du câble mêlée à 30 % de noir (color-mix de l'écran). */
+const darker = (hex: string) => { const m = /^#([0-9a-f]{6})$/i.exec(hex); if (!m) return hex; const v = parseInt(m[1]!, 16); return '#' + [16, 8, 0].map((s) => Math.round(((v >> s) & 255) * 0.7).toString(16).padStart(2, '0')).join(''); };
 
-/** Un nœud, dessiné comme à l'écran (couleurs papier) : en-tête teinté et bande à la couleur de
- *  la famille, titre et sous-titre, ports à la couleur de leur famille avec sens, nom et
- *  connecteur. `data-block` : le découpage en feuilles ne coupe pas le nœud. */
-export function synNodeSvg(n: SynNodeData, x: number, y: number, fitted: { l: string; r: string }[]): string {
+/** Un nœud, dessiné comme à l'écran (couleurs du thème clair) : en-tête teinté et bande à la
+ *  couleur de la famille, titre (en chasse fixe quand c'est l'ID) et sous-titre, ports à la couleur
+ *  de leur famille (pleins quand un câble y est branché) avec sens, nom et connecteur ; contour
+ *  pointillé pour un panel. `data-block` : le découpage en feuilles ne coupe pas le nœud. */
+function synNodeSvg(n: SynNodeData, x: number, y: number, used: Set<string>): string {
   const { NW, HH, PS } = SYN;
   const L = n.ports.filter((p) => p.side === 'l'), R = n.ports.filter((p) => p.side !== 'l');
   const h = HH + Math.max(L.length, R.length, 1) * PS + 12;
-  const col = n.function ? familyColor(n.function, { screen: false }) : n.kind === 'panel' ? HEX.mute : FAMILY_NONE;
+  const col = esc(n.function ? familyColor(n.function, { screen: false }) : n.kind === 'panel' ? HEX.mute : FAMILY_NONE);
   const [t1, t2] = nodeLines(n);
-  const title = fitText(t1 || 'Équipement', NW - 44, TITLE_F), sub = fitSub(t2, NW - 44, SUB_F);
+  const isId = n.kind === 'equipment' && !n.custom?.trim() && !!n.tag && t1 === n.tag;
+  const title = fitText(t1 || 'Équipement', NW - 42, isId ? FONTS.titleId : FONTS.title), sub = fitSub(t2, NW - 42, FONTS.sub);
+  const rows: { l: string; r: string }[] = [];
+  for (let i = 0; i < Math.max(L.length, R.length); i++) {
+    const a = L[i], b = R[i];
+    const [wl, wr] = shareRow(a ? textWidth(a.label) : null, b ? textWidth(b.label) : null, NW - 48);
+    rows.push({ l: a ? fitText(a.label, wl) : '', r: b ? fitText(b.label, wr) : '' });
+  }
   const o: string[] = [];
   o.push(`<g data-block="${esc(t1)}" transform="translate(${x} ${y})">`);
-  o.push(`<rect width="${NW}" height="${h}" rx="10" fill="#FFFFFF" stroke="#CEC9BF" stroke-width="1"/>`);
-  o.push(`<path d="M0 10a10 10 0 0 1 10-10h${NW - 20}a10 10 0 0 1 10 10v${HH - 10}H0z" fill="${esc(col)}" fill-opacity="0.09"/>`);
-  o.push(`<rect width="${NW}" height="4" rx="2" fill="${esc(col)}"/><line x1="0" x2="${NW}" y1="${HH}" y2="${HH}" stroke="#E2DED6" stroke-width="1"/>`);
-  o.push(`<circle cx="16" cy="${HH / 2 + 1}" r="4.5" fill="${esc(col)}"/>`);
-  o.push(`<text x="30" y="25" font-family="${F}" font-size="15" font-weight="bold" fill="${HEX.ink}">${esc(title)}</text>`);
-  o.push(`<text x="30" y="42" font-family="${SVG_MONO}" font-size="11" fill="${HEX.dark}">${esc(sub)}</text>`);
+  o.push(`<rect width="${NW}" height="${h}" rx="10" fill="${P.bg}" stroke="${P.edge}" stroke-width="1"${n.kind === 'panel' ? ' stroke-dasharray="5 3"' : ''}/>`);
+  o.push(`<path d="M0 10a10 10 0 0 1 10-10h${NW - 20}a10 10 0 0 1 10 10v${HH - 10}H0z" fill="${col}" fill-opacity="0.09"/>`);
+  o.push(`<rect width="${NW}" height="4" rx="2" fill="${col}"/><line x1="0" x2="${NW}" y1="${HH}" y2="${HH}" stroke="${P.sep}" stroke-width="1"/>`);
+  o.push(`<circle cx="16" cy="${HH / 2 + 1}" r="4.5" fill="${col}"/>`);
+  o.push(`<text x="30" y="25" font-family="${isId ? SM : SF}" font-size="15" font-weight="bold" fill="${HEX.ink}">${esc(title)}</text>`);
+  o.push(`<text x="30" y="42" font-family="${SM}" font-size="11" fill="${HEX.dark}">${esc(sub)}</text>`);
   for (const [list, out] of [[L, false], [R, true]] as const) {
     list.forEach((p: any, i: number) => {
       const px = out ? NW : 0, py = HH + i * PS + PS / 2 + 4, mk = out ? NW - 19 : 12, tx = out ? NW - 24 : 24;
       const c = esc(familyColor(p.family, { screen: false }));
-      o.push(`<circle cx="${px}" cy="${py}" r="4.5" fill="#FFFFFF" stroke="${c}" stroke-width="2"/>`);
+      o.push(`<circle cx="${px}" cy="${py}" r="4.5" fill="${used.has(p.ref) ? c : P.bg}" stroke="${c}" stroke-width="2"/>`);
       if (p.dir === 'in' || p.dir === 'out') o.push(`<path d="M${mk} ${py - 4.5}l7 4.5-7 4.5z" fill="${c}"/>`);
-      else o.push(`<path d="M${mk + 3.5} ${py - 4.5}l-3.5 4.5 3.5 4.5z" fill="${c}"/><path d="M${mk + 3.5} ${py - 4.5}l3.5 4.5-3.5 4.5z" fill="${HEX.mute}"/>`);
+      else o.push(`<path d="M${mk + 3.5} ${py - 4.5}l-3.5 4.5 3.5 4.5z" fill="${c}"/><path d="M${mk + 3.5} ${py - 4.5}l3.5 4.5-3.5 4.5z" fill="${HEX.dark}"/>`);
       const anchor = out ? ' text-anchor="end"' : '';
-      o.push(`<text x="${tx}" y="${py - 0.5}" font-family="${F}" font-size="12" font-weight="bold" fill="${HEX.ink}"${anchor}>${esc((out ? fitted[i]?.r : fitted[i]?.l) ?? p.label)}</text>`);
-      o.push(`<text x="${tx}" y="${py + 10}" font-family="${SVG_MONO}" font-size="8.5" letter-spacing="0.25" fill="${HEX.dark}"${anchor}>${esc(portChip(p))}</text>`);
+      o.push(`<text x="${tx}" y="${py - 0.5}" font-family="${SF}" font-size="12" font-weight="bold" fill="${HEX.ink}"${anchor}>${esc((out ? rows[i]?.r : rows[i]?.l) ?? p.label)}</text>`);
+      o.push(`<text x="${tx}" y="${py + 10}" font-family="${SM}" font-size="8.5" letter-spacing="0.25" fill="${HEX.dark}"${anchor}>${esc(portChip(p))}</text>`);
     });
   }
   o.push('</g>');
   return o.join('');
 }
 
-/** Synoptique d'une vue, au rendu de l'écran : positions enregistrées (sinon la disposition
- *  automatique de l'écran), câbles routés comme à l'écran (couloirs sans chevauchement, tracés
- *  posés à la main), étiquettes connecteur et numéro à chaque extrémité, renvoi vers l'autre
- *  bout pour un câble qui sort de la vue. Couleur d'un câble et d'un port : sa famille de signal
- *  uniquement ; motif de trait par famille (lisible en noir et blanc). `families` : familles des
- *  câbles et des ports dessinés (légende). */
-export function synopticSvg(syn: { nodes: any[]; cables: any[]; layout: Record<string, { x: number; y: number }> }): Rendered | null {
+/** Synoptique d'une vue : le même dessin que l'écran Synoptique (hors sélection et poignées), dans
+ *  le même ordre de calques. Positions enregistrées (sinon la disposition automatique de
+ *  l'écran) ; câbles routés par le même routage global (mêmes demandes, flèches et adaptateurs
+ *  compris, tracés posés à la main en obstacles), style orthogonal, arrondi ou flèche ; liseré
+ *  de fond qui détache les croisements ; étiquettes connecteur et numéro à chaque extrémité,
+ *  avec l'alerte des numéros en double et des câbles à vérifier ; renvoi vers l'autre bout pour
+ *  un câble qui sort de la vue ou en flèche ; zones et textes posés sur la vue. Couleur d'un câble
+ *  et d'un port : sa famille de signal ; motif de trait par famille (lisible en noir et blanc),
+ *  comme l'export de l'écran. Cadré sur tout ce qui est dessiné, à 30 unités de marge : rien
+ *  n'est coupé. Tous les calques sont dessinés (les calques masqués à l'écran sont une
+ *  préférence d'affichage propre au navigateur). `families` : familles dessinées (légende). */
+export function synopticSvg(syn: { nodes: any[]; cables: any[]; layout: Record<string, { x: number; y: number }>; annotations?: any[] }): Rendered | null {
   const { NW, HH, PS, TAG_GAP } = SYN;
   const nodes = (syn.nodes as SynNodeData[]).filter((n) => n.ports.length);
   if (!nodes.length) return null;
@@ -281,21 +314,28 @@ export function synopticSvg(syn: { nodes: any[]; cables: any[]; layout: Record<s
   const pos: Pos = { ...synLayout(nodes, nh), ...syn.layout };
   const byRef = new Map<string, { n: SynNodeData; p: any }>();
   for (const n of nodes) for (const p of n.ports) byRef.set(p.ref, { n, p });
-  const portXY = (ref: string): [number, number, 'l' | 'r'] | null => {
+  const portXY = (ref: string): End | null => {
     const e = byRef.get(ref); if (!e) return null;
     const list = e.p.side === 'l' ? left(e.n) : right(e.n), i = list.indexOf(e.p), at = pos[e.n.key] ?? { x: 0, y: 0 };
     return [e.p.side === 'l' ? at.x : at.x + NW, at.y + HH + i * PS + PS / 2 + 4, e.p.side === 'l' ? 'l' : 'r'];
   };
-  const famOf = (c: any): string => byRef.get(c.a)?.p.family ?? byRef.get(c.b)?.p.family ?? '';
+  const port = (ref: string) => byRef.get(ref)?.p;
+  const cables: any[] = syn.cables ?? [];
+  const inView = (c: any, e: 'a' | 'b'): boolean => c[`${e}_in_view`] ?? byRef.has(c[e]);
+  const both = (c: any) => inView(c, 'a') && inView(c, 'b');
+  const famOf = (c: any): string => port(c.a)?.family ?? port(c.b)?.family ?? '';
   const colOf = (f: string) => esc(familyColor(f || null, { screen: false }));
   const dash = (f: string, sw: number) => { const d = familyDash(f || null); return d.length ? ` stroke-dasharray="${d.map((x) => +(x * sw).toFixed(2)).join(' ')}"${Math.min(...d) <= 1 ? ' stroke-linecap="round"' : ''}` : ''; };
-  const connOf = (c: any) => connShort(byRef.get(c.a)?.p.connector ?? byRef.get(c.b)?.p.connector ?? c.a_info?.connector ?? '');
-  const tagW = (c: any) => Math.ceil(TAG_L + textWidth(connOf(c), MONO_S) + TAG_SEP + textWidth(c.fields?.number || '—', MONO_N) + TAG_R);
+  const connOf = (c: any) => connShort(port(c.a)?.connector ?? port(c.b)?.connector ?? c.a_info?.connector ?? '');
+  const tagW = (c: any) => Math.ceil(TAG_L + textWidth(connOf(c), FONTS.connector) + TAG_SEP + (c.fields?.number ? textWidth(c.fields.number, FONTS.number) : textWidth('—', FONTS.none)) + TAG_R);
   const farName = (info: any) => (info ? (info.external ? info.label : `${info.label} › ${info.port}`) : 'Extrémité manquante');
+  const used = new Set<string>(cables.flatMap((c) => [c.a, c.b]));
+  const seen = new Map<string, number>();
+  for (const c of cables) if (c.fields?.number && !c.fields?.attach) seen.set(c.fields.number, (seen.get(c.fields.number) ?? 0) + 1);
+  const dups = new Set([...seen].filter(([, k]) => k > 1).map(([x]) => x));
   const boxes = nodes.map((n) => { const p = pos[n.key] ?? { x: 0, y: 0 }; return [p.x - 6, p.y - 8, p.x + NW + 6, p.y + nh(n) + 8] as [number, number, number, number]; });
-  const cables = syn.cables.filter((c) => !c.fields?.attach && (byRef.has(c.a) || byRef.has(c.b)));
-  // Tracés posés à la main (sortie horizontale, points de passage, entrée), sinon routage global.
-  const manual = (c: any, A: [number, number, string], B: [number, number, string]): [number, number][] | null => {
+  // Tracés posés à la main (sortie horizontale, points de passage, entrée), comme l'écran.
+  const manual = (c: any, A: End, B: End): [number, number][] | null => {
     const wp: [number, number][] = c.fields?.waypoints ?? []; if (!wp.length) return null;
     const out = TAG_GAP * 2 + tagW(c);
     const exA: [number, number] = [A[0] + (A[2] === 'r' ? out : -out), A[1]], exB: [number, number] = [B[0] + (B[2] === 'r' ? out : -out), B[1]];
@@ -304,68 +344,100 @@ export function synopticSvg(syn: { nodes: any[]; cables: any[]; layout: Record<s
     for (let i = 1; i < raw.length; i++) { const p = pts[pts.length - 1]!, q = raw[i]!; if (p[0] !== q[0] && p[1] !== q[1]) pts.push([q[0], p[1]]); pts.push(q); }
     return pts.filter((q, i) => i === 0 || q[0] !== pts[i - 1]![0] || q[1] !== pts[i - 1]![1]);
   };
+  // Routage global de l'écran : tous les câbles dont les deux bouts sont dans la vue, dans l'ordre
+  // de la réponse (flèches et adaptateurs compris : ils réservent aussi leur couloir à l'écran).
   const reqs: RouteReq[] = [], fixed: [number, number][][] = [];
   for (const c of cables) {
-    const A = portXY(c.a), B = portXY(c.b); if (!A || !B || c.fields?.style === 'arrow') continue;
+    if (!both(c)) continue;
+    const A = portXY(c.a), B = portXY(c.b); if (!A || !B) continue;
     const m = manual(c, A, B); if (m) { fixed.push(m); continue; }
     reqs.push({ id: c.id, a: { x: A[0], y: A[1], side: A[2] }, b: { x: B[0], y: B[1], side: B[2] }, out: tagW(c) + TAG_GAP * 2 + 12, tag: TAG_GAP + tagW(c) / 2 });
   }
   const routed = routeAll(reqs, boxes, fixed);
-  const xs: number[] = [], ys: number[] = [];
-  for (const n of nodes) { const p = pos[n.key]!; xs.push(p.x - 40, p.x + NW + 40); ys.push(p.y - 30, p.y + nh(n) + 30); }
+  // Boîte englobante de tout ce qui est dessiné.
+  let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity;
+  const ext = (xa: number, ya: number, xb: number, yb: number) => { bx0 = Math.min(bx0, xa, xb); by0 = Math.min(by0, ya, yb); bx1 = Math.max(bx1, xa, xb); by1 = Math.max(by1, ya, yb); };
   const fams = new Set<string>();
   for (const n of nodes) for (const p of n.ports) fams.add(p.family ?? '');
-  const lines: string[] = [], tags: string[] = [];
-  const tag = (c: any, P: [number, number, string], col: string) => {
-    const w = tagW(c), x = P[2] === 'r' ? P[0] + TAG_GAP : P[0] - TAG_GAP - w, cw = textWidth(connOf(c), MONO_S);
-    xs.push(x - 4, x + w + 4);
-    const num = c.fields?.number;
-    tags.push(`<g transform="translate(${x} ${P[1] - 9})"><rect width="${w}" height="18" rx="4" fill="${num ? '#FFFFFF' : '#F6EED9'}" stroke="${col}" stroke-width="1"${num ? '' : ' stroke-dasharray="3 2"'}/><rect x="3.5" y="3.5" width="3" height="11" rx="1" fill="${col}"/>`
-      + `<text x="${TAG_L}" y="12.5" font-family="${SVG_MONO}" font-size="9.5" font-weight="bold" fill="${HEX.dark}">${esc(connOf(c))}</text>`
-      + `<text x="${TAG_L + cw + TAG_SEP}" y="13" font-family="${SVG_MONO}" font-size="11" font-weight="bold" fill="${num ? HEX.ink : HEX.dark}"${num ? '' : ' font-style="italic"'}>${esc(num || '—')}</text></g>`);
-  };
-  const far = (x: number, y: number, dx: number, text: string, col: string) => {
-    const ft = fitText(text, 260, FAR_F), fw = Math.ceil(textWidth(ft, FAR_F)) + 18, x0 = dx > 0 ? x + 4 : x - 4 - fw;
-    xs.push(x0 - 4, x0 + fw + 4);
-    tags.push(`<g transform="translate(${x0} ${y - 11})"><rect width="${fw}" height="22" rx="6" fill="#FFFFFF" stroke="${col}" stroke-width="1.2"/><text x="9" y="15" font-family="${F}" font-size="11" font-weight="bold" fill="${HEX.dark}">${esc(ft)}</text></g>`);
-  };
+  const zonesL: string[] = [], cablesL: string[] = [], nodesL: string[] = [], renvoisL: string[] = [], tagsL: string[] = [], labelsL: string[] = [];
+  const anns: any[] = syn.annotations ?? [];
+  for (const a of anns.filter((x) => x.kind === 'zone')) {
+    const d = a.data ?? {}, col = esc(d.color ?? '#2459E0'), name = d.name || 'Zone sans nom';
+    const sd = d.stroke === 'dashed' ? ' stroke-dasharray="10 6"' : d.stroke === 'dotted' ? ' stroke-dasharray="2 5"' : '';
+    zonesL.push(`<rect x="${d.x}" y="${d.y}" width="${d.w}" height="${d.h}" rx="${d.radius ?? 14}" fill="${col}" fill-opacity="${d.opacity ?? 0.08}" stroke="${col}" stroke-width="${d.width ?? 2}"${sd}/>`
+      + `<text x="${d.x + 6}" y="${d.y - 8}" font-family="${SF}" font-size="15" font-weight="bold" fill="${col}">${esc(name)}</text>`);
+    const sw = (d.width ?? 2) / 2;
+    ext(d.x - sw, d.y - sw, d.x + d.w + sw, d.y + d.h + sw); ext(d.x + 6, d.y - 23, d.x + 6 + textWidth(name, FONTS.zone), d.y);
+  }
+  // Liseré du fond sous chaque câble : les croisements restent lisibles, comme à l'écran.
+  const casing = (d: string, w = 6) => `<path d="${d}" fill="none" stroke="${P.bg}" stroke-width="${w}"/>`;
   const arrowHead = (x2: number, y2: number, a: number) => { const L = 11, W = 5; return `M${x2} ${y2}L${x2 - Math.cos(a) * L + Math.sin(a) * W} ${y2 - Math.sin(a) * L - Math.cos(a) * W}L${x2 - Math.cos(a) * L - Math.sin(a) * W} ${y2 - Math.sin(a) * L + Math.cos(a) * W}Z`; };
-  const arrowTo = FONT.unicode ? '→' : '»';
+  const tag = (c: any, Pt: End) => {
+    const w = tagW(c), x = Pt[2] === 'r' ? Pt[0] + TAG_GAP : Pt[0] - TAG_GAP - w, y = Pt[1] - 9, num = c.fields?.number as string | null, col = colOf(famOf(c));
+    const cw = textWidth(connOf(c), FONTS.connector), dup = !!num && dups.has(num), warn = dup || (c.warnings?.length ?? 0) > 0;
+    tagsL.push(`<g transform="translate(${x} ${y})"><rect width="${w}" height="18" rx="4" fill="${P.bg}" stroke="${dup ? P.warn : darker(col)}" stroke-width="${dup ? 1.8 : 1}"/><rect x="3.5" y="3.5" width="3" height="11" rx="1" fill="${col}"/>`
+      + `<text x="${TAG_L}" y="12.5" font-family="${SM}" font-size="9.5" font-weight="bold" fill="${HEX.dark}">${esc(connOf(c))}</text>`
+      + (num ? `<text x="${TAG_L + cw + TAG_SEP}" y="13" font-family="${SM}" font-size="11" font-weight="bold" fill="${HEX.ink}">${esc(num)}</text>`
+        : `<text x="${TAG_L + cw + TAG_SEP}" y="13" font-family="${SM}" font-size="11" font-style="italic" fill="${HEX.dark}">—</text>`)
+      + (warn ? `<g transform="translate(${w + 4} 1)"><path d="M8 1l7.5 14h-15z" fill="${P.warn}"/><text x="8" y="13.5" font-family="${SF}" font-size="10" font-weight="bold" text-anchor="middle" fill="${P.warnFg}">!</text></g>` : '')
+      + '</g>');
+    ext(x - 1, y - 1, x + w + (warn ? 20 : 1), y + 19);
+  };
   for (const c of cables) {
-    const fam = famOf(c), col = colOf(fam), A = portXY(c.a), B = portXY(c.b);
-    fams.add(fam);
-    if (A && B && c.fields?.style === 'arrow') {
-      // Flèche : un renvoi à chaque extrémité, vers l'équipement et le port d'en face.
-      for (const [P, other] of [[A, c.b], [B, c.a]] as const) {
-        const dx = P[2] === 'r' ? 1 : -1, end = P[0] + dx * (tagW(c) + TAG_GAP * 2 + 50), o = byRef.get(other);
-        lines.push(`<path d="M${P[0]} ${P[1]}H${end}" fill="none" stroke="${col}" stroke-width="2.6"${dash(fam, 2.6)}/><path d="${arrowHead(end + dx * 8, P[1], dx > 0 ? 0 : Math.PI)}" fill="${col}"/>`);
-        far(end + dx * 8, P[1], dx, `${arrowTo} ${o ? `${nodeLines(o.n)[0]} › ${o.p.label}` : 'Extrémité manquante'}`, col);
-        tag(c, P, col);
+    const fam = famOf(c), col = colOf(fam), w = tagW(c), attach = !!c.fields?.attach;
+    if (both(c)) {
+      const A = portXY(c.a), B = portXY(c.b); if (!A || !B) continue;
+      if (!attach) fams.add(fam);
+      if (c.fields?.style === 'arrow') {
+        // Flèche : un renvoi à chaque extrémité terminé par une pointe, vers l'équipement et le
+        // port d'en face (face avant ou arrière d'un panel).
+        const ends = ([[A, c.b], [B, c.a]] as const).map(([Pt, other]) => {
+          const dx = Pt[2] === 'r' ? 1 : -1, end = Pt[0] + dx * (w + TAG_GAP * 2 + 50), o = byRef.get(other);
+          const face = o?.n.kind === 'panel' ? (o.p.side === 'l' ? ' arrière' : ' avant') : '';
+          return { Pt, dx, end, ex: end + dx * 8, far: o ? `${nodeLines(o.n)[0]} › ${o.p.label}${face}` : '?' };
+        });
+        const d = ends.map((e) => `M${e.Pt[0]} ${e.Pt[1]}H${e.end}`).join('');
+        cablesL.push(casing(d) + `<path d="${d}" fill="none" stroke="${col}" stroke-width="2.6" stroke-linejoin="round"${dash(fam, 2.6)}/><path d="${ends.map((e) => arrowHead(e.ex, e.Pt[1], e.dx > 0 ? 0 : Math.PI)).join('')}" fill="${col}"/>`);
+        for (const e of ends) {
+          const ft = fitText(e.far, 240, FONTS.far), fw = Math.ceil(textWidth(ft, FONTS.far)) + 20, gx = e.dx > 0 ? e.ex + 4 : e.ex - 4;
+          renvoisL.push(`<g transform="translate(${gx} ${e.Pt[1] - 11})"><rect x="${e.dx > 0 ? 0 : -fw}" width="${fw}" height="22" rx="6" fill="${P.bg}" stroke="${col}" stroke-width="1.2"/><text x="${e.dx > 0 ? 10 : -fw + 10}" y="15" font-family="${SF}" font-size="11" font-weight="bold" fill="${HEX.dark}">${esc(ft)}</text></g>`);
+          ext(e.dx > 0 ? gx : gx - fw, e.Pt[1] - 12, e.dx > 0 ? gx + fw : gx, e.Pt[1] + 12);
+        }
+      } else {
+        const pts = manual(c, A, B) ?? routed.get(c.id)?.pts ?? [[A[0], A[1]], [B[0], B[1]]];
+        const d = c.fields?.style === 'rounded' ? rounded(pts, 12) : rounded(pts, 4);
+        for (const q of pts) ext(q[0] - 3, q[1] - 3, q[0] + 3, q[1] + 3);
+        // Adaptateur attaché : trait épais et plein, sans étiquette.
+        if (attach) cablesL.push(casing(d, 10) + `<path d="${d}" fill="none" stroke="${col}" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" opacity="0.85"/>`);
+        else cablesL.push(casing(d) + `<path d="${d}" fill="none" stroke="${col}" stroke-width="2.2" stroke-linejoin="round"${dash(fam, 2.2)}/>`);
       }
-    } else if (A && B) {
-      const pts = manual(c, A, B) ?? routed.get(c.id)?.pts ?? [[A[0], A[1]], [B[0], B[1]]];
-      for (const q of pts) { xs.push(q[0]); ys.push(q[1]); }
-      lines.push(`<path d="${c.fields?.style === 'rounded' ? rounded(pts, 12) : rounded(pts, 4)}" fill="none" stroke="${col}" stroke-width="2.2" stroke-linejoin="round"${dash(fam, 2.2)}/>`);
-      tag(c, A, col); tag(c, B, col);
+      if (!attach) { tag(c, A); tag(c, B); }
     } else {
       // Une seule extrémité dans la vue : renvoi vers l'autre bout.
-      const P = (A ?? B)!, info = A ? c.b_info : c.a_info, dx = P[2] === 'r' ? 1 : -1, end = P[0] + dx * (tagW(c) + TAG_GAP * 2 + 60);
-      lines.push(`<path d="M${P[0]} ${P[1]}H${end}" fill="none" stroke="${col}" stroke-width="2.2"${dash(fam, 2.2)}/>`);
-      far(end, P[1], dx, `${info?.external ? '↗' : arrowTo} ${farName(info)}`, col);
-      tag(c, P, col);
+      const a = inView(c, 'a'), Pt = portXY(a ? c.a : c.b); if (!Pt) continue;
+      if (!attach) fams.add(fam);
+      const info = a ? c.b_info : c.a_info, dx = Pt[2] === 'r' ? 1 : -1, end = Pt[0] + dx * (w + TAG_GAP * 2 + 60);
+      const ft = fitText(`${info?.external ? '↗' : '→'} ${farName(info)}`, 260, FONTS.far), fw = Math.ceil(textWidth(ft, FONTS.far)) + 18, gx = dx > 0 ? end + 4 : end - 4;
+      const d = `M${Pt[0]} ${Pt[1]}H${end}`;
+      cablesL.push(casing(d) + `<path d="${d}" fill="none" stroke="${col}" stroke-width="2.2" stroke-linejoin="round"${dash(fam, 2.2)}/>`
+        + `<g transform="translate(${gx} ${Pt[1] - 11})"><rect x="${dx > 0 ? 0 : -fw}" width="${fw}" height="22" rx="6" fill="${P.bg}" stroke="${col}" stroke-width="1.2"/><text x="${dx > 0 ? 9 : -fw + 9}" y="15" font-family="${SF}" font-size="11" font-weight="bold" fill="${HEX.dark}">${esc(ft)}</text></g>`);
+      ext(dx > 0 ? gx : gx - fw, Pt[1] - 12, dx > 0 ? gx + fw : gx, Pt[1] + 12);
+      if (!attach) tag(c, Pt);
     }
   }
-  const body: string[] = [];
-  for (const n of nodes) {
-    const p = pos[n.key]!, L = left(n), R = right(n), rows: { l: string; r: string }[] = [];
-    for (let i = 0; i < Math.max(L.length, R.length); i++) {
-      const a = L[i], b = R[i];
-      const [wl, wr] = shareRow(a ? textWidth(a.label) : null, b ? textWidth(b.label) : null, NW - 48);
-      rows.push({ l: a ? fitText(a.label, wl) : '', r: b ? fitText(b.label, wr) : '' });
-    }
-    body.push(synNodeSvg(n, p.x, p.y, rows));
+  for (const n of nodes) { const p = pos[n.key]!; nodesL.push(synNodeSvg(n, p.x, p.y, used)); ext(p.x - 6, p.y - 1, p.x + NW + 6, p.y + nh(n) + 1); }
+  for (const a of anns.filter((x) => x.kind === 'label')) {
+    const d = a.data ?? {}, size = Number(d.size) || 16, text = String(d.text ?? ''), col = esc(d.color ?? HEX.ink);
+    const fam = d.font === 'mono' ? SM : d.font === 'serif' ? 'Georgia, Times, serif' : SF;
+    const tw = Math.ceil(textWidth(text, `${d.italic ? 'italic ' : ''}${d.bold ? 700 : 400} ${size}px ${d.font === 'mono' ? MONO_CSS : d.font === 'serif' ? 'Georgia, serif' : SANS_CSS}`));
+    labelsL.push((d.pill ? `<rect x="${d.x - 8}" y="${d.y - size}" width="${tw + 16}" height="${size * 1.45}" rx="${size * 0.72}" fill="${col}" opacity="0.14"/>` : '')
+      + `<text x="${d.x}" y="${d.y}" font-family="${fam}" font-size="${size}" font-weight="${d.bold ? 'bold' : 'normal'}" font-style="${d.italic ? 'italic' : 'normal'}"${d.underline ? ' text-decoration="underline"' : ''} fill="${col}">${esc(text)}</text>`);
+    ext(d.x - (d.pill ? 8 : 0), d.y - size, d.x + tw + (d.pill ? 8 : 0), d.y + size * 0.45);
   }
-  const x0 = Math.min(...xs), y0 = Math.min(...ys), W = Math.max(...xs) - x0, H = Math.max(...ys) - y0;
+  const M = 30, x0 = Math.floor(bx0 - M), y0 = Math.floor(by0 - M), W = Math.ceil(bx1 + M) - x0, H = Math.ceil(by1 + M) - y0;
   const blocks = nodes.map((n) => { const p = pos[n.key]!; return { box: [p.x - x0, p.y - y0, p.x + NW - x0, p.y + nh(n) - y0] as [number, number, number, number], title: nodeLines(n)[0] }; });
-  return { svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${x0} ${y0} ${W} ${H}" width="${W}" height="${H}"><rect x="${x0}" y="${y0}" width="${W}" height="${H}" fill="#ffffff"/>${lines.join('')}${body.join('')}${tags.join('')}</svg>`, w: W, h: H, families: [...fams], blocks };
+  return {
+    svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${x0} ${y0} ${W} ${H}" width="${W}" height="${H}"><rect x="${x0}" y="${y0}" width="${W}" height="${H}" fill="${P.bg}"/>${zonesL.join('')}${cablesL.join('')}${nodesL.join('')}${renvoisL.join('')}${tagsL.join('')}${labelsL.join('')}</svg>`,
+    w: W, h: H, families: [...fams], blocks,
+  };
 }
