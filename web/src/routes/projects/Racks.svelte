@@ -15,22 +15,26 @@
   import { join } from '../../lib/live.svelte';
   import { nf, relative, pl } from '../../lib/format';
   import { refById, loadRefs, familyColor } from '../../lib/catalog.svelte';
-  import { rackLines, rackText, setRackText, RACK_TEXT, type RackText } from '../../lib/racktext.svelte';
+  import { rackLines, rackText, setRackText, modelOf, RACK_TEXT, type RackText } from '../../lib/racktext.svelte';
   import { faceType, ALU, decor, accFace, visualOf } from '../../lib/faceplate';
-  import { CONTAINER_KINDS, type Accessory, type Article, type ProjectView } from '../../lib/projects';
+  import { CONTAINER_KINDS, type Accessory, type Article, type Instance, type ProjectView } from '../../lib/projects';
   import PanelFace from '../../components/PanelFace.svelte';
   import ProjectPanel from './ProjectPanel.svelte';
   import Rack3D from '../../components/Rack3D.svelte';
   import AllRacks from './AllRacks.svelte';
   import RackPicker from '../../components/RackPicker.svelte';
   import AddArticle from './AddArticle.svelte';
+  import Inspector from '../../components/Inspector.svelte';
+  import FieldError from '../../components/FieldError.svelte';
+  import { ApiError } from '../../lib/api';
+  import { blankClick } from '../../lib/blankclick';
 
   // `fixed` : éditeur d'un seul élément, intégré à une autre page (casquette d'un mobilier).
   let { view, fixed = null }: { view: ProjectView; fixed?: string | null } = $props();
   type Face = 'front' | 'rear' | 'rear_inner';
   type W = 'full' | 'half' | 'third' | 'quarter';
   interface Placement { id: string; article_id: string; instance_id: string | null; face: Face; u_start: number; width: W; col: number; circuit_id: string | null; shelf_id: string | null; rev: number }
-  interface RackEl { placement: Placement; label: string; tag: string | null; custom?: string | null; nature: string; height_u: number; depth_mm: number | null; rear_reserve_mm: number | null; weight_kg: number | null; power_w: number | null; function: string | null; category: string | null; brand: string | null; accessory: Accessory | null; article_rev: number; type_id?: string | null; visual?: string | null }
+  interface RackEl { placement: Placement; label: string; tag: string | null; custom?: string | null; nature: string; height_u: number; depth_mm: number | null; rear_reserve_mm: number | null; weight_kg: number | null; power_w: number | null; function: string | null; category: string | null; brand: string | null; accessory: Accessory | null; article_rev: number; type_id?: string | null; visual?: string | null; item_id?: string | null }
   interface Pending { article_id: string; instance_id?: string; tag?: string; label: string; nature: string; height_u: number | null; width: W | null; rackable: boolean; function: string | null; accessory: Accessory | null; type_id?: string | null; visual?: string | null }
   interface VPdu { article_id: string; rev: number; label: string; accessory: { kind: 'vertical_pdu'; length_mm: number; outlets: number; side: 'left' | 'right'; circuit_id?: string | null }; circuit: string | null; fed: number; free: number; over: boolean }
   interface Circuit { id: string; name: string; phase: 'L1' | 'L2' | 'L3'; rating_a: number; rev: number }
@@ -55,7 +59,6 @@
   let show3d = $state(false);
   let armed = $state<Pending | null>(null);
   let sel = $state<string | null>(null);
-  let hoverU = $state<{ u: number; col: number } | null>(null);
   let newer = $state(false);
   let requested = $state<string | null>(null);
   // « Ajouter du matériel » : la boîte de l'inventaire, réglée sur l'élément affiché.
@@ -96,7 +99,11 @@
 
   async function load() {
     if (!cid) return;
-    try { rack = await api.get<Rack>(`/containers/${cid}/rack`); newer = false; } catch (e) { fail(e); }
+    try {
+      rack = await api.get<Rack>(`/containers/${cid}/rack`); newer = false;
+      // L'élément armé suit le rechargement (mêmes données, nouvel objet).
+      if (armed) { const k = armed.instance_id ?? armed.article_id; armed = rack.pending.find((x) => (x.instance_id ?? x.article_id) === k) ?? null; }
+    } catch (e) { fail(e); }
   }
 
   // Verrou : prise de main à l'ouverture, battement toutes les 20 s, libération à la sortie
@@ -117,11 +124,13 @@
     try { const r = await api.post<{ mine: boolean }>(`/containers/${cid}/rack/lock`); if (!r.mine) { stopBeat(); await load(); } } catch { /* réseau : on réessaie au prochain battement */ }
   }
   function stopBeat() { if (beat) { clearInterval(beat); beat = null; } }
+  // Page quittée : plus aucune lecture de l'état dérivé (cid…) après la destruction (avertissement derived_inert).
+  let destroyed = false;
   async function release(id = cid) {
     stopBeat();
     if (!id) return;
     try { await api.del(`/containers/${id}/rack/lock`); } catch { /* déjà libre */ }
-    if (id === cid) await load();
+    if (!destroyed && id === cid) await load();
   }
   async function requestHand() {
     try { await api.post(`/containers/${cid}/rack/lock/request`); toast(`Demande envoyée à ${rack?.lock?.account_name}.`, 'info'); } catch (e) { fail(e); }
@@ -146,7 +155,29 @@
     if (c.kind === 'lock' && c.action === 'released' && !mine) load();
   }));
   const leave = () => { if (current && beat) fetch(`/api/containers/${current}/rack/lock`, { method: 'DELETE', headers: { 'X-Strata-Request': '1' }, keepalive: true }); };
-  onDestroy(() => { stopBeat(); if (current) release(current); });
+  onDestroy(() => { destroyed = true; stopBeat(); if (current) release(current); });
+
+  // ?i=<exemplaire> (lien « Poser » de l'inventaire) : l'exemplaire posé est sélectionné et montré,
+  // sinon il est armé dans « À placer », prêt à poser.
+  let handledI: string | null = null;
+  $effect(() => {
+    const iid = route.query.get('i'), r = rack, at = cid;
+    if (!iid || !r || !at || handledI === `${at}:${iid}`) return;
+    untrack(() => {
+      handledI = `${at}:${iid}`;
+      const el = r.elements.find((e) => e.placement.instance_id === iid);
+      if (el) {
+        armed = null; sel = el.placement.id;
+        if (!el.placement.shelf_id && face !== el.placement.face && face !== 'side') face = el.placement.face;
+        show3d = false;
+        tick().then(() => document.querySelector<HTMLElement>(`.rack-screen .ritem[data-pl="${CSS.escape(el.placement.shelf_id ?? el.placement.id)}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }));
+        return;
+      }
+      const p = r.pending.find((x) => x.instance_id === iid);
+      if (p?.rackable) { sel = null; if (face === 'side') face = 'front'; show3d = false; arm(p, true); }
+      else if (p) toast(`« ${p.tag ?? p.label} » est hors format rack : posez-le sur une étagère du rack.`, 'info');
+    });
+  });
 
   // ----- Pose et déplacement -----
   // Ordre du document = ordre visuel, du haut vers le bas (parcours au clavier).
@@ -163,18 +194,19 @@
   }
   const selected = $derived(rack?.elements.find((e) => e.placement.id === sel) ?? null);
   let placing = false;
-  async function placeAt(u: number, col: number) {
+  async function placeAt(u: number, col: number, p: Pending | null = armed) {
     // Une pose à la fois : le clic suivant attend la réponse du serveur.
-    if (!armed || !mine || face === 'side' || placing) return;
+    if (!p || !mine || face === 'side' || placing) return;
     lastAction = Date.now();
-    const p = armed;
+    const wasArmed = armed === p;
     placing = true;
     try {
       const r = await api.post<{ adjusted: boolean; warning: string | null; placement: Placement }>(`/containers/${cid}/placements`, { article_id: p.article_id, instance_id: p.instance_id ?? null, face, u_start: u, col });
-      if (r.adjusted) toast(`Posé en U${r.placement.u_start}, la place libre la plus proche.`, 'info');
+      const id = r.placement.id, h = Math.max(1, Math.ceil(p.height_u ?? 1));
+      toast(`« ${p.tag ?? p.label} » posé en ${rangeTxt(r.placement.u_start, h)}.`, 'ok', { run: async () => { await api.del(`/placements/${id}`); if (sel === id) sel = null; await load(); } });
       if (r.warning) toast(r.warning, 'warn');
-      armed = null; sel = r.placement.id; await load();
-      const next = rack?.pending.find((x) => x.article_id === p.article_id && x.rackable);
+      armed = null; aim = null; sel = id; await load(); flash(id);
+      const next = wasArmed ? rack?.pending.find((x) => x.article_id === p.article_id && x.rackable) : null;
       if (next) armed = next;
     } catch (e) { fail(e); } finally { placing = false; }
   }
@@ -199,6 +231,118 @@
       (document.querySelector<HTMLElement>(`[data-pend="${CSS.escape(key)}"]`) ?? document.querySelector<HTMLElement>('.rack-screen .rack-body'))?.focus();
     } catch (x) { fail(x); }
   }
+  // ----- Panneau de l'équipement sélectionné : position et libellé modifiables -----
+  /** Place libre et dans les limites ? Renvoie le message d'erreur, sinon null. */
+  function checkSpot(e: RackEl, u: number, f: Face, col = e.placement.col): string | null {
+    const h = Math.ceil(e.height_u || 1), top = units - h + 1;
+    if (!Number.isInteger(u)) return 'Un numéro d’U entier est attendu.';
+    if (top < 1) return 'L’équipement est plus haut que le rack.';
+    if (u < 1 || u > top) return `Entre U1 et U${top} pour cet équipement de ${fmtU(e.height_u)} U.`;
+    const hit = blocker(h, e.placement.width, col, u, f, e.placement.id);
+    return hit ? `Position occupée par « ${hit.custom || hit.label} ».` : null;
+  }
+  const nameOf = (e: RackEl) => e.custom || e.tag || e.label;
+  const rangeTxt = (u: number, h: number) => (h > 1 ? `U${u}–U${u + h - 1}` : `U${u}`);
+  /** Élément posé qui occupe déjà une partie de la place visée (même face, colonnes qui se chevauchent). */
+  function blocker(h: number, w: W, col: number, u: number, f: Face, skip?: string): RackEl | null {
+    const n = cols(w), a0 = col / n, a1 = (col + 1) / n;
+    return rack?.elements.find((o) => {
+      if (o.placement.id === skip || o.placement.shelf_id || o.placement.face !== f) return false;
+      const m = cols(o.placement.width), b0 = o.placement.col / m, b1 = (o.placement.col + 1) / m;
+      const ou = o.placement.u_start, oh = Math.ceil(o.height_u || 1);
+      return u < ou + oh && ou < u + h && a0 < b1 - 1e-9 && b0 < a1 - 1e-9;
+    }) ?? null;
+  }
+  let uDraft = $state<number | null>(null);
+  let posErr = $state<{ field: 'u' | 'face'; message: string } | null>(null);
+  let labelDraft = $state('');
+  let labelErr = $state<string | null>(null);
+  // Brouillons repris à chaque changement de sélection ou rechargement de l'élévation.
+  $effect(() => {
+    const e = selected;
+    untrack(() => { uDraft = e?.placement.u_start ?? null; labelDraft = e?.custom ?? ''; });
+  });
+  $effect(() => { void sel; untrack(() => { posErr = null; labelErr = null; }); });
+  /** Déplace l'équipement (même appel que le glisser) ; erreur affichée sous le champ, toast avec Annuler. */
+  async function moveTo(e: RackEl, change: { u_start?: number; face?: Face; col?: number }, field: 'u' | 'face') {
+    const p = e.placement, u = change.u_start ?? p.u_start, f = change.face ?? p.face, col = change.col ?? p.col;
+    if (u === p.u_start && f === p.face && col === p.col) { posErr = null; return; }
+    const bad = checkSpot(e, u, f, col);
+    if (bad) { posErr = { field, message: bad }; return; }
+    posErr = null;
+    lastAction = Date.now();
+    const name = e.custom || e.tag || e.label;
+    try {
+      await api.patch(`/placements/${p.id}`, { rev: p.rev, face: f, u_start: u, width: p.width, col, circuit_id: p.circuit_id });
+      await load();
+      // Changement de face : la vue suit l'équipement.
+      if (f !== p.face && face !== 'side') face = f;
+      flash(p.id);
+      toast(`« ${name} » déplacé en ${rangeTxt(u, Math.ceil(e.height_u || 1))}${f !== p.face ? `, face ${FACES[f].toLowerCase()}` : ''}.`, 'ok', { run: async () => {
+        const now = rack?.elements.find((x) => x.placement.id === p.id);
+        if (!now) return false;
+        await api.patch(`/placements/${p.id}`, { rev: now.placement.rev, face: p.face, u_start: p.u_start, width: p.width, col: p.col, circuit_id: now.placement.circuit_id });
+        await load();
+      } });
+    } catch (x) {
+      const m = x instanceof ApiError ? (x.field('u_start') ?? x.field('face')) : undefined;
+      if (m) posErr = { field, message: m }; else fail(x);
+      await load();
+    }
+  }
+  function commitU(e: RackEl) {
+    const u = uDraft;
+    if (u === e.placement.u_start) { posErr = null; return; }
+    if (u == null || Number.isNaN(u)) { posErr = { field: 'u', message: 'Un numéro d’U est attendu, par exemple 12.' }; return; }
+    moveTo(e, { u_start: u }, 'u');
+  }
+  // Libellé personnalisé de l'exemplaire (même appel que l'inventaire) ; révision suivie localement.
+  const instCache = $state<Record<string, Instance>>({});
+  const instOf = (e: RackEl): Instance | null => (e.placement.instance_id ? (instCache[e.placement.instance_id] ?? view.instances.find((i) => i.id === e.placement.instance_id) ?? null) : null);
+  async function saveLabel(i: Instance, label: string) {
+    const cur = instCache[i.id] ?? i;
+    const r = await api.patch<Instance>(`/instances/${i.id}`, { rev: cur.rev, label, serial: cur.serial, mac: cur.mac, inventory_tag: cur.inventory_tag });
+    instCache[i.id] = r;
+    return r;
+  }
+  async function commitLabel(e: RackEl) {
+    const i = instOf(e);
+    if (!i) return;
+    const before = (instCache[i.id] ?? i).label ?? '', next = labelDraft.trim();
+    if (next === before.trim()) { labelErr = null; labelDraft = before; return; }
+    if (next.length > 80) { labelErr = '80 caractères au plus.'; return; }
+    labelErr = null;
+    try {
+      await saveLabel(i, next);
+      await load();
+      toast(next ? `Libellé de « ${i.tag} » enregistré.` : `Libellé de « ${i.tag} » retiré.`, 'ok', { run: async () => { await saveLabel(i, before); await load(); } });
+    } catch (x) {
+      const m = x instanceof ApiError ? x.field('label') : undefined;
+      if (m) labelErr = m; else fail(x);
+    }
+  }
+  /** Touches d'un champ du panneau : Entrée valide, Échap rétablit la valeur et rend la main au panneau. */
+  function cellKey(k: KeyboardEvent, reset: () => void) {
+    if (k.key === 'Enter') { k.preventDefault(); (k.currentTarget as HTMLInputElement).blur(); }
+    else if (k.key === 'Escape') { k.preventDefault(); k.stopPropagation(); reset(); (k.currentTarget as HTMLInputElement).blur(); }
+  }
+  // Ports de la fiche (catalogue), chargés à la sélection quand le rôle permet de lire le catalogue.
+  const portsCache = $state<Record<string, { total: number; inn: number; out: number } | null>>({});
+  $effect(() => {
+    const id = selected?.item_id;
+    if (!id || id in portsCache || !can('catalogue', 'lecture')) return;
+    portsCache[id] = null;
+    api.get<{ item: { data: { ports?: { direction?: string; quantity?: number }[] } } }>(`/catalog/items/${id}`).then((r) => {
+      const ps = r.item.data?.ports ?? [];
+      const q = (d?: string) => ps.filter((x) => !d || x.direction === d).reduce((n, x) => n + (x.quantity ?? 1), 0);
+      portsCache[id] = { total: q(), inn: q('In'), out: q('Out') };
+    }).catch(() => { /* fiche illisible : pas de ports affichés */ });
+  });
+  const portsTxt = (p: { total: number; inn: number; out: number }) => `${p.total}${p.inn || p.out ? ` · ${[p.inn ? `${p.inn} entrée${pl(p.inn)}` : '', p.out ? `${p.out} sortie${pl(p.out)}` : ''].filter(Boolean).join(', ')}` : ''}`;
+  /** Vignette de façade : même rendu que dans le rack, réduit à la largeur du panneau. */
+  let thumbW = $state(0);
+  const thumbZoom = (e: RackEl) => Math.max(0.3, Math.min(1, (thumbW - 20) / (BW + 24), 120 / (Math.max(1, e.height_u) * U)));
+
   async function clearRack() {
     const n = rack?.elements.length ?? 0;
     await ask({
@@ -208,20 +352,99 @@
       run: async () => { const r = await api.post<{ removed: number }>(`/containers/${cid}/placements/clear`); toast(`${r.removed} équipement${pl(r.removed)} remis à placer.`); await load(); },
     });
   }
-  function slotFromEvent(ev: MouseEvent, el: HTMLElement): { u: number; col: number } {
-    const r = el.getBoundingClientRect();
-    const u = Math.max(1, Math.min(units, Math.floor((r.bottom - ev.clientY) / (U * (r.height / (units * U) || 1))) + 1));
-    const n = armed?.width ? cols(armed.width) : 1;
-    const col = Math.min(n - 1, Math.max(0, Math.floor(((ev.clientX - r.left) / r.width) * n)));
-    return { u, col };
-  }
-  // Glisser un élément posé pour le déplacer.
+  // ----- Visée : fantôme de l'équipement à poser ou à déplacer, aimanté au U entier -----
+  // Sujet : équipement glissé depuis le rack (déplacement), glissé depuis « À placer », ou armé (clic, clavier).
   let dragging = $state<RackEl | null>(null);
+  let dragP = $state<Pending | null>(null);
+  /** U de départ visé et colonne (bas de l'équipement). */
+  let aim = $state<{ u: number; col: number } | null>(null);
+  /** Écart, en U, entre le bas de l'équipement et le pointeur (le fantôme suit la prise). */
+  let grabOff = 0;
+  type Subject = { move: RackEl; p?: undefined } | { p: Pending; move?: undefined };
+  const subject = $derived<Subject | null>(dragging ? { move: dragging } : dragP ? { p: dragP } : armed ? { p: armed } : null);
+  const subjH = (s: Subject) => Math.max(1, Math.ceil((s.move ? s.move.height_u : s.p.height_u) ?? 1));
+  const subjW = (s: Subject): W => (s.move ? s.move.placement.width : (s.p.width ?? 'full'));
+  /** Place visée : hauteur, colonne, plage « U36–U39 » et raison courte si la pose est impossible. */
+  function previewAt(s: Subject | null, at: { u: number; col: number } | null) {
+    if (!s || !at || face === 'side' || show3d) return null;
+    const h = subjH(s), w = subjW(s), n = cols(w), col = Math.min(n - 1, Math.max(0, at.col)), u = at.u;
+    let why: string | null = null;
+    if (u + h - 1 > units) why = 'Dépasse le haut du rack';
+    else if (u < 1) why = 'Dépasse le bas du rack';
+    else { const b = blocker(h, w, col, u, face as Face, s.move?.placement.id); if (b) why = `Occupé par ${b.custom || b.label}`; }
+    const same = !!s.move && s.move.placement.face === face && s.move.placement.u_start === u && s.move.placement.col === col;
+    return { u, h, n, col, why, same, name: s.move ? (s.move.custom || s.move.label) : s.p.label, range: rangeTxt(u, h) };
+  }
+  const preview = $derived(previewAt(subject, aim));
+  /** U visé par le pointeur (aimanté au U entier), moins la prise ; colonne d'après la largeur du sujet. */
+  function aimFromEvent(ev: MouseEvent, el: HTMLElement, s: Subject | null = subject) {
+    const r = el.getBoundingClientRect();
+    const under = Math.max(1, Math.min(units, Math.floor((r.bottom - ev.clientY) / (U * (r.height / (units * U) || 1))) + 1));
+    const n = s ? cols(subjW(s)) : 1;
+    const col = Math.min(n - 1, Math.max(0, Math.floor(((ev.clientX - r.left) / r.width) * n)));
+    return { u: under - grabOff, col };
+  }
+  // Numéros de U de la zone visée, et bandes libres de la face affichée pendant une visée.
+  const hotU = (n: number) => !!preview && n >= Math.max(1, preview.u) && n <= Math.min(units, preview.u + preview.h - 1);
+  const freeRuns = $derived.by(() => {
+    if (!subject || face === 'side' || !rack) return [];
+    const busy = new Set<number>();
+    for (const e of faceEls) if (!(subject.move && e.placement.id === subject.move.placement.id)) for (let k = 0; k < Math.ceil(e.height_u || 1); k++) busy.add(e.placement.u_start + k);
+    const out: { u: number; n: number }[] = [];
+    for (let u = 1; u <= units; u++) if (!busy.has(u)) { const last = out[out.length - 1]; if (last && last.u + last.n === u) last.n++; else out.push({ u, n: 1 }); }
+    return out;
+  });
+  // Pose réussie : l'équipement clignote (accent) ; place impossible : le fantôme tremble.
+  let flashId = $state<string | null>(null);
+  function flash(id: string) { flashId = id; setTimeout(() => { if (flashId === id) flashId = null; }, 1300); }
+  let shake = $state(false);
+  function reject(why: string) {
+    toast(`Impossible de poser ici : ${why.charAt(0).toLowerCase()}${why.slice(1)}.`, 'warn');
+    shake = true; setTimeout(() => (shake = false), 420);
+  }
+  /** Valide la visée : pose, déplacement, ou refus indiqué (rien n'est écrit). */
+  function commit(s: Subject | null, at: { u: number; col: number } | null) {
+    const pv = previewAt(s, at);
+    if (!s || !pv) return;
+    if (pv.why) { reject(pv.why); return; }
+    if (s.move) { if (!pv.same) { sel = s.move.placement.id; moveTo(s.move, { u_start: pv.u, face: face as Face, col: pv.col }, 'u'); } return; }
+    placeAt(pv.u, pv.col, s.p);
+  }
+  // Image de glisser transparente : seul le fantôme aimanté montre la place.
+  const BLANK = typeof Image !== 'undefined' ? Object.assign(new Image(), { src: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7' }) : null;
+  function startMove(ev: DragEvent, e: RackEl) {
+    const r = (ev.currentTarget as HTMLElement).getBoundingClientRect(), h = Math.max(1, Math.ceil(e.height_u || 1));
+    grabOff = Math.max(0, Math.min(h - 1, Math.floor(((r.bottom - ev.clientY) / (r.height || 1)) * h)));
+    dragging = e; armed = null; aim = null;
+    if (ev.dataTransfer) { ev.dataTransfer.effectAllowed = 'move'; ev.dataTransfer.setData('text/plain', nameOf(e)); if (BLANK) ev.dataTransfer.setDragImage(BLANK, 0, 0); }
+  }
+  function startPend(ev: DragEvent, p: Pending) {
+    grabOff = Math.floor(Math.max(1, Math.ceil(p.height_u ?? 1)) / 2);
+    dragP = p; armed = null; aim = null;
+    if (ev.dataTransfer) { ev.dataTransfer.effectAllowed = 'copyMove'; ev.dataTransfer.setData('text/plain', p.label); if (BLANK) ev.dataTransfer.setDragImage(BLANK, 0, 0); }
+  }
+  /** Fin du glisser : un lâcher sur une place impossible (refusé par le navigateur) est indiqué. */
+  let lastBad: string | null = null, leftAt = 0;
+  function endDrag() {
+    // Lâché sur une place impossible : le navigateur refuse le dépôt (pas d'événement drop) et
+    // envoie aussitôt dragleave puis dragend. Une sortie du rack plus ancienne n'est pas un refus.
+    if (lastBad && (!leftAt || Date.now() - leftAt < 80)) reject(lastBad);
+    dragging = null; dragP = null; aim = null; lastBad = null; leftAt = 0;
+  }
+  function dragOver(ev: DragEvent) {
+    if (!mine || !(dragging || dragP) || face === 'side') return;
+    ev.preventDefault();
+    aim = aimFromEvent(ev, ev.currentTarget as HTMLElement);
+    leftAt = 0;
+    const pv = previewAt(subject, aim);
+    lastBad = pv?.why ?? null;
+    if (ev.dataTransfer) ev.dataTransfer.dropEffect = pv?.why ? 'none' : 'move';
+  }
   function drop(ev: DragEvent, el: HTMLElement) {
     ev.preventDefault();
-    const at = slotFromEvent(ev, el);
-    if (dragging) { const d = dragging; dragging = null; patch(d, { u_start: at.u, face: face as Face }); }
-    else if (armed) placeAt(at.u, at.col);
+    const s = subject, at = aimFromEvent(ev, el, s);
+    lastBad = null;
+    commit(s, at);
   }
 
   // ----- Circuits -----
@@ -296,26 +519,28 @@
   // ----- Clavier -----
   // Échap remonte d'un seul niveau (équipement armé, puis sélection) ; Suppr retire l'équipement sélectionné (annulable).
   $effect(() => canvasKeys({
-    onEscape: () => { if (armed) { armed = null; hoverU = null; } else if (sel) sel = null; },
+    onEscape: () => { if (armed) { armed = null; aim = null; } else if (sel) sel = null; },
     onDelete: () => { if (mine && selected) unplace(selected); },
   }));
+  // Clic dans le vide (fond du dessin, zone vide, hors du rack) : désélectionne. Pas pendant une pose.
+  $effect(() => blankClick({ enabled: () => !!sel && !armed && !dragging && !dragP, onBlank: () => (sel = null) }));
   /** Pose au clavier : une fois l'équipement armé, flèches haut/bas pour choisir le U, Entrée pour poser. */
   function rackKey(e: KeyboardEvent) {
     if (!armed || face === 'side') return;
     const h = Math.ceil(armed.height_u ?? 1), top = Math.max(1, units - h + 1);
-    const at = hoverU ?? { u: top, col: 0 };
+    const at = aim ?? { u: top, col: 0 };
     const n = armed.width ? cols(armed.width) : 1;
-    if (e.key === 'ArrowUp') hoverU = { ...at, u: Math.min(top, at.u + (e.shiftKey ? 5 : 1)) };
-    else if (e.key === 'ArrowDown') hoverU = { ...at, u: Math.max(1, at.u - (e.shiftKey ? 5 : 1)) };
-    else if (e.key === 'ArrowLeft' && n > 1) hoverU = { ...at, col: Math.max(0, at.col - 1) };
-    else if (e.key === 'ArrowRight' && n > 1) hoverU = { ...at, col: Math.min(n - 1, at.col + 1) };
-    else if (e.key === 'Enter' || e.key === ' ') placeAt(at.u, at.col);
+    if (e.key === 'ArrowUp') aim = { ...at, u: Math.min(top, at.u + (e.shiftKey ? 5 : 1)) };
+    else if (e.key === 'ArrowDown') aim = { ...at, u: Math.max(1, at.u - (e.shiftKey ? 5 : 1)) };
+    else if (e.key === 'ArrowLeft' && n > 1) aim = { ...at, col: Math.max(0, at.col - 1) };
+    else if (e.key === 'ArrowRight' && n > 1) aim = { ...at, col: Math.min(n - 1, at.col + 1) };
+    else if (e.key === 'Enter' || e.key === ' ') commit(subject, at);
     else return;
     e.preventDefault();
   }
-  async function arm(p: Pending) {
-    armed = armed === p ? null : p;
-    hoverU = null;
+  async function arm(p: Pending, force = false) {
+    armed = !force && armed === p ? null : p;
+    aim = null; grabOff = armed ? Math.floor(Math.max(1, Math.ceil(armed.height_u ?? 1)) / 2) : 0;
     if (armed && narrow) sheetOpen = false;
     if (armed) { await tick(); document.querySelector<HTMLElement>('.rack-screen .rack-body')?.focus(); }
   }
@@ -348,7 +573,7 @@
     <div class="dtool">
       {#if !fixed}<RackPicker {view} value={cid ?? ''} onpick={(v) => navigate(`/projets/${view.project.id}/racks/${v.replace(':', '/')}`)} />{/if}
       <!-- En 3D, la face et les textes n'ont pas d'effet : ils sont masqués (le cadrage est dans la vue 3D). -->
-      {#if !show3d}<Seg label="Face" value={face} options={[...rack.faces, 'side' as const].map((f) => ({ value: f, label: FACES[f] }))} onchange={(f) => { face = f; armed = null; hoverU = null; }} />{/if}
+      {#if !show3d}<Seg label="Face" value={face} options={[...rack.faces, 'side' as const].map((f) => ({ value: f, label: FACES[f] }))} onchange={(f) => { face = f; armed = null; aim = null; }} />{/if}
       <Seg label="Rendu" value={show3d ? '3d' : mode} options={[...RENDERS]} onchange={(v) => { if (v === '3d') { show3d = true; armed = null; } else { mode = v; show3d = false; } }} />
       {#if !show3d}<label class="rtx" title="Textes affichés sur les équipements"><span class="flabel">Textes</span><select class="input sm" value={rackText.v} onchange={(e) => setRackText((e.target as HTMLSelectElement).value as RackText)}>{#each Object.entries(RACK_TEXT) as [k, l]}<option value={k}>{l}</option>{/each}</select></label>
         <button class="btn sm ghost" aria-pressed={fitH} title="Ajuster le rack à la hauteur de l’écran" onclick={() => (fitH = !fitH)}><Icon name="fit" size="sm" />Ajuster à la hauteur</button>{/if}
@@ -367,12 +592,13 @@
         </button>
         <section>
           <h2 class="sheet-t">À placer <span class="muted">· {wanted.length}</span></h2>
-          {#if mine && !show3d}<p class="small muted">Choisissez un équipement, puis sa position dans le rack (clic, ou flèches et Entrée). Échap pour annuler.</p>{/if}
+          {#if mine && !show3d}<p class="small muted">Glissez un équipement dans le rack, ou choisissez-le puis sa position (clic, ou flèches et Entrée). Échap pour annuler.</p>{/if}
           {#if canAdd && shownC}<button class="btn sm add-mat" onclick={() => (adding = true)}><Icon name="plus" size="sm" />Ajouter du matériel</button>{/if}
           {#each wantedGroups as g (g.key)}
             <div class="pcat eyebrow"><i style="--c:{g.color}"></i><span>{g.label}</span><b>{g.list.length}</b></div>
           {#each g.list as p (p.instance_id ?? p.article_id)}
-            <button class="pend mini" class:on={armed === p} aria-pressed={armed === p} data-pend={p.instance_id ?? p.article_id} disabled={!mine || face === 'side' || show3d} onclick={() => arm(p)} title="{p.label}{p.tag ? ` · ${p.tag}` : ''}">
+            <button class="pend mini" class:on={armed === p} class:dragging={dragP === p} aria-pressed={armed === p} data-pend={p.instance_id ?? p.article_id} disabled={!mine || face === 'side' || show3d} onclick={() => arm(p)}
+              draggable={mine && face !== 'side' && !show3d} ondragstart={(ev) => startPend(ev, p)} ondragend={endDrag} title="{p.label}{p.tag ? ` · ${p.tag}` : ''}">
               <i class="pm-c" style="--c:{famColor(p.function)}"></i><span class="pm-l">{p.label}</span>{#if p.tag}<span class="pm-t">{p.tag}</span>{/if}<span class="pm-u">{p.height_u} U{p.width && p.width !== 'full' ? ` · ${p.width === 'half' ? '½' : p.width === 'third' ? '⅓' : '¼'}` : ''}</span>
             </button>
           {/each}
@@ -415,28 +641,33 @@
                 {@const k = vpOf().filter((x, j) => j < i && x.accessory.side === v.accessory.side).length}
                 <div class="vpdu" style="{left ? 'left' : 'right'}:{6 + k * 20}px;bottom:calc(24px + {(units * U - h) / 2}px);height:{h}px;--n:{v.accessory.outlets}" title={v.label}><i></i></div>
               {/each}
-              <div class="rack-scale">{#each Array(units) as _, i}<span>{units - i}</span>{/each}</div>
-              <div class="rack-body" role="grid" tabindex={armed ? 0 : -1} aria-label={armed ? `Élévation : position de ${armed.label}${hoverU ? `, U${hoverU.u}` : ''} (flèches haut et bas, Entrée pour poser)` : 'Élévation'}
-                onmousemove={(e) => { if (armed) hoverU = slotFromEvent(e, e.currentTarget as HTMLElement); }}
-                onmouseleave={() => (hoverU = null)}
-                onclick={(e) => { if (armed && !(e.target as Element).closest('.ritem')) { const at = slotFromEvent(e, e.currentTarget as HTMLElement); placeAt(at.u, at.col); } else if (!(e.target as Element).closest('.ritem')) sel = null; }}
+              <div class="rack-scale">{#each Array(units) as _, i}<span class:hot={hotU(units - i)} class:no={hotU(units - i) && !!preview?.why}>{units - i}</span>{/each}</div>
+              <div class="rack-body" class:aiming={!!subject} class:no={!!preview?.why} role="grid" tabindex={armed ? 0 : -1} aria-label={armed ? `Élévation : position de ${armed.label}${preview ? `, ${preview.range}${preview.why ? `, ${preview.why.toLowerCase()}` : ', libre'}` : ''} (flèches haut et bas, Entrée pour poser)` : 'Élévation'}
+                onmousemove={(e) => { if (armed) aim = aimFromEvent(e, e.currentTarget as HTMLElement); }}
+                onmouseleave={() => { if (armed) aim = null; }}
+                onclick={(e) => { if (armed) commit(subject, aimFromEvent(e, e.currentTarget as HTMLElement)); else if (!(e.target as Element).closest('.ritem')) sel = null; }}
                 onkeydown={rackKey}
-                ondragover={(e) => { if (mine) e.preventDefault(); }}
+                ondragover={dragOver}
+                ondragleave={(e) => { if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) { aim = null; leftAt = Date.now(); } }}
                 ondrop={(e) => drop(e, e.currentTarget as HTMLElement)}>
+                {#each freeRuns as r (r.u)}<span class="rfree" style="bottom:calc({r.u - 1} * var(--u));height:calc({r.n} * var(--u))"></span>{/each}
                 {#each faceEls as e (e.placement.id)}
-                  <div class="ritem {e.nature === 'accessory' ? 'acc' : ''} {ALU.has(typeOf(e)) && mode === 'real' ? 'alu' : ''} {e.height_u <= 1 ? 'u1' : ''} {e.placement.width !== 'full' ? `half c${e.placement.col}` : ''}" class:sel={sel === e.placement.id} class:dw={dw(e)} class:draggable={mine} class:dragging={dragging === e}
-                    style={style(e)} role="button" tabindex="0" draggable={mine} aria-pressed={sel === e.placement.id} aria-label="{e.custom ? `${e.custom} · ` : ''}{e.tag ? `${e.tag} · ` : ''}{e.label} · U{e.placement.u_start}" title="{e.custom ? `${e.custom} · ` : ''}{e.tag ? `${e.tag} · ` : ''}{e.label} · U{e.placement.u_start}"
-                    onclick={() => (sel = e.placement.id)} onkeydown={(k) => { if (k.key === 'Enter' || k.key === ' ') { k.preventDefault(); sel = e.placement.id; } }}
-                    ondragstart={() => (dragging = e)} ondragend={() => (dragging = null)}>
+                  <div class="ritem {e.nature === 'accessory' ? 'acc' : ''} {ALU.has(typeOf(e)) && mode === 'real' ? 'alu' : ''} {e.height_u <= 1 ? 'u1' : ''} {e.placement.width !== 'full' ? `half c${e.placement.col}` : ''}" class:sel={sel === e.placement.id} class:dw={dw(e)} class:draggable={mine} class:dragging={dragging === e} class:flash={flashId === e.placement.id}
+                    style={style(e)} data-pl={e.placement.id} role="button" tabindex="0" draggable={mine} aria-pressed={sel === e.placement.id} aria-label="{e.custom ? `${e.custom} · ` : ''}{e.tag ? `${e.tag} · ` : ''}{e.label} · U{e.placement.u_start}" title="{e.custom ? `${e.custom} · ` : ''}{e.tag ? `${e.tag} · ` : ''}{e.label} · U{e.placement.u_start}"
+                    onclick={() => { if (!armed) sel = e.placement.id; }} onkeydown={(k) => { if (k.key === 'Enter' || k.key === ' ') { k.preventDefault(); sel = e.placement.id; } }}
+                    ondragstart={(ev) => startMove(ev, e)} ondragend={endDrag}>
                     {#if e.nature !== 'accessory'}<i class="led"></i>{/if}<span class="rl" class:two={!!rl(e)[1]}>{#if rl(e)[0]}<b class="rn" class:id={!!e.tag && rl(e)[0] === e.tag}>{rl(e)[0]}</b>{/if}{#if rl(e)[1]}<small>{rl(e)[1]}</small>{/if}</span>{#if isShelf(e) && onShelf(e.placement.id).length}<span class="shelf-load">{#each onShelf(e.placement.id) as x (x.placement.id)}<span class="sh-it" style="--c:{famColor(x.function)}">{x.label}</span>{/each}</span>{:else if mode === 'real' && panelOf(e)}<span class="pdec"><PanelFace panel={panelOf(e)!} /></span>{:else if mode === 'real'}<span class="dec">{@html decor(typeOf(e))}</span>{:else}<span class="dec"></span>{/if}
                   </div>
                 {/each}
-                {#if armed && hoverU}
-                  {@const n = armed.width ? cols(armed.width) : 1}
-                  <div class="rghost" style="bottom:calc({Math.min(hoverU.u, units - Math.ceil(armed.height_u ?? 1) + 1) - 1} * var(--u));height:calc({armed.height_u ?? 1} * var(--u));left:calc({(100 * hoverU.col) / n}% + 2px);width:calc({100 / n}% - 4px)"></div>
+                {#if preview && !preview.same}
+                  {@const u0 = Math.max(1, preview.u)}
+                  {@const u1 = Math.min(units, preview.u + preview.h - 1)}
+                  <div class="aim" class:no={!!preview.why} class:shake aria-hidden="true" style="bottom:calc({u0 - 1} * var(--u) + 1px);height:calc({Math.max(1, u1 - u0 + 1)} * var(--u) - 2px);left:calc({(100 * preview.col) / preview.n}% + 2px);width:calc({100 / preview.n}% - 4px)">
+                    <span class="aim-n">{preview.name}</span><span class="aim-u">{preview.range}</span>{#if preview.why}<span class="aim-why">{preview.why}</span>{/if}
+                  </div>
                 {/if}
               </div>
-              <div class="rack-scale">{#each Array(units) as _, i}<span>{units - i}</span>{/each}</div>
+              <div class="rack-scale">{#each Array(units) as _, i}<span class:hot={hotU(units - i)} class:no={hotU(units - i) && !!preview?.why}>{units - i}</span>{/each}</div>
             </div>
           </div>
         {/if}
@@ -445,47 +676,105 @@
       <aside class="pane right">
         {#if selected}
           {@const p = selected.placement}
-          <section>
-            <h2 class="sel-h"><span>{selected.label}</span><button class="icon-btn sm" aria-label="Désélectionner (Échap)" title="Désélectionner (Échap)" onclick={() => (sel = null)}><Icon name="x" /></button></h2>
-            <dl class="kv"><dt>ID</dt><dd class="mono">{selected.tag ?? '—'}</dd><dt>Position</dt><dd>U{p.u_start}{selected.height_u > 1 ? `–${p.u_start + Math.ceil(selected.height_u) - 1}` : ''} · {FACES[p.face]}</dd>
-              <dt>Profondeur</dt><dd>{selected.depth_mm ? `${nf(selected.depth_mm)} mm` : '—'}</dd><dt>Puissance</dt><dd>{selected.power_w ? `${nf(selected.power_w)} W` : '—'}</dd></dl>
+          {@const e = selected}
+          {@const inst = instOf(e)}
+          {@const h = Math.ceil(e.height_u || 1)}
+          {@const ports = e.item_id ? portsCache[e.item_id] : null}
+          <Inspector eyebrow={e.nature === 'accessory' ? (panelOf(e) ? 'Panel' : 'Accessoire') : 'Équipement'} title={e.custom || e.label}
+            id={e.tag} sub={e.custom ? modelOf(e) : e.brand && !e.label.toLowerCase().startsWith(e.brand.toLowerCase()) ? e.brand : null} onclose={() => (sel = null)}>
+            {#snippet thumb()}
+              <div class="ithumb" bind:clientWidth={thumbW}>
+                <div class="ithumb-in" style="--u:{U}px;width:{BW}px;height:{e.height_u * U}px;zoom:{thumbZoom(e)}">
+                  <div class="ritem {e.nature === 'accessory' ? 'acc' : ''} {ALU.has(typeOf(e)) && mode === 'real' ? 'alu' : ''} {e.height_u <= 1 ? 'u1' : ''}" style="{style(e).replace(/;?(bottom|height|left|width):[^;]*/g, '')};left:0;right:0;top:0;bottom:0" aria-hidden="true">
+                    {#if e.nature !== 'accessory'}<i class="led"></i>{/if}<span class="rl" class:two={!!rl(e)[1]}>{#if rl(e)[0]}<b class="rn" class:id={!!e.tag && rl(e)[0] === e.tag}>{rl(e)[0]}</b>{/if}{#if rl(e)[1]}<small>{rl(e)[1]}</small>{/if}</span>{#if mode === 'real' && panelOf(e)}<span class="pdec"><PanelFace panel={panelOf(e)!} /></span>{:else if mode === 'real'}<span class="dec">{@html decor(typeOf(e))}</span>{:else}<span class="dec"></span>{/if}
+                  </div>
+                </div>
+              </div>
+            {/snippet}
             {#each rack.warnings.filter((w) => w.placement_id === p.id) as w}<div class="alert warn"><Icon name="alert" /><span>{w.message}</span></div>{/each}
-            {#if panelOf(selected)}
-              {@const pn = panelOf(selected)!}
-              <div class="pside"><span class="pface-s" style="--h:{pn.height_u}"><PanelFace panel={pn} /></span><span class="muted small">{pn.slots.length} connecteur{pn.slots.length > 1 ? 's' : ''} sur {pn.height_u * pn.per_u} · {pn.groups.length} groupe{pn.groups.length > 1 ? 's' : ''}</span>
-                <button class="btn sm" onclick={() => (editPanel = selected)}><Icon name="grid" size="sm" />{mine ? 'Modifier le panel' : 'Voir le panel'}</button></div>
-            {/if}
-            {#if isShelf(selected)}
-              <div class="stack" style="gap:8px">
-                <span class="flabel">Sur l’étagère · {onShelf(p.id).length} / 10</span>
-                {#each onShelf(p.id) as x (x.placement.id)}<button class="pend" style="padding:8px 10px" onclick={() => (sel = x.placement.id)}><span class="pend-t"><b>{x.label}</b><span>{x.tag ?? ''}</span></span></button>{/each}
-                {#if mine && notRackable.length && onShelf(p.id).length < 10}
-                  {#each notRackable as np (np.instance_id ?? np.article_id)}<button class="btn sm" style="justify-content:flex-start" onclick={() => putOnShelf(selected, np)}><Icon name="plus" size="sm" />Poser {np.label}{np.tag ? ` · ${np.tag}` : ''}</button>{/each}
-                {/if}
-              </div>
-            {/if}
-            {#if selected.placement.shelf_id}
-              <p class="small muted">Posé sur {shelfOf(selected)?.label ?? 'une étagère'} : il en suit la position.</p>
-              {#if mine}
-                <div class="field"><label for="rk-c2">Circuit</label><select class="input sm" id="rk-c2" value={p.circuit_id ?? ''} onchange={(e) => patch(selected, { circuit_id: (e.target as HTMLSelectElement).value || null })}><option value="">Non branché</option>{#each rack.circuits as c}<option value={c.id}>{c.name} · {c.phase} · {c.rating_a} A</option>{/each}</select></div>
-                <button class="btn sm ghost danger" style="align-self:flex-start" title="Retirer de l’étagère (Suppr) : il redevient à placer" onclick={() => unplace(selected)}><Icon name="x" size="sm" />Retirer de l’étagère</button>
+            <section class="insp-sec">
+              <h3>Position</h3>
+              {#if p.shelf_id}
+                <div class="insp-row"><span class="insp-k">Étagère</span><span class="insp-v">{shelfOf(e)?.custom || shelfOf(e)?.label || 'Étagère'} · U{p.u_start}</span></div>
+              {:else}
+                <div class="insp-row">
+                  <label class="insp-k" for="rk-u">U de départ</label>
+                  {#if mine}
+                    <span class="insp-v insp-num"><input class="cell mono" id="rk-u" type="number" inputmode="numeric" min="1" max={Math.max(1, units - h + 1)} step="1" bind:value={uDraft} aria-invalid={posErr?.field === 'u' ? 'true' : undefined} aria-describedby={posErr?.field === 'u' ? 'rk-u-err' : 'rk-u-help'}
+                      onblur={() => commitU(e)} onkeydown={(k) => cellKey(k, () => { uDraft = p.u_start; posErr = null; })}><span class="u">U</span></span>
+                  {:else}<span class="insp-v mono" id="rk-u">U{p.u_start}</span>{/if}
+                  {#if posErr?.field === 'u'}<FieldError message={posErr.message} for="rk-u" />{:else}<span class="help" id="rk-u-help">{h > 1 ? `Occupe U${p.u_start} à U${p.u_start + h - 1}.` : `Occupe U${p.u_start}.`}</span>{/if}
+                </div>
+                <div class="insp-row">
+                  <label class="insp-k" for="rk-face">Face</label>
+                  {#if mine && rack.faces.length > 1}
+                    <span class="insp-v"><select class="cell" id="rk-face" value={p.face} aria-invalid={posErr?.field === 'face' ? 'true' : undefined} aria-describedby={posErr?.field === 'face' ? 'rk-face-err' : undefined}
+                      onchange={(ev) => { const f = (ev.target as HTMLSelectElement).value as Face; moveTo(e, { face: f }, 'face'); }}>{#each rack.faces as f}<option value={f}>{FACES[f]}</option>{/each}</select></span>
+                  {:else}<span class="insp-v" id="rk-face">{FACES[p.face]}</span>{/if}
+                  {#if posErr?.field === 'face'}<FieldError message={posErr.message} for="rk-face" />{/if}
+                </div>
               {/if}
-            {:else if mine}
-              <div style="display:flex;gap:6px;flex-wrap:wrap">
-                <button class="btn sm" onclick={() => patch(selected, { u_start: p.u_start + 1 })} disabled={p.u_start + selected.height_u > units}><span class="rot-up"><Icon name="chevr" size="sm" /></span>Monter d’un U</button>
-                <button class="btn sm" onclick={() => patch(selected, { u_start: p.u_start - 1 })} disabled={p.u_start <= 1}><span class="rot-dn"><Icon name="chevr" size="sm" /></span>Descendre d’un U</button>
-              </div>
-              <div class="field"><label for="rk-face">Face</label><select class="input sm" id="rk-face" value={p.face} onchange={(e) => patch(selected, { face: (e.target as HTMLSelectElement).value as Face })}>{#each rack.faces as f}<option value={f}>{FACES[f]}</option>{/each}</select></div>
-              {#if selected.nature !== 'accessory'}
-                <div class="field"><label for="rk-w">Largeur et colonne</label><select class="input sm" id="rk-w" value="{p.width}:{p.col}" onchange={(e) => { const [w, c] = (e.target as HTMLSelectElement).value.split(':'); patch(selected, { width: w as W, col: Number(c) }); }}>
-                  <option value="full:0">Pleine largeur</option>
-                  {#each [['half', 2, '1/2'], ['third', 3, '1/3'], ['quarter', 4, '1/4']] as [w, n, l]}{#each Array(n) as _, c}<option value="{w}:{c}">{l} · colonne {c + 1}</option>{/each}{/each}
-                </select></div>
-                <div class="field"><label for="rk-c">Circuit</label><select class="input sm" id="rk-c" value={p.circuit_id ?? ''} onchange={(e) => patch(selected, { circuit_id: (e.target as HTMLSelectElement).value || null })}><option value="">Non branché</option>{#each rack.circuits as c}<option value={c.id}>{c.name} · {c.phase} · {c.rating_a} A</option>{/each}</select></div>
+              <div class="insp-row"><span class="insp-k">Hauteur</span><span class="insp-v">{fmtU(e.height_u)} U{p.width !== 'full' ? ` · ${p.width === 'half' ? '½' : p.width === 'third' ? '⅓' : '¼'} de largeur, colonne ${p.col + 1}` : ''}</span></div>
+              {#if e.nature !== 'accessory' || p.shelf_id}
+                <div class="insp-row">
+                  <label class="insp-k" for="rk-c">Circuit</label>
+                  {#if mine}
+                    <span class="insp-v"><select class="cell" id="rk-c" value={p.circuit_id ?? ''} onchange={(ev) => patch(e, { circuit_id: (ev.target as HTMLSelectElement).value || null })}><option value="">Non branché</option>{#each rack.circuits as c}<option value={c.id}>{c.name} · {c.phase} · {c.rating_a} A</option>{/each}</select></span>
+                  {:else}<span class="insp-v" id="rk-c">{rack.circuits.find((c) => c.id === p.circuit_id)?.name ?? 'Non branché'}</span>{/if}
+                </div>
               {/if}
-              <button class="btn sm ghost danger" style="align-self:flex-start" title="Retirer du rack (Suppr) : il redevient à placer" onclick={() => unplace(selected)}><Icon name="x" size="sm" />Retirer du rack</button>
+              {#if p.shelf_id}<p class="insp-note">Posé sur une étagère : il en suit la position.</p>{/if}
+            </section>
+            <section class="insp-sec">
+              <h3>Identification</h3>
+              {#if inst}
+                <div class="insp-row">
+                  <label class="insp-k" for="rk-lbl">Libellé</label>
+                  {#if canAdd}
+                    <span class="insp-v"><input class="cell" id="rk-lbl" maxlength="80" placeholder="Ajouter un libellé" bind:value={labelDraft} aria-invalid={labelErr ? 'true' : undefined} aria-describedby={labelErr ? 'rk-lbl-err' : undefined}
+                      onblur={() => commitLabel(e)} onkeydown={(k) => cellKey(k, () => { labelDraft = e.custom ?? ''; labelErr = null; })}></span>
+                  {:else}<span class="insp-v" class:muted={!e.custom} id="rk-lbl">{e.custom || 'Aucun'}</span>{/if}
+                  <FieldError message={labelErr} for="rk-lbl" />
+                </div>
+              {/if}
+              {#if e.tag}<div class="insp-row"><span class="insp-k">ID</span><span class="insp-v mono">{e.tag}</span></div>{/if}
+              {#if inst?.serial}<div class="insp-row"><span class="insp-k">N° de série</span><span class="insp-v mono">{inst.serial}</span></div>{/if}
+              <div class="insp-row"><span class="insp-k">{e.nature === 'accessory' ? 'Accessoire' : 'Modèle'}</span><span class="insp-v">{modelOf(e)}</span></div>
+            </section>
+            {#if e.nature !== 'accessory' || e.weight_kg || e.depth_mm}
+              <section class="insp-sec">
+                <h3>Caractéristiques</h3>
+                <div class="insp-row"><span class="insp-k">Poids</span><span class="insp-v" class:muted={!e.weight_kg}>{e.weight_kg ? `${nf(e.weight_kg, 1)} kg` : 'Non renseigné'}</span></div>
+                {#if e.nature !== 'accessory'}<div class="insp-row"><span class="insp-k">Puissance</span><span class="insp-v" class:muted={!e.power_w}>{e.power_w ? `${nf(e.power_w)} W` : 'Non renseignée'}</span></div>{/if}
+                <div class="insp-row"><span class="insp-k">Profondeur</span><span class="insp-v" class:muted={!e.depth_mm}>{e.depth_mm ? `${nf(e.depth_mm)} mm` : 'Non renseignée'}</span></div>
+                {#if ports?.total}<div class="insp-row"><span class="insp-k">Ports</span><span class="insp-v">{portsTxt(ports)}</span></div>{/if}
+              </section>
             {/if}
-          </section>
+            {#if panelOf(e)}
+              {@const pn = panelOf(e)!}
+              <section class="insp-sec">
+                <h3>Panel</h3>
+                <div class="pside"><span class="muted small">{pn.slots.length} connecteur{pn.slots.length > 1 ? 's' : ''} sur {pn.height_u * pn.per_u} · {pn.groups.length} groupe{pn.groups.length > 1 ? 's' : ''}</span>
+                  <button class="btn sm" onclick={() => (editPanel = e)}><Icon name="grid" size="sm" />{mine ? 'Modifier le panel' : 'Voir le panel'}</button></div>
+              </section>
+            {/if}
+            {#if isShelf(e)}
+              <section class="insp-sec">
+                <h3>Sur l’étagère · {onShelf(p.id).length} / 10</h3>
+                <div class="stack" style="gap:6px">
+                  {#each onShelf(p.id) as x (x.placement.id)}<button class="pend" style="padding:8px 10px" onclick={() => (sel = x.placement.id)}><span class="pend-t"><b>{x.custom || x.label}</b><span>{x.tag ?? ''}</span></span></button>{:else}<p class="insp-note" style="margin:0">Rien n’est posé sur cette étagère.</p>{/each}
+                  {#if mine && notRackable.length && onShelf(p.id).length < 10}
+                    {#each notRackable as np (np.instance_id ?? np.article_id)}<button class="btn sm" style="justify-content:flex-start" onclick={() => putOnShelf(e, np)}><Icon name="plus" size="sm" />Poser {np.label}{np.tag ? ` · ${np.tag}` : ''}</button>{/each}
+                  {/if}
+                </div>
+              </section>
+            {/if}
+            {#snippet actions()}
+              {#if e.item_id && e.nature !== 'accessory'}<a class="btn sm ghost" href="/catalogue/equipment/{e.item_id}"><Icon name="file" size="sm" />Ouvrir la fiche</a>{/if}
+              {#if cid}<a class="btn sm ghost" href="/projets/{view.project.id}/synoptique/element/{cid}"><Icon name="syn" size="sm" />Voir dans le synoptique</a>{/if}
+              {#if mine}<button class="btn sm ghost danger" title="{p.shelf_id ? 'Retirer de l’étagère' : 'Retirer du rack'} (Suppr) : il redevient à placer" onclick={() => unplace(e)}><Icon name="x" size="sm" />{p.shelf_id ? 'Retirer de l’étagère' : 'Retirer du rack'}</button>{/if}
+            {/snippet}
+          </Inspector>
         {:else}
         <section>
           <h2>Énergie par phase</h2>
@@ -546,15 +835,38 @@
 <style>
   .add-mat { align-self: stretch; justify-content: center; margin: 2px 0 6px; }
   .rack-screen :global(.rack-body) { width: var(--bw, 370px); }
-  .sel-h { justify-content: space-between; align-items: center; }
-  .sel-h span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pcat { display: flex; align-items: center; gap: 8px; margin: 10px 0 2px; padding: 0 2px; }
   .mu-pend { white-space: nowrap; }
-  .rot-up, .rot-dn { display: inline-flex; }
-  .rot-up { transform: rotate(-90deg); }
-  .rot-dn { transform: rotate(90deg); }
   .rack-body:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-  .ritem.dragging { opacity: .35; }
+  /* Visée (pose et déplacement). La baie est un objet sombre fixe : couleurs d'outil claires fixes
+     (accent du thème sombre, erreur du thème sombre), lisibles sur le métal dans les deux thèmes. */
+  .rack { --aim: #9DB0FF; --aim-no: #FF7B70; }
+  .ritem.draggable { cursor: grab; }
+  .ritem.draggable:active { cursor: grabbing; }
+  .ritem.dragging, .pend.dragging { opacity: .4; }
+  .ritem.dragging { outline: 1.5px dashed var(--aim); outline-offset: 1px; filter: none; }
+  .rack-body.aiming { cursor: copy; }
+  .rack-body.aiming.no { cursor: not-allowed; }
+  .rack-body.aiming .ritem { cursor: inherit; }
+  .rack-body.aiming .ritem:not(.dragging) { filter: brightness(.62) saturate(.7); }
+  .rfree { position: absolute; left: 0; right: 0; z-index: 0; pointer-events: none; background: color-mix(in srgb, var(--aim) 9%, transparent); box-shadow: inset 0 1px 0 color-mix(in srgb, var(--aim) 22%, transparent), inset 0 -1px 0 color-mix(in srgb, var(--aim) 22%, transparent); }
+  .aim { position: absolute; z-index: 4; pointer-events: none; box-sizing: border-box; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; align-content: center; column-gap: 8px; row-gap: 1px; padding: 0 8px; overflow: hidden; border-radius: 3px;
+    background: color-mix(in srgb, var(--aim) 26%, rgba(8, 10, 14, .55)); box-shadow: inset 0 0 0 2px var(--aim), 0 0 0 1px rgba(0, 0, 0, .6), 0 6px 16px -6px rgba(0, 0, 0, .7); color: #F6F7FB; font: 600 11.5px/1.25 var(--font); text-align: center; white-space: nowrap; }
+  .aim.no { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--aim-no) 34%, rgba(8, 10, 14, .6)) 0 7px, rgba(8, 10, 14, .6) 7px 14px); box-shadow: inset 0 0 0 2px var(--aim-no), 0 0 0 1px rgba(0, 0, 0, .6); }
+  .aim-n { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+  .aim-u { font: 700 11.5px/1.25 var(--mono); color: var(--aim); font-variant-numeric: tabular-nums; }
+  .aim.no .aim-u, .aim-why { color: var(--aim-no); }
+  .aim-why { font-weight: 700; }
+  .rack-scale span.hot { color: var(--aim); font-weight: 700; }
+  .rack-scale span.hot.no { color: var(--aim-no); }
+  .aim.shake { animation: aim-shake .4s ease; }
+  .ritem.flash { animation: rk-flash 1.2s ease-out; z-index: 3; }
+  @keyframes aim-shake { 20%, 60% { transform: translateX(-5px); } 40%, 80% { transform: translateX(5px); } }
+  @keyframes rk-flash { 0%, 40% { box-shadow: 0 0 0 2px #fff, 0 0 0 6px var(--aim), 0 0 18px 6px var(--aim); } 100% { box-shadow: 0 0 0 0 transparent; } }
+  @media (prefers-reduced-motion: reduce) {
+    .aim.shake, .ritem.flash { animation: none; }
+    .ritem.flash { outline: 2px solid var(--aim); outline-offset: 2px; }
+  }
   .pcat i { width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
   .pcat b { margin-left: auto; font: 600 11px var(--mono); padding: 1px 7px; border-radius: 99px; background: var(--surface-3); color: var(--fg-2); }
   .pend.mini { flex-direction: row; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; min-height: 34px; }
@@ -586,7 +898,11 @@
   .circ-form { align-items: end; }
   .pdec { flex: 1 1 0; min-width: 0; align-self: stretch; display: block; padding: 2px 0; margin-left: 8px; }
   .pside { display: grid; gap: 8px; justify-items: start; }
-  .pface-s { display: block; width: 100%; height: calc(var(--h) * 26px); background: linear-gradient(180deg, #363B42, #1D2025); border-radius: 4px; padding: 2px 4px; }
+  /* Vignette de façade (panneau de droite) : l'équipement tel qu'il est dans le rack, réduit. */
+  .ithumb { width: 100%; display: flex; justify-content: center; }
+  .ithumb-in { position: relative; flex: none; margin: 0 12px; }
+  .ithumb-in .ritem { position: absolute; cursor: default; }
+  .ithumb-in .ritem:hover { filter: none; }
   @media (max-width: 1100px) { .rack-screen .design-body { grid-template-columns: minmax(0, 1fr); height: auto; } }
   .sheet-h { display: none; }
   @media (max-width: 767px) {

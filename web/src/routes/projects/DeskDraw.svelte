@@ -6,12 +6,14 @@
   import { casqProfile, deskExtent, CASQ_W, type DeskData } from '../../lib/sheet';
   import type { Container, DeskPosition } from '../../lib/projects';
 
-  let { desk, casq, posts, mode, sel, selP, w, h, armed, nameOf, gearOf, onhit, onequip, ondropon }: {
+  let { desk, casq, posts, mode, sel, selP, w, h, armed, nameOf, gearOf, onhit, onequip, ondropon, onover }: {
     desk: Container; casq: Container[]; posts: DeskPosition[]; mode: 'side' | 'top';
     sel: string | null; selP: string | null; w: number; h: number; armed: boolean;
     nameOf: (c: Container) => string; gearOf: (p: DeskPosition) => number;
     onhit: (kind: 'c' | 'p', id: string) => void; onequip: (id: string) => void;
     ondropon: (kind: 'c' | 'p', id: string) => void;
+    /** Cible survolée (glisser, ou élément choisi), `null` à la sortie ; renvoie si le dépôt y est possible. */
+    onover?: (kind: 'c' | 'p', id: string | null) => boolean;
   } = $props();
 
   const dd = $derived<DeskData>({
@@ -40,14 +42,21 @@
     else if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); onhit(kind, id); }
   }
   let over = $state<string | null>(null);
+  let bad = $state(false);
   const dz = (kind: 'c' | 'p', id: string) => ({
-    ondragover: (e: DragEvent) => { e.preventDefault(); over = `${kind}:${id}`; },
-    ondragleave: () => { if (over === `${kind}:${id}`) over = null; },
-    ondrop: (e: DragEvent) => { e.preventDefault(); over = null; ondropon(kind, id); },
+    ondragover: (e: DragEvent) => {
+      e.preventDefault(); over = `${kind}:${id}`;
+      bad = !(onover?.(kind, id) ?? true);
+      if (e.dataTransfer) e.dataTransfer.dropEffect = bad ? 'none' : 'move';
+    },
+    ondragleave: (e: DragEvent) => { if (over === `${kind}:${id}` && !(e.currentTarget as Element).contains(e.relatedTarget as Node)) { over = null; bad = false; onover?.(kind, null); } },
+    ondrop: (e: DragEvent) => { e.preventDefault(); over = null; bad = false; ondropon(kind, id); },
+    onpointerenter: () => { if (armed) { over = `${kind}:${id}`; bad = !(onover?.(kind, id) ?? true); } },
+    onpointerleave: () => { if (armed) { over = null; bad = false; onover?.(kind, null); } },
   });
 </script>
 
-<svg class="dd" class:armed viewBox="{vb.x} {vb.y} {vb.w} {vb.h}" width={vb.w * k} height={vb.h * k} role="group" aria-label="{desk.name} · {mode === 'side' ? 'côté' : 'dessus'}" style="--sw:{1.2 / k}">
+<svg class="dd" class:armed class:bad viewBox="{vb.x} {vb.y} {vb.w} {vb.h}" width={vb.w * k} height={vb.h * k} role="group" aria-label="{desk.name} · {mode === 'side' ? 'côté' : 'dessus'}" style="--sw:{1.2 / k}">
   {#if mode === 'side'}
     {@const Dp = dd.depth_mm}
     {@const Hd = dd.height_mm}
@@ -122,6 +131,8 @@
   .post:hover rect { stroke: var(--accent); }
   .post.sel rect, .post:focus-visible rect { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2.5; stroke-dasharray: none; }
   .over rect, polygon.over { stroke: var(--accent); stroke-width: 3; fill: var(--accent-soft); }
+  .bad .over rect, .bad polygon.over { stroke: var(--err); fill: var(--err-soft); }
+  .bad .over { cursor: not-allowed; }
   .armed .cq rect, .armed polygon.cq, .armed .post rect { stroke: var(--accent); }
   .dim line { stroke: var(--fg-3); stroke-width: 1; }
   .dim text, .op { fill: var(--fg-3); font-family: var(--mono); }

@@ -19,6 +19,9 @@
   import AddArticle from './AddArticle.svelte';
   import DeskDraw from './DeskDraw.svelte';
   import DeskPost from './DeskPost.svelte';
+  import Inspector from '../../components/Inspector.svelte';
+  import FieldError from '../../components/FieldError.svelte';
+  import { blankClick } from '../../lib/blankclick';
   import { api } from '../../lib/api';
   import { can } from '../../lib/session.svelte';
   import { toast, fail } from '../../lib/toast.svelte';
@@ -67,7 +70,7 @@
   const posts = $derived<DeskPosition[]>(desk?.kind === 'desk' ? (desk.details?.positions ?? []) : []);
   const selPost = $derived(posts.find((p) => p.id === selP) ?? null);
   function pick(kind: 'c' | 'p', id: string) {
-    if (armed || dragged) { deliver(dragged ?? armed!, kind, id); return; }
+    if (armed || dragged) { hint = null; overT = null; deliver(dragged ?? armed!, kind, id); return; }
     if (kind === 'c') { sel = id; selP = null; } else { selP = id; sel = null; }
   }
   const clearSel = () => { sel = null; selP = null; };
@@ -141,17 +144,24 @@
     if (!desk || busy || !writable) return;
     armed = null; dragged = null;
     const name = p.tag ?? p.label;
+    let placed: string | null = null;
     busy = true;
     try {
       if (kind === 'p') {
         const post = posts.find((x) => x.id === id);
         if (!post) return;
         if (!p.instance_id) { toast('Seul un équipement avec un ID se place sur un poste.', 'warn'); return; }
-        if (p.from !== desk.id) { await moveTo(p, desk.id); await reload(); }
-        const d = desks.find((x) => x.id === desk.id)!;
+        const moved = p.from !== desk.id ? await moveTo(p, desk.id) : null;
+        if (moved) await reload();
+        const d = desks.find((x) => x.id === desk.id)!, did = d.id, iid = p.instance_id!, from = p.from;
         const cur = d.details?.positions ?? [];
-        if (await saveDetails(d, cur.map((x) => (x.id === id ? { ...x, instance_ids: [...x.instance_ids.filter((i) => i !== p.instance_id), p.instance_id!] } : x))))
-          toast(`« ${name} » placé au poste ${post.role || 'sans rôle'}.`);
+        if (await saveDetails(d, cur.map((x) => (x.id === id ? { ...x, instance_ids: [...x.instance_ids.filter((i) => i !== iid), iid] } : x))))
+          toast(`« ${name} » affecté au poste ${post.role || posts.indexOf(post) + 1}.`, 'ok', { run: async () => {
+            const d2 = desks.find((x) => x.id === did);
+            if (!d2 || !(await saveDetails(d2, (d2.details?.positions ?? []).map((x) => (x.id === id ? { ...x, instance_ids: x.instance_ids.filter((i) => i !== iid) } : x))))) return false;
+            if (moved) await moveBack(moved, from, iid);
+            await reload(); await loadRacks();
+          } });
         selP = id; sel = null;
         return;
       }
@@ -159,17 +169,57 @@
       if (!c) return;
       const rackable = p.rackable && !!p.height_u;
       // Place libre en face avant, au plus près du U visé (le haut de la casquette par défaut).
-      const at = rackable ? freeU(c, Math.ceil(p.height_u!), u) : null;
+      const at = rackable ? landing(c, p, u) : null;
       if (rackable && at === null) { toast(`Plus de place libre pour « ${name} » dans ${shortName(c)} : agrandissez la casquette ou retirez du matériel.`, 'warn'); return; }
       const art = p.from === id ? p.article_id : await moveTo(p, id);
       if (!rackable) { toast(`« ${name} » est dans ${shortName(c)} : hors format rack, il se pose sur une étagère avec « Équiper ».`, 'info'); return; }
       if (!canDesign) { toast(`« ${name} » est dans ${shortName(c)} : votre rôle ne permet pas de le poser dans l’élévation.`, 'info'); return; }
-      const r = await withLock(id, () => api.post<{ adjusted: boolean; warning: string | null; placement: { u_start: number } }>(`/containers/${id}/placements`, { article_id: art, instance_id: p.instance_id ?? null, face: 'front', u_start: at, col: 0 }));
-      toast(`« ${name} » posé dans ${shortName(c)} en U${r.placement.u_start}${r.adjusted ? ', la place libre la plus proche' : ''}.`);
+      const r = await withLock(id, () => api.post<{ adjusted: boolean; warning: string | null; placement: { id: string; u_start: number } }>(`/containers/${id}/placements`, { article_id: art, instance_id: p.instance_id ?? null, face: 'front', u_start: at, col: 0 }));
+      const pid = r.placement.id, from = p.from, iid = p.instance_id ?? null;
+      toast(`« ${name} » posé dans ${shortName(c)} en ${rangeTxt(r.placement.u_start, Math.ceil(p.height_u!))}.`, 'ok', { run: async () => {
+        await withLock(id, () => api.del(`/placements/${pid}`));
+        if (from !== id) await moveBack(art, from, iid);
+        await reload(); await loadRacks();
+      } });
       if (r.warning) toast(r.warning, 'warn');
-      sel = id; selP = null;
+      sel = id; selP = null; placed = pid;
     } catch (e) { fail(e); }
-    finally { busy = false; await reload(); await loadRacks(); }
+    finally { busy = false; await reload(); await loadRacks(); if (placed) flash(placed); }
+  }
+  /** Annulation d'une pose : l'exemplaire (ou le matériel) revient dans l'élément d'origine. */
+  async function moveBack(article: string, to: string, instance: string | null) {
+    await reload();
+    const a = view.articles.find((x) => x.id === article);
+    if (a) await api.post(`/articles/${a.id}/move`, { rev: a.rev, container_id: to, location_id: null, instance_id: instance });
+  }
+  const rangeTxt = (u: number, h: number) => (h > 1 ? `U${u}–U${u + h - 1}` : `U${u}`);
+  /** U de départ où l'élément atterrira dans la casquette : place libre la plus proche du pointeur (centré sur lui). */
+  const landing = (c: Container, p: Pending, u?: number) => { const h = Math.max(1, Math.ceil(p.height_u ?? 1)); return freeU(c, h, u == null ? undefined : u - Math.floor(h / 2)); };
+  // ----- Visée : où l'élément va atterrir (cible en surbrillance, message, fantôme dans la casquette) -----
+  interface Hint { key: string; text: string; ok: boolean; cid?: string; u?: number; h?: number }
+  let hint = $state<Hint | null>(null);
+  function hintFor(p: Item, kind: 'c' | 'p', id: string, u?: number): Hint | null {
+    const key = `${kind}:${id}`;
+    if (kind === 'p') {
+      const i = posts.findIndex((x) => x.id === id);
+      if (i < 0) return null;
+      return p.instance_id ? { key, ok: true, text: `Affecter au poste ${posts[i]!.role || i + 1}` } : { key, ok: false, text: 'Seul un équipement avec un ID se place sur un poste' };
+    }
+    const c = casq.find((x) => x.id === id);
+    if (!c) return null;
+    if (!p.rackable || !p.height_u) return { key, ok: true, text: `Ranger dans ${shortName(c)} · hors format rack` };
+    const h = Math.ceil(p.height_u), at = landing(c, p, u);
+    if (at === null) return { key, ok: false, text: `Plus de place libre dans ${shortName(c)}` };
+    return { key, ok: true, text: `Poser dans ${shortName(c)} · ${rangeTxt(at, h)} libre`, cid: c.id, u: at, h };
+  }
+  // Pose réussie : l'équipement posé clignote (accent).
+  let flashId = $state<string | null>(null);
+  function flash(id: string) { flashId = id; setTimeout(() => { if (flashId === id) flashId = null; }, 1300); }
+  /** Lâché sur une cible impossible : le navigateur refuse le dépôt (dragleave puis dragend aussitôt). */
+  let leftAt = 0, lastBad: string | null = null;
+  function endPendDrag() {
+    if (lastBad && (!leftAt || Date.now() - leftAt < 80)) toast(`${lastBad}.`, 'warn');
+    dragged = null; overT = null; hint = null; leftAt = 0; lastBad = null;
   }
   /** Première position libre (face avant) pour `h` U, au plus près de `want`. */
   function freeU(c: Container, h: number, want?: number): number | null {
@@ -190,19 +240,40 @@
     return Math.max(1, Math.min(units, Math.floor((r.bottom - ev.clientY) / (r.height / units)) + 1));
   }
   function dragStart(e: DragEvent, p: Item) {
-    dragged = p;
+    dragged = p; armed = null; hint = null;
     if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', p.label); }
   }
   let overT = $state<string | null>(null);
-  /** Cible du glisser-déposer : casquette ou poste. */
-  const dz = (kind: 'c' | 'p', id: string, inner?: string, units = 6) => ({
-    ondragover: (e: DragEvent) => { if (!dragged) return; e.preventDefault(); overT = `${kind}:${id}`; },
-    ondragleave: () => { if (overT === `${kind}:${id}`) overT = null; },
-    ondrop: (e: DragEvent) => { e.preventDefault(); overT = null; const p = dragged; if (p) deliver(p, kind, id, inner ? uAt(e, (e.currentTarget as Element).querySelector(inner) ?? (e.currentTarget as Element), units) : undefined); },
-  });
+  /** Cible du glisser-déposer (et du survol d'un élément choisi) : casquette ou poste. */
+  const dz = (kind: 'c' | 'p', id: string, inner?: string, units = 6) => {
+    const key = `${kind}:${id}`;
+    const at = (e: MouseEvent) => (inner ? uAt(e, (e.currentTarget as Element).matches(inner) ? (e.currentTarget as Element) : (e.currentTarget as Element).querySelector(inner), units) : undefined);
+    return {
+      ondragover: (e: DragEvent) => {
+        if (!dragged) return;
+        e.preventDefault(); overT = key; leftAt = 0;
+        hint = hintFor(dragged, kind, id, at(e));
+        lastBad = hint && !hint.ok ? hint.text : null;
+        if (e.dataTransfer) e.dataTransfer.dropEffect = hint && !hint.ok ? 'none' : 'move';
+      },
+      ondragleave: (e: DragEvent) => { if (overT === key && !(e.currentTarget as Element).contains(e.relatedTarget as Node)) { overT = null; hint = null; leftAt = Date.now(); } },
+      ondrop: (e: DragEvent) => { e.preventDefault(); overT = null; hint = null; lastBad = null; const p = dragged; if (p) deliver(p, kind, id, at(e)); },
+      onpointermove: (e: PointerEvent) => { if (armed && !drag) { overT = key; hint = hintFor(armed, kind, id, at(e)); } },
+      onpointerleave: () => { if (armed && overT === key) { overT = null; hint = null; } },
+    };
+  };
+  /** Vues de côté et de dessus : la cible survolée est signalée par le dessin ; renvoie si le dépôt est possible. */
+  function overDraw(kind: 'c' | 'p', id: string | null): boolean {
+    const p = dragged ?? armed;
+    if (!id || !p) { if (overT) leftAt = Date.now(); overT = null; hint = null; return true; }
+    overT = `${kind}:${id}`; leftAt = 0;
+    hint = hintFor(p, kind, id);
+    lastBad = dragged && hint && !hint.ok ? hint.text : null;
+    return !hint || hint.ok;
+  }
   /** Clic sur une casquette du dessin : pose de l'élément choisi au U visé, sinon sélection. */
   function hitCasq(ev: MouseEvent, c: Container, inner: string) {
-    if (armed) { const t = ev.currentTarget as Element; deliver(armed, 'c', c.id, uAt(ev, t.matches(inner) ? t : t.querySelector(inner), c.height_u ?? 6)); return; }
+    if (armed) { const t = ev.currentTarget as Element; hint = null; overT = null; deliver(armed, 'c', c.id, uAt(ev, t.matches(inner) ? t : t.querySelector(inner), c.height_u ?? 6)); return; }
     sel = c.id; selP = null;
   }
 
@@ -346,21 +417,32 @@
   type DkKey = 'length_mm' | 'width_mm' | 'outer_height_mm';
   let cq = $state<Record<CqKey, number | null>>({ height_u: null, depth_mm: null, offset_mm: null, tilt_deg: null });
   let dk = $state<Record<DkKey, number | null>>({ length_mm: null, width_mm: null, outer_height_mm: null });
+  let cqErr = $state<Partial<Record<CqKey, string | null>>>({});
   $effect(() => { const c = selC; if (c) untrack(() => { cq = { height_u: c.height_u ?? 6, depth_mm: c.depth_mm ?? 350, offset_mm: Math.round(c.offset_mm ?? 0), tilt_deg: c.tilt_deg ?? 0 }; }); });
+  $effect(() => { void sel; untrack(() => { cqErr = {}; }); });
   $effect(() => { const d = desk; if (d) untrack(() => { dk = { length_mm: d.length_mm ?? null, width_mm: d.width_mm ?? null, outer_height_mm: d.outer_height_mm ?? null }; }); });
-  /** Enregistre le champ quitté (événement change du champ, identifié par son id « cq-… » ou « dk-… »). */
+  /** Enregistre le champ quitté (événement change du champ, identifié par son id « cq-… » ou « dk-… ») ;
+   *  une valeur de casquette hors limites (min et max du champ) reste affichée avec son erreur. */
   function saveField(e: Event) {
-    const id = (e.target as HTMLElement).id;
+    const el = e.target as HTMLInputElement, id = el.id;
     const k = id.slice(3);
-    if (id.startsWith('cq-') && selC && k in cq) patch(selC, { [k]: cq[k as CqKey] });
-    else if (id.startsWith('dk-') && desk && k in dk) patch(desk, { [k]: dk[k as DkKey] });
+    if (id.startsWith('cq-') && selC && k in cq) {
+      const v = cq[k as CqKey], u = el.dataset.unit ? ` ${el.dataset.unit}` : '';
+      if (v == null || Number.isNaN(v)) { cqErr[k as CqKey] = 'Une valeur est attendue.'; return; }
+      if ((el.min !== '' && v < Number(el.min)) || (el.max !== '' && v > Number(el.max))) { cqErr[k as CqKey] = `Entre ${nf(Number(el.min))} et ${nf(Number(el.max))}${u}.`; return; }
+      cqErr[k as CqKey] = null;
+      patch(selC, { [k]: v });
+    } else if (id.startsWith('dk-') && desk && k in dk) patch(desk, { [k]: dk[k as DkKey] });
   }
+  const blurOnEnter = (k: KeyboardEvent) => { if (k.key === 'Enter') { k.preventDefault(); (k.currentTarget as HTMLElement).blur(); } };
   // Clavier : Échap remonte d'un niveau (élément choisi, puis sélection) ; Suppr supprime la casquette ou le poste sélectionné.
   $effect(() => canvasKeys({
     enabled: () => !equip && !!desk,
-    onEscape: () => { if (armed) armed = null; else clearSel(); },
+    onEscape: () => { if (armed) { armed = null; hint = null; overT = null; } else clearSel(); },
     onDelete: () => { if (!writable) return; if (selC) delCasquette(selC); else if (selPost) delPost(selPost); },
   }));
+  // Clic dans le vide (fond du dessin, plateau, hors du mobilier) : désélectionne. Pas pendant une pose ni un glisser.
+  $effect(() => blankClick({ enabled: () => !equip && !!(sel || selP) && !armed && !dragged && !drag, onBlank: clearSel }));
   const shortName = (c: Container | undefined) => (!c ? '' : desk ? c.name.replace(`${desk.name} · `, '') : c.name);
   const equipIt = (id: string) => { if (desk) navigate(deskHref(desk.id, id)); };
   // « Ajouter du matériel » : sur la casquette sélectionnée, sinon sur le mobilier lui-même.
@@ -382,6 +464,15 @@
   const fmtU = (u: number) => nf(u, u % 1 ? 1 : 0);
   const selU = (c: Container) => c.totals.placed_u ?? 0;
 </script>
+
+{#snippet num(id: string, label: string, unit: string, min: number, max: number, step: number, help?: string)}
+  {@const k = id.slice(3) as CqKey}
+  <div class="insp-row">
+    <label class="insp-k" for={id}>{label}</label>
+    <span class="insp-v insp-num"><input class="cell mono" {id} type="number" {min} {max} {step} data-unit={unit} bind:value={cq[k]} disabled={!writable} aria-invalid={cqErr[k] ? 'true' : undefined} aria-describedby={cqErr[k] ? `${id}-err` : help ? `${id}-help` : undefined} onchange={saveField} onkeydown={blurOnEnter}><span class="u">{unit}</span></span>
+    {#if cqErr[k]}<FieldError message={cqErr[k]} for={id} />{:else if help}<span class="help" id="{id}-help">{help}</span>{/if}
+  </div>
+{/snippet}
 
 {#if !desks.length}
   <EmptyState icon="layers" message="Aucun mobilier dans ce projet"
@@ -431,13 +522,13 @@
         </button>
         <section>
           <h2 class="sheet-t">À placer <span class="muted">· {wanted.length}</span></h2>
-          {#if writable && !show3d}<p class="small muted">Choisissez un équipement, puis une casquette ou un poste du dessin (clic ou glisser). Échap pour annuler.</p>{/if}
+          {#if writable && !show3d}<p class="small muted">Glissez un équipement sur une casquette ou un poste du dessin, ou choisissez-le puis cliquez sur la cible. Échap pour annuler.</p>{/if}
           {#if writable}<button class="btn sm add-mat" onclick={() => (adding = true)} title="Ajouter du matériel {selC ? `dans ${shortName(selC)}` : `à ${desk.name}`}"><Icon name="plus" size="sm" />Ajouter du matériel</button>{/if}
           {#each wantedGroups as g (g.key)}
             <div class="pcat eyebrow"><i style="--c:{g.color}"></i><span>{g.label}</span><b>{g.list.length}</b></div>
             {#each g.list as p (keyOf(p))}
               <button class="pend mini" class:on={!!armed && keyOf(armed) === keyOf(p)} aria-pressed={!!armed && keyOf(armed) === keyOf(p)} data-pend={keyOf(p)} disabled={!writable || show3d || busy}
-                draggable={writable && !show3d && !busy} ondragstart={(e) => dragStart(e, p)} ondragend={() => { dragged = null; overT = null; }} onclick={() => arm(p)} title="{p.label}{p.tag ? ` · ${p.tag}` : ''} · {fromName(p)}">
+                draggable={writable && !show3d && !busy} ondragstart={(e) => dragStart(e, p)} ondragend={endPendDrag} class:dragging={!!dragged && keyOf(dragged) === keyOf(p)} onclick={() => arm(p)} title="{p.label}{p.tag ? ` · ${p.tag}` : ''} · {fromName(p)}">
                 <i class="pm-c" style="--c:{famColor(p.function)}"></i><span class="pm-l">{p.label}<small>{fromName(p)}</small></span>{#if p.tag}<span class="pm-t">{p.tag}</span>{/if}<span class="pm-u">{p.height_u ? `${p.height_u} U${wTxt(p.width)}` : 'Hors rack'}</span>
               </button>
             {/each}
@@ -445,13 +536,14 @@
         </section>
       </aside>
 
-      <div class="rack-stage mob-stage" class:stage3d={show3d} class:placing={!!armed || !!dragged} bind:clientWidth={stageW} bind:clientHeight={stageH}>
+      <div class="rack-stage mob-stage" class:stage3d={show3d} class:placing={!!armed || !!dragged} class:nodrop={!!hint && !hint.ok} bind:clientWidth={stageW} bind:clientHeight={stageH}>
+        {#if hint && !show3d}<div class="drop-hint" class:no={!hint.ok} role="status"><Icon name={hint.ok ? 'arrowr' : 'alert'} size="sm" />{hint.text}</div>{/if}
         {#if show3d}
           <Desk3D {desk} casquettes={casq.map((c) => ({ c, elements: racks[c.id]?.elements ?? [] }))} />
         {:else if face === 'side' || face === 'top'}
           <div class="dd-wrap">
             <DeskDraw {desk} {casq} {posts} mode={face} {sel} {selP} w={stageW} h={narrow ? 4000 : stageH - 60} armed={!!armed || !!dragged}
-              nameOf={shortName} gearOf={(p) => p.instance_ids.length} onhit={pick} onequip={equipIt} ondropon={(k, id) => { if (dragged) deliver(dragged, k, id); }} />
+              nameOf={shortName} gearOf={(p) => p.instance_ids.length} onhit={pick} onequip={equipIt} ondropon={(k, id) => { hint = null; lastBad = null; if (dragged) deliver(dragged, k, id); }} onover={overDraw} />
           </div>
         {:else if face === 'casq'}
           <div class="cq-row-wrap">
@@ -463,9 +555,10 @@
                   <div class="rack-scale">{#each Array(units) as _, i}<span>{units - i}</span>{/each}</div>
                   <div class="rack-body" style="width:{BWc}px" role="button" tabindex="0" aria-pressed={sel === c.id} aria-label="{shortName(c)} : Espace pour sélectionner, Entrée pour équiper"
                     onclick={(e) => hitCasq(e, c, '.rack-body')} ondblclick={() => equipIt(c.id)} onkeydown={(e) => { if (e.key === 'Enter' && !armed) { e.preventDefault(); equipIt(c.id); } else if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); pick('c', c.id); } }} {...dz('c', c.id, '.rack-body', units)}>
+                    {#if hint?.cid === c.id && hint.u}<span class="aim" aria-hidden="true" style="bottom:calc({hint.u - 1} * var(--u) + 1px);height:calc({hint.h} * var(--u) - 2px)"><span class="aim-n">{(dragged ?? armed)?.label}</span><span class="aim-u">{rangeTxt(hint.u, hint.h ?? 1)}</span></span>{/if}
                     {#each frontEls(c.id) as e (e.placement.id)}
                       {@const n = cols(e.placement.width)}
-                      <div class="ritem {e.nature === 'accessory' ? 'acc' : ''} {ALU.has(typeOf(e)) && mode === 'real' ? 'alu' : ''} {e.height_u <= 1 ? 'u1' : ''}" title="{e.custom ? `${e.custom} · ` : ''}{e.tag ? `${e.tag} · ` : ''}{e.label} · U{e.placement.u_start}"
+                      <div class="ritem {e.nature === 'accessory' ? 'acc' : ''} {ALU.has(typeOf(e)) && mode === 'real' ? 'alu' : ''} {e.height_u <= 1 ? 'u1' : ''}" class:flash={flashId === e.placement.id} title="{e.custom ? `${e.custom} · ` : ''}{e.tag ? `${e.tag} · ` : ''}{e.label} · U{e.placement.u_start}"
                         style="{skin(e)};bottom:calc({e.placement.u_start - 1} * var(--u) + 1px);height:calc({e.height_u} * var(--u) - 2px);left:calc({(100 * e.placement.col) / n}% + 2px);width:calc({100 / n}% - 4px)">
                         {#if e.nature !== 'accessory'}<i class="led"></i>{/if}<span class="rl" class:two={!!rl(e)[1]}>{#if rl(e)[0]}<b class="rn" class:id={!!e.tag && rl(e)[0] === e.tag}>{rl(e)[0]}</b>{/if}{#if rl(e)[1]}<small>{rl(e)[1]}</small>{/if}</span>{#if mode === 'real'}<span class="dec">{@html decor(typeOf(e))}</span>{:else}<span class="dec"></span>{/if}
                       </div>
@@ -506,10 +599,11 @@
                   <span class="cq-name">{shortName(c)}{c.tilt_deg ? ` · ${nf(c.tilt_deg)}°` : ''}</span>
                   {#if (racks[c.id]?.pending.length ?? 0) > 0}<span class="cq-pend" title="Matériel de cette casquette pas encore posé : Entrée ou double-clic pour l’équiper">{racks[c.id]!.pending.length} à placer</span>{/if}
                   <div class="cq-in">
+                    {#if hint?.cid === c.id && hint.u}<span class="aim" aria-hidden="true" style="bottom:{(hint.u - 1) * up + 1}px;height:{(hint.h ?? 1) * up - 2}px"><span class="aim-u">{rangeTxt(hint.u, hint.h ?? 1)}</span></span>{/if}
                     {#each frontEls(c.id) as e (e.placement.id)}
                       {@const n = cols(e.placement.width)}
                       {@const [l1, l2] = rl(e)}
-                      <span class="ritem {e.nature === 'accessory' ? 'acc' : ''} {ALU.has(typeOf(e)) && mode === 'real' ? 'alu' : ''} {e.height_u <= 1 ? 'u1' : ''}" title="{e.custom ? `${e.custom} · ` : ''}{e.tag ? `${e.tag} · ` : ''}{e.label}"
+                      <span class="ritem {e.nature === 'accessory' ? 'acc' : ''} {ALU.has(typeOf(e)) && mode === 'real' ? 'alu' : ''} {e.height_u <= 1 ? 'u1' : ''}" class:flash={flashId === e.placement.id} title="{e.custom ? `${e.custom} · ` : ''}{e.tag ? `${e.tag} · ` : ''}{e.label}"
                         style="{skin(e)};bottom:{(e.placement.u_start - 1) * up + 1}px;height:{e.height_u * up - 2}px;left:calc({(100 * e.placement.col) / n}% + 1px);width:calc({100 / n}% - 2px)">{#if up * e.height_u > 16}<span class="rl" class:two={!!l2 && up * e.height_u > 30}>{#if l1}<b class="rn" class:id={!!e.tag && l1 === e.tag}>{l1}</b>{/if}{#if l2 && up * e.height_u > 30}<small>{l2}</small>{/if}</span>{#if mode === 'real'}<span class="dec">{@html decor(typeOf(e))}</span>{/if}{/if}</span>
                     {/each}
                   </div>
@@ -525,30 +619,62 @@
         {#if selC}
           {@const c = selC}
           {@const els = racks[c.id]?.elements ?? []}
-          <section>
-            <h2 class="sel-h"><span>{shortName(c)}</span><button class="icon-btn sm" aria-label="Désélectionner (Échap)" title="Désélectionner (Échap)" onclick={clearSel}><Icon name="x" /></button></h2>
-            <div class="field"><label for="cq-n">Nom</label><input class="input" id="cq-n" value={c.name} disabled={!writable} onchange={(e) => patch(c, { name: (e.target as HTMLInputElement).value })}></div>
-            <fieldset class="mob-fs fg2" disabled={!writable} onchange={saveField}>
-              <NumField id="cq-height_u" label="Hauteur" unit="U" min={1} max={24} step={1} bind:value={cq.height_u} />
-              <NumField id="cq-depth_mm" label="Profondeur" unit="mm" min={100} max={900} step={10} bind:value={cq.depth_mm} />
-              <NumField id="cq-offset_mm" label="Position" unit="mm" min={0} step={10} bind:value={cq.offset_mm} help="Depuis le bord gauche du plateau." />
-              <NumField id="cq-tilt_deg" label="Inclinaison" unit="°" min={0} max={60} bind:value={cq.tilt_deg} help="Vers l’arrière, face vers l’opérateur." />
-            </fieldset>
-            <dl class="kv"><dt>Hauteur posée</dt><dd>{fmtU(selU(c))} / {c.height_u} U</dd><dt>Matériel posé</dt><dd>{els.length}</dd><dt>À placer</dt><dd>{racks[c.id]?.pending.length ?? 0}</dd><dt>Poids</dt><dd>{nf(c.totals.weight_kg, 1)} kg</dd><dt>Puissance</dt><dd>{nf(c.totals.power_w)} W</dd><dt>Code câble</dt><dd class="mono">{c.cable_code || '—'}</dd></dl>
-            <a class="btn sm primary" style="align-self:flex-start" href={deskHref(desk.id, c.id)}><Icon name="server" size="sm" />Équiper la casquette</a>
-          </section>
-          <section>
-            <h2>Matériel posé <span class="muted">· {els.length}</span></h2>
-            {#each [...els].sort((a, b) => b.placement.u_start - a.placement.u_start) as e (e.placement.id)}
-              <div class="el-row"><i class="pm-c" style="--c:{famColor(e.function)}"></i><span class="pm-l">{e.label}</span>{#if e.tag}<span class="pm-t">{e.tag}</span>{/if}<span class="pm-u">U{e.placement.u_start}</span></div>
-            {:else}<p class="small muted">Rien n’est posé : « Équiper la casquette », ou glissez du matériel depuis « À placer ».</p>{/each}
-          </section>
-          {#if writable}
-            <section class="rk-clear">
-              {#if els.length && canDesign}<button class="btn sm ghost danger" title="Tous les équipements posés redeviennent « à placer » (après confirmation)" onclick={() => clearCasquette(c)}><Icon name="undo" size="sm" />Vider la casquette</button>{/if}
-              <button class="btn sm ghost danger" title="Supprimer la casquette et son matériel (Suppr, après confirmation)" onclick={() => delCasquette(c)}><Icon name="trash" size="sm" />Supprimer la casquette</button>
+          {@const units = c.height_u ?? 6}
+          <Inspector eyebrow="Casquette" title={shortName(c)} id={c.cable_code || null} sub="{units} U{c.tilt_deg ? ` · ${nf(c.tilt_deg)}°` : ''} · {els.length} posé{pl(els.length)}" onclose={clearSel}>
+            {#snippet thumb()}
+              <div class="cq-thumb" style="zoom:{Math.min(1, 170 / (units * 20 + 46))}" aria-hidden="true">
+                <div class="rack" style="--units:{units};--u:20px">
+                  <div class="rack-scale">{#each Array(units) as _, i}<span>{units - i}</span>{/each}</div>
+                  <div class="rack-body" style="width:195px">
+                    {#each frontEls(c.id) as e (e.placement.id)}
+                      {@const n = cols(e.placement.width)}
+                      <div class="ritem {e.nature === 'accessory' ? 'acc' : ''} {ALU.has(typeOf(e)) && mode === 'real' ? 'alu' : ''} {e.height_u <= 1 ? 'u1' : ''}"
+                        style="{skin(e)};bottom:calc({e.placement.u_start - 1} * var(--u) + 1px);height:calc({e.height_u} * var(--u) - 2px);left:calc({(100 * e.placement.col) / n}% + 2px);width:calc({100 / n}% - 4px)">
+                        {#if e.nature !== 'accessory'}<i class="led"></i>{/if}<span class="rl">{#if rl(e)[0]}<b class="rn" class:id={!!e.tag && rl(e)[0] === e.tag}>{rl(e)[0]}</b>{/if}</span>{#if mode === 'real'}<span class="dec">{@html decor(typeOf(e))}</span>{:else}<span class="dec"></span>{/if}
+                      </div>
+                    {/each}
+                  </div>
+                  <div class="rack-scale">{#each Array(units) as _, i}<span>{units - i}</span>{/each}</div>
+                </div>
+              </div>
+            {/snippet}
+            <section class="insp-sec">
+              <h3>Identification</h3>
+              <div class="insp-row"><label class="insp-k" for="cq-n">Nom</label><span class="insp-v"><input class="cell" id="cq-n" value={c.name} disabled={!writable} maxlength="120" onchange={(e) => patch(c, { name: (e.target as HTMLInputElement).value })} onkeydown={blurOnEnter}></span></div>
+              <div class="insp-row"><span class="insp-k">Code câble</span><span class="insp-v mono" class:muted={!c.cable_code}>{c.cable_code || '—'}</span></div>
             </section>
-          {/if}
+            <section class="insp-sec">
+              <h3>Position sur le plateau</h3>
+              {@render num('cq-offset_mm', 'Position', 'mm', 0, Math.max(0, Math.round(L - WC)), 10, 'Depuis le bord gauche du plateau.')}
+              {@render num('cq-tilt_deg', 'Inclinaison', '°', 0, 60, 1, 'Vers l’arrière, face vers l’opérateur.')}
+            </section>
+            <section class="insp-sec">
+              <h3>Dimensions</h3>
+              {@render num('cq-height_u', 'Hauteur', 'U', 1, 24, 1)}
+              {@render num('cq-depth_mm', 'Profondeur', 'mm', 100, 900, 10)}
+            </section>
+            <section class="insp-sec">
+              <h3>Contenu</h3>
+              <div class="insp-row"><span class="insp-k">Hauteur posée</span><span class="insp-v">{fmtU(selU(c))} / {c.height_u} U</span></div>
+              <div class="insp-row"><span class="insp-k">À placer</span><span class="insp-v">{racks[c.id]?.pending.length ?? 0}</span></div>
+              <div class="insp-row"><span class="insp-k">Poids</span><span class="insp-v">{nf(c.totals.weight_kg, 1)} kg</span></div>
+              <div class="insp-row"><span class="insp-k">Puissance</span><span class="insp-v">{nf(c.totals.power_w)} W</span></div>
+            </section>
+            <section class="insp-sec">
+              <h3>Matériel posé · {els.length}</h3>
+              <div class="el-list">
+                {#each [...els].sort((a, b) => b.placement.u_start - a.placement.u_start) as e (e.placement.id)}
+                  <div class="el-row"><i class="pm-c" style="--c:{famColor(e.function)}"></i><span class="pm-l">{e.custom || e.label}</span>{#if e.tag}<span class="pm-t">{e.tag}</span>{/if}<span class="pm-u">U{e.placement.u_start}</span></div>
+                {:else}<p class="insp-note" style="margin:0">Rien n’est posé : « Équiper la casquette », ou glissez du matériel depuis « À placer ».</p>{/each}
+              </div>
+            </section>
+            {#snippet actions()}
+              <a class="btn sm primary" href={deskHref(desk.id, c.id)}><Icon name="server" size="sm" />Équiper la casquette</a>
+              <a class="btn sm ghost" href="/projets/{pid}/synoptique/element/{c.id}"><Icon name="syn" size="sm" />Voir dans le synoptique</a>
+              {#if writable && els.length && canDesign}<button class="btn sm ghost danger" title="Tous les équipements posés redeviennent « à placer » (après confirmation)" onclick={() => clearCasquette(c)}><Icon name="undo" size="sm" />Vider la casquette</button>{/if}
+              {#if writable}<button class="btn sm ghost danger" title="Supprimer la casquette et son matériel (Suppr, après confirmation)" onclick={() => delCasquette(c)}><Icon name="trash" size="sm" />Supprimer la casquette</button>{/if}
+            {/snippet}
+          </Inspector>
         {:else if selPost}
           <DeskPost post={selPost} index={posts.indexOf(selPost)} positions={posts} {gear} {writable} onsave={savePosts} onclose={clearSel} ondelete={() => delPost(selPost)} />
         {:else}
@@ -618,8 +744,6 @@
   .mob .mob-equip :global(.rack-screen) { flex: 1; min-height: 0; display: flex; flex-direction: column; }
   .mob .mob-equip :global(.rack-screen .design-body) { flex: 1; height: auto; min-height: 0; }
   .mob-fs { margin: 0; padding: 0; border: 0; min-width: 0; }
-  .sel-h { justify-content: space-between; align-items: center; }
-  .sel-h span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .add-mat { align-self: stretch; justify-content: center; margin: 2px 0 6px; }
   .pcat { display: flex; align-items: center; gap: 8px; margin: 10px 0 2px; padding: 0 2px; }
   .pcat i { width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
@@ -635,13 +759,37 @@
   .rtx { display: inline-flex; align-items: center; gap: 8px; }
   .rtx .input { width: auto; }
   .rk-clear { padding-top: 14px; border-top: 1px solid var(--line); }
+  .el-list { display: grid; gap: 4px; padding-top: 4px; }
   .el-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; min-height: 34px; border-radius: 8px; background: var(--surface-2); }
+  /* Vignette de la casquette (panneau de droite) : son élévation, réduite. */
+  .cq-thumb { display: flex; justify-content: center; }
+  .cq-thumb .rack { grid-template-columns: 20px auto 20px; padding: 12px 5px 14px; box-shadow: var(--rack-rim), 0 6px 14px -8px rgba(0, 0, 0, .5); }
+  .cq-thumb .rack-scale { font-size: 11px; }
+  .cq-thumb .ritem { cursor: default; font-size: 11px; }
   .cq-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; padding: 8px 10px; border: 0; border-radius: 10px; background: var(--surface-2); text-align: left; font: inherit; color: inherit; cursor: pointer; }
   .cq-row:hover { box-shadow: inset 0 0 0 1.5px var(--accent); }
   .cq-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .cq-row .muted.small:last-child:not(:nth-child(2)) { grid-column: 1 / -1; }
   .rack-stage.stage3d { padding: 0; display: block; align-self: stretch; }
   .mob-stage.placing { cursor: copy; }
+  .mob-stage.placing.nodrop { cursor: not-allowed; }
+  /* Visée : message de la cible survolée, fantôme de l'élément dans la casquette. Les casquettes sont
+     des objets sombres fixes : couleurs d'outil claires fixes (accent et erreur du thème sombre). */
+  .mob-stage { position: relative; --aim: #9DB0FF; --aim-no: #FF7B70; }
+  .drop-hint { position: absolute; z-index: 6; top: 12px; left: 50%; transform: translateX(-50%); max-width: calc(100% - 24px); display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 12px; border-radius: 999px; background: var(--surface); box-shadow: 0 0 0 1.5px var(--accent), var(--e1); color: var(--fg); font: 600 var(--fs-sm)/1.2 var(--font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+  .drop-hint :global(.ic) { color: var(--accent); flex: none; }
+  .drop-hint.no { box-shadow: 0 0 0 1.5px var(--err), var(--e1); }
+  .drop-hint.no :global(.ic) { color: var(--err); }
+  .aim { position: absolute; left: 2px; right: 2px; z-index: 4; pointer-events: none; box-sizing: border-box; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; align-content: center; column-gap: 6px; overflow: hidden; border-radius: 2px; background: color-mix(in srgb, var(--aim) 26%, rgba(8, 10, 14, .55)); box-shadow: inset 0 0 0 2px var(--aim); color: #F6F7FB; font: 600 11px/1.2 var(--font); white-space: nowrap; }
+  .aim-n { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+  .aim-u { font: 700 11px/1.2 var(--mono); color: var(--aim); }
+  .pend.mini.dragging { opacity: .4; }
+  .nodrop .cq.over { box-shadow: inset 0 3px 0 #1b1d21, inset 0 4px 0 rgba(220,224,230,.6), 0 0 0 2px var(--err), 0 0 0 6px color-mix(in srgb, var(--err) 22%, transparent); }
+  .nodrop .cq-el .rack.over { box-shadow: var(--rack-rim), 0 0 0 3px var(--err); }
+  .nodrop .post.over { background: color-mix(in srgb, var(--err) 55%, transparent); }
+  .ritem.flash { animation: mob-flash 1.2s ease-out; z-index: 3; }
+  @keyframes mob-flash { 0%, 40% { box-shadow: 0 0 0 2px #fff, 0 0 0 5px var(--aim), 0 0 16px 5px var(--aim); } 100% { box-shadow: 0 0 0 0 transparent; } }
+  @media (prefers-reduced-motion: reduce) { .ritem.flash { animation: none; outline: 2px solid var(--aim); outline-offset: 1px; } }
 
   /* ----- Vue de côté et de dessus ----- */
   .dd-wrap { margin: auto; }
