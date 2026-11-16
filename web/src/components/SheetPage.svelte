@@ -4,8 +4,9 @@
   // Impression : cadre à 10 mm du bord, aucun texte sous 6 pt (2,15 mm), petits textes en #333.
   // Baies : vues avant, arrière, côté et 3D, en rendu réel (façades simplifiées), schématique
   // (aplats à la couleur de la famille de signal, catégorie en texte) ou 3D ; mobilier : face,
-  // côté, dessus, 3D et casquettes ; synoptiques (même rendu que l'écran et le dossier, mis à
-  // l'échelle). Chaque dessin a sa propre échelle (`zoom`). Couleurs et traits de pdfkit.
+  // côté, dessus, 3D et casquettes ; synoptiques (le dessin de l'écran Synoptique, lib/render,
+  // cadré sur tout son contenu et mis à l'échelle). Chaque dessin a sa propre échelle (`zoom`),
+  // réglée par les poignées de coin. Couleurs et traits de pdfkit.
   import { familyColor } from '../lib/catalog.svelte';
   import { rackLines } from '../lib/racktext.svelte';
   import { slotColor as panelSlotColor } from '../lib/panel';
@@ -15,18 +16,21 @@
   import {
     BLOCK, CASQ_W, CASQ_EXTRA, FRAME, RACK_NUM, RACK_VIEWS, DESK_VIEWS, SYN_MM, U_MM,
     casqProfile, deskExtent, groupLayout, isDrawing, itemSize, pageSize, rackGeom, rackBodyH, scaleOf, shotKey, usableW, viewsOf, zoomOf,
-    type Ctx, type DeskData, type RackData, type RackRender, type Sheet, type SheetItem, type SheetPage, type ViewBox,
+    type Corner, type Ctx, type DeskData, type RackData, type RackRender, type Sheet, type SheetItem, type SheetPage, type ViewBox,
   } from '../lib/sheet';
 
   /** `revision` : révision du projet, affichée quand la planche n'a pas de version propre. */
   interface Info { project: string; client: string; venue: string; site: string; date: string; revision?: string; locations: Record<string, { name: string; code: string }> }
   let { sheet, page, ctx, info, index, total, shots = {}, editable = false, selected = null, onpick, onresize, onselect, nameOf }: {
     sheet: Sheet; page: SheetPage; ctx: Ctx; info: Info; index: number; total: number; shots?: Record<string, string>;
-    editable?: boolean; selected?: string | null; onpick?: (it: SheetItem, e: PointerEvent) => void; onresize?: (it: SheetItem, e: PointerEvent) => void;
+    editable?: boolean; selected?: string | null; onpick?: (it: SheetItem, e: PointerEvent) => void;
+    /** Poignée de coin saisie : le coin opposé reste en place pendant le redimensionnement. */
+    onresize?: (it: SheetItem, e: PointerEvent, corner: Corner) => void;
     /** Sélection au clavier (focus, Entrée ou Espace) ; `nameOf` : nom lu par les lecteurs d'écran. */
     onselect?: (it: SheetItem) => void; nameOf?: (it: SheetItem) => string;
   } = $props();
 
+  const CORNERS: [Corner, string][] = [['nw', 'haut gauche'], ['ne', 'haut droit'], ['sw', 'bas gauche'], ['se', 'bas droit']];
   const F = 'Inter, Helvetica, Arial, sans-serif', MONO = 'JetBrainsMono, Courier, monospace';
   /** Encre et gris foncé des petits textes, ceux des PDF (pdfkit) ; LINE : contour des appareils. */
   const INK = HEX.ink, DARK = HEX.dark, LINE = '#3A4048';
@@ -404,7 +408,12 @@
     {#if it}
       {@const [w, h] = itemSize(it, k, ctx, maxW)}
       {@const hs = Math.max(2.6, size[0] / 110)}
-      <rect class="rz" x={it.x + w + 1.5 - hs / 2} y={it.y + h + 1.5 - hs / 2} width={hs} height={hs} rx={hs * 0.2} fill="#FFFFFF" stroke="#4F6BFF" stroke-width={hs * 0.14} role="button" aria-label="Redimensionner" tabindex="-1" onpointerdown={(e) => { e.stopPropagation(); onresize(it, e); }} />
+      <!-- Une poignée à chaque coin : proportions gardées, le coin opposé ne bouge pas. -->
+      {#each CORNERS as [c, l] (c)}
+        {@const cx = c[1] === 'w' ? it.x - 1.5 : it.x + w + 1.5}
+        {@const cy = c[0] === 'n' ? it.y - 1.5 : it.y + h + 1.5}
+        <rect class="rz rz-{c}" x={cx - hs / 2} y={cy - hs / 2} width={hs} height={hs} rx={hs * 0.2} fill="#FFFFFF" stroke="#4F6BFF" stroke-width={hs * 0.14} role="button" aria-label="Redimensionner (coin {l})" tabindex="-1" onpointerdown={(e) => { e.stopPropagation(); onresize(it, e, c); }}><title>Glisser pour redimensionner (proportions gardées)</title></rect>
+      {/each}
     {/if}
   {/if}
   {#if sheet.titleBlock}
@@ -429,5 +438,6 @@
   .it.edit { cursor: grab; outline: none; }
   .it.edit:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .it.edit:active { cursor: grabbing; }
-  .rz { cursor: nwse-resize; }
+  .rz-nw, .rz-se { cursor: nwse-resize; }
+  .rz-ne, .rz-sw { cursor: nesw-resize; }
 </style>

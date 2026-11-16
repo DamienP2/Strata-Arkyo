@@ -3,8 +3,10 @@
   // schématique ou 3D), du mobilier (face, côté, dessus, 3D, casquettes), des synoptiques, de
   // titres de lieux et d'emplacements réservés, sur une ou plusieurs feuilles avec cartouche.
   // La feuille occupe la page (zoom, défilement) ; le panneau de droite montre l'élément
-  // sélectionné, ou la bibliothèque et le cartouche. Chaque dessin se redimensionne par sa
-  // poignée (échelle propre, proportions gardées). Réglages mémorisés par projet ; export PDF
+  // sélectionné, ou la bibliothèque et le cartouche. Chaque dessin se redimensionne par ses
+  // poignées de coin (échelle propre, proportions gardées, coin opposé fixe) ou par son champ
+  // Échelle (%) ; un synoptique dont le texte passe sous 6 pt est signalé. Réglages mémorisés
+  // par projet ; export PDF
   // vectoriel, PNG ou JPG. Enregistrement automatique (lib/autosave), pile Annuler / Rétablir,
   // clavier commun des canevas (lib/canvaskeys) : Échap, Suppr, Ctrl+Z, flèches (1 mm, 10 mm avec Maj).
   import { tick, untrack } from 'svelte';
@@ -28,9 +30,9 @@
   import { loadRefs } from '../../lib/catalog.svelte';
   import type { ProjectView } from '../../lib/projects';
   import {
-    PAPERS, SCALES, RACK_VIEWS, DESK_VIEWS, RACK_RENDERS, FRAME, MARGIN, BLOCK, SYN_MM, SYN_MIN, ZOOM_MAX, ZOOM_MIN,
-    autoLayout, blankSheet, fileName, groupLayout, isDrawing, itemSize, normalize, pageSize, scaleOf, shotKey, shotViews, uid, usableW, viewsOf, zoomOf,
-    type Ctx, type Paper, type RackRender, type Sheet, type SheetItem,
+    PAPERS, SCALES, RACK_VIEWS, DESK_VIEWS, RACK_RENDERS, FRAME, MARGIN, BLOCK, MIN_PT, SYN_LEGIBLE, SYN_MM, SYN_MIN, ZOOM_MAX, ZOOM_MIN,
+    autoLayout, blankSheet, fileName, groupLayout, isDrawing, itemSize, minTextPt, normalize, pageSize, scaleOf, shotKey, shotViews, uid, usableW, viewsOf, zoomOf,
+    type Corner, type Ctx, type Paper, type RackRender, type Sheet, type SheetItem,
   } from '../../lib/sheet';
   import { isDesk, loadCtx, loadSyn, shot3D, shotsFor, synIds, synViews } from '../../lib/sheetctx';
   import { pl } from '../../lib/format';
@@ -178,39 +180,64 @@
     if (d && (d.it.x !== d.x0 || d.it.y !== d.y0)) changed();
   }
 
-  // Redimensionner un dessin par sa poignée de coin : échelle propre, proportions gardées.
-  let rz: { it: SheetItem; w0: number; h0: number; z0: number; x0: number; y0: number } | null = null;
+  // Redimensionner un dessin par l'une de ses poignées de coin : échelle propre, proportions
+  // gardées (un dessin à l'échelle ne se déforme pas), le coin opposé reste en place.
+  let rz: { it: SheetItem; w0: number; h0: number; z0: number; x0: number; y0: number; ax: number; ay: number; sx: number; sy: number } | null = null;
   let resizing = $state(false);
   const zMin = (it: SheetItem) => (it.kind === 'synoptic' ? SYN_MIN : ZOOM_MIN);
-  const clampZ = (it: SheetItem, z: number) => Math.round(Math.min(ZOOM_MAX, Math.max(zMin(it), z)) * 100) / 100;
-  function startResize(it: SheetItem, e: PointerEvent) {
+  const clampZ = (it: SheetItem, z: number) => Math.round(Math.min(ZOOM_MAX, Math.max(zMin(it), z)) * 1000) / 1000;
+  function startResize(it: SheetItem, e: PointerEvent, corner: Corner = 'se') {
     if (!writable || !sheet) return;
     e.preventDefault();
     selected = it.id;
     const [w0, h0] = itemSize(it, sheet.scale, ctx, usableW(sheet));
-    rz = { it, w0, h0, z0: zoomOf(it), x0: it.x, y0: it.y }; resizing = true;
+    const sx = corner[1] === 'e' ? 1 : -1, sy = corner[0] === 's' ? 1 : -1;
+    rz = { it, w0, h0, z0: zoomOf(it), x0: it.x, y0: it.y, ax: sx > 0 ? it.x : it.x + w0, ay: sy > 0 ? it.y : it.y + h0, sx, sy }; resizing = true;
     window.addEventListener('pointermove', moveResize);
     window.addEventListener('pointerup', upResize, { once: true });
   }
   function moveResize(e: PointerEvent) {
     if (!rz || !sheet) return;
     const [x, y] = toMm(e);
-    // Projection du pointeur sur la diagonale du dessin : agrandit ou réduit des deux côtés à la fois.
-    const dx = x - rz.it.x, dy = y - rz.it.y;
+    // Projection du pointeur sur la diagonale issue du coin opposé : agrandit ou réduit des deux côtés à la fois.
+    const dx = (x - rz.ax) * rz.sx, dy = (y - rz.ay) * rz.sy;
     const ratio = (dx * rz.w0 + dy * rz.h0) / (rz.w0 * rz.w0 + rz.h0 * rz.h0);
-    rz.it.zoom = clampZ(rz.it, rz.z0 * Math.max(0.05, ratio));
+    rz.it.zoom = clampZ(rz.it, rz.z0 * Math.max(0.02, ratio));
+    const [w, h] = itemSize(rz.it, sheet.scale, ctx, usableW(sheet));
+    rz.it.x = Math.round((rz.sx > 0 ? rz.ax : rz.ax - w) * 10) / 10;
+    rz.it.y = Math.round((rz.sy > 0 ? rz.ay : rz.ay - h) * 10) / 10;
   }
   function upResize() {
     window.removeEventListener('pointermove', moveResize);
     const r = rz; rz = null; resizing = false;
     if (!r) return;
     keepIn(r.it);
+    // Agrandi par un coin haut ou gauche : le dessin reste dans le cadre.
+    r.it.x = Math.max(FRAME, r.it.x); r.it.y = Math.max(FRAME, r.it.y);
     if (zoomOf(r.it) !== r.z0 || r.it.x !== r.x0 || r.it.y !== r.y0) changed();
   }
   /** Le dessin dépasse-t-il la zone dans le cadre ? */
   const tooBig = (it: SheetItem) => { if (!sheet) return false; const [W, H] = pageSize(sheet), [w, h] = itemSize(it, sheet.scale, ctx, usableW(sheet)); return w > W - 2 * FRAME + 0.5 || h > H - 2 * FRAME + 0.5; };
   /** Taille propre : `commit` à faux pendant le glissement du curseur (aperçu), vrai au lâcher. */
   function setZoom(it: SheetItem, z: number, commit = true) { it.zoom = clampZ(it, z); keepIn(it); if (commit) changed('zoom:' + it.id); }
+  /** Synoptique posé entier dans le cadre de la feuille (même calcul qu'à l'ajout). */
+  function fitSel(it: SheetItem) {
+    const r = ctx.syn?.[it.container_id ?? '']; if (!r || !sheet) return;
+    setZoom(it, synFit(r));
+    putAt(it, it.x, it.y);
+  }
+  /** Échelle propre en %, saisie au clavier (alternative aux poignées), validée en sortie de champ. */
+  const pctOf = (it: SheetItem) => Math.round(zoomOf(it) * 1000) / 10;
+  let zPct = $state<number | null>(null);
+  $effect(() => { if (sel) { const v = pctOf(sel); untrack(() => (zPct = v)); } });
+  function commitPct() { if (!sel) return; if (zPct != null && zPct > 0) setZoom(sel, zPct / 100); zPct = pctOf(sel); }
+  /** Corps en points, à la française (« 4,2 »). */
+  const ptTxt = (v: number) => v.toFixed(1).replace('.', ',');
+  /** Plus petit texte de l’élément sélectionné, en points (synoptique). */
+  const selPt = $derived(sel ? minTextPt(sel) : null);
+  /** Dessins dont le texte passe sous 6 pt à leur échelle, toutes feuilles : signalés sur la
+   *  feuille et rappelés avant l'export. */
+  const tiny = $derived((sheet?.pages ?? []).flatMap((p, i) => p.items.filter((it) => (minTextPt(it) ?? MIN_PT) < MIN_PT - 0.05).map((it) => ({ name: nameOf(it), page: i + 1, pt: minTextPt(it)! }))));
   /** Éléments qui sortent du cadre, toutes feuilles : signalés dans la barre et rappelés avant l'export. */
   const outside = $derived.by(() => {
     if (!sheet) return [] as { name: string; page: number }[];
@@ -306,17 +333,19 @@
     selected = n.id;
     changed();
   }
-  /** Synoptique d'un élément : posé à une échelle qui le fait tenir sur la feuille si possible. */
+  /** Échelle qui fait tenir un synoptique entier dans le cadre (texte plafonné à 160 %). */
+  function synFit(r: { w: number; h: number }): number {
+    if (!sheet) return 1;
+    const [W, H] = pageSize(sheet);
+    const fit = Math.min((W - 2 * MARGIN - 8) / (r.w * SYN_MM), (H - 2 * MARGIN - 20 - (sheet.titleBlock ? BLOCK[1] : 0)) / (r.h * SYN_MM));
+    return Math.floor(Math.min(1.6, Math.max(SYN_MIN, fit)) * 1000) / 1000;
+  }
+  /** Synoptique d'un élément : posé entier, à l'échelle qui le fait tenir dans le cadre ; sous
+   *  6 pt, il est signalé et se règle par ses poignées ou son champ Échelle. */
   async function addSyn(cid: string) {
     if (!sheet) return;
     const r = await ensureSyn(cid);
-    let zoom = 1;
-    if (r) {
-      const [W, H] = pageSize(sheet);
-      const fit = Math.min((W - 2 * MARGIN - 8) / (r.w * SYN_MM), (H - 2 * MARGIN - 20 - (sheet.titleBlock ? 44 : 0)) / (r.h * SYN_MM));
-      zoom = Math.round(Math.min(1.6, Math.max(SYN_MIN, fit)) * 100) / 100;
-    }
-    add({ kind: 'synoptic', container_id: cid, zoom });
+    add({ kind: 'synoptic', container_id: cid, zoom: r ? synFit(r) : 1 });
   }
   /** Retire l'élément sélectionné : notification avec Annuler (et Ctrl+Z). */
   function removeSel() {
@@ -435,6 +464,12 @@
       text: `${outside.map((o) => `${o.name} (feuille ${o.page})`).join(', ')}. Ils seront coupés au bord de la feuille : réduisez l’échelle, déplacez-les ou choisissez un format plus grand.`,
       confirmLabel: 'Exporter quand même', cancelLabel: 'Revenir à la planche',
     }))) return;
+    // Texte sous 6 pt : illisible à l'impression, on prévient aussi.
+    if (tiny.length && !(await ask({
+      title: tiny.length === 1 ? 'Un synoptique a un texte sous 6 pt' : `${tiny.length} synoptiques ont un texte sous 6 pt`,
+      text: `${tiny.map((o) => `${o.name} (feuille ${o.page}, ${ptTxt(o.pt)} pt)`).join(', ')}. Ce texte sera difficile à lire imprimé : agrandissez-les, répartissez-les sur plusieurs feuilles ou choisissez un format plus grand.`,
+      confirmLabel: 'Exporter quand même', cancelLabel: 'Revenir à la planche',
+    }))) return;
     exporting = true;
     try {
       exportShots = await shotsFor($state.snapshot(sheet) as Sheet, ctx);
@@ -510,7 +545,10 @@
     <div class="pl-body">
       <div class="pl-stage">
         <!-- Éléments hors cadre : signalés sur la feuille (la barre d'outils reste sur une ligne). -->
-        {#if outside.length}<span class="chip warn pl-out-chip" role="status" title="{outside.map((o) => `${o.name} (feuille ${o.page})`).join(', ')} : réduisez l’échelle, déplacez ou choisissez un format plus grand."><Icon name="alert" size="sm" />{outside.length} hors cadre</span>{/if}
+        {#if outside.length || tiny.length}<div class="pl-out-chip" role="status">
+          {#if outside.length}<span class="chip warn" title="{outside.map((o) => `${o.name} (feuille ${o.page})`).join(', ')} : réduisez l’échelle, déplacez ou choisissez un format plus grand."><Icon name="alert" size="sm" />{outside.length} hors cadre</span>{/if}
+          {#if tiny.length}<span class="chip warn" title="{tiny.map((o) => `${o.name} (feuille ${o.page}, ${ptTxt(o.pt)} pt)`).join(', ')} : texte difficile à lire imprimé, agrandissez ou choisissez un format plus grand."><Icon name="alert" size="sm" />{tiny.length === 1 ? 'Texte' : `${tiny.length} synoptiques : texte`} &lt; 6 pt</span>{/if}
+        </div>{/if}
         <div class="pl-desk" role="presentation" bind:this={deskEl} bind:clientWidth={deskW} bind:clientHeight={deskH} onpointerdown={(e) => { if (!(e.target as Element).closest('.it, .rz, .pl-empty button')) selected = null; }}>
           <div class="pl-paper" bind:this={svgHost} style="width:{paperW}px;aspect-ratio:{pageSize(sheet)[0]} / {pageSize(sheet)[1]}">
             {#if page && !page.items.length}<div class="pl-empty"><b>Feuille vide</b><span>{writable ? 'Ajoutez des racks, du mobilier ou des synoptiques depuis le panneau de droite, ou placez tout d’un coup.' : 'Aucun élément sur cette feuille.'}</span>{#if writable}<button class="btn sm" onclick={() => (relayout = true)}><Icon name="grid" size="sm" />Disposer automatiquement</button>{/if}</div>{/if}
@@ -531,17 +569,23 @@
             <section class="pl-sec">
               <div class="field"><label for="pl-gl">Libellé</label><input class="input" id="pl-gl" value={sel.label ?? ''} placeholder={sel.kind === 'synoptic' ? `Synoptique · ${selName}` : selName} maxlength="80" disabled={!writable} oninput={(e) => { sel.label = (e.target as HTMLInputElement).value || undefined; }} onchange={() => changed('label:' + sel.id)}></div>
               <label class="toggle-row"><input type="checkbox" checked={!sel.hideLabel} disabled={!writable} onchange={(e) => { sel.hideLabel = !(e.target as HTMLInputElement).checked || undefined; keepIn(sel); changed(); }}><span>Afficher le libellé</span></label>
-              <div class="pl-row">
-                <span class="flabel pl-l">Taille</span>
-                <input type="range" min={Math.log(zMin(sel))} max={Math.log(ZOOM_MAX)} step="0.01" value={Math.log(zoomOf(sel))} disabled={!writable} aria-label="Échelle propre du dessin" oninput={(e) => setZoom(sel, Math.exp(Number((e.target as HTMLInputElement).value)), false)} onchange={() => changed('zoom:' + sel.id)}>
-                <span class="mono small pl-zp">{Math.round(zoomOf(sel) * 100)} %</span>
+              <div class="pl-row pl-scale">
+                <fieldset class="pl-fs pl-zf" disabled={!writable} onchange={commitPct}>
+                  <NumField id="pl-zs" label="Échelle" unit="%" min={zMin(sel) * 100} max={ZOOM_MAX * 100} bind:value={zPct} />
+                </fieldset>
+                {#if selPt != null}<span class="chip {selPt < MIN_PT - 0.05 ? 'warn' : 'ok'} pl-tp" role="status" title="Plus petit texte du synoptique (connecteur des ports), imprimé">{#if selPt < MIN_PT - 0.05}<Icon name="alert" size="sm" />{/if}Texte {ptTxt(selPt)} pt</span>{/if}
               </div>
-              {#if zoomOf(sel) !== 1 && writable}<button class="btn sm ghost pl-reset" onclick={() => setZoom(sel, 1)}><Icon name="refresh" size="sm" />Revenir à 100 %</button>{/if}
-              <span class="muted small">{sel.kind === 'synoptic' ? 'Poignée de coin sur la feuille pour redimensionner.' : `Échelle du dessin 1:${+scaleOf(sel, sheet.scale).toFixed(1)} (feuille 1:${sheet.scale}). Poignée de coin pour redimensionner.`}</span>
+              <input class="pl-range" type="range" min={Math.log(zMin(sel))} max={Math.log(ZOOM_MAX)} step="0.005" value={Math.log(zoomOf(sel))} disabled={!writable} aria-label="Échelle propre du dessin (curseur)" oninput={(e) => setZoom(sel, Math.exp(Number((e.target as HTMLInputElement).value)), false)} onchange={() => changed('zoom:' + sel.id)}>
+              {#if selPt != null && selPt < MIN_PT - 0.05}<p class="pl-note small">Texte sous 6 pt : difficile à lire imprimé. Il atteint 6 pt à partir de {Math.ceil(SYN_LEGIBLE * 100)} % ; sinon, choisissez un format plus grand.</p>{/if}
+              {#if writable}<div class="pl-acts">
+                {#if zoomOf(sel) !== 1}<button class="btn sm ghost pl-reset" onclick={() => setZoom(sel, 1)}><Icon name="refresh" size="sm" />Revenir à 100 %</button>{/if}
+                {#if sel.kind === 'synoptic' && ctx.syn?.[sel.container_id ?? '']}<button class="btn sm ghost" title="Échelle qui fait tenir le synoptique entier dans le cadre de la feuille" onclick={() => fitSel(sel)}><Icon name="fit" size="sm" />Ajuster à la feuille</button>{/if}
+              </div>{/if}
+              <span class="muted small">{sel.kind === 'synoptic' ? 'Poignées aux quatre coins de la feuille : proportions gardées, coin opposé fixe.' : `Échelle du dessin 1:${+scaleOf(sel, sheet.scale).toFixed(1)} (feuille 1:${sheet.scale}). Poignées aux quatre coins : proportions gardées.`}</span>
             </section>
           {/if}
           {#if isDrawing(sel) && tooBig(sel)}
-            <p class="pl-warn small">{sel.kind === 'synoptic' && zoomOf(sel) <= SYN_MIN ? 'Le synoptique dépasse la feuille à sa plus petite taille lisible (texte de 6 pt) : choisissez un format plus grand.' : 'Le dessin dépasse la feuille : réduisez-le ou choisissez un format plus grand.'}</p>
+            <p class="pl-warn small">Le dessin dépasse la feuille : réduisez-le ou choisissez un format plus grand.</p>
           {/if}
           {#if sel.kind === 'synoptic'}
             <section class="pl-sec">
@@ -695,13 +739,18 @@
   .pl-exp[aria-current] b::after { content: " · dernier choix"; font-weight: 400; color: var(--fg-3); }
   .pl-body { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 12px; align-items: start; }
   .pl-stage { position: relative; min-width: 0; }
-  .pl-out-chip { position: absolute; top: 10px; left: 10px; z-index: 2; box-shadow: var(--card-sh); }
+  .pl-out-chip { position: absolute; top: 10px; left: 10px; z-index: 2; display: flex; flex-wrap: wrap; gap: 6px; }
+  .pl-out-chip .chip { box-shadow: var(--card-sh); }
+  .pl-scale { align-items: flex-end; }
+  .pl-zf { flex: 0 1 140px; min-width: 0; }
+  .pl-tp { margin-bottom: 6px; }
+  .pl-range { width: 100%; }
+  .pl-note { margin: 0; color: var(--warn); }
   .pl-desk { padding: 28px; border-radius: 14px; background: radial-gradient(90% 70% at 50% 0%, color-mix(in srgb, var(--fg) 6%, var(--surface-2)), var(--surface-2)); overflow: auto; height: calc(100dvh - 242px); min-height: 420px; }
   .pl-paper { position: relative; flex: none; margin: 0 auto; background: #fff; box-shadow: 0 24px 50px -22px rgba(0, 0, 0, .55), 0 0 0 1px rgba(0, 0, 0, .08); touch-action: none; }
   .pl-zoom { display: flex; align-items: center; gap: 2px; }
   .pl-zv { min-width: 52px; text-align: center; }
   .pl-warn { margin: 0; padding: 10px 14px; color: var(--warn); background: var(--warn-soft); border-bottom: 1px solid var(--line); }
-  .pl-zp { min-width: 44px; text-align: right; }
   /* Feuille vide : papier blanc fixe, textes aux gris du papier. */
   .pl-empty { position: absolute; left: 50%; top: 42%; transform: translate(-50%, -50%); display: grid; gap: 6px; justify-items: center; text-align: center; max-width: 340px; color: #5B636D; font-size: 13px; pointer-events: none; z-index: 1; }
   .pl-empty b { color: #15171A; font-size: 15px; }
