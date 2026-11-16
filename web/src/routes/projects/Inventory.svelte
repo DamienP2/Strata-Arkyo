@@ -1,11 +1,11 @@
 <script lang="ts">
   // Inventaire (section 8) : emplacements, éléments, articles, exemplaires.
-  // Deux vues : « Par élément » (tous les emplacements et leurs éléments à gauche, élément ouvert
-  // à droite) et « Nomenclature » (un tableau groupé par élément, pour l'emplacement choisi parmi
-  // des puces). Les lignes de matériel se glissent d'un élément à l'autre (glisser-déposer HTML5),
-  // y compris vers un élément d'un autre emplacement de la colonne, ou passent par « Déplacer vers… ».
+  // À gauche, l'arbre des emplacements : leurs éléments, les casquettes en retrait sous leur
+  // mobilier, puis le matériel libre. À droite, l'élément ouvert : en-tête compact, recherche et
+  // filtre de pose, tableau du matériel et de ses exemplaires. Un seul « Ajouter » et un seul
+  // « Exporter » dans l'en-tête de page. Les lignes de matériel se glissent vers un élément de
+  // l'arbre (glisser-déposer HTML5, annulable) ou passent par « Déplacer vers… ».
   import Icon from '../../components/Icon.svelte';
-  import Vu from '../../components/Vu.svelte';
   import Dialog from '../../components/Dialog.svelte';
   import FieldError from '../../components/FieldError.svelte';
   import HeadActions from '../../components/HeadActions.svelte';
@@ -29,6 +29,7 @@
   import { modalOpen } from '../../lib/modal';
   import { nf, pl } from '../../lib/format';
   import { route } from '../../lib/router.svelte';
+  import { ITEM_KINDS } from '../../lib/catalog.svelte';
   import { tick, untrack } from 'svelte';
   import { SvelteSet } from 'svelte/reactivity';
   import { CONTAINER_KINDS, type Article, type ElementDetails, type Container, type Instance, type Location, type ProjectView } from '../../lib/projects';
@@ -36,30 +37,21 @@
   let { view = $bindable(), reload }: { view: ProjectView; reload: () => Promise<void> } = $props();
   const writable = $derived(can('projets', 'ecriture'));
 
-  // Vue : « Par élément » (a) ou « Nomenclature » (b), mémorisée dans le navigateur et dans l'adresse.
-  type Mode = 'a' | 'b';
-  const MODE_KEY = 'strata.inventaire.vue';
-  let mode = $state<Mode>(untrack(() => { try { return localStorage.getItem(MODE_KEY) === 'b' ? 'b' : 'a'; } catch { return 'a'; } }));
-  function setMode(m: Mode) {
-    mode = m; sel.clear();
-    try { localStorage.setItem(MODE_KEY, m); } catch { /* stockage indisponible : la vue reste celle de la session */ }
-  }
-
   let selLoc = $state<string | null>(null);
   let panelOf = $state<Article | null>(null);
-  let selCont = $state<string | null>(null); // id d’élément, ou « free » pour les équipements libres
+  let selCont = $state<string | null>(null); // id d’élément, ou « free » pour le matériel libre
   $effect(() => {
     if (!view.locations.some((l) => l.id === selLoc)) selLoc = view.locations[0]?.id ?? null;
     const conts = view.containers.filter((c) => c.location_id === selLoc);
     if (selCont !== 'free' && !conts.some((c) => c.id === selCont)) selCont = conts[0]?.id ?? (selLoc ? 'free' : null);
   });
-  // État de l'écran dans l'adresse : ?emplacement=<id>&element=<id|libre>[&vue=nomenclature],
-  // partageable et rechargeable. ?i=<exemplaire> (palette de recherche) ouvre son emplacement et
-  // son élément, déplie son groupe au besoin, fait défiler sa sous-ligne et la met en évidence.
+  // État de l'écran dans l'adresse : ?emplacement=<id>&element=<id|libre>, partageable et
+  // rechargeable (l'ancien &vue=nomenclature est ignoré). ?i=<exemplaire> (palette de recherche)
+  // ouvre son emplacement et son élément, déplie sa section, fait défiler sa sous-ligne et la met
+  // en évidence.
   let flash = $state<string | null>(null);
   let flashT: ReturnType<typeof setTimeout> | undefined;
   function applyQuery(q: URLSearchParams) {
-    if (q.has('vue')) mode = q.get('vue') === 'nomenclature' ? 'b' : 'a';
     const iid = q.get('i');
     const inst = iid ? view.instances.find((x) => x.id === iid) : undefined;
     let art = inst ? view.articles.find((a) => a.id === inst.article_id) : undefined;
@@ -71,7 +63,6 @@
       selCont = e === 'libre' ? 'free' : e && view.containers.some((c) => c.id === e && c.location_id === l) ? e : null;
     }
     if (inst && art) {
-      collapsed.delete(scopeOfArt(art));
       foldLoc(art.location_id, false);
       flash = inst.id;
       clearTimeout(flashT); flashT = setTimeout(() => (flash = null), 6000);
@@ -82,13 +73,29 @@
   const contsOf = (lid: string | null) => view.containers.filter((c) => c.location_id === lid);
   // Un emplacement ne se supprime que vide (ni élément ni matériel) : le menu le dit avant.
   const busyOf = (l: Location) => l.totals.containers > 0 || view.articles.some((a) => a.location_id === l.id);
-  const conts = $derived(contsOf(selLoc));
   const cont = $derived(view.containers.find((c) => c.id === selCont) ?? null);
   const modulesOf = (a: Article) => view.articles.filter((m) => m.host?.article_id === a.id).sort((x, y) => x.host!.slot - y.host!.slot);
   let chassisOf = $state<Article | null>(null);
   const contOf = (a: Article) => (a.container_id ? view.containers.find((c) => c.id === a.container_id) ?? null : null);
-  /** Portée d'un article dans l'écran : l'id de son élément, ou « free » (équipements libres). */
-  const scopeOfArt = (a: Article) => a.container_id ?? 'free';
+  /** Mobilier d'une casquette. */
+  const parentOf = (c: Container) => (c.parent_id ? view.containers.find((p) => p.id === c.parent_id) ?? null : null);
+  /** Nom court d'une casquette sous son mobilier : « Pupitre · casquette 1 » devient « Casquette 1 ». */
+  function shortName(c: Container): string {
+    const p = parentOf(c);
+    if (!p) return c.name;
+    for (const sep of [' · ', ' - ', ' – ', ' ']) {
+      const pre = p.name + sep;
+      if (c.name.length > pre.length && c.name.toLowerCase().startsWith(pre.toLowerCase())) { const r = c.name.slice(pre.length); return r.charAt(0).toUpperCase() + r.slice(1); }
+    }
+    return c.name;
+  }
+  /** Arbre d'un emplacement : ses éléments de premier niveau et, sous chacun, ses casquettes.
+   *  Un élément dont le parent n'est pas une racine de l'emplacement reste à la racine. */
+  function treeOf(lid: string): { c: Container; kids: Container[] }[] {
+    const lc = contsOf(lid);
+    const roots = lc.filter((c) => !c.parent_id || !lc.some((p) => p.id === c.parent_id && !p.parent_id));
+    return roots.map((c) => ({ c, kids: c.parent_id ? [] : lc.filter((k) => k.parent_id === c.id) }));
+  }
   /** Matériel de premier niveau d'une portée (les modules d'un châssis s'affichent sous leur châssis). */
   const scopeArts = (s: string) => view.articles.filter((a) => !a.host && (s === 'free' ? a.location_id === selLoc && !a.container_id : a.container_id === s));
   const piecesOf = (s: string) => scopeArts(s).reduce((n, a) => n + a.quantity, 0);
@@ -102,7 +109,7 @@
   let racks = $state<Record<string, RackView>>({});
   $effect(() => {
     void view.articles; void view.instances;
-    const list = (mode === 'b' ? conts : cont ? [cont] : []).filter((c) => c.rackable);
+    const list = (cont ? [cont] : []).filter((c) => c.rackable);
     for (const c of list) api.get<RackView>(`/containers/${c.id}/rack`).then((r) => { racks[c.id] = r; }, () => {});
   });
   /** U posés dans l'élévation (hors matériel posé sur étagère et PDU verticaux) et U restant à placer. */
@@ -127,7 +134,7 @@
   function statusOf(a: Article, instId: string | null): St {
     if (a.host) return { kind: 'info', text: `Dans le châssis · S${a.host.slot}` };
     const c = contOf(a);
-    if (!c) return { kind: 'info', text: 'Libre dans l’emplacement' };
+    if (!c) return { kind: 'info', text: 'Matériel libre' };
     if (!c.rackable) return { kind: 'info', text: `Dans ${CONTAINER_KINDS[c.kind].label.toLowerCase()}` };
     const rackable = a.accessory || item(a)?.rackable;
     if (!rackable) return { kind: 'info', text: 'Hors rack' };
@@ -154,6 +161,20 @@
   /** Page de conception de l'élément : éditeur de racks ou de mobilier. */
   const designHref = (c: Container) => (c.kind === 'desk' || c.kind === 'furniture' ? `/projets/${view.project.id}/mobilier/${c.id}` : c.kind === 'casquette' && c.parent_id ? `/projets/${view.project.id}/mobilier/${c.parent_id}/${c.id}` : c.rackable ? `/projets/${view.project.id}/racks/${c.id}` : null);
   const designLabel = (c: Container) => (c.kind === 'desk' || c.kind === 'furniture' || (c.kind === 'casquette' && c.parent_id) ? 'Ouvrir dans Mobilier' : 'Ouvrir dans Racks');
+  const designIcon = (c: Container) => (c.rackable && !(c.kind === 'casquette' && c.parent_id) ? 'server' : 'layers');
+  /** Lien « Poser » d'un article rackable (ou d'un de ses exemplaires) : l'éditeur de son élément,
+   *  avec l'exemplaire dans l'adresse (?i=) pour que l'éditeur puisse le désigner. */
+  function placeHref(a: Article, iid: string | null): string | null {
+    const c = contOf(a);
+    const h = c && c.rackable && !a.host && (a.accessory || item(a)?.rackable) ? designHref(c) : null;
+    return h && iid ? `${h}?i=${encodeURIComponent(iid)}` : h;
+  }
+  /** Fiche du catalogue d'un article (équipement ou adaptateur). */
+  function ficheHref(a: Article): string | null {
+    const it = item(a);
+    const k = it && ITEM_KINDS.find((x) => x.kind === it.kind);
+    return k ? `/catalogue/${k.path}/${it!.id}` : null;
+  }
   const instOf = (a: Article) => view.instances.filter((i) => i.article_id === a.id);
   const item = (a: Article) => (a.item_id ? view.items[a.item_id] : undefined);
   const heightOf = (a: Article) => (a.accessory ? (a.accessory.kind === 'panel' ? a.accessory.panel.height_u : a.accessory.kind === 'vertical_pdu' ? null : a.accessory.height_u) : item(a)?.rackable ? item(a)!.height_u : null);
@@ -234,9 +255,13 @@
       if (!l.id) { selLoc = r.id; selCont = null; }
     } catch (x) { if (x instanceof ApiError) locErr = Object.fromEntries(x.fields.map((f) => [f.field, f.message])); if (!(x instanceof ApiError && x.fields.length)) fail(x); }
   }
-  function pickLoc(id: string) { if (id === selLoc) return; selLoc = id; selCont = null; sel.clear(); }
   /** Ouvre un élément (ou les équipements libres) de n'importe quel emplacement : l'emplacement suit. */
-  function pickCont(lid: string, id: string) { if (lid === selLoc && id === selCont) return; selLoc = lid; selCont = id; sel.clear(); q = ''; }
+  function pickCont(lid: string, id: string) {
+    if (lid === selLoc && id === selCont) return;
+    selLoc = lid; selCont = id; sel.clear(); q = '';
+    // Sur tablette et téléphone, l'arbre est au-dessus : on descend jusqu'à l'élément ouvert.
+    if (matchMedia('(max-width: 860px)').matches) tick().then(() => document.querySelector('.inv .elhead')?.scrollIntoView({ block: 'start', behavior: 'smooth' }));
+  }
 
   // Colonne des emplacements : chaque emplacement est une section repliable ; les sections
   // repliées sont mémorisées dans le navigateur, projet par projet (toutes dépliées par défaut).
@@ -247,7 +272,7 @@
     if (shut) folded.add(id); else folded.delete(id);
     try { localStorage.setItem(FOLD_KEY, JSON.stringify([...folded])); } catch { /* stockage indisponible : l'état vaut pour la session */ }
   }
-  /** « Équipements libres » d'un emplacement : affichés s'il y en a, s'ils sont ouverts, ou si
+  /** « Matériel libre » d'un emplacement : affiché s'il y en a, s'il est ouvert, ou si
    *  l'emplacement n'a aucun élément. L'en-tête de section reçoit aussi le matériel glissé. */
   const showFree = (l: Location) => l.totals.free_items > 0 || (l.id === selLoc && selCont === 'free') || !contsOf(l.id).length;
   let sideEl = $state<HTMLElement | null>(null);
@@ -268,21 +293,15 @@
     if (box) ro.observe(box);
     return () => ro.disconnect();
   });
-  // L'élément ouvert reste visible dans la colonne (défilement vertical sur grand écran, rangée
-  // horizontale de sa section sur téléphone), sans faire défiler la page.
+  // L'élément ouvert reste visible dans l'arbre quand celui-ci défile seul, sans faire défiler la page.
   $effect(() => {
-    void selCont; void selLoc; void mode;
+    void selCont; void selLoc;
     const box = sideEl;
     if (!box) return;
     tick().then(() => {
-      const el = box.querySelector<HTMLElement>('.el[aria-current="true"]');
+      const el = box.querySelector<HTMLElement>('.tn[aria-current="true"]');
       if (!el) return;
       const a = el.getBoundingClientRect();
-      const row = el.parentElement;
-      if (row && row.scrollWidth > row.clientWidth + 1) {
-        const r = row.getBoundingClientRect();
-        if (a.left < r.left) row.scrollLeft -= r.left - a.left + 8; else if (a.right > r.right) row.scrollLeft += a.right - r.right + 8;
-      }
       if (box.scrollHeight > box.clientHeight + 1) {
         const b = box.getBoundingClientRect();
         if (a.top < b.top) box.scrollTop -= b.top - a.top + 12; else if (a.bottom > b.bottom) box.scrollTop += a.bottom - b.bottom + 12;
@@ -304,7 +323,7 @@
     if (!a.item_id || item(a)?.modular) return `${s}|${a.id}`;
     return `${s}|${a.nature}|${a.item_id}`;
   }
-  // Recherche dans l'élément (ou la nomenclature) et filtre de pose.
+  // Recherche dans l'élément ouvert et filtre de pose.
   let q = $state('');
   let filter = $state<'all' | 'todo' | 'ok'>('all');
   const instsOf = (r: Row) => r.list.flatMap(instOf);
@@ -328,14 +347,13 @@
     const keep = [...rows.values()].filter((r) => match(r, needle) && (all || filter === 'all' || unitsOf(r).some((u) => u.kind === filter)));
     return SECTIONS.map(([k, label]) => ({ k, label, rows: keep.filter((r) => sectionOf(r.a) === k) })).filter((g) => g.rows.length);
   }
-  const scopes = $derived(mode === 'b' ? [...conts.map((c) => c.id), 'free'] : selCont ? [selCont] : []);
+  const scopes = $derived(selCont ? [selCont] : []);
   const secsOf = $derived(new Map(scopes.map((s) => [s, build(s)])));
   const qtyOf = (r: Row) => r.list.reduce((n, a) => n + a.quantity, 0);
 
-  // Sélection multiple (cases) et groupes repliés de la nomenclature.
+  // Sélection multiple (cases).
   const sel = new SvelteSet<string>();
-  const collapsed = new SvelteSet<string>();
-  const shownRows = $derived(scopes.flatMap((s) => (mode === 'b' && collapsed.has(s) ? [] : (secsOf.get(s) ?? []).flatMap((g) => g.rows))));
+  const shownRows = $derived(scopes.flatMap((s) => (secsOf.get(s) ?? []).flatMap((g) => g.rows)));
   const selRows = $derived(scopes.flatMap((s) => (secsOf.get(s) ?? []).flatMap((g) => g.rows)).filter((r) => sel.has(r.key)));
   const allSel = $derived(shownRows.length > 0 && shownRows.every((r) => sel.has(r.key)));
   function toggleAll() {
@@ -383,6 +401,12 @@
   }
   const delRow = (r: Row) => delArts(r.list, `Supprimer « ${r.a.label} »${qtyOf(r) > 1 ? ` (${qtyOf(r)} pièces)` : ''} ?`, `« ${r.a.label} » retiré de l’inventaire.`);
   const delSel = () => delArts(selRows.flatMap((r) => r.list), `Supprimer ${selRows.length} matériel${selRows.length > 1 ? 's' : ''} ?`, `${selRows.length} matériel${selRows.length > 1 ? 's' : ''} retiré${selRows.length > 1 ? 's' : ''} de l’inventaire.`);
+  /** Retire un exemplaire précis : son article (une pièce) quitte l'inventaire. */
+  async function delInst(owner: Article, i: Instance) {
+    const ok = await ask({ title: `Retirer l’exemplaire ${i.tag} ?`, eyebrow: 'Exemplaire', text: `Une pièce de « ${owner.label} » quitte l’inventaire, avec son ID.`, confirmLabel: 'Retirer', danger: true, run: () => api.del(`/articles/${owner.id}`) });
+    if (ok) { sel.delete(keyOf(owner)); toast(`Exemplaire ${i.tag} retiré.`); }
+    await reload();
+  }
   async function delModule(mo: Article) {
     const ok = await ask({ title: `Retirer « ${mo.label} » du châssis ?`, eyebrow: 'Module', text: 'Le module quitte l’inventaire, avec son ID.', confirmLabel: 'Retirer', danger: true, run: () => api.del(`/articles/${mo.id}`) });
     if (ok) toast(`« ${mo.label} » retiré du châssis.`);
@@ -397,13 +421,13 @@
     if (ok) { toast(`Emplacement « ${l.name} » supprimé.`); await reload(); }
   }
 
-  // Déplacement. Une destination s'écrit « c:<élément> » ou « l:<emplacement> » (équipements
-  // libres). Un équipement en quantité N se déplace exemplaire par exemplaire (le serveur sort un
+  // Déplacement. Une destination s'écrit « c:<élément> » ou « l:<emplacement> » (matériel
+  // libre). Un équipement en quantité N se déplace exemplaire par exemplaire (le serveur sort un
   // exemplaire à la fois, avec son ID) ; le dernier emporte l'article lui-même.
   let moveBusy = $state(false);
   const targetName = (t: string) => {
     const [k, id] = t.split(':');
-    return k === 'c' ? `« ${view.containers.find((c) => c.id === id)?.name ?? 'élément'} »` : `Équipements libres (${view.locations.find((l) => l.id === id)?.name ?? 'emplacement'})`;
+    return k === 'c' ? `« ${view.containers.find((c) => c.id === id)?.name ?? 'élément'} »` : `le matériel libre de ${view.locations.find((l) => l.id === id)?.name ?? 'l’emplacement'}`;
   };
   const isAt = (a: Article, t: string) => { const [k, id] = t.split(':'); return k === 'c' ? a.container_id === id : !a.container_id && a.location_id === id; };
   /** La destination accepte-t-elle ce matériel ? (un accessoire reste dans un élément rackable) */
@@ -471,13 +495,13 @@
   }
 
   // Glisser-déposer : une ligne, ou toute la sélection si la ligne glissée en fait partie.
-  // Cibles : lignes d'éléments (vue par élément), lignes de groupe et lignes du groupe
-  // (nomenclature), équipements libres. Le geste ne part pas d'un champ ni d'un bouton.
+  // Cibles : les éléments de l'arbre, son matériel libre et l'en-tête de chaque emplacement
+  // (matériel libre de cet emplacement). Le geste ne part pas d'un champ ni d'un bouton.
   let drag = $state<{ rows: Row[]; keys: Set<string> } | null>(null);
   let dropOn = $state<string | null>(null);
   let downIn = false;
-  /** Cible d'un dépôt : un élément, les équipements libres de l'emplacement ouvert (« free »), ou
-   *  ceux d'un emplacement donné (« free:<id> » pour la ligne, « head:<id> » pour l'en-tête). */
+  /** Cible d'un dépôt : un élément, le matériel libre de l'emplacement ouvert (« free »), ou
+   *  celui d'un emplacement donné (« free:<id> » pour la ligne, « head:<id> » pour l'en-tête). */
   const dropTarget = (s: string) => (s === 'free' ? `l:${selLoc}` : s.includes(':') ? `l:${s.slice(s.indexOf(':') + 1)}` : `c:${s}`);
   function dragStart(e: DragEvent, r: Row) {
     if (!writable || moveBusy || downIn) { e.preventDefault(); return; }
@@ -525,7 +549,7 @@
     });
     queue.set(i.id, next);
   }
-  const pct = (v: number, max: number | null | undefined) => (max ? (v / max) * 100 : 0);
+  const pct = (v: number, max: number | null | undefined) => (max ? Math.min(100, Math.max(0, (v / max) * 100)) : 0);
   /** Blocs de la mini-baie : chaque article rackable, de bas en haut, à l'échelle. */
   function blocks(c: Container) {
     const total = c.height_u ?? 1;
@@ -541,20 +565,20 @@
     if (H > 0 && t.used_u > H) return `Dépasse de ${fu(t.used_u - H)} U : ${fu(t.used_u)} U affectés pour ${H} U`;
     return `${use ? fu(use.placed) : '0'} U posés${use?.todo ? `, ${fu(use.todo)} U à placer` : ''}, ${H} U disponibles`;
   };
-  const allCollapsed = $derived(scopes.length > 0 && scopes.every((s) => collapsed.has(s)));
-  const MODES = [{ value: 'a' as Mode, label: 'Par élément' }, { value: 'b' as Mode, label: 'Nomenclature' }];
   const FILTERS = [{ value: 'all' as const, label: 'Tout' }, { value: 'todo' as const, label: 'À placer' }, { value: 'ok' as const, label: 'Posé' }];
-  const exportXlsx = () => download(`/projects/${view.project.id}/inventory/export?format=xlsx&group=container`);
+  /** Exports du serveur : nomenclature Excel par élément ou par emplacement, liste à plat en CSV. */
+  const exportInv = (format: 'xlsx' | 'csv', group: 'container' | 'location' | 'none') => download(`/projects/${view.project.id}/inventory/export?format=${format}&group=${group}`);
+  const exportXlsx = () => exportInv('xlsx', 'container');
   // Lecture initiale de l'adresse, une fois toutes les déclarations faites (applyQuery lit
-  // les lignes dépliées et les groupes repliés).
+  // les sections repliées de l'arbre).
   let seenQ = untrack(() => route.query);
   untrack(() => applyQuery(seenQ));
   $effect(() => { const q = route.query; if (q === seenQ) return; seenQ = q; untrack(() => applyQuery(q)); });
-  // L'adresse suit l'emplacement, l'élément et la vue choisis, sans entrée d'historique ni retour
+  // L'adresse suit l'emplacement et l'élément choisis, sans entrée d'historique ni retour
   // en haut de page (navigate() ramènerait la vue en haut à chaque clic).
   $effect(() => {
     if (!selLoc) return;
-    const p = new URLSearchParams({ emplacement: selLoc, ...(selCont ? { element: selCont === 'free' ? 'libre' : selCont } : {}), ...(mode === 'b' ? { vue: 'nomenclature' } : {}) });
+    const p = new URLSearchParams({ emplacement: selLoc, ...(selCont ? { element: selCont === 'free' ? 'libre' : selCont } : {}) });
     if (location.search === `?${p}`) return;
     history.replaceState(history.state, '', `${location.pathname}?${p}`);
     untrack(() => { seenQ = p; route.query = p; });
@@ -565,85 +589,81 @@
 
 <!-- Vignette d'élément : la mini-baie ou le pictogramme actuels, en réduction. -->
 {#snippet thumb(c: Container | null, big: boolean)}
-  <span class="thumb" class:big aria-hidden="true">
+  <span class="thumb" class:big class:none={!c} aria-hidden="true">
     {#if !c}<Icon name="box" size="sm" />
     {:else if c.rackable}<span class="mini-rack" class:case={c.kind !== 'rack'}>{#each blocks(c) as b}<i style="height:{b.h}%;--c:{b.color}"></i>{/each}</span>
-    {:else}<span class="kind-vis"><KindIll kind={c.kind} size={big ? 44 : 30} /></span>{/if}
+    {:else}<span class="kind-vis"><KindIll kind={c.kind} size={big ? 40 : 26} /></span>{/if}
   </span>
 {/snippet}
 
-<!-- Jauge de hauteur posée : U posés dans l'élévation ; le matériel affecté mais pas encore posé
-     est annoncé à part, et un dépassement de la hauteur colore toute la jauge. -->
-{#snippet gauge(c: Container, n: number, long: boolean)}
+<!-- Jauge de hauteur, fine : U posés (vert), U affectés à placer (ambre), dépassement en rouge sur
+     toute la longueur. Le détail est dans l'infobulle, sans phrase répétée. -->
+{#snippet gauge(c: Container, wide: boolean)}
   {@const use = rackUse(c)}
   {@const H = c.height_u ?? 0}
   {@const over = H > 0 && c.totals.used_u > H}
-  <span class="gauge" class:err={over} title={gaugeTitle(c)}>
-    {#if over}<Vu value={100} mode="prog" cls="err" {n} />{:else}<Vu value={use ? pct(use.placed, H) : 0} mode="load" {n} />{/if}
-    <span class="mono g-val">{use ? fu(use.placed) : '—'} / {H} U</span>
-    {#if over}<span class="g-note over">{long ? gaugeTitle(c) : `+${fu(c.totals.used_u - H)} U de trop`}</span>
-    {:else if use?.todo}<span class="g-note">+{fu(use.todo)} U à placer</span>{/if}
+  {@const done = over ? 100 : use ? pct(use.placed, H) : 0}
+  <span class="gauge" class:over class:wide title={gaugeTitle(c)}>
+    <span class="g-bar" role="img" aria-label={gaugeTitle(c)}><i class="g-on" style:width="{done}%"></i>{#if !over && use?.todo}<i class="g-todo" style:width="{Math.min(100 - done, pct(use.todo, H))}%"></i>{/if}</span>
+    <span class="mono g-val">{use ? fu(use.placed) : '—'}/{H} U</span>
   </span>
 {/snippet}
 
-<!-- Actions d'un emplacement (en-tête de sa section, ou à côté des puces de la nomenclature). -->
+<!-- Actions d'un emplacement (en-tête de sa section dans l'arbre). -->
 {#snippet locMenu(l: Location)}
   {@const busy = busyOf(l)}
-  <Menu label="Actions de « {l.name} »" iconOnly icon="more" btnClass="icon-btn sm">
+  <Menu label="Actions de « {l.name} »" iconOnly icon="more" btnClass="icon-btn sm" fixed>
     {#snippet children()}
       {#if writable}
-        <button role="menuitem" onclick={() => editLoc(l)}><Icon name="pen" size="sm" /><span class="mi"><b>Renommer l’emplacement</b><small class="pm-sub">Nom et code câble</small></span></button>
-        <hr aria-hidden="true">
-        <button role="menuitem" onclick={() => (fromTemplate = l.id)}><Icon name="case" size="sm" /><span class="mi"><b>Ajouter un élément depuis un modèle</b><small class="pm-sub">Un rack, un flight-case, avec son contenu</small></span></button>
-        <button role="menuitem" onclick={() => openRegiePick(l)}><Icon name="layers" size="sm" /><span class="mi"><b>Ajouter une régie depuis un modèle</b><small class="pm-sub">Plusieurs éléments d’un coup, dans cet emplacement</small></span></button>
-        {#if can('catalogue', 'ecriture')}<button role="menuitem" onclick={() => saveLocAsRegie(l)}><Icon name="copy" size="sm" /><span class="mi"><b>Enregistrer comme modèle de régie</b><small class="pm-sub">Tous ses éléments et leur matériel</small></span></button>{/if}
-        <hr aria-hidden="true">
+        <button role="menuitem" title="Nom et code câble" onclick={() => editLoc(l)}><Icon name="pen" size="sm" />Renommer</button>
+        <button role="menuitem" onclick={() => (contEdit = { c: null, loc: l.id })}><Icon name="plus" size="sm" />Nouvel élément</button>
+        {#if can('catalogue', 'ecriture')}<button role="menuitem" title="Modèle de régie : tous ses éléments et leur matériel" onclick={() => saveLocAsRegie(l)}><Icon name="copy" size="sm" />Enregistrer comme modèle</button>{/if}
       {/if}
-      <button role="menuitem" onclick={exportXlsx}><Icon name="download" size="sm" /><span class="mi"><b>Exporter la nomenclature (Excel)</b><small class="pm-sub">Tout le matériel du projet, élément par élément</small></span></button>
+      <button role="menuitem" title="Fichier Excel de tout le matériel du projet, élément par élément" onclick={exportXlsx}><Icon name="download" size="sm" />Exporter la nomenclature</button>
       {#if writable}
         <hr aria-hidden="true">
-        <button role="menuitem" class="danger" disabled={busy} onclick={() => delLoc(l)}><Icon name="trash" size="sm" /><span class="mi"><b>Supprimer l’emplacement</b>{#if busy}<small class="pm-sub">Videz-le d’abord : déplacez ou supprimez son contenu</small>{/if}</span></button>
+        <button role="menuitem" class="danger" disabled={busy} title={busy ? 'Videz-le d’abord : déplacez ou supprimez son contenu' : undefined} onclick={() => delLoc(l)}><Icon name="trash" size="sm" />Supprimer l’emplacement</button>
       {/if}
     {/snippet}
   </Menu>
 {/snippet}
 
-<!-- Ligne d'élément de la colonne (cible de dépôt, ouvre l'élément et son emplacement). -->
-{#snippet elRow(l: Location, c: Container | null, child: boolean)}
-  {@const s = c ? c.id : `free:${l.id}`}
-  {@const on = c ? c.id === selCont : l.id === selLoc && selCont === 'free'}
-  <button class="el" class:free={!c} class:drop-ok={dropOn === s} class:child aria-current={on ? 'true' : undefined} data-drop={s} onclick={() => pickCont(l.id, c ? c.id : 'free')}>
-    {@render thumb(c, false)}
-    <span class="el-t">
-      {#if c}
-        <span class="el-n">{c.name}</span>
-        {#if c.rackable}{@render gauge(c, 14, false)}{:else}<span class="el-k">{CONTAINER_KINDS[c.kind].label}</span>{/if}
-      {:else}<span class="el-n">Équipements libres</span><span class="el-k">Sans élément</span>{/if}
-    </span>
-    <span class="el-cnt mono" title="Pièces">{c ? piecesOf(c.id) : l.totals.free_items}</span>
-  </button>
-{/snippet}
-
-<!-- Actions d'un élément (en-tête de l'élément ouvert, ligne de groupe de la nomenclature). -->
-{#snippet elMenu(c: Container, inB: boolean)}
-  {#if writable || inB}
-    <Menu label="Actions de « {c.name} »" iconOnly icon="more" btnClass="icon-btn sm">
+<!-- Actions de l'élément ouvert. -->
+{#snippet elMenu(c: Container)}
+  {@const href = designHref(c)}
+  {#if writable || href}
+    <Menu label="Actions de « {c.name} »" iconOnly icon="more" btnClass="icon-btn sm" fixed>
       {#snippet children()}
-        {#if inB}<button role="menuitem" onclick={() => { selCont = c.id; setMode('a'); }}><Icon name="list" size="sm" /><span class="mi"><b>Ouvrir dans la vue par élément</b></span></button>{/if}
-        {#if writable}
-          <button role="menuitem" onclick={() => (contEdit = { c, loc: c.location_id })}><Icon name="pen" size="sm" /><span class="mi"><b>Modifier l’élément</b><small class="pm-sub">Nom, type, dimensions, limites</small></span></button>
-          {#if can('catalogue', 'ecriture')}<button role="menuitem" onclick={() => saveAsTemplate(c)}><Icon name="copy" size="sm" /><span class="mi"><b>Enregistrer comme modèle</b><small class="pm-sub">Copie l’élément et son contenu dans la bibliothèque</small></span></button>{/if}
-          <hr aria-hidden="true">
-          <button role="menuitem" class="danger" onclick={() => delCont(c)}><Icon name="trash" size="sm" /><span class="mi"><b>Supprimer l’élément</b></span></button>
-        {/if}
+        {#if writable}<button role="menuitem" title="Nom, type, dimensions, limites" onclick={() => (contEdit = { c, loc: c.location_id })}><Icon name="pen" size="sm" />Modifier</button>{/if}
+        {#if href}<a role="menuitem" {href}><Icon name={designIcon(c)} size="sm" />{designLabel(c)}</a>{/if}
+        {#if writable && can('catalogue', 'ecriture')}<button role="menuitem" title="Copie l’élément et son contenu dans la bibliothèque" onclick={() => saveAsTemplate(c)}><Icon name="copy" size="sm" />Enregistrer comme modèle</button>{/if}
+        {#if writable}<hr aria-hidden="true"><button role="menuitem" class="danger" onclick={() => delCont(c)}><Icon name="trash" size="sm" />Supprimer l’élément</button>{/if}
       {/snippet}
     </Menu>
   {/if}
 {/snippet}
 
+<!-- Nœud de l'arbre : un élément, une casquette (en retrait sous son mobilier) ou le matériel
+     libre. Cible de dépôt ; ouvre l'élément et son emplacement. -->
+{#snippet node(l: Location, c: Container | null, child: boolean, kids: number, last: boolean)}
+  {@const s = c ? c.id : `free:${l.id}`}
+  {@const on = c ? c.id === selCont : l.id === selLoc && selCont === 'free'}
+  <button class="tn" class:child class:last class:free={!c} class:drop-ok={dropOn === s} aria-current={on ? 'true' : undefined} data-drop={s}
+    title={c && child && shortName(c) !== c.name ? c.name : undefined} onclick={() => pickCont(l.id, c ? c.id : 'free')}>
+    {@render thumb(c, false)}
+    <span class="tn-t">
+      {#if c}
+        <span class="tn-n">{shortName(c)}</span>
+        {#if c.rackable}{@render gauge(c, false)}{:else}<span class="tn-k">{CONTAINER_KINDS[c.kind].label}{kids ? ` · ${kids} casquette${pl(kids)}` : ''}</span>{/if}
+      {:else}<span class="tn-n">Matériel libre</span><span class="tn-k">Sans élément</span>{/if}
+    </span>
+    <span class="tn-c mono" title="Pièces">{c ? piecesOf(c.id) : l.totals.free_items}</span>
+  </button>
+{/snippet}
+
 <!-- Une ligne de matériel, puis une sous-ligne par exemplaire (ID, libellé éditable, pose) et par
-     module de châssis, toujours affichées ; identique dans les deux vues. -->
-{#snippet rowLines(r: Row, inB: boolean)}
+     module de châssis, toujours affichées. -->
+{#snippet rowLines(r: Row)}
   {@const a = r.a}
   {@const it = item(a)}
   {@const inst = instsOf(r)}
@@ -651,14 +671,15 @@
   {@const subs = [...inst.map((i) => ({ i, mo: null as Article | null })), ...mods.flatMap((mo) => instOf(mo).map((i) => ({ i, mo })))]}
   {@const st = rowStatus(r)}
   {@const h = heightOf(a)}
-  {@const c = contOf(a)}
-  {@const rackHref = c && c.rackable && (a.accessory || it?.rackable) ? designHref(c) : null}
-  <tr class="row" class:has-sub={subs.length > 0} class:sel={sel.has(r.key)} class:drag-src={drag?.keys.has(r.key)} data-drop={inB ? r.scope : undefined}
+  {@const rackHref = placeHref(a, null)}
+  {@const fiche = ficheHref(a)}
+  {@const allTodo = st.kind === 'todo' && unitsOf(r).every((u) => u.kind === 'todo')}
+  <tr class="row" class:has-sub={subs.length > 0} class:sel={sel.has(r.key)} class:drag-src={drag?.keys.has(r.key)}
     draggable={writable && !moveBusy} onpointerdown={(e) => (downIn = !!(e.target as Element).closest('input, button, a, select, textarea, .stepper, .menu-wrap'))}
     ondragstart={(e) => dragStart(e, r)} ondragend={dragEnd}>
     {#if writable}
       <td class="ck"><input type="checkbox" checked={sel.has(r.key)} onchange={() => toggleRow(r)} aria-label="Sélectionner {a.label}"></td>
-      <td class="c-grip"><span class="grip" title="Glisser vers un autre élément"><Icon name="grip" size="sm" /></span></td>
+      <td class="c-grip"><span class="grip" title="Glisser vers un élément de l’arbre"><Icon name="grip" size="sm" /></span></td>
     {/if}
     <td class="c-name">
       <span class="nm-txt" title="{a.label}{it?.weight_kg ? ` · ${nf(it.weight_kg * qtyOf(r), 1)} kg` : ''}{it?.power_w ? ` · ${nf(it.power_w * qtyOf(r))} W` : ''}">
@@ -671,59 +692,78 @@
     <td class="c-u num mono">{h ? `${fu(h)} U` : '—'}</td>
     <td class="c-qty">{#if writable}<span class="stepper" title="Quantité"><button onclick={() => step(r, -1)} aria-label="Retirer un {a.label}" disabled={moveBusy}>−</button><span>{qtyOf(r)}</span><button onclick={() => step(r, 1)} aria-label="Ajouter un {a.label}" disabled={moveBusy}>+</button></span>{:else}<span class="mono">× {qtyOf(r)}</span>{/if}</td>
     <!-- Exemplaire unique : son état est sur sa sous-ligne, pas en double ici. -->
-    <td class="c-st">{#if inst.length === 1 && !it?.modular}{:else if st.kind === 'load'}<Loading inline label={st.text} />{:else}<span class={ST[st.kind]} title={st.title}>{st.text}</span>{/if}</td>
+    <td class="c-st">{#if inst.length === 1 && !it?.modular}{:else if st.kind === 'load'}<Loading inline label={st.text} />{:else if allTodo && !inst.length && rackHref}<a class="place" href={rackHref} title="Poser dans {contOf(a)?.name}"><Icon name="server" size="sm" />Poser</a>{:else}<span class={ST[st.kind]} title={st.title}>{st.text}</span>{/if}</td>
     <td class="acts">
-      <Menu label="Actions pour {a.label}" iconOnly icon="more" btnClass="icon-btn sm">
-        {#snippet children()}
-          {#if writable}<button role="menuitem" onclick={() => (moving = { rows: [r], inst: '', target: '' })}><Icon name="arrowr" size="sm" /><span class="mi"><b>Déplacer vers…</b><small class="pm-sub">Un autre élément ou les équipements libres</small></span></button>{/if}
-          {#if rackHref}<a role="menuitem" href={rackHref}><Icon name="server" size="sm" /><span class="mi"><b>Poser dans le rack</b><small class="pm-sub">{designLabel(c!)}</small></span></a>{/if}
-          {#if it?.modular}<button role="menuitem" onclick={() => (chassisOf = a)}><Icon name="grid" size="sm" /><span class="mi"><b>Modules du châssis</b><small class="pm-sub">{mods.length} module{mods.length > 1 ? 's' : ''} glissé{mods.length > 1 ? 's' : ''}</small></span></button>{/if}
-          {#if a.accessory?.kind === 'panel'}<button role="menuitem" onclick={() => (panelOf = a)}><Icon name="panel" size="sm" /><span class="mi"><b>{writable ? 'Modifier le panel' : 'Voir le panel'}</b></span></button>{/if}
-          {#if writable}<hr aria-hidden="true"><button role="menuitem" class="danger" onclick={() => delRow(r)}><Icon name="trash" size="sm" /><span class="mi"><b>Supprimer de l’inventaire</b></span></button>{/if}
-        {/snippet}
-      </Menu>
+      {#if writable || fiche || it?.modular || a.accessory?.kind === 'panel'}
+        <Menu label="Actions pour {a.label}" iconOnly icon="more" btnClass="icon-btn sm" fixed>
+          {#snippet children()}
+            {#if writable}<button role="menuitem" title="Vers un autre élément ou le matériel libre" onclick={() => (moving = { rows: [r], inst: '', target: '' })}><Icon name="arrowr" size="sm" />Déplacer vers…</button>{/if}
+            {#if fiche}<a role="menuitem" href={fiche}><Icon name="file" size="sm" />Ouvrir la fiche</a>{/if}
+            {#if it?.modular}<button role="menuitem" title="{mods.length} module{mods.length > 1 ? 's' : ''} glissé{mods.length > 1 ? 's' : ''}" onclick={() => (chassisOf = a)}><Icon name="grid" size="sm" />Modules du châssis</button>{/if}
+            {#if a.accessory?.kind === 'panel'}<button role="menuitem" onclick={() => (panelOf = a)}><Icon name="panel" size="sm" />{writable ? 'Modifier le panel' : 'Voir le panel'}</button>{/if}
+            {#if writable}<hr aria-hidden="true"><button role="menuitem" class="danger" onclick={() => delRow(r)}><Icon name="trash" size="sm" />Supprimer</button>{/if}
+          {/snippet}
+        </Menu>
+      {/if}
     </td>
   </tr>
   {#each subs as { i, mo }, n (i.id)}
     {@const owner = mo ?? r.list.find((x) => x.id === i.article_id) ?? a}
     {@const ist = statusOf(owner, i.id)}
     {@const mi = mo ? item(mo) : undefined}
-    <tr class="sub" class:mod={!!mo} class:last={n === subs.length - 1} class:drag-src={drag?.keys.has(r.key)} class:focus={flash === i.id} data-inst={i.id} data-drop={inB ? r.scope : undefined}>
+    {@const ph = placeHref(owner, i.id)}
+    {@const canMove = writable && !mo && owner.nature === 'equipment'}
+    {@const canDel = writable && (!!mo || (owner.quantity === 1 && qtyOf(r) > 1))}
+    <tr class="sub" class:mod={!!mo} class:last={n === subs.length - 1} class:drag-src={drag?.keys.has(r.key)} class:focus={flash === i.id} data-inst={i.id}>
       {#if writable}<td class="ck"></td><td class="c-grip"></td>{/if}
       <td class="sub-main" colspan="3">
         <span class="sub-line">
           <span class="tag mono">{i.tag}</span>
-          {#if mo}<span class="tag slot mono">S{mo.host!.slot}</span><span class="mod-name">{mo.label}{mi?.brand ? ` · ${mi.brand}` : ''}</span>
+          {#if mo}<span class="tag mod-slot mono">S{mo.host!.slot}</span><span class="mod-name">{mo.label}{mi?.brand ? ` · ${mi.brand}` : ''}</span>
           {:else}<input class="input cell" value={i.label ?? ''} readonly={!writable} placeholder="Libellé libre" maxlength="80" onchange={(e) => saveInstance(i, 'label', (e.target as HTMLInputElement).value)} aria-label="Libellé de {i.tag}">{/if}
         </span>
       </td>
-      <td class="c-st">{#if ist.kind === 'load'}<Loading inline label={ist.text} />{:else}<span class={ST[ist.kind]} title={ist.title}>{ist.text}</span>{/if}</td>
+      <td class="c-st">{#if ist.kind === 'load'}<Loading inline label={ist.text} />{:else if ist.kind === 'todo' && ph}<a class="place" href={ph} title="Poser {i.tag} dans {contOf(owner)?.name}"><Icon name="server" size="sm" />Poser</a>{:else}<span class={ST[ist.kind]} title={ist.title}>{ist.text}</span>{/if}</td>
       <td class="acts">
-        {#if writable && mo}<button class="icon-btn sm danger" title="Retirer du châssis" aria-label="Retirer {mo.label} du châssis" onclick={() => delModule(mo)}><Icon name="x" size="sm" /></button>
-        {:else if writable && owner.nature === 'equipment'}<button class="icon-btn sm" title="Déplacer cet exemplaire" aria-label="Déplacer l’exemplaire {i.tag}" onclick={() => moveInst(r, i)}><Icon name="arrowr" size="sm" /></button>{/if}
+        {#if canMove || ph || canDel}
+          <Menu label="Actions pour {i.tag}" iconOnly icon="more" btnClass="icon-btn sm" fixed>
+            {#snippet children()}
+              {#if canMove}<button role="menuitem" onclick={() => moveInst(r, i)}><Icon name="arrowr" size="sm" />Déplacer cet exemplaire</button>{/if}
+              {#if ph}<a role="menuitem" href={ph}><Icon name="server" size="sm" />{ist.kind === 'ok' ? 'Voir dans le rack' : 'Poser dans le rack'}</a>{/if}
+              {#if canDel}
+                {#if canMove || ph}<hr aria-hidden="true">{/if}
+                {#if mo}<button role="menuitem" class="danger" onclick={() => delModule(mo)}><Icon name="trash" size="sm" />Retirer du châssis</button>
+                {:else}<button role="menuitem" class="danger" onclick={() => delInst(owner, i)}><Icon name="trash" size="sm" />Retirer cet exemplaire</button>{/if}
+              {/if}
+            {/snippet}
+          </Menu>
+        {/if}
       </td>
     </tr>
   {/each}
 {/snippet}
 
-{#snippet thead(label: string)}
-  <thead><tr>
-    {#if writable}<th class="ck"><input type="checkbox" checked={allSel} disabled={!shownRows.length} onchange={toggleAll} aria-label="Tout sélectionner"></th><th class="c-grip"><span class="sr-only">Glisser</span></th>{/if}
-    <th class="c-name">{label}</th><th class="c-u num">U</th><th class="c-qty">Qté</th><th class="c-st">État</th><th class="acts"><span class="sr-only">Actions</span></th>
-  </tr></thead>
-{/snippet}
-
-{#snippet selBar()}
-  {#if writable && selRows.length}
-    <div class="selbar" role="region" aria-label="Sélection">
-      <b class="sel-n">{selRows.length} sélectionné{selRows.length > 1 ? 's' : ''}</b>
-      <button class="btn sm" disabled={moveBusy} onclick={() => (moving = { rows: [...selRows], inst: '', target: '' })}><Icon name="arrowr" size="sm" />Déplacer vers…</button>
-      <button class="btn sm ghost danger" disabled={moveBusy} onclick={delSel}><Icon name="trash" size="sm" />Supprimer</button>
-      <span class="grow"></span>
-      <button class="btn sm ghost" onclick={() => sel.clear()} title="Désélectionner (Échap)">Désélectionner</button>
-    </div>
+<HeadActions>
+  <Menu label="Exporter" icon="download" btnClass="btn" fixed menuLabel="Exporter l’inventaire">
+    {#snippet children()}
+      <button role="menuitem" title="Tout le matériel du projet, élément par élément" onclick={() => exportInv('xlsx', 'container')}><Icon name="sheet" size="sm" />Nomenclature par élément (Excel)</button>
+      <button role="menuitem" title="Tout le matériel du projet, sous-totaux par emplacement" onclick={() => exportInv('xlsx', 'location')}><Icon name="sheet" size="sm" />Nomenclature par emplacement (Excel)</button>
+      <button role="menuitem" title="Une ligne par matériel, sans sous-totaux" onclick={() => exportInv('csv', 'none')}><Icon name="file" size="sm" />Liste du matériel (CSV)</button>
+    {/snippet}
+  </Menu>
+  {#if writable}
+    <Menu label="Ajouter" icon="plus" btnClass="btn primary" fixed menuLabel="Ajouter">
+      {#snippet children()}
+        <button role="menuitem" disabled={!selLoc} onclick={() => (adding = true)}><Icon name="box" size="sm" />Matériel{#if loc}<span class="mi-to">{cont ? shortName(cont) : 'Matériel libre'}</span>{/if}</button>
+        <button role="menuitem" disabled={!loc} onclick={() => loc && (contEdit = { c: null, loc: loc.id })}><Icon name="server" size="sm" />Élément{#if loc}<span class="mi-to">{loc.name}</span>{/if}</button>
+        <button role="menuitem" onclick={newLoc}><Icon name="pin" size="sm" />Emplacement</button>
+        <hr aria-hidden="true">
+        <button role="menuitem" disabled={!loc} title="Un rack, un flight-case, avec son contenu" onclick={() => loc && (fromTemplate = loc.id)}><Icon name="case" size="sm" />Élément depuis un modèle</button>
+        <button role="menuitem" disabled={!loc} title="Plusieurs éléments d’un coup, dans l’emplacement ouvert" onclick={() => loc && openRegiePick(loc)}><Icon name="layers" size="sm" />Régie depuis un modèle</button>
+      {/snippet}
+    </Menu>
   {/if}
-{/snippet}
+</HeadActions>
 
 <div class="inv">
   {#if !view.locations.length}
@@ -731,156 +771,105 @@
   {/if}
 
   {#if loc}
-    <HeadActions>
-      <button class="btn" onclick={exportXlsx} title="Fichier Excel de tout le matériel du projet, élément par élément : liste de colisage, chiffrage, logistique"><Icon name="download" size="sm" />Exporter</button>
-      {#if writable}<button class="btn primary" onclick={() => (adding = true)} title={cont ? `Dans « ${cont.name} »` : 'Dans les équipements libres'}><Icon name="plus" size="sm" />Ajouter du matériel</button>{/if}
-    </HeadActions>
-
-    {#if mode === 'a'}
-      <div class="a-grid">
-        <aside class="card a-side" aria-label="Emplacements et éléments" bind:this={sideEl} style:--side-top="{headH + 12}px" style:--side-max={viewH ? `${viewH - headH - 24}px` : undefined}>
-          {#each view.locations as l (l.id)}
-            {@const lc = contsOf(l.id)}
-            {@const shut = folded.has(l.id)}
-            <section class="ls" aria-labelledby="ls-n-{l.id}">
-              <div class="ls-head" class:drop-ok={dropOn === `head:${l.id}`} data-drop="head:{l.id}">
-                <button class="ls-tog" aria-expanded={!shut} aria-controls={shut ? undefined : `ls-b-${l.id}`} title={shut ? 'Déplier' : 'Replier'} onclick={() => foldLoc(l.id, !shut)}>
+    {@const par = cont ? parentOf(cont) : null}
+    <div class="a-grid">
+      <nav class="card a-side tree" aria-label="Emplacements et éléments" bind:this={sideEl} style:--side-top="{headH + 12}px" style:--side-max={viewH ? `${viewH - headH - 24}px` : undefined}>
+        {#each view.locations as l (l.id)}
+          {@const tree = treeOf(l.id)}
+          {@const shut = folded.has(l.id)}
+          <section class="tl" aria-labelledby="tl-n-{l.id}">
+            <div class="tl-head" class:drop-ok={dropOn === `head:${l.id}`} data-drop="head:{l.id}">
+              <button class="tl-tog" aria-expanded={!shut} aria-controls={shut ? undefined : `tl-b-${l.id}`} title={shut ? 'Déplier' : 'Replier'} onclick={() => foldLoc(l.id, !shut)}>
+                <span class="eyebrow">Emplacement</span>
+                <span class="tl-l1">
                   <span class="caret"><Icon name="chevr" size="sm" /></span>
-                  <span class="ls-t">
-                    <span class="ls-l1"><b class="ls-name" id="ls-n-{l.id}">{l.name}</b>{#if l.code}<span class="mono ls-code">{l.code}</span>{/if}</span>
-                    <span class="ls-meta">{lc.length} élément{lc.length > 1 ? 's' : ''}{l.totals.free_items ? ` · ${l.totals.free_items} libre${l.totals.free_items > 1 ? 's' : ''}` : ''}</span>
-                  </span>
-                </button>
-                {@render locMenu(l)}
-              </div>
-              {#if !shut}
-                <div class="ls-body" id="ls-b-{l.id}">
-                  {#each lc as c (c.id)}{@render elRow(l, c, !!c.parent_id && lc.some((p) => p.id === c.parent_id))}{/each}
-                  {#if showFree(l)}{@render elRow(l, null, false)}{/if}
-                  {#if writable}<button class="btn ghost sm el-add" onclick={() => (contEdit = { c: null, loc: l.id })} aria-label="Nouvel élément dans {l.name}"><Icon name="plus" size="sm" />Nouvel élément</button>{/if}
-                </div>
-              {/if}
-            </section>
-          {/each}
-          {#if writable}<button class="btn ghost sm loc-add" onclick={newLoc}><Icon name="plus" size="sm" />Nouvel emplacement</button>{/if}
-        </aside>
-
-        <div class="a-main">
-          <section class="card elhead" aria-label={cont ? cont.name : 'Équipements libres'}>
-            <div class="who">
-              {@render thumb(cont, true)}
-              <div class="who-t">
-                <span class="who-chips">{#if cont}<span class="chip">{CONTAINER_KINDS[cont.kind].label}</span>{#if cont.wheels}<span class="chip">Roulettes</span>{/if}{:else}<span class="chip">Sans élément</span>{/if}</span>
-                <h2 class="el-title">{cont ? cont.name : 'Équipements libres'}</h2>
-                <span class="mono small muted">{#if cont}{cont.cable_code} · {specLine(cont)}{cont.totals.volume_m3 ? ` · ${nf(cont.totals.volume_m3, 2)} m³` : ''}{:else}Comptés dans la nomenclature et les totaux · {loc.code}{/if}</span>
-              </div>
+                  <b class="tl-name" id="tl-n-{l.id}">{l.name}</b>{#if l.code}<span class="mono tl-code">{l.code}</span>{/if}
+                  {#if shut}<span class="tl-meta">{l.totals.containers} élément{pl(l.totals.containers)}</span>{/if}
+                </span>
+              </button>
+              {@render locMenu(l)}
             </div>
-            <div class="stats">
-              {#if cont?.rackable}<span class="kv kv-g"><span>Hauteur posée</span>{@render gauge(cont, 24, true)}</span>{/if}
-              <span class="kv"><span>Pièces</span><b class="mono">{selCont ? piecesOf(selCont) : 0}</b></span>
-              <span class="kv" class:err={cont?.totals.over_weight}><span>Poids</span><b class="mono">{nf(cont ? cont.totals.weight_kg : loc.totals.weight_kg, 1)}{cont?.max_weight_kg ? ` / ${nf(cont.max_weight_kg)}` : ''} kg</b></span>
-              <span class="kv" class:err={cont?.totals.over_power}><span>Conso</span><b class="mono">{nf(cont ? cont.totals.power_w : loc.totals.power_w)}{cont?.max_power_w ? ` / ${nf(cont.max_power_w)}` : ''} W</b></span>
-            </div>
-            {#if cont}
-              <div class="el-acts">
-                {#if designHref(cont)}<a class="btn" href={designHref(cont)}><Icon name={cont.rackable && !(cont.kind === 'casquette' && cont.parent_id) ? 'server' : 'layers'} size="sm" />{designLabel(cont)}</a>{/if}
-                {@render elMenu(cont, false)}
+            {#if !shut}
+              <div class="tl-body" id="tl-b-{l.id}">
+                {#each tree as { c, kids } (c.id)}
+                  {@render node(l, c, false, kids.length, false)}
+                  {#each kids as k, n (k.id)}{@render node(l, k, true, 0, n === kids.length - 1)}{/each}
+                {/each}
+                {#if showFree(l)}{@render node(l, null, false, 0, false)}{/if}
+                {#if writable && !tree.length}<button class="btn ghost sm tl-add" onclick={() => (contEdit = { c: null, loc: l.id })} aria-label="Nouvel élément dans {l.name}"><Icon name="plus" size="sm" />Nouvel élément</button>{/if}
               </div>
             {/if}
           </section>
+        {/each}
+      </nav>
 
-          {#if cont?.kind === 'monitor_wall' && cont.details?.wall}
-            <section class="card"><WallView wall={cont.details.wall} screens={gearOf(cont)} {writable} onsave={(w) => saveDetails(cont, { ...cont.details, wall: w })} /></section>
-          {:else if (cont?.kind === 'desk' || cont?.kind === 'operator_position') && cont.details?.positions?.length}
-            <section class="card"><DeskView positions={cont.details.positions} gear={gearOf(cont)} {writable} onsave={(ps) => saveDetails(cont, { ...cont.details, positions: ps })} /></section>
+      <div class="a-main">
+        <section class="card elhead" aria-label={cont ? cont.name : 'Matériel libre'}>
+          {@render thumb(cont, true)}
+          <div class="eh-t">
+            <span class="eh-path">{loc.name}{par ? ` › ${par.name}` : ''} · {cont ? CONTAINER_KINDS[cont.kind].label : 'Sans élément'}{cont?.wheels ? ' · roulettes' : ''}</span>
+            <span class="eh-l1">
+              <h2 class="eh-title">{cont ? shortName(cont) : 'Matériel libre'}</h2>
+              {#if cont?.rackable}{@render gauge(cont, true)}{/if}
+            </span>
+            <span class="eh-meta">
+              {#if cont}<span class="mono">{cont.cable_code}</span><span>{specLine(cont)}</span>{#if cont.totals.volume_m3}<span>{nf(cont.totals.volume_m3, 2)} m³</span>{/if}{:else if loc.code}<span class="mono">{loc.code}</span>{/if}
+              <span>{selCont ? piecesOf(selCont) : 0} pièce{pl(selCont ? piecesOf(selCont) : 0)}</span>
+              <span class:err={cont?.totals.over_weight} title={cont?.totals.over_weight ? 'Poids maximal dépassé' : undefined}>{nf(cont ? cont.totals.weight_kg : loc.totals.weight_kg, 1)}{cont?.max_weight_kg ? ` / ${nf(cont.max_weight_kg)}` : ''} kg</span>
+              <span class:err={cont?.totals.over_power} title={cont?.totals.over_power ? 'Consommation maximale dépassée' : undefined}>{nf(cont ? cont.totals.power_w : loc.totals.power_w)}{cont?.max_power_w ? ` / ${nf(cont.max_power_w)}` : ''} W</span>
+              {#if !cont}<span>compté dans la nomenclature</span>{/if}
+            </span>
+          </div>
+          {#if cont}
+            <div class="eh-acts">
+              {#if designHref(cont)}<a class="btn sm" href={designHref(cont)}><Icon name={designIcon(cont)} size="sm" />{designLabel(cont)}</a>{/if}
+              {@render elMenu(cont)}
+            </div>
           {/if}
+        </section>
 
-          <div class="toolbar">
-            <label class="search"><Icon name="search" /><input class="input" type="search" bind:value={q} placeholder="Rechercher dans {cont ? cont.name : 'les équipements libres'}" aria-label="Rechercher dans l’élément"></label>
-            {#if cont?.rackable}<Seg options={FILTERS} bind:value={filter} label="Filtrer par pose" />{/if}
+        {#if cont?.kind === 'monitor_wall' && cont.details?.wall}
+          <section class="card"><WallView wall={cont.details.wall} screens={gearOf(cont)} {writable} onsave={(w) => saveDetails(cont, { ...cont.details, wall: w })} /></section>
+        {:else if (cont?.kind === 'desk' || cont?.kind === 'operator_position') && cont.details?.positions?.length}
+          <section class="card"><DeskView positions={cont.details.positions} gear={gearOf(cont)} {writable} onsave={(ps) => saveDetails(cont, { ...cont.details, positions: ps })} /></section>
+        {/if}
+
+        <div class="toolbar">
+          <label class="search"><Icon name="search" /><input class="input" type="search" bind:value={q} placeholder="Rechercher dans {cont ? shortName(cont) : 'le matériel libre'}" aria-label="Rechercher dans l’élément"></label>
+          {#if cont?.rackable}<Seg options={FILTERS} bind:value={filter} label="Filtrer par pose" />{/if}
+        </div>
+
+        {#if writable && selRows.length}
+          <div class="selbar" role="region" aria-label="Sélection">
+            <b class="sel-n">{selRows.length} sélectionné{selRows.length > 1 ? 's' : ''}</b>
+            <button class="btn sm" disabled={moveBusy} onclick={() => (moving = { rows: [...selRows], inst: '', target: '' })}><Icon name="arrowr" size="sm" />Déplacer vers…</button>
+            <button class="btn sm ghost danger" disabled={moveBusy} onclick={delSel}><Icon name="trash" size="sm" />Supprimer</button>
             <span class="grow"></span>
-            <Seg options={MODES} value={mode} label="Vue" onchange={setMode} />
-            {#if writable}<button class="btn" onclick={() => (adding = true)}><Icon name="plus" size="sm" />Ajouter ici</button>{/if}
+            <button class="btn sm ghost" onclick={() => sel.clear()} title="Désélectionner (Échap)">Désélectionner</button>
           </div>
+        {/if}
 
-          {@render selBar()}
-
-          <div class="card tbl-card dense">
-            <table class="tbl dense inv-tbl">
-              {@render thead('Matériel et exemplaires')}
-              <tbody>
-                {#each secsOf.get(selCont ?? '') ?? [] as g (g.k)}
-                  <tr class="grp"><th colspan={writable ? 7 : 5} scope="colgroup"><span class="eyebrow">{g.label}</span><span class="grp-n mono">{g.rows.reduce((n, r) => n + qtyOf(r), 0)}</span></th></tr>
-                  {#each g.rows as r (r.key)}{@render rowLines(r, false)}{/each}
-                {:else}
-                  <tr><td colspan={writable ? 7 : 5}>
-                    {#if q.trim() || filter !== 'all'}<EmptyState card={false} icon="search" message="Aucun matériel ne correspond" hint="Changez la recherche ou le filtre de pose." />
-                    {:else}<EmptyState card={false} icon="box" message="Aucun matériel ici" hint={writable ? 'Ajoutez-en avec « Ajouter du matériel », ou glissez une ligne depuis un autre élément.' : ''} />{/if}
-                  </td></tr>
-                {/each}
-              </tbody>
-            </table>
-          </div>
+        <div class="card tbl-card dense">
+          <table class="tbl dense inv-tbl">
+            <thead><tr>
+              {#if writable}<th class="ck"><input type="checkbox" checked={allSel} disabled={!shownRows.length} onchange={toggleAll} aria-label="Tout sélectionner"></th><th class="c-grip"><span class="sr-only">Glisser</span></th>{/if}
+              <th class="c-name">Matériel et exemplaires</th><th class="c-u num">U</th><th class="c-qty">Qté</th><th class="c-st">État</th><th class="acts"><span class="sr-only">Actions</span></th>
+            </tr></thead>
+            <tbody>
+              {#each secsOf.get(selCont ?? '') ?? [] as g (g.k)}
+                <tr class="grp"><th colspan={writable ? 7 : 5} scope="colgroup"><span class="eyebrow">{g.label}</span><span class="grp-n mono">{g.rows.reduce((n, r) => n + qtyOf(r), 0)}</span></th></tr>
+                {#each g.rows as r (r.key)}{@render rowLines(r)}{/each}
+              {:else}
+                <tr><td colspan={writable ? 7 : 5}>
+                  {#if q.trim() || filter !== 'all'}<EmptyState card={false} icon="search" message="Aucun matériel ne correspond" hint="Changez la recherche ou le filtre de pose." />
+                  {:else}<EmptyState card={false} icon="box" message="Aucun matériel ici" hint={writable ? 'Ajoutez-en avec « Ajouter › Matériel », ou glissez une ligne sur un élément de l’arbre.' : ''} />{/if}
+                </td></tr>
+              {/each}
+            </tbody>
+          </table>
         </div>
       </div>
-    {:else}
-      <div class="b-locs" role="group" aria-label="Emplacements">
-        <span class="eyebrow">Emplacement</span>
-        {#each view.locations as l (l.id)}
-          <button class="fchip" class:on={l.id === selLoc} aria-pressed={l.id === selLoc} title="{l.name}{l.code ? ` · ${l.code}` : ''}" onclick={() => pickLoc(l.id)}>{l.name} <span class="muted mono">{l.totals.containers}</span></button>
-        {/each}
-        {@render locMenu(loc)}
-        {#if writable}<button class="btn ghost sm" onclick={newLoc}><Icon name="plus" size="sm" />Nouvel emplacement</button>{/if}
-      </div>
-      <div class="toolbar b-bar">
-        <label class="search"><Icon name="search" /><input class="input" type="search" bind:value={q} placeholder="Rechercher" aria-label="Rechercher dans la nomenclature"></label>
-        <Seg options={FILTERS} bind:value={filter} label="Filtrer par pose" />
-        <span class="grow"></span>
-        <button class="btn ghost" onclick={() => { if (allCollapsed) collapsed.clear(); else for (const s of scopes) collapsed.add(s); }}><Icon name={allCollapsed ? 'chevd' : 'chevr'} size="sm" />{allCollapsed ? 'Tout déplier' : 'Tout replier'}</button>
-        <Seg options={MODES} value={mode} label="Vue" onchange={setMode} />
-        {#if writable}<button class="btn" onclick={() => (contEdit = { c: null, loc: loc.id })}><Icon name="plus" size="sm" />Nouvel élément</button>{/if}
-      </div>
-
-      {@render selBar()}
-
-      <div class="card tbl-card dense">
-        <table class="tbl dense inv-tbl b-tbl">
-          {@render thead('Matériel et exemplaires')}
-          {#each scopes as s (s)}
-            {@const c = s === 'free' ? null : view.containers.find((x) => x.id === s) ?? null}
-            {@const rows = (secsOf.get(s) ?? []).flatMap((g) => g.rows)}
-            {@const shut = collapsed.has(s)}
-            <tbody class="b-group">
-              <tr class="b-grp" class:drop-ok={dropOn === s} data-drop={s}>
-                <td class="b-g-main" colspan={writable ? 6 : 4}>
-                  <span class="gtitle">
-                    <button class="icon-btn xs caret" aria-expanded={!shut} aria-label="{shut ? 'Déplier' : 'Replier'} {c ? c.name : 'Équipements libres'}" title={shut ? 'Déplier' : 'Replier'} onclick={() => (shut ? collapsed.delete(s) : collapsed.add(s))}><Icon name="chevr" size="sm" /></button>
-                    {@render thumb(c, false)}
-                    <b class="g-name">{c ? c.name : 'Équipements libres'}</b>
-                    <span class="chip">{c ? CONTAINER_KINDS[c.kind].label : 'Sans élément'}</span>
-                    <span class="mono small muted">{s === 'free' ? loc.totals.free_items : piecesOf(s)} pièce{(s === 'free' ? loc.totals.free_items : piecesOf(s)) > 1 ? 's' : ''}</span>
-                    {#if c?.rackable}<span class="g-gauge">{@render gauge(c, 14, false)}</span>{/if}
-                  </span>
-                </td>
-                <td class="acts">
-                  <span class="g-acts">
-                    {#if c && designHref(c)}<a class="icon-btn sm" href={designHref(c)} title={designLabel(c)} aria-label="{designLabel(c)} : {c.name}"><Icon name={c.rackable && !(c.kind === 'casquette' && c.parent_id) ? 'server' : 'layers'} size="sm" /></a>{/if}
-                    {#if writable}<button class="icon-btn sm" title="Ajouter ici" aria-label="Ajouter du matériel dans {c ? c.name : 'les équipements libres'}" onclick={() => { selCont = s; adding = true; }}><Icon name="plus" size="sm" /></button>{/if}
-                    {#if c}{@render elMenu(c, true)}{/if}
-                  </span>
-                </td>
-              </tr>
-              {#if !shut}
-                {#each rows as r (r.key)}{@render rowLines(r, true)}
-                {:else}
-                  <tr class="b-drop" class:drop-ok={dropOn === s} data-drop={s}><td colspan={writable ? 7 : 5}>{#if scopeArts(s).length}Aucun matériel ne correspond{:else}Vide{writable ? ' · glissez du matériel ici' : ''}{/if}</td></tr>
-                {/each}
-              {/if}
-            </tbody>
-          {/each}
-        </table>
-      </div>
-    {/if}
+    </div>
   {/if}
 </div>
 
@@ -916,8 +905,8 @@
           <option value="" disabled>Choisir une destination</option>
           {#each view.locations as l}
             <optgroup label={l.name}>
-              {#each view.containers.filter((c) => c.location_id === l.id) as c}{#if !movingArts.every((a) => a.container_id === c.id)}<option value="c:{c.id}" disabled={hasAcc && !c.rackable}>{c.name}</option>{/if}{/each}
-              {#if !movingArts.every((a) => !a.container_id && a.location_id === l.id)}<option value="l:{l.id}" disabled={hasAcc}>Équipements libres de {l.name}</option>{/if}
+              {#each treeOf(l.id).flatMap((t) => [t.c, ...t.kids]) as c}{#if !movingArts.every((a) => a.container_id === c.id)}<option value="c:{c.id}" disabled={hasAcc && !c.rackable}>{c.parent_id ? `${parentOf(c)?.name ?? ''} › ${shortName(c)}` : c.name}</option>{/if}{/each}
+              {#if !movingArts.every((a) => !a.container_id && a.location_id === l.id)}<option value="l:{l.id}" disabled={hasAcc}>Matériel libre de {l.name}</option>{/if}
             </optgroup>
           {/each}
         </select>
@@ -932,86 +921,91 @@
 
 <style>
   .inv { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
-  [role^='menuitem'] > .mi { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+  /* Menus courts : une ligne par action ; la cible d'un ajout se lit à droite, en discret. */
+  [role^='menuitem'] { white-space: nowrap; }
+  .mi-to { margin-left: auto; padding-left: 16px; max-width: 160px; overflow: hidden; text-overflow: ellipsis; font-size: var(--fs-sm); color: var(--fg-3); }
 
-  /* ---------- Vue par élément : deux colonnes ---------- */
-  .a-grid { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 14px; align-items: start; }
-  /* Colonne des emplacements : collée sous l'en-tête de l'espace de travail, elle défile seule
-     quand la liste dépasse la hauteur visible. */
-  .a-side { padding: 6px 8px 8px; display: flex; flex-direction: column; gap: 2px; position: sticky; top: var(--side-top, 12px); max-height: var(--side-max, calc(100dvh - var(--side-top, 12px) - 12px)); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; min-width: 0; }
-  .ls { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-  .ls + .ls { margin-top: 4px; padding-top: 6px; border-top: 1px solid var(--line); }
-  .ls-head { display: flex; align-items: center; gap: 2px; padding-right: 2px; border-radius: var(--r-sm); }
-  .ls-tog { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 6px 4px; border: 0; border-radius: var(--r-sm); background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; transition: background .12s; }
-  .ls-tog:hover { background: var(--surface-2); }
-  .ls-tog:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-  .ls-tog .caret { display: grid; place-items: center; flex: none; width: 18px; color: var(--fg-3); }
-  .ls-tog[aria-expanded='true'] .caret :global(.ic) { transform: rotate(90deg); }
-  .ls-t { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 1px; }
-  .ls-l1 { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
-  .ls-name { min-width: 0; font: 650 var(--fs-lg)/1.25 var(--display); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .ls-code { flex: none; font: 600 var(--fs-xs) var(--mono); color: var(--fg-3); }
-  .ls-meta { font-size: var(--fs-sm); color: var(--fg-3); }
-  .ls-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding-bottom: 4px; }
-  .loc-add { align-self: flex-start; margin-top: 8px; }
-  .el { display: flex; gap: 10px; align-items: center; width: 100%; padding: 8px; border: 0; border-radius: var(--r-sm); background: transparent; color: inherit; text-align: left; font: inherit; cursor: pointer; transition: background .12s; }
-  .el:hover { background: var(--surface-2); }
-  .el[aria-current='true'] { background: var(--accent-soft); }
-  .el:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-  .el.child { padding-left: 20px; }
-  .el-t { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 3px; }
-  .el-n { font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .el[aria-current='true'] .el-n { color: var(--accent-2); }
-  .el-k { font-size: var(--fs-xs); color: var(--fg-3); }
-  .el-cnt { font-size: var(--fs-xs); font-weight: 600; color: var(--fg-3); }
-  .el-add { align-self: flex-start; margin: 2px 0 0 4px; }
-  .drop-ok, .tbl tr.drop-ok td { box-shadow: inset 0 0 0 2px var(--accent); background: var(--accent-soft); }
-  .tbl tr.drop-ok td { box-shadow: inset 0 2px 0 var(--accent), inset 0 -2px 0 var(--accent); }
+  /* ---------- Deux colonnes : arbre et élément ouvert ---------- */
+  .a-grid { display: grid; grid-template-columns: 290px minmax(0, 1fr); gap: 14px; align-items: start; }
+  /* Arbre : collé sous l'en-tête de l'espace de travail, il défile seul quand il dépasse la
+     hauteur visible. Ses menus sont rendus hors de la colonne : jamais coupés. */
+  .a-side { padding: 4px 8px 8px; display: flex; flex-direction: column; gap: 1px; position: sticky; top: var(--side-top, 12px); max-height: var(--side-max, calc(100dvh - var(--side-top, 12px) - 12px)); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; min-width: 0; }
+  .tl { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .tl + .tl { margin-top: 6px; padding-top: 4px; border-top: 1px solid var(--line); }
+  .tl-head { display: flex; align-items: flex-start; gap: 2px; padding: 6px 0 2px; border-radius: var(--r-sm); }
+  .tl-head :global(.menu-wrap) { margin-top: 2px; }
+  .tl-tog { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 4px 6px 6px; border: 0; border-radius: var(--r-sm); background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; transition: background .12s; }
+  .tl-tog:hover { background: var(--surface-2); }
+  .tl-tog:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .tl-tog .eyebrow { margin: 0; }
+  .tl-l1 { display: flex; align-items: baseline; gap: 6px; min-width: 0; max-width: 100%; }
+  .tl-l1 .caret { align-self: center; display: grid; place-items: center; flex: none; width: 16px; margin-left: -2px; color: var(--fg-3); }
+  .tl-l1 .caret :global(.ic) { transition: transform .15s; }
+  .tl-tog[aria-expanded='true'] .caret :global(.ic) { transform: rotate(90deg); }
+  .tl-name { min-width: 0; font: 700 var(--fs-lg)/1.25 var(--display); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tl-code { flex: none; font: 600 var(--fs-xs) var(--mono); color: var(--fg-3); }
+  .tl-meta { flex: none; font-size: var(--fs-sm); color: var(--fg-3); }
+  .tl-body { display: flex; flex-direction: column; gap: 1px; min-width: 0; padding-bottom: 4px; }
+  .tl-add { align-self: flex-start; margin: 2px 0 0 2px; }
+
+  .tn { position: relative; display: flex; gap: 9px; align-items: center; width: 100%; min-height: 48px; padding: 6px 8px; border: 0; border-radius: var(--r-sm); background: transparent; color: inherit; text-align: left; font: inherit; cursor: pointer; transition: background .12s; }
+  .tn:hover { background: var(--surface-2); }
+  .tn[aria-current='true'] { background: var(--accent-soft); }
+  .tn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  /* Casquette : en retrait sous son mobilier, reliée par un trait. */
+  .tn.child { padding-left: 32px; }
+  .tn.child::before { content: ''; position: absolute; left: 20px; top: -1px; height: calc(50% + 1px); width: 8px; border-left: 1px solid var(--line-2); border-bottom: 1px solid var(--line-2); border-bottom-left-radius: 5px; pointer-events: none; }
+  .tn.child:not(.last)::after { content: ''; position: absolute; left: 20px; top: 50%; bottom: -1px; border-left: 1px solid var(--line-2); pointer-events: none; }
+  .tn-t { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 4px; }
+  .tn-n { font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tn[aria-current='true'] .tn-n { color: var(--accent-2); }
+  .tn.free .tn-n { font-style: italic; }
+  .tn-k { font-size: var(--fs-xs); color: var(--fg-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tn-c { align-self: flex-start; padding-top: 2px; font-size: var(--fs-xs); font-weight: 600; color: var(--fg-3); }
+  .drop-ok { box-shadow: inset 0 0 0 2px var(--accent); background: var(--accent-soft); }
 
   /* Vignettes : les illustrations des éléments en réduction. */
-  .thumb { flex: none; display: grid; place-items: center; width: 30px; height: 38px; border-radius: 6px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line); color: var(--fg-3); overflow: hidden; }
-  .thumb.big { width: 44px; height: 56px; border-radius: var(--r-sm); }
-  .thumb .mini-rack { width: 18px; height: 30px; padding: 2px 3px 3px; gap: 0; border-radius: 2px; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .6); }
-  .thumb.big .mini-rack { width: 26px; height: 46px; padding: 3px 4px 4px; }
+  .thumb { flex: none; display: grid; place-items: center; width: 28px; height: 36px; border-radius: 6px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line); color: var(--fg-3); overflow: hidden; }
+  .thumb.none { background: transparent; box-shadow: inset 0 0 0 1px var(--line-2); }
+  .thumb.big { width: 40px; height: 50px; border-radius: var(--r-sm); }
+  .thumb .mini-rack { width: 17px; height: 28px; padding: 2px 3px 3px; gap: 0; border-radius: 2px; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .6); }
+  .thumb.big .mini-rack { width: 24px; height: 40px; padding: 3px 4px 4px; }
   .thumb .mini-rack i::before, .thumb .mini-rack.case::after { display: none; }
   .thumb .mini-rack.case { box-shadow: inset 0 0 0 2px var(--ill-alu); }
   .kind-vis { display: grid; place-items: center; --ki: var(--sig-v); }
 
-  /* Jauge de hauteur (liste, en-tête, groupes de la nomenclature). */
-  .gauge { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; min-width: 0; font-size: var(--fs-xs); color: var(--fg-3); }
-  .gauge :global(.vu) { width: 64px; min-width: 0; height: 7px; }
-  .g-val { font: 600 var(--fs-xs) var(--mono); color: var(--fg-2); white-space: nowrap; }
-  .gauge.err .g-val { color: var(--err); font-weight: 700; }
-  .g-note { white-space: nowrap; }
-  .g-note.over { color: var(--err); font-weight: 600; white-space: normal; }
+  /* Jauge fine de hauteur (arbre et en-tête de l'élément). */
+  .gauge { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .g-bar { position: relative; display: flex; flex: 1; min-width: 40px; height: 5px; border-radius: 3px; background: var(--surface-3); overflow: hidden; }
+  .g-bar i { display: block; height: 100%; }
+  .g-on { background: var(--ok); }
+  .g-todo { background: color-mix(in srgb, var(--warn) 55%, transparent); }
+  .gauge.over .g-on { background: var(--err); }
+  .g-val { flex: none; font: 600 var(--fs-xs) var(--mono); color: var(--fg-2); white-space: nowrap; }
+  .gauge.over .g-val { color: var(--err); }
+  .gauge.wide { width: 190px; max-width: 100%; }
+  .gauge.wide .g-bar { height: 6px; }
 
   .a-main { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-  .elhead { padding: 14px 16px; display: flex; flex-wrap: wrap; gap: 12px 22px; align-items: center; }
-  .who { display: flex; gap: 12px; align-items: center; min-width: 0; flex: 1 1 260px; }
-  .who-t { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-width: 0; }
-  .who-chips { display: flex; gap: 6px; }
-  .el-title { margin: 0; font: 700 var(--fs-xl)/1.2 var(--display); letter-spacing: -.015em; overflow-wrap: anywhere; }
-  .stats { display: flex; gap: 10px 20px; align-items: flex-start; flex-wrap: wrap; }
-  .kv { display: flex; flex-direction: column; gap: 3px; font-size: var(--fs-xs); color: var(--fg-3); }
-  .kv b { font-size: var(--fs-ctl-sm); font-weight: 600; color: var(--fg); white-space: nowrap; }
-  .kv.err b { color: var(--err); font-weight: 700; }
-  .kv-g { max-width: 260px; }
-  .kv-g .gauge :global(.vu) { width: 120px; }
-  .el-acts { display: flex; gap: 8px; align-items: center; margin-left: auto; }
+  .elhead { padding: 12px 14px 12px 16px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px 14px; align-items: center; }
+  .eh-t { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
+  .eh-l1 { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 18px; max-width: 100%; }
+  .eh-path { font-size: var(--fs-sm); color: var(--fg-3); }
+  .eh-title { margin: 0; font: 700 var(--fs-xl)/1.2 var(--display); letter-spacing: -.015em; overflow-wrap: anywhere; }
+  .eh-meta { display: flex; flex-wrap: wrap; gap: 0 6px; font-size: var(--fs-sm); color: var(--fg-3); }
+  .eh-meta > span + span::before { content: '·'; margin-right: 6px; color: var(--fg-3); }
+  .eh-meta .mono { font-size: var(--fs-xs); font-weight: 600; }
+  .eh-meta .err { color: var(--err); font-weight: 700; }
+  .eh-acts { display: flex; gap: 6px; align-items: center; }
 
   .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-  .toolbar .grow { flex: 1; }
   .toolbar .search { flex: 1 1 220px; max-width: 340px; }
-  .b-bar { gap: 8px 10px; }
-  /* Nomenclature : une puce par emplacement, puis les actions de celui qui est choisi. */
-  .b-locs { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-  .b-locs .eyebrow { margin: 0 4px 0 0; }
 
   .selbar { position: sticky; top: 8px; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 8px 6px 14px; border-radius: var(--r-md); background: var(--accent-soft); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent); color: var(--accent-2); }
   .sel-n { margin-right: 6px; font-weight: 650; white-space: nowrap; }
   .selbar .grow { flex: 1; }
 
-  /* ---------- Tableau du matériel (les deux vues) ---------- */
+  /* ---------- Tableau du matériel ---------- */
   .inv-tbl { table-layout: auto; }
   .inv-tbl th.c-grip, .inv-tbl td.c-grip { width: 22px; padding-right: 4px; }
   .inv-tbl .c-u { width: 44px; }
@@ -1027,46 +1021,35 @@
   .row[draggable='true']:active .grip { cursor: grabbing; }
   .grip { display: grid; place-items: center; width: 18px; height: 24px; color: var(--fg-3); }
   .row.drag-src, .sub.drag-src { opacity: .4; }
-  .caret :global(.ic) { transition: transform .15s; }
-  .caret[aria-expanded='true'] :global(.ic) { transform: rotate(90deg); }
   .nm-txt { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; min-width: 0; }
   .nm { font-weight: 650; overflow-wrap: anywhere; }
   .br { font-size: var(--fs-sm); color: var(--fg-3); }
   .br:empty { display: none; }
   .tag { display: inline-flex; align-items: center; height: 22px; padding: 0 6px; border-radius: 6px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line-2); font-size: var(--fs-2xs); font-weight: 600; color: var(--fg); white-space: nowrap; }
+  /* « Poser » : action explicite d'un exemplaire à placer, vers l'éditeur de son élément. */
+  .place { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px; border-radius: 6px; color: var(--accent); font: 600 var(--fs-xs) var(--font); text-decoration: none; white-space: nowrap; transition: background .12s; }
+  .place:hover { background: var(--accent-soft); color: var(--accent-2); }
+  .place:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
   /* Sous-lignes d'exemplaire : compactes, alignées sous la colonne Matériel, toujours affichées. */
   .tbl.dense tr.row.has-sub td { border-bottom: 0; }
   .tbl.dense tr.sub td { height: 32px; padding-top: 1px; padding-bottom: 1px; border-bottom: 0; }
   .tbl.dense tr.sub.last td { height: 36px; padding-bottom: 5px; border-bottom: 1px solid var(--line); }
   .tbl.dense tr.sub .chip { font-weight: 600; }
   .sub-line { display: flex; align-items: center; gap: 8px; min-width: 0; padding-left: 16px; }
-  .tag.slot { background: var(--surface-3); box-shadow: none; color: var(--fg-2); }
+  .tag.mod-slot { background: var(--surface-3); box-shadow: none; color: var(--fg-2); }
   .no-id { font-size: var(--fs-xs); color: var(--fg-3); }
   .sub-line .cell { flex: 1 1 160px; max-width: 320px; }
   .mod-name { min-width: 0; font-size: var(--fs-sm); color: var(--fg-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-  /* ---------- Nomenclature ---------- */
-  .b-tbl tbody.b-group + tbody.b-group tr.b-grp td { border-top: 8px solid var(--bg); }
-  .tbl.dense tr.b-grp td { height: 50px; background: var(--surface-2); }
-  .gtitle { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-width: 0; }
-  .g-name { font: 700 var(--fs-lg)/1.25 var(--display); }
-  .g-gauge { margin-left: auto; }
-  .g-acts { display: inline-flex; gap: 4px; align-items: center; }
-  .b-drop td { text-align: center; font-size: var(--fs-sm); color: var(--fg-3); }
-
-  /* Tablette et téléphone : les sections s'empilent au-dessus de l'élément ouvert, chacune avec
-     la rangée défilante de ses éléments. */
-  @media (max-width: 900px) {
+  /* Tablette et téléphone : l'arbre passe au-dessus de l'élément ouvert, sans défilement propre. */
+  @media (max-width: 860px) {
     .a-grid { grid-template-columns: minmax(0, 1fr); }
-    .a-side { position: static; max-height: none; overflow: visible; padding: 6px; }
-    .ls-body { flex-direction: row; align-items: center; overflow-x: auto; scrollbar-width: thin; padding-bottom: 6px; }
-    .ls-body .el { flex: none; width: 220px; }
-    .el.child { padding-left: 8px; }
-    .el-add { flex: none; align-self: center; margin: 0 4px; }
-    .el-acts { margin-left: 0; }
+    .a-side { position: static; max-height: none; overflow: visible; }
+    .elhead { grid-template-columns: auto minmax(0, 1fr); }
+    .eh-acts { grid-column: 1 / -1; }
   }
   /* Téléphone : la ligne de matériel garde nom, quantité et menu ; la pose passe dessous ; une
-     sous-ligne d'exemplaire tient sur une rangée (ID, libellé, pose, action). */
+     sous-ligne d'exemplaire tient sur une rangée (ID, libellé, pose, menu). */
   @media (max-width: 640px) {
     .inv-tbl, .inv-tbl tbody { display: block; }
     .inv-tbl thead, .inv-tbl .c-grip, .inv-tbl .c-u { display: none; }
@@ -1091,16 +1074,6 @@
     .inv-tbl tr.sub td.c-st { grid-area: st; width: auto; }
     .inv-tbl tr.sub td.acts { grid-area: acts; }
     .inv-tbl tr.grp, .inv-tbl tr.grp th { display: block; }
-    .inv-tbl tr.b-grp { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px; border-radius: var(--r-sm); background: var(--surface-2); }
-    .tbl.dense.inv-tbl tr.b-grp td { background: none; border-top: 0; }
-    .inv-tbl tbody.b-group + tbody.b-group tr.b-grp { margin-top: 10px; }
-    .inv-tbl tr.b-grp td.acts { width: auto; padding-right: 4px; }
-    .tbl.dense.inv-tbl tr.b-grp td { display: block; height: auto; border-bottom: 0; }
-    .inv-tbl tr.b-grp td.b-g-main { flex: 1; min-width: 0; padding: 8px 0 8px 8px; }
-    .inv-tbl tr.b-drop, .inv-tbl tr.b-drop td { display: block; }
-    .g-gauge { margin-left: 0; }
     .toolbar .search { max-width: none; flex-basis: 100%; }
-    .toolbar .grow { display: none; }
-    .stats { width: 100%; }
   }
 </style>
