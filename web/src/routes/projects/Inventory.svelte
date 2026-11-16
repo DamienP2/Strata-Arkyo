@@ -765,7 +765,7 @@
     {:else}
       <div class="toolbar b-bar">
         <div class="b-loc">{@render locPicker()}</div>
-        <label class="search"><Icon name="search" /><input class="input" type="search" bind:value={q} placeholder="Matériel, marque, ID, libellé" aria-label="Rechercher dans la nomenclature"></label>
+        <label class="search"><Icon name="search" /><input class="input" type="search" bind:value={q} placeholder="Rechercher" aria-label="Rechercher dans la nomenclature"></label>
         <Seg options={FILTERS} bind:value={filter} label="Filtrer par pose" />
         <span class="grow"></span>
         <button class="btn ghost" onclick={() => { if (allCollapsed) collapsed.clear(); else for (const s of scopes) collapsed.add(s); }}><Icon name={allCollapsed ? 'chevd' : 'chevr'} size="sm" />{allCollapsed ? 'Tout déplier' : 'Tout replier'}</button>
