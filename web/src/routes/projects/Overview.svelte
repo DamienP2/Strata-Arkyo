@@ -1,7 +1,6 @@
 <script lang="ts">
   import Icon from '../../components/Icon.svelte';
   import ProjectLinks from '../../components/ProjectLinks.svelte';
-  import Seg from '../../components/Seg.svelte';
   import FieldError from '../../components/FieldError.svelte';
   import AnomalyGroups from '../../components/AnomalyGroups.svelte';
   import type { Anomaly } from '../../lib/anomalies';
@@ -11,7 +10,7 @@
   import { navigate, registerLeaveGuard } from '../../lib/router.svelte';
   import { ask } from '../../lib/ask.svelte';
   import { nf } from '../../lib/format';
-  import { REGIE, type Project, type ProjectView } from '../../lib/projects';
+  import { PROJECT_TYPES, projectType, type Project, type ProjectView } from '../../lib/projects';
 
   let { view = $bindable(), reload }: { view: ProjectView; reload: () => Promise<void> } = $props();
   const writable = $derived(can('projets', 'ecriture'));
@@ -55,14 +54,12 @@
     toast(`« ${name} » supprimé.`);
     navigate('/projets');
   }
-  const REGIE_OPTIONS = Object.entries(REGIE).map(([k, r]) => ({ value: k as Project['regie'], label: r.label }));
   const p = $derived(view.project);
   const units = $derived(view.instances.length);
   const missing = $derived([
     !p.client && 'le client',
     !p.venue && 'le lieu',
     !p.description && 'une description',
-    !p.service_type && 'le type de projet',
     !(p.planning_start && p.planning_end) && 'la période de préparation',
     !((p.shoot_start && p.shoot_end) || p.commissioning) && 'la période d’exploitation',
     !view.locations.length && 'un emplacement',
@@ -105,19 +102,17 @@
 
 <div class="grid-2 ov-grid">
   <section class="card">
-    <div class="card-head"><h2>Informations du projet</h2><span class="chip">{REGIE[p.regie].label}</span></div>
+    <div class="card-head"><h2>Informations du projet</h2><span class="chip">{PROJECT_TYPES[projectType(p.regie)].label}</span></div>
     {#if missing.length}<p class="muted small fiche-miss">À compléter : {missing.join(', ')}.</p>{/if}
     <form class="form-grid ov-form" onsubmit={save}>
       <fieldset disabled={!writable} style="display:contents">
         <div class="field span"><label for="o-name">Nom</label><input class="input" id="o-name" bind:value={form.name} required maxlength="120" {...inv('name', 'o-name')}><FieldError message={errors.name} for="o-name" /></div>
         <div class="field"><label for="o-client">Client</label><input class="input" id="o-client" value={form.client ?? ''} oninput={txt('client')} placeholder="Vide : projet interne"></div>
-        <div class="field"><label for="o-tp">Type de projet</label><input class="input" id="o-tp" value={form.service_type ?? ''} oninput={txt('service_type')} placeholder="Ex. Sport, concert, TV"></div>
         <div class="field span"><label for="o-venue">Lieu</label><input class="input" id="o-venue" value={form.venue ?? ''} oninput={txt('venue')}></div>
         <div class="field"><label for="o-ps">Préparation : début</label><input class="input" type="date" id="o-ps" value={form.planning_start ?? ''} oninput={txt('planning_start')} {...inv('planning_start', 'o-ps')}><FieldError message={errors.planning_start} for="o-ps" /></div>
         <div class="field"><label for="o-pe">Préparation : fin</label><input class="input" type="date" id="o-pe" value={form.planning_end ?? ''} oninput={txt('planning_end')} {...inv('planning_end', 'o-pe')}><FieldError message={errors.planning_end} for="o-pe" /></div>
         <div class="field"><label for="o-ss">Exploitation : début</label><input class="input" type="date" id="o-ss" value={form.shoot_start ?? form.commissioning ?? ''} oninput={txt('shoot_start')} {...inv('shoot_start', 'o-ss')}><FieldError message={errors.shoot_start} for="o-ss" /></div>
         <div class="field"><label for="o-se">Exploitation : fin</label><input class="input" type="date" id="o-se" value={form.shoot_end ?? form.commissioning ?? ''} oninput={txt('shoot_end')} {...inv('shoot_end', 'o-se')}><FieldError message={errors.shoot_end} for="o-se" /></div>
-        <div class="field span"><span class="flabel" aria-hidden="true">Type de régie</span><Seg label="Type de régie" options={REGIE_OPTIONS} bind:value={form.regie} /></div>
         <div class="field span"><label for="o-desc">Description</label><textarea class="input" id="o-desc" rows="4" value={form.description ?? ''} oninput={txt('description')}></textarea></div>
         {#if writable}<div class="span row-actions"><button class="btn ghost" type="button" disabled={!dirty} onclick={() => { form = structuredClone($state.snapshot(view.project)); errors = {}; }}>Annuler</button><button class="btn primary" disabled={!dirty || busy}>{#if busy}<span class="spin"></span>{/if}Enregistrer</button></div>{/if}
       </fieldset>

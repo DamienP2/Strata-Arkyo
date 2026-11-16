@@ -9,7 +9,7 @@
   import { api } from '../lib/api';
   import { session, can } from '../lib/session.svelte';
   import { nf, relative, COMPLETION_HELP } from '../lib/format';
-  import { STATUS, STATUS_ORDER, REGIE, fdate, urgency, type Project, type Status } from '../lib/projects';
+  import { STATUS, STATUS_ORDER, REGIE, PROJECT_TYPES, projectType, fdate, urgency, type Project, type Status } from '../lib/projects';
 
   interface Dash {
     today: string; projects_total: number; projects_active: number; tasks_total: number; tasks_done: number; tasks_pct: number; completion_avg: number;
@@ -53,7 +53,7 @@
     {#if dash?.next}
       {@const n = dash.next}
       <a class="next" href="/projets/{n.project.id}">
-        <span class="next-top"><span class="lbl-t">Prochaine exploitation · {REGIE[n.project.regie].label}</span><span class="tally">J-{n.days}</span></span>
+        <span class="next-top"><span class="lbl-t">Prochaine exploitation · {PROJECT_TYPES[projectType(n.project.regie)].label}</span><span class="tally">J-{n.days}</span></span>
         <span class="next-vis"><Ill kind={REGIE[n.project.regie].ill} cables pulse w={380} /></span>
         <span class="next-name">{n.project.name}</span>
         <span class="next-sub">{n.project.client ?? 'Projet interne'}{n.project.venue ? ` · ${n.project.venue}` : ''}</span>

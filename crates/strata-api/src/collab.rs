@@ -123,14 +123,13 @@ async fn todo(
         (&d.client, "client"),
         (&d.venue, "lieu"),
         (&d.description, "description"),
-        (&d.service_type, "type de prestation"),
     ] {
         if v.as_deref().is_none_or(|s| s.trim().is_empty()) {
             missing.push(l);
         }
     }
     if d.planning_start.is_none() || d.planning_end.is_none() {
-        missing.push("période de planification");
+        missing.push("période de préparation");
     }
     if !missing.is_empty() {
         items.push(json!({ "kind": "sheet", "severity": "info", "message": format!("Informations à compléter : {}.", missing.join(", ")), "href": base }));

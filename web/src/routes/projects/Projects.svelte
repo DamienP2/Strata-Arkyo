@@ -14,12 +14,12 @@
   import { fail } from '../../lib/toast.svelte';
   import { pl, COMPLETION_HELP } from '../../lib/format';
   import { route, navigate } from '../../lib/router.svelte';
-  import { STATUS, STATUS_ORDER, REGIE, keyDate, daysBetween, fdate, period, urgency, type ProjectSummary, type Status, type Regie } from '../../lib/projects';
+  import { STATUS, STATUS_ORDER, PROJECT_TYPES, projectType, keyDate, daysBetween, fdate, period, urgency, type ProjectSummary, type Status, type ProjectType } from '../../lib/projects';
 
   // Recherche, tri et filtres mémorisés sur cet appareil.
   const saved = (() => { try { return JSON.parse(localStorage.getItem('sa-projects') ?? '{}'); } catch { return {}; } })();
   // `sort` : tri des cartes (Récents, Date, A → Z) ; `lsort` : colonne triée de la vue liste (aucune : récents d'abord).
-  let f = $state<{ q: string; st: Status[]; regie: Regie[]; sort: 'updated' | 'name' | 'date'; view: 'cards' | 'list'; lsort: Sort }>({ q: '', st: [], regie: [], sort: 'updated', view: 'cards', lsort: { key: '', dir: 1 }, ...saved });
+  let f = $state<{ q: string; st: Status[]; regie: ProjectType[]; sort: 'updated' | 'name' | 'date'; view: 'cards' | 'list'; lsort: Sort }>({ q: '', st: [], sort: 'updated', view: 'cards', lsort: { key: '', dir: 1 }, ...saved, regie: (saved.regie ?? []).filter((x: string) => x === 'prestation' || x === 'fixe') });
   $effect(() => { const v = JSON.stringify(f); try { localStorage.setItem('sa-projects', v); } catch { /* indisponible */ } });
 
   let projects = $state<ProjectSummary[]>([]);
@@ -31,7 +31,7 @@
   const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
   const list = $derived.by(() => {
     const q = norm(f.q.trim());
-    let l = projects.filter((p) => (!f.st.length || f.st.includes(p.status)) && (!f.regie.length || f.regie.includes(p.regie)) && (!q || norm([p.name, p.client, p.venue, p.service_type, p.description].filter(Boolean).join(' ')).includes(q)));
+    let l = projects.filter((p) => (!f.st.length || f.st.includes(p.status)) && (!f.regie.length || f.regie.includes(projectType(p.regie))) && (!q || norm([p.name, p.client, p.venue, p.service_type, p.description].filter(Boolean).join(' ')).includes(q)));
     const by = f.view === 'list' ? f.lsort : { key: f.sort === 'updated' ? '' : f.sort, dir: 1 };
     const cmp: Record<string, (a: ProjectSummary, b: ProjectSummary) => number> = {
       name: (a, b) => a.name.localeCompare(b.name, 'fr'),
@@ -48,7 +48,7 @@
   /** Téléphone : les filtres restent repliés derrière « Filtres (n) ». */
   let filtersOpen = $state(false);
   const toggle = <T,>(arr: T[], v: T) => (arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
-  const REGIE_ICON: Record<Regie, string> = { car: 'truck', flight_case: 'case', fixed: 'monitor' };
+  const TYPE_ICON: Record<ProjectType, string> = { prestation: 'truck', fixe: 'monitor' };
   /** « Projet interne » n'informe que si d'autres projets ont un client. */
   const anyClient = $derived(projects.some((p) => p.client));
   const subOf = (p: ProjectSummary) => [p.client ?? (anyClient ? 'Projet interne' : ''), p.venue].filter(Boolean).join(' · ');
@@ -88,7 +88,7 @@
       </div>
       <div class="pj-fg" role="group" aria-labelledby="pj-l-rg">
         <span class="pj-lbl" id="pj-l-rg">Régie</span>
-        {#each Object.entries(REGIE) as [k, r]}{@const n = projects.filter((p) => p.regie === k).length}<button class="fchip cxf" class:on={f.regie.includes(k as Regie)} class:zero={!n} aria-pressed={f.regie.includes(k as Regie)} onclick={() => (f.regie = toggle(f.regie, k as Regie))}><Icon name={REGIE_ICON[k as Regie]} size="sm" />{r.label} <span class="pj-n">{n}</span></button>{/each}
+        {#each Object.entries(PROJECT_TYPES) as [k, r]}{@const n = projects.filter((p) => projectType(p.regie) === k).length}<button class="fchip cxf" class:on={f.regie.includes(k as ProjectType)} class:zero={!n} aria-pressed={f.regie.includes(k as ProjectType)} onclick={() => (f.regie = toggle(f.regie, k as ProjectType))}><Icon name={TYPE_ICON[k as ProjectType]} size="sm" />{r.label} <span class="pj-n">{n}</span></button>{/each}
       </div>
       {#if filters}<button class="btn ghost sm" onclick={() => { f.st = []; f.regie = []; }}>Effacer {filters} filtre{filters > 1 ? 's' : ''}</button>{/if}
     </div>
@@ -111,7 +111,7 @@
             <tr class="click" onclick={() => navigate(`/projets/${p.id}`)}>
               <td><a href="/projets/{p.id}" class="cell-link" onclick={(e) => e.stopPropagation()}>{p.name}</a>{#if p.service_type}<span class="muted small">&nbsp;· {p.service_type}</span>{/if}</td>
               <td><StatusChip status={p.status} /></td>
-              <td>{REGIE[p.regie].label}</td>
+              <td>{PROJECT_TYPES[projectType(p.regie)].label}</td>
               <td class="pj-cl" title={subOf(p)}>{subOf(p) || '—'}</td>
               <td class="tnum">{period(p)}</td>
               <td class="num">{#if act && d != null && d >= 0}<span class="tally" style="--c:{urgency(d)}">J-{d}</span>{:else if act && d != null}<span class="muted small">passée</span>{:else}<span class="muted small">—</span>{/if}</td>
@@ -132,7 +132,7 @@
               {@const d = kd ? daysBetween(today, kd) : null}
               {@const act = !['done', 'cancelled'].includes(p.status)}
               <a class="card link pj-card" class:off={!act} href="/projets/{p.id}" style="--c:{STATUS[p.status].color}">
-                <span class="pj-top"><span class="pj-ico" title={REGIE[p.regie].label}><Icon name={REGIE_ICON[p.regie]} size="sm" /></span><span class="pj-kind">{REGIE[p.regie].label}{#if p.service_type}{' · '}{p.service_type}{/if}</span>
+                <span class="pj-top"><span class="pj-ico" title={PROJECT_TYPES[projectType(p.regie)].label}><Icon name={TYPE_ICON[projectType(p.regie)]} size="sm" /></span><span class="pj-kind">{PROJECT_TYPES[projectType(p.regie)].label}</span>
                   <span class="pc-j">{#if act && d != null && d >= 0}<span class="tally" style="--c:{urgency(d)}">J-{d}</span>{:else if !act}<span class="tally off">{p.status === 'done' ? 'Livré' : 'Annulé'}</span>{/if}</span></span>
                 <span class="pc-body"><b class="pc-name" title={p.name}>{p.name}</b>{#if subOf(p)}<span class="pc-sub" title={subOf(p)}>{subOf(p)}</span>{/if}
                   <span class="pc-foot"><span><span class="lbl-t">Exploitation</span><b>{kd ? fdate(kd, { day: 'numeric', month: 'short', year: 'numeric' }) : 'à fixer'}</b></span><span title={COMPLETION_HELP}><span class="lbl-t">Avancement · {p.completion} %</span><Vu value={p.completion} n={20} cls={p.completion >= 80 ? 'ok' : ''} /></span></span></span>

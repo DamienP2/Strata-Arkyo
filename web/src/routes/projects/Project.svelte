@@ -14,7 +14,7 @@
   import { toast, fail } from '../../lib/toast.svelte';
   import { route, navigate } from '../../lib/router.svelte';
   import { join, live } from '../../lib/live.svelte';
-  import { STATUS, STATUS_ORDER, REGIE, keyDate, daysBetween, period, urgency, type ProjectView, type Status } from '../../lib/projects';
+  import { STATUS, STATUS_ORDER, PROJECT_TYPES, projectType, keyDate, daysBetween, period, urgency, type ProjectView, type Status } from '../../lib/projects';
   import Overview from './Overview.svelte';
   import Inventory from './Inventory.svelte';
   import Workshop from './Workshop.svelte';
@@ -144,7 +144,7 @@
         <a class="ws-back" href="/projets"><Icon name="chevr" size="sm" />Projets</a>
         <div class="ws-proj">
           <b title={p.name}>{p.name}</b>
-          <span>{[REGIE[p.regie].label, p.service_type].filter(Boolean).join(' · ')}</span>
+          <span>{PROJECT_TYPES[projectType(p.regie)].label}</span>
         </div>
         {@render statusSelect()}
       {/if}

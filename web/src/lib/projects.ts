@@ -72,6 +72,14 @@ export const REGIE: Record<Regie, { label: string; ill: 'truck' | 'case' | 'fixe
   car: { label: 'Car régie', ill: 'truck' },
   fixed: { label: 'Installation fixe', ill: 'fixe' },
 };
+/** Type de projet affiché : une prestation (car régie, flight-case) ou une installation fixe.
+ *  Stocké dans `regie` : « fixed » pour une installation fixe, sinon prestation. */
+export type ProjectType = 'prestation' | 'fixe';
+export const PROJECT_TYPES: Record<ProjectType, { label: string; ill: 'truck' | 'fixe'; regie: Regie; help: string }> = {
+  prestation: { label: 'Prestation', ill: 'truck', regie: 'car', help: 'Un événement ou un tournage : préparation puis exploitation.' },
+  fixe: { label: 'Installation fixe', ill: 'fixe', regie: 'fixed', help: 'Une régie ou un studio installé durablement.' },
+};
+export const projectType = (r: Regie): ProjectType => (r === 'fixed' ? 'fixe' : 'prestation');
 export type ElementFamily = 'contenants' | 'regie' | 'terrain' | 'site' | 'diffusion';
 export const ELEMENT_FAMILIES: { key: ElementFamily; label: string; help: string }[] = [
   { key: 'contenants', label: 'Racks et valises', help: 'Racks, flight-cases, valises et meubles : élévation, panels, circuits.' },

@@ -179,7 +179,6 @@ pub fn completion(p: &ProjectData, locations: usize, containers: usize, articles
         p.client.is_some(),
         p.venue.is_some(),
         p.description.is_some(),
-        p.service_type.is_some(),
         p.planning_start.is_some() && p.planning_end.is_some(),
         dates,
         locations > 0,
