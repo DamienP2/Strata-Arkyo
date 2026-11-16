@@ -278,6 +278,7 @@ function synNodeSvg(n: SynNodeData, x: number, y: number, used: Set<string>): st
   o.push(`<circle cx="16" cy="${HH / 2 + 1}" r="4.5" fill="${col}"/>`);
   o.push(`<text x="30" y="25" font-family="${isId ? SM : SF}" font-size="15" font-weight="bold" fill="${HEX.ink}">${esc(title)}</text>`);
   o.push(`<text x="30" y="42" font-family="${SM}" font-size="11" fill="${HEX.dark}">${esc(sub)}</text>`);
+  if (!L.length && !R.length) o.push(`<text x="${NW / 2}" y="${HH + 26}" font-family="${SF}" font-size="11" fill="${HEX.dark}" text-anchor="middle">Aucun port dans la fiche</text>`);
   for (const [list, out] of [[L, false], [R, true]] as const) {
     list.forEach((p: any, i: number) => {
       const px = out ? NW : 0, py = HH + i * PS + PS / 2 + 4, mk = out ? NW - 19 : 12, tx = out ? NW - 24 : 24;
@@ -307,11 +308,22 @@ function synNodeSvg(n: SynNodeData, x: number, y: number, used: Set<string>): st
  *  préférence d'affichage propre au navigateur). `families` : familles dessinées (légende). */
 export function synopticSvg(syn: { nodes: any[]; cables: any[]; layout: Record<string, { x: number; y: number }>; annotations?: any[] }): Rendered | null {
   const { NW, HH, PS, TAG_GAP } = SYN;
-  const nodes = (syn.nodes as SynNodeData[]).filter((n) => n.ports.length);
+  // Tout l'équipement de la vue est dessiné, y compris celui sans port dans sa fiche (l'écran le
+  // masque par défaut pour alléger l'édition ; une planche montre tout).
+  const nodes = syn.nodes as SynNodeData[];
   if (!nodes.length) return null;
   const left = (n: SynNodeData) => n.ports.filter((p) => p.side === 'l'), right = (n: SynNodeData) => n.ports.filter((p) => p.side !== 'l');
   const nh = (n: SynNodeData) => HH + Math.max(left(n).length, right(n).length, 1) * PS + 12;
-  const pos: Pos = { ...synLayout(nodes, nh), ...syn.layout };
+  const wired = nodes.filter((n) => n.ports.length), bare = nodes.filter((n) => !n.ports.length);
+  const pos: Pos = { ...synLayout(wired.length ? wired : nodes, nh), ...syn.layout };
+  // Équipements sans port non placés : rangés sous le dessin, sans chevaucher les nœuds placés.
+  const loose = wired.length ? bare.filter((n) => !syn.layout?.[n.key]) : [];
+  if (loose.length) {
+    const placed = nodes.filter((n) => pos[n.key] && !loose.includes(n));
+    const y0 = Math.max(0, ...placed.map((n) => pos[n.key]!.y + nh(n))) + 60;
+    const x0 = Math.min(...placed.map((n) => pos[n.key]!.x));
+    loose.forEach((n, i) => { pos[n.key] = { x: x0 + i * (NW + 40), y: y0 }; });
+  }
   const byRef = new Map<string, { n: SynNodeData; p: any }>();
   for (const n of nodes) for (const p of n.ports) byRef.set(p.ref, { n, p });
   const portXY = (ref: string): End | null => {

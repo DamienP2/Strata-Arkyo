@@ -119,7 +119,7 @@ export function groupLayout(it: SheetItem, sheetK: number, ctx: Ctx, maxW = Infi
   if (it.kind === 'synoptic') {
     const r = ctx.syn?.[it.container_id ?? ''];
     const s = SYN_MM * zoomOf(it);
-    parts.push(r ? { v: 'syn', w: r.w * s, h: r.h * s } : { v: 'syn', w: 80, h: 40 });
+    parts.push(r ? { v: 'syn', w: r.w * s, h: r.h * s } : { v: 'syn', w: 80 * zoomOf(it), h: 40 * zoomOf(it) });
   } else if (it.kind === 'rack') {
     const r = ctx.racks[it.container_id ?? ''];
     const units = r?.units ?? 42, depth = r?.depth_mm ?? 800, hb = rackBodyH(units, k);
