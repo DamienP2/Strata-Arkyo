@@ -69,4 +69,7 @@ cal:'M4 6h16v14H4zM4 10h16M8 3.5v4M16 3.5v4',
 tablet:'M6 3h12v18H6zM11 18h2',
 monitor:'M3 5h18v11H3zM8 20h8M12 16v4',
 case:'M4 8h16v11H4zM9 8V6h6v2M4 13h16M7 13v2M17 13v2',
+// Points de suspension (menu ⋯) et poignée de glisser (deux colonnes de trois points).
+more:'M4 12a1 1 0 1 0 2 0a1 1 0 1 0-2 0M11 12a1 1 0 1 0 2 0a1 1 0 1 0-2 0M18 12a1 1 0 1 0 2 0a1 1 0 1 0-2 0',
+grip:'M8 6a1 1 0 1 0 2 0a1 1 0 1 0-2 0M14 6a1 1 0 1 0 2 0a1 1 0 1 0-2 0M8 12a1 1 0 1 0 2 0a1 1 0 1 0-2 0M14 12a1 1 0 1 0 2 0a1 1 0 1 0-2 0M8 18a1 1 0 1 0 2 0a1 1 0 1 0-2 0M14 18a1 1 0 1 0 2 0a1 1 0 1 0-2 0',
 };
