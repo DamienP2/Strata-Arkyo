@@ -1,8 +1,9 @@
 <script lang="ts">
   // Inventaire (section 8) : emplacements, éléments, articles, exemplaires.
-  // Deux vues : « Par élément » (liste des éléments à gauche, élément ouvert à droite) et
-  // « Nomenclature » (un seul tableau groupé par élément). Les lignes de matériel se glissent
-  // d'un élément à l'autre (glisser-déposer HTML5) ou passent par « Déplacer vers… ».
+  // Deux vues : « Par élément » (tous les emplacements et leurs éléments à gauche, élément ouvert
+  // à droite) et « Nomenclature » (un tableau groupé par élément, pour l'emplacement choisi parmi
+  // des puces). Les lignes de matériel se glissent d'un élément à l'autre (glisser-déposer HTML5),
+  // y compris vers un élément d'un autre emplacement de la colonne, ou passent par « Déplacer vers… ».
   import Icon from '../../components/Icon.svelte';
   import Vu from '../../components/Vu.svelte';
   import Dialog from '../../components/Dialog.svelte';
@@ -71,15 +72,17 @@
     }
     if (inst && art) {
       collapsed.delete(scopeOfArt(art));
+      foldLoc(art.location_id, false);
       flash = inst.id;
       clearTimeout(flashT); flashT = setTimeout(() => (flash = null), 6000);
       tick().then(() => requestAnimationFrame(() => document.querySelector(`[data-inst="${CSS.escape(inst.id)}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' })));
     }
   }
   const loc = $derived(view.locations.find((l) => l.id === selLoc));
+  const contsOf = (lid: string | null) => view.containers.filter((c) => c.location_id === lid);
   // Un emplacement ne se supprime que vide (ni élément ni matériel) : le menu le dit avant.
-  const busyLoc = $derived(!!loc && (loc.totals.containers > 0 || view.articles.some((a) => a.location_id === loc.id)));
-  const conts = $derived(view.containers.filter((c) => c.location_id === selLoc));
+  const busyOf = (l: Location) => l.totals.containers > 0 || view.articles.some((a) => a.location_id === l.id);
+  const conts = $derived(contsOf(selLoc));
   const cont = $derived(view.containers.find((c) => c.id === selCont) ?? null);
   const modulesOf = (a: Article) => view.articles.filter((m) => m.host?.article_id === a.id).sort((x, y) => x.host!.slot - y.host!.slot);
   let chassisOf = $state<Article | null>(null);
@@ -158,9 +161,9 @@
   // Dialogues
   let locEdit = $state<{ id: string | null; rev: number; name: string; code: string } | null>(null);
   let locErr = $state<Record<string, string>>({});
-  let contEdit = $state<{ c: Container | null } | null>(null);
+  let contEdit = $state<{ c: Container | null; loc: string } | null>(null);
   let adding = $state(false);
-  let fromTemplate = $state(false);
+  let fromTemplate = $state<string | null>(null); // emplacement qui reçoit l'élément
   /** Exemplaires du matériel d'un élément, pour les tuiles du mur et les postes du pupitre. */
   const gearOf = (c: Container) => {
     const own = new Map(view.articles.filter((a) => a.container_id === c.id).map((a) => [a.id, a.label]));
@@ -197,25 +200,27 @@
   }
   // Modèles de régie, au niveau du lieu : tout le contenu du lieu en un modèle, ou un modèle
   // recopié dans le lieu (ses éléments et leur matériel).
-  let regiePick = $state<{ lib: { id: string; name: string; members: { name: string }[] }[]; id: string } | null>(null);
-  async function saveLocAsRegie() {
-    if (!loc || !conts.length) { toast('Cet emplacement ne contient aucun élément.', 'warn'); return; }
+  let regiePick = $state<{ lib: { id: string; name: string; members: { name: string }[] }[]; id: string; loc: Location } | null>(null);
+  async function saveLocAsRegie(l: Location) {
+    const lc = contsOf(l.id);
+    if (!lc.length) { toast('Cet emplacement ne contient aucun élément.', 'warn'); return; }
     try {
-      const r = await api.post<{ id: string }>(`/projects/${view.project.id}/regies`, { name: loc.name, kind: view.project.regie, service_type: view.project.service_type, notes: null, members: conts.map((c) => c.id) });
+      const r = await api.post<{ id: string }>(`/projects/${view.project.id}/regies`, { name: l.name, kind: view.project.regie, service_type: view.project.service_type, notes: null, members: lc.map((c) => c.id) });
       const m = await api.post<{ name: string; members: unknown[] }>(`/regies/${r.id}/save-as-template`, {});
       await api.del(`/regies/${r.id}`).catch(() => {});
       toast(`Modèle de régie « ${m.name} » créé avec ${m.members.length} élément${m.members.length > 1 ? 's' : ''} (en brouillon, à activer dans Catalogue › Modèles › Régies).`);
     } catch (e) { fail(e); }
   }
-  async function openRegiePick() {
-    try { const l = (await api.get<{ regies: any[] }>('/regies')).regies; regiePick = { lib: l, id: l[0]?.id ?? '' }; } catch (e) { fail(e); }
+  async function openRegiePick(loc: Location) {
+    try { const l = (await api.get<{ regies: any[] }>('/regies')).regies; regiePick = { lib: l, id: l[0]?.id ?? '', loc }; } catch (e) { fail(e); }
   }
   // La boîte suit l'envoi (bouton bloqué, indicateur) ; une erreur la laisse ouverte.
   async function addRegie() {
-    if (!regiePick?.id || !selLoc) return;
-    const r = await api.post<{ regie: { members: unknown[] }; skipped_items: number }>(`/projects/${view.project.id}/regies/from-template`, { regie_id: regiePick.id, location_id: selLoc });
+    if (!regiePick?.id) return;
+    const lid = regiePick.loc.id;
+    const r = await api.post<{ regie: { members: unknown[] }; skipped_items: number }>(`/projects/${view.project.id}/regies/from-template`, { regie_id: regiePick.id, location_id: lid });
     toast(`${r.regie.members.length} élément${r.regie.members.length > 1 ? 's' : ''} ajouté${r.regie.members.length > 1 ? 's' : ''}${r.skipped_items ? ` · ${r.skipped_items} fiche${pl(r.skipped_items)} introuvable${pl(r.skipped_items)} dans le catalogue` : ''}.`);
-    regiePick = null; await reload();
+    regiePick = null; foldLoc(lid, false); await reload();
   }
 
   const newLoc = () => { locErr = {}; locEdit = { id: null, rev: 0, name: '', code: '' }; };
@@ -225,11 +230,65 @@
     const l = locEdit!;
     try {
       const r = l.id ? await api.patch<Location>(`/locations/${l.id}`, { rev: l.rev, name: l.name, code: l.code }) : await api.post<Location>(`/projects/${view.project.id}/locations`, { name: l.name, code: l.code });
-      toast(l.id ? 'Emplacement enregistré.' : 'Emplacement ajouté.'); locEdit = null; selLoc = r.id; await reload();
+      toast(l.id ? 'Emplacement enregistré.' : 'Emplacement ajouté.'); locEdit = null; await reload();
+      if (!l.id) { selLoc = r.id; selCont = null; }
     } catch (x) { if (x instanceof ApiError) locErr = Object.fromEntries(x.fields.map((f) => [f.field, f.message])); if (!(x instanceof ApiError && x.fields.length)) fail(x); }
   }
   function pickLoc(id: string) { if (id === selLoc) return; selLoc = id; selCont = null; sel.clear(); }
-  function pickCont(id: string) { if (id === selCont) return; selCont = id; sel.clear(); q = ''; }
+  /** Ouvre un élément (ou les équipements libres) de n'importe quel emplacement : l'emplacement suit. */
+  function pickCont(lid: string, id: string) { if (lid === selLoc && id === selCont) return; selLoc = lid; selCont = id; sel.clear(); q = ''; }
+
+  // Colonne des emplacements : chaque emplacement est une section repliable ; les sections
+  // repliées sont mémorisées dans le navigateur, projet par projet (toutes dépliées par défaut).
+  const FOLD_KEY = untrack(() => `strata.inventaire.replies.${view.project.id}`);
+  const folded = new SvelteSet<string>(untrack(() => { try { const v = JSON.parse(localStorage.getItem(FOLD_KEY) ?? '[]'); return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []; } catch { return []; } }));
+  function foldLoc(id: string, shut: boolean) {
+    if (folded.has(id) === shut) return;
+    if (shut) folded.add(id); else folded.delete(id);
+    try { localStorage.setItem(FOLD_KEY, JSON.stringify([...folded])); } catch { /* stockage indisponible : l'état vaut pour la session */ }
+  }
+  /** « Équipements libres » d'un emplacement : affichés s'il y en a, s'ils sont ouverts, ou si
+   *  l'emplacement n'a aucun élément. L'en-tête de section reçoit aussi le matériel glissé. */
+  const showFree = (l: Location) => l.totals.free_items > 0 || (l.id === selLoc && selCont === 'free') || !contsOf(l.id).length;
+  let sideEl = $state<HTMLElement | null>(null);
+  // La colonne se colle sous l'en-tête collant de l'espace de travail, dont la hauteur varie
+  // (méta du projet, retour à la ligne), et ne dépasse pas la zone qui défile (sous la barre
+  // haute de l'application) : elle défile alors seule.
+  let headH = $state(0);
+  let viewH = $state(0);
+  $effect(() => {
+    const h = document.querySelector<HTMLElement>('.ws-top');
+    const box = sideEl?.closest<HTMLElement>('.ws-main') ?? null;
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => {
+      headH = h && getComputedStyle(h).position === 'sticky' ? h.offsetHeight : 0;
+      viewH = box ? box.clientHeight : 0;
+    });
+    if (h) ro.observe(h);
+    if (box) ro.observe(box);
+    return () => ro.disconnect();
+  });
+  // L'élément ouvert reste visible dans la colonne (défilement vertical sur grand écran, rangée
+  // horizontale de sa section sur téléphone), sans faire défiler la page.
+  $effect(() => {
+    void selCont; void selLoc; void mode;
+    const box = sideEl;
+    if (!box) return;
+    tick().then(() => {
+      const el = box.querySelector<HTMLElement>('.el[aria-current="true"]');
+      if (!el) return;
+      const a = el.getBoundingClientRect();
+      const row = el.parentElement;
+      if (row && row.scrollWidth > row.clientWidth + 1) {
+        const r = row.getBoundingClientRect();
+        if (a.left < r.left) row.scrollLeft -= r.left - a.left + 8; else if (a.right > r.right) row.scrollLeft += a.right - r.right + 8;
+      }
+      if (box.scrollHeight > box.clientHeight + 1) {
+        const b = box.getBoundingClientRect();
+        if (a.top < b.top) box.scrollTop -= b.top - a.top + 12; else if (a.bottom > b.bottom) box.scrollTop += a.bottom - b.bottom + 12;
+      }
+    });
+  });
 
   // Matériel rangé par nature, une ligne par matériel : les exemplaires d'une même fiche dans un
   // même élément et les accessoires identiques (une pièce par article, chacune posée à sa place)
@@ -417,7 +476,9 @@
   let drag = $state<{ rows: Row[]; keys: Set<string> } | null>(null);
   let dropOn = $state<string | null>(null);
   let downIn = false;
-  const dropTarget = (s: string) => (s === 'free' ? `l:${selLoc}` : `c:${s}`);
+  /** Cible d'un dépôt : un élément, les équipements libres de l'emplacement ouvert (« free »), ou
+   *  ceux d'un emplacement donné (« free:<id> » pour la ligne, « head:<id> » pour l'en-tête). */
+  const dropTarget = (s: string) => (s === 'free' ? `l:${selLoc}` : s.includes(':') ? `l:${s.slice(s.indexOf(':') + 1)}` : `c:${s}`);
   function dragStart(e: DragEvent, r: Row) {
     if (!writable || moveBusy || downIn) { e.preventDefault(); return; }
     const rows = sel.has(r.key) ? selRows : [r];
@@ -525,47 +586,42 @@
   </span>
 {/snippet}
 
-<!-- Sélecteur d'emplacement et actions de l'emplacement (en tête de la liste ou de la barre). -->
-{#snippet locPicker()}
-  {#if loc}
-    <div class="loc-pick">
-      <span class="eyebrow">Emplacement</span>
-      {#if view.locations.length > 1}
-        <Menu label="Changer d’emplacement" btnClass="btn ghost sm loc-btn" align="left" menuLabel="Emplacements">
-          {#snippet trigger()}<b>{loc.name}</b><span class="mono muted">{loc.code}</span><Icon name="chevd" size="sm" />{/snippet}
-          {#snippet children()}
-            {#each view.locations as l (l.id)}
-              <button role="menuitemradio" aria-checked={l.id === selLoc} onclick={() => pickLoc(l.id)}>
-                <span class="mono loc-code">{l.code || '—'}</span>
-                <span class="mi"><b>{l.name}</b><small class="pm-sub">{l.totals.containers} élément{l.totals.containers > 1 ? 's' : ''}{l.totals.free_items ? ` · ${l.totals.free_items} libre${l.totals.free_items > 1 ? 's' : ''}` : ''}</small></span>
-                {#if l.id === selLoc}<Icon name="check" size="sm" />{/if}
-              </button>
-            {/each}
-          {/snippet}
-        </Menu>
-      {:else}
-        <span class="loc-one"><b>{loc.name}</b><span class="mono muted">{loc.code}</span></span>
+<!-- Actions d'un emplacement (en-tête de sa section, ou à côté des puces de la nomenclature). -->
+{#snippet locMenu(l: Location)}
+  {@const busy = busyOf(l)}
+  <Menu label="Actions de « {l.name} »" iconOnly icon="more" btnClass="icon-btn sm">
+    {#snippet children()}
+      {#if writable}
+        <button role="menuitem" onclick={() => editLoc(l)}><Icon name="pen" size="sm" /><span class="mi"><b>Renommer l’emplacement</b><small class="pm-sub">Nom et code câble</small></span></button>
+        <hr aria-hidden="true">
+        <button role="menuitem" onclick={() => (fromTemplate = l.id)}><Icon name="case" size="sm" /><span class="mi"><b>Ajouter un élément depuis un modèle</b><small class="pm-sub">Un rack, un flight-case, avec son contenu</small></span></button>
+        <button role="menuitem" onclick={() => openRegiePick(l)}><Icon name="layers" size="sm" /><span class="mi"><b>Ajouter une régie depuis un modèle</b><small class="pm-sub">Plusieurs éléments d’un coup, dans cet emplacement</small></span></button>
+        {#if can('catalogue', 'ecriture')}<button role="menuitem" onclick={() => saveLocAsRegie(l)}><Icon name="copy" size="sm" /><span class="mi"><b>Enregistrer comme modèle de régie</b><small class="pm-sub">Tous ses éléments et leur matériel</small></span></button>{/if}
+        <hr aria-hidden="true">
       {/if}
-    </div>
-    <Menu label="Actions de l’emplacement" iconOnly icon="more" btnClass="icon-btn sm">
-      {#snippet children()}
-        {#if writable}
-          <button role="menuitem" onclick={() => editLoc(loc)}><Icon name="pen" size="sm" /><span class="mi"><b>Renommer l’emplacement</b><small class="pm-sub">Nom et code câble</small></span></button>
-          <button role="menuitem" onclick={newLoc}><Icon name="plus" size="sm" /><span class="mi"><b>Nouvel emplacement</b></span></button>
-          <hr aria-hidden="true">
-          <button role="menuitem" onclick={() => (fromTemplate = true)}><Icon name="case" size="sm" /><span class="mi"><b>Ajouter un élément depuis un modèle</b><small class="pm-sub">Un rack, un flight-case, avec son contenu</small></span></button>
-          <button role="menuitem" onclick={openRegiePick}><Icon name="layers" size="sm" /><span class="mi"><b>Ajouter une régie depuis un modèle</b><small class="pm-sub">Plusieurs éléments d’un coup, dans cet emplacement</small></span></button>
-          {#if can('catalogue', 'ecriture')}<button role="menuitem" onclick={saveLocAsRegie}><Icon name="copy" size="sm" /><span class="mi"><b>Enregistrer comme modèle de régie</b><small class="pm-sub">Tous ses éléments et leur matériel</small></span></button>{/if}
-          <hr aria-hidden="true">
-        {/if}
-        <button role="menuitem" onclick={exportXlsx}><Icon name="download" size="sm" /><span class="mi"><b>Exporter la nomenclature (Excel)</b><small class="pm-sub">Tout le matériel du projet, élément par élément</small></span></button>
-        {#if writable}
-          <hr aria-hidden="true">
-          <button role="menuitem" class="danger" disabled={busyLoc} onclick={() => delLoc(loc)}><Icon name="trash" size="sm" /><span class="mi"><b>Supprimer l’emplacement</b>{#if busyLoc}<small class="pm-sub">Videz-le d’abord : déplacez ou supprimez son contenu</small>{/if}</span></button>
-        {/if}
-      {/snippet}
-    </Menu>
-  {/if}
+      <button role="menuitem" onclick={exportXlsx}><Icon name="download" size="sm" /><span class="mi"><b>Exporter la nomenclature (Excel)</b><small class="pm-sub">Tout le matériel du projet, élément par élément</small></span></button>
+      {#if writable}
+        <hr aria-hidden="true">
+        <button role="menuitem" class="danger" disabled={busy} onclick={() => delLoc(l)}><Icon name="trash" size="sm" /><span class="mi"><b>Supprimer l’emplacement</b>{#if busy}<small class="pm-sub">Videz-le d’abord : déplacez ou supprimez son contenu</small>{/if}</span></button>
+      {/if}
+    {/snippet}
+  </Menu>
+{/snippet}
+
+<!-- Ligne d'élément de la colonne (cible de dépôt, ouvre l'élément et son emplacement). -->
+{#snippet elRow(l: Location, c: Container | null, child: boolean)}
+  {@const s = c ? c.id : `free:${l.id}`}
+  {@const on = c ? c.id === selCont : l.id === selLoc && selCont === 'free'}
+  <button class="el" class:free={!c} class:drop-ok={dropOn === s} class:child aria-current={on ? 'true' : undefined} data-drop={s} onclick={() => pickCont(l.id, c ? c.id : 'free')}>
+    {@render thumb(c, false)}
+    <span class="el-t">
+      {#if c}
+        <span class="el-n">{c.name}</span>
+        {#if c.rackable}{@render gauge(c, 14, false)}{:else}<span class="el-k">{CONTAINER_KINDS[c.kind].label}</span>{/if}
+      {:else}<span class="el-n">Équipements libres</span><span class="el-k">Sans élément</span>{/if}
+    </span>
+    <span class="el-cnt mono" title="Pièces">{c ? piecesOf(c.id) : l.totals.free_items}</span>
+  </button>
 {/snippet}
 
 <!-- Actions d'un élément (en-tête de l'élément ouvert, ligne de groupe de la nomenclature). -->
@@ -575,7 +631,7 @@
       {#snippet children()}
         {#if inB}<button role="menuitem" onclick={() => { selCont = c.id; setMode('a'); }}><Icon name="list" size="sm" /><span class="mi"><b>Ouvrir dans la vue par élément</b></span></button>{/if}
         {#if writable}
-          <button role="menuitem" onclick={() => (contEdit = { c })}><Icon name="pen" size="sm" /><span class="mi"><b>Modifier l’élément</b><small class="pm-sub">Nom, type, dimensions, limites</small></span></button>
+          <button role="menuitem" onclick={() => (contEdit = { c, loc: c.location_id })}><Icon name="pen" size="sm" /><span class="mi"><b>Modifier l’élément</b><small class="pm-sub">Nom, type, dimensions, limites</small></span></button>
           {#if can('catalogue', 'ecriture')}<button role="menuitem" onclick={() => saveAsTemplate(c)}><Icon name="copy" size="sm" /><span class="mi"><b>Enregistrer comme modèle</b><small class="pm-sub">Copie l’élément et son contenu dans la bibliothèque</small></span></button>{/if}
           <hr aria-hidden="true">
           <button role="menuitem" class="danger" onclick={() => delCont(c)}><Icon name="trash" size="sm" /><span class="mi"><b>Supprimer l’élément</b></span></button>
@@ -682,26 +738,31 @@
 
     {#if mode === 'a'}
       <div class="a-grid">
-        <aside class="card a-side" aria-label="Éléments">
-          <div class="side-head">{@render locPicker()}</div>
-          <div class="side-list">
-            {#each conts as c (c.id)}
-              <button class="el" class:drop-ok={dropOn === c.id} class:child={!!c.parent_id && conts.some((p) => p.id === c.parent_id)} aria-current={c.id === selCont ? 'true' : undefined} data-drop={c.id} onclick={() => pickCont(c.id)}>
-                {@render thumb(c, false)}
-                <span class="el-t">
-                  <span class="el-n">{c.name}</span>
-                  {#if c.rackable}{@render gauge(c, 14, false)}{:else}<span class="el-k">{CONTAINER_KINDS[c.kind].label}</span>{/if}
-                </span>
-                <span class="el-cnt mono" title="Pièces">{piecesOf(c.id)}</span>
-              </button>
-            {/each}
-            <button class="el free" class:drop-ok={dropOn === 'free'} aria-current={selCont === 'free' ? 'true' : undefined} data-drop="free" onclick={() => pickCont('free')}>
-              {@render thumb(null, false)}
-              <span class="el-t"><span class="el-n">Équipements libres</span><span class="el-k">Sans élément</span></span>
-              <span class="el-cnt mono" title="Pièces">{loc.totals.free_items}</span>
-            </button>
-            {#if writable}<button class="btn ghost sm el-add" onclick={() => (contEdit = { c: null })}><Icon name="plus" size="sm" />Nouvel élément</button>{/if}
-          </div>
+        <aside class="card a-side" aria-label="Emplacements et éléments" bind:this={sideEl} style:--side-top="{headH + 12}px" style:--side-max={viewH ? `${viewH - headH - 24}px` : undefined}>
+          {#each view.locations as l (l.id)}
+            {@const lc = contsOf(l.id)}
+            {@const shut = folded.has(l.id)}
+            <section class="ls" aria-labelledby="ls-n-{l.id}">
+              <div class="ls-head" class:drop-ok={dropOn === `head:${l.id}`} data-drop="head:{l.id}">
+                <button class="ls-tog" aria-expanded={!shut} aria-controls={shut ? undefined : `ls-b-${l.id}`} title={shut ? 'Déplier' : 'Replier'} onclick={() => foldLoc(l.id, !shut)}>
+                  <span class="caret"><Icon name="chevr" size="sm" /></span>
+                  <span class="ls-t">
+                    <span class="ls-l1"><b class="ls-name" id="ls-n-{l.id}">{l.name}</b>{#if l.code}<span class="mono ls-code">{l.code}</span>{/if}</span>
+                    <span class="ls-meta">{lc.length} élément{lc.length > 1 ? 's' : ''}{l.totals.free_items ? ` · ${l.totals.free_items} libre${l.totals.free_items > 1 ? 's' : ''}` : ''}</span>
+                  </span>
+                </button>
+                {@render locMenu(l)}
+              </div>
+              {#if !shut}
+                <div class="ls-body" id="ls-b-{l.id}">
+                  {#each lc as c (c.id)}{@render elRow(l, c, !!c.parent_id && lc.some((p) => p.id === c.parent_id))}{/each}
+                  {#if showFree(l)}{@render elRow(l, null, false)}{/if}
+                  {#if writable}<button class="btn ghost sm el-add" onclick={() => (contEdit = { c: null, loc: l.id })} aria-label="Nouvel élément dans {l.name}"><Icon name="plus" size="sm" />Nouvel élément</button>{/if}
+                </div>
+              {/if}
+            </section>
+          {/each}
+          {#if writable}<button class="btn ghost sm loc-add" onclick={newLoc}><Icon name="plus" size="sm" />Nouvel emplacement</button>{/if}
         </aside>
 
         <div class="a-main">
@@ -763,14 +824,21 @@
         </div>
       </div>
     {:else}
+      <div class="b-locs" role="group" aria-label="Emplacements">
+        <span class="eyebrow">Emplacement</span>
+        {#each view.locations as l (l.id)}
+          <button class="fchip" class:on={l.id === selLoc} aria-pressed={l.id === selLoc} title="{l.name}{l.code ? ` · ${l.code}` : ''}" onclick={() => pickLoc(l.id)}>{l.name} <span class="muted mono">{l.totals.containers}</span></button>
+        {/each}
+        {@render locMenu(loc)}
+        {#if writable}<button class="btn ghost sm" onclick={newLoc}><Icon name="plus" size="sm" />Nouvel emplacement</button>{/if}
+      </div>
       <div class="toolbar b-bar">
-        <div class="b-loc">{@render locPicker()}</div>
         <label class="search"><Icon name="search" /><input class="input" type="search" bind:value={q} placeholder="Rechercher" aria-label="Rechercher dans la nomenclature"></label>
         <Seg options={FILTERS} bind:value={filter} label="Filtrer par pose" />
         <span class="grow"></span>
         <button class="btn ghost" onclick={() => { if (allCollapsed) collapsed.clear(); else for (const s of scopes) collapsed.add(s); }}><Icon name={allCollapsed ? 'chevd' : 'chevr'} size="sm" />{allCollapsed ? 'Tout déplier' : 'Tout replier'}</button>
         <Seg options={MODES} value={mode} label="Vue" onchange={setMode} />
-        {#if writable}<button class="btn" onclick={() => (contEdit = { c: null })}><Icon name="plus" size="sm" />Nouvel élément</button>{/if}
+        {#if writable}<button class="btn" onclick={() => (contEdit = { c: null, loc: loc.id })}><Icon name="plus" size="sm" />Nouvel élément</button>{/if}
       </div>
 
       {@render selBar()}
@@ -824,11 +892,11 @@
     </div>
   </Dialog>
 {/if}
-{#if contEdit && selLoc}<ContainerDialog {view} container={contEdit.c} locationId={selLoc} onclose={() => (contEdit = null)} ondone={async (id) => { contEdit = null; await reload(); const c = view.containers.find((x) => x.id === id); if (c) { selLoc = c.location_id; selCont = id; } }} />{/if}
-{#if fromTemplate && selLoc}<TemplatePick {view} locationId={selLoc} onclose={() => (fromTemplate = false)} ondone={async (id) => { fromTemplate = false; await reload(); selCont = id; }} />{/if}
+{#if contEdit}<ContainerDialog {view} container={contEdit.c} locationId={contEdit.loc} onclose={() => (contEdit = null)} ondone={async (id) => { const lid = contEdit?.loc; contEdit = null; await reload(); const c = view.containers.find((x) => x.id === id); if (c) { selLoc = c.location_id; selCont = id; } if (lid) foldLoc(lid, false); }} />{/if}
+{#if fromTemplate}{@const lid = fromTemplate}<TemplatePick {view} locationId={lid} onclose={() => (fromTemplate = null)} ondone={async (id) => { fromTemplate = null; await reload(); foldLoc(lid, false); selLoc = lid; selCont = id; }} />{/if}
 {#if adding && selLoc}<AddArticle {view} container={cont} locationId={selLoc} onclose={() => (adding = false)} ondone={async () => { await reload(); }} />{/if}
 {#if regiePick}
-  <Dialog title="Ajouter une régie depuis un modèle" eyebrow={loc?.name ?? ''} onclose={() => (regiePick = null)} onsubmit={addRegie} submitLabel="Ajouter dans {loc?.name ?? 'l’emplacement'}" submitDisabled={!regiePick.id}>
+  <Dialog title="Ajouter une régie depuis un modèle" eyebrow={regiePick.loc.name} onclose={() => (regiePick = null)} onsubmit={addRegie} submitLabel="Ajouter dans {regiePick.loc.name}" submitDisabled={!regiePick.id}>
     {#if !regiePick.lib.length}<p class="muted">Aucun modèle de régie : enregistrez un emplacement comme modèle, ou créez-en un dans <a class="ilink" href="/catalogue/regies">Catalogue › Modèles › Régies</a>.</p>
     {:else}
       <div class="field"><label for="rp-m">Modèle</label><select class="input" id="rp-m" bind:value={regiePick.id} aria-describedby="rp-m-help">{#each regiePick.lib as r}<option value={r.id}>{r.name} · {r.members.length} élément{r.members.length > 1 ? 's' : ''}</option>{/each}</select>
@@ -865,17 +933,27 @@
 <style>
   .inv { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
   [role^='menuitem'] > .mi { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
-  .loc-code { min-width: 44px; font-size: var(--fs-sm); color: var(--fg-3); }
 
   /* ---------- Vue par élément : deux colonnes ---------- */
   .a-grid { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 14px; align-items: start; }
-  .a-side { padding: 8px; display: flex; flex-direction: column; gap: 2px; position: sticky; top: 12px; min-width: 0; }
-  .side-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; padding: 4px 4px 8px 8px; }
-  .loc-pick { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
-  .loc-one { display: inline-flex; align-items: baseline; gap: 8px; font: 700 var(--fs-lg)/1.25 var(--display); }
-  .loc-one .mono, :global(.loc-btn) .mono { font: 600 var(--fs-xs) var(--mono); }
-  :global(.btn.loc-btn) { margin-left: -11px; font-family: var(--display); }
-  .side-list { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  /* Colonne des emplacements : collée sous l'en-tête de l'espace de travail, elle défile seule
+     quand la liste dépasse la hauteur visible. */
+  .a-side { padding: 6px 8px 8px; display: flex; flex-direction: column; gap: 2px; position: sticky; top: var(--side-top, 12px); max-height: var(--side-max, calc(100dvh - var(--side-top, 12px) - 12px)); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; min-width: 0; }
+  .ls { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .ls + .ls { margin-top: 4px; padding-top: 6px; border-top: 1px solid var(--line); }
+  .ls-head { display: flex; align-items: center; gap: 2px; padding-right: 2px; border-radius: var(--r-sm); }
+  .ls-tog { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 6px 4px; border: 0; border-radius: var(--r-sm); background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; transition: background .12s; }
+  .ls-tog:hover { background: var(--surface-2); }
+  .ls-tog:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .ls-tog .caret { display: grid; place-items: center; flex: none; width: 18px; color: var(--fg-3); }
+  .ls-tog[aria-expanded='true'] .caret :global(.ic) { transform: rotate(90deg); }
+  .ls-t { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 1px; }
+  .ls-l1 { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+  .ls-name { min-width: 0; font: 650 var(--fs-lg)/1.25 var(--display); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ls-code { flex: none; font: 600 var(--fs-xs) var(--mono); color: var(--fg-3); }
+  .ls-meta { font-size: var(--fs-sm); color: var(--fg-3); }
+  .ls-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding-bottom: 4px; }
+  .loc-add { align-self: flex-start; margin-top: 8px; }
   .el { display: flex; gap: 10px; align-items: center; width: 100%; padding: 8px; border: 0; border-radius: var(--r-sm); background: transparent; color: inherit; text-align: left; font: inherit; cursor: pointer; transition: background .12s; }
   .el:hover { background: var(--surface-2); }
   .el[aria-current='true'] { background: var(--accent-soft); }
@@ -886,7 +964,7 @@
   .el[aria-current='true'] .el-n { color: var(--accent-2); }
   .el-k { font-size: var(--fs-xs); color: var(--fg-3); }
   .el-cnt { font-size: var(--fs-xs); font-weight: 600; color: var(--fg-3); }
-  .el-add { align-self: flex-start; margin-top: 6px; }
+  .el-add { align-self: flex-start; margin: 2px 0 0 4px; }
   .drop-ok, .tbl tr.drop-ok td { box-shadow: inset 0 0 0 2px var(--accent); background: var(--accent-soft); }
   .tbl tr.drop-ok td { box-shadow: inset 0 2px 0 var(--accent), inset 0 -2px 0 var(--accent); }
 
@@ -925,8 +1003,9 @@
   .toolbar .grow { flex: 1; }
   .toolbar .search { flex: 1 1 220px; max-width: 340px; }
   .b-bar { gap: 8px 10px; }
-  .b-loc { display: flex; align-items: center; gap: 4px; margin-right: 6px; }
-  .b-loc .loc-pick { flex-direction: row; align-items: center; gap: 10px; }
+  /* Nomenclature : une puce par emplacement, puis les actions de celui qui est choisi. */
+  .b-locs { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .b-locs .eyebrow { margin: 0 4px 0 0; }
 
   .selbar { position: sticky; top: 8px; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 8px 6px 14px; border-radius: var(--r-md); background: var(--accent-soft); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent); color: var(--accent-2); }
   .sel-n { margin-right: 6px; font-weight: 650; white-space: nowrap; }
@@ -975,12 +1054,13 @@
   .g-acts { display: inline-flex; gap: 4px; align-items: center; }
   .b-drop td { text-align: center; font-size: var(--fs-sm); color: var(--fg-3); }
 
+  /* Tablette et téléphone : les sections s'empilent au-dessus de l'élément ouvert, chacune avec
+     la rangée défilante de ses éléments. */
   @media (max-width: 900px) {
     .a-grid { grid-template-columns: minmax(0, 1fr); }
-    .a-side { position: static; padding: 6px; }
-    .side-head { padding: 4px 4px 6px 8px; }
-    .side-list { flex-direction: row; overflow-x: auto; scrollbar-width: thin; padding-bottom: 4px; }
-    .side-list .el { flex: none; width: 220px; }
+    .a-side { position: static; max-height: none; overflow: visible; padding: 6px; }
+    .ls-body { flex-direction: row; align-items: center; overflow-x: auto; scrollbar-width: thin; padding-bottom: 6px; }
+    .ls-body .el { flex: none; width: 220px; }
     .el.child { padding-left: 8px; }
     .el-add { flex: none; align-self: center; margin: 0 4px; }
     .el-acts { margin-left: 0; }
@@ -1021,7 +1101,6 @@
     .g-gauge { margin-left: 0; }
     .toolbar .search { max-width: none; flex-basis: 100%; }
     .toolbar .grow { display: none; }
-    .b-loc { flex-basis: 100%; justify-content: space-between; }
     .stats { width: 100%; }
   }
 </style>
