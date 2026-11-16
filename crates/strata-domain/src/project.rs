@@ -813,6 +813,9 @@ pub enum Priority {
 pub struct TaskData {
     pub title: String,
     pub description: Option<String>,
+    /// Début facultatif (AAAA-MM-JJ), au plus tard le jour de l'échéance : la Timeline trace
+    /// alors une barre du début à l'échéance. Absent des tâches plus anciennes.
+    pub start_date: Option<String>,
     pub due: Option<String>,
     pub done_on: Option<String>,
     pub assignee_id: Option<String>,
@@ -831,9 +834,19 @@ pub fn validate_task(t: &mut TaskData) -> Vec<FieldError> {
         .as_ref()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty());
-    for (f, v) in [("due", &t.due), ("done_on", &t.done_on)] {
+    for (f, v) in [
+        ("start_date", &t.start_date),
+        ("due", &t.due),
+        ("done_on", &t.done_on),
+    ] {
         if v.as_deref().is_some_and(|d| !is_date(d)) {
             e.push(err(f, "Date attendue au format AAAA-MM-JJ."));
+        }
+    }
+    if let (Some(s), Some(d)) = (&t.start_date, &t.due) {
+        // Dates au format AAAA-MM-JJ : l'ordre alphabétique est l'ordre chronologique.
+        if is_date(s) && is_date(d) && s > d {
+            e.push(err("start_date", "Le début doit précéder l'échéance."));
         }
     }
     e
@@ -853,6 +866,37 @@ mod tests {
             commissioning: Some("2026-12-01".into()),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn task_start_date() {
+        let mut t = TaskData {
+            title: "Câbler".into(),
+            start_date: Some("2026-11-10".into()),
+            due: Some("2026-11-12".into()),
+            ..Default::default()
+        };
+        assert!(validate_task(&mut t).is_empty());
+        // Début le jour même de l'échéance : permis.
+        t.start_date = Some("2026-11-12".into());
+        assert!(validate_task(&mut t).is_empty());
+        // Début sans échéance : permis.
+        t.due = None;
+        assert!(validate_task(&mut t).is_empty());
+        t.due = Some("2026-11-11".into());
+        let e = validate_task(&mut t);
+        assert_eq!(e.len(), 1);
+        assert_eq!(e[0].field, "start_date");
+        t.start_date = Some("12/11/2026".into());
+        assert!(
+            validate_task(&mut t)
+                .iter()
+                .any(|e| e.field == "start_date")
+        );
+        // Une tâche enregistrée avant ce champ se lit toujours.
+        let old: TaskData =
+            serde_json::from_str(r#"{"title":"Ancienne","due":"2026-11-12"}"#).unwrap();
+        assert_eq!(old.start_date, None);
     }
 
     #[test]
@@ -937,7 +981,14 @@ mod tests {
             }],
         );
         assert_eq!(
-            (t.used_u, t.placed_u, t.pending_u, t.weight_kg, t.power_w, t.over_weight),
+            (
+                t.used_u,
+                t.placed_u,
+                t.pending_u,
+                t.weight_kg,
+                t.power_w,
+                t.over_weight
+            ),
             (4.0, 2.0, 2.0, 64.0, 300.0, true)
         );
         c.kind = ContainerKind::Rack;

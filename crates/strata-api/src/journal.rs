@@ -137,6 +137,7 @@ fn field_label(k: &str) -> Option<&'static str> {
         "shoot_start" | "shoot_end" => "exploitation",
         "assignee" => "responsable",
         "due" => "échéance",
+        "start_date" => "début",
         "role_id" => "rôle",
         "email" => "adresse",
         _ => return None,
