@@ -332,7 +332,7 @@
   </EmptyState>
 {:else if rack}
   {@const t = rack.totals}
-  <div class="rack-screen card" style="padding:0;overflow:hidden">
+  <div class="rack-screen card" class:solo={!fixed} style="padding:0;overflow:hidden">
     {#if !mine || requested}<div class="lockbar" class:mine class:other={!mine}>
       {#if mine}
         <span class="lk"><span class="key-i"><Icon name="lock" /></span><span><b>{requested}</b> demande la main.</span></span>
@@ -568,6 +568,12 @@
   .rack-screen .design-body { height: calc(100dvh - 216px); min-height: 560px; }
   /* Barre de verrou affichée (49 px : bouton de 30 px + marges) : la zone de travail rétrécit d'autant, la page ne défile pas. */
   @media (min-width: 1101px) { .rack-screen:has(> .lockbar) .design-body { height: calc(100dvh - 265px); } }
+  /* Page Racks seule : colonne flexible qui remplit la hauteur visible sous l'en-tête, quelle que soit
+     la hauteur de la barre (une ou deux lignes, barre de verrou) : la page ne défile pas. */
+  @media (min-width: 1101px) {
+    .rack-screen.solo { display: flex; flex-direction: column; height: calc(100dvh - 226px); min-height: 600px; }
+    .rack-screen.solo .design-body, .rack-screen.solo:has(> .lockbar) .design-body { flex: 1; height: auto; min-height: 0; }
+  }
   .shelf-load { flex: 1 1 0; min-width: 0; display: flex; gap: 4px; justify-content: flex-end; overflow: hidden; }
   .sh-it { flex: none; font: 600 10px/1 var(--font); padding: 3px 6px; border-radius: 3px; color: #fff; background: color-mix(in srgb, var(--c) 70%, #1C1F23); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .15); max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .circ { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 8px 10px; border-radius: 10px; background: var(--surface-2); font-size: 14px; }
