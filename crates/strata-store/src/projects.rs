@@ -1214,6 +1214,40 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn task_start_date_round_trip() {
+        let (s, p, _, _) = setup().await;
+        let t = s
+            .insert_task(
+                &p.id,
+                &TaskData {
+                    title: "Monter le plateau".into(),
+                    start_date: Some("2026-11-10".into()),
+                    due: Some("2026-11-12".into()),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(t.data.start_date.as_deref(), Some("2026-11-10"));
+        let mut d = t.data.clone();
+        d.start_date = None;
+        let t = s.update_task(&t.id, t.rev, &d).await.unwrap();
+        assert_eq!(t.data.start_date, None);
+        // Une tâche enregistrée avant le champ (JSON sans start_date) se lit sans erreur.
+        sqlx::query("UPDATE tasks SET data = ? WHERE id = ?")
+            .bind(r#"{"title":"Ancienne","due":"2026-11-12","status":"todo","priority":"high"}"#)
+            .bind(&t.id)
+            .execute(&s.pool)
+            .await
+            .unwrap();
+        let old = s.task(&t.id).await.unwrap().unwrap();
+        assert_eq!(old.data.title, "Ancienne");
+        assert_eq!(old.data.start_date, None);
+        assert_eq!(old.data.due.as_deref(), Some("2026-11-12"));
+    }
+
+    #[tokio::test]
     async fn moving_a_container_moves_its_articles() {
         let (s, p, l, c) = setup().await;
         let l2 = s

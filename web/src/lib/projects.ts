@@ -51,7 +51,7 @@ export interface Instance { id: string; project_id: string; article_id: string; 
 export interface ItemView { id: string; kind: string; name: string; reference: string | null; brand: string | null; category: string | null; rackable: boolean; height_u: number | null; depth_mm: number | null; weight_kg: number | null; power_w: number | null; modular: boolean; host_slots?: number | null; module_slots?: number | null; active: boolean }
 export type TaskStatus = 'todo' | 'in_progress' | 'done' | 'validated';
 export type Priority = 'low' | 'normal' | 'high' | 'urgent';
-export interface Task { id: string; project_id: string; position: number; title: string; description: string | null; due: string | null; done_on: string | null; assignee_id: string | null; status: TaskStatus; priority: Priority; rev: number; created_by: string | null; created_at: string; updated_at: string }
+export interface Task { id: string; project_id: string; position: number; title: string; description: string | null; start_date?: string | null; due: string | null; done_on: string | null; assignee_id: string | null; status: TaskStatus; priority: Priority; rev: number; created_by: string | null; created_at: string; updated_at: string }
 
 export interface ProjectView {
   project: Project; completion: number; today: string;

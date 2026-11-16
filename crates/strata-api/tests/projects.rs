@@ -535,6 +535,53 @@ async fn tasks_and_rights() {
     )
     .await;
     assert_eq!(r.body["code"], "stale");
+
+    // Date de début facultative, au plus tard le jour de l'échéance.
+    let t = call(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid}/tasks"),
+        Some(json!({"title": "Monter le plateau", "start_date": days(1), "due": days(3)})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(t.status, StatusCode::CREATED, "{}", t.body);
+    assert_eq!(t.body["start_date"], days(1));
+    let tid = t.body["id"].as_str().unwrap();
+    let r = call(
+        &app,
+        "PATCH",
+        &format!("/api/tasks/{tid}"),
+        Some(
+            json!({"rev": 1, "title": "Monter le plateau", "start_date": days(4), "due": days(3)}),
+        ),
+        Some(&o),
+    )
+    .await;
+    assert!(r.status.is_client_error(), "{}", r.body);
+    assert!(r.body.to_string().contains("start_date"), "{}", r.body);
+    // Sans le champ (ancien client) : la tâche reste valable, sans date de début.
+    let r = call(
+        &app,
+        "PATCH",
+        &format!("/api/tasks/{tid}"),
+        Some(json!({"rev": 1, "title": "Monter le plateau", "due": days(3), "status": "in_progress"})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.body);
+    assert!(r.body["start_date"].is_null());
+    // Créée directement dans Terminé (pied de colonne du Kanban) : datée du jour.
+    let t = call(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid}/tasks"),
+        Some(json!({"title": "Tester les intercoms", "status": "done"})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(t.status, StatusCode::CREATED, "{}", t.body);
+    assert_eq!(t.body["done_on"], days(0));
 }
 
 #[tokio::test]

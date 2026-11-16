@@ -1763,6 +1763,13 @@ async fn create_task(
     project_of(&st.store, &pid).await?;
     fields(validate_task(&mut b))?;
     check_assignee(&st.store, &b).await?;
+    // Une tâche créée directement dans Terminé ou Validé (Kanban) prend sa date de fin.
+    if matches!(b.status, TaskStatus::Done | TaskStatus::Validated) && b.done_on.is_none() {
+        b.done_on = Some(today());
+    }
+    if matches!(b.status, TaskStatus::Todo | TaskStatus::InProgress) {
+        b.done_on = None;
+    }
     let t = st
         .store
         .insert_task(&pid, &b, Some(&m.0.account.id))
