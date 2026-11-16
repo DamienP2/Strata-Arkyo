@@ -116,6 +116,7 @@
       <select value={p.status} aria-label="Statut du projet" disabled={!can('projets', 'ecriture')} onchange={(e) => setStatus((e.target as HTMLSelectElement).value as Status)}>{#each STATUS_ORDER as s}<option value={s}>{STATUS[s].label}</option>{/each}</select>
     </label>
   {/snippet}
+  <!-- Méta du projet sous le titre des sections ; la vue d'ensemble la porte dans son bandeau. -->
   {#snippet meta()}
     <span class="hm">
       {#if days != null && days >= 0 && !['done', 'cancelled'].includes(p.status)}<span class="tally" style="--c:{urgency(days)}" title="Jours avant l’exploitation">J-{days}</span>{/if}
@@ -150,7 +151,7 @@
       {/if}
     {/snippet}
     {#snippet top()}
-      <PageHead ws portal {crumbs} title={section?.label ?? 'Section introuvable'} count={pageSlot.count} desc={DESC[sub] ?? ''} info={meta} />
+      <PageHead ws portal {crumbs} title={section?.label ?? 'Section introuvable'} count={pageSlot.count} desc={DESC[sub] ?? ''} info={sub ? meta : undefined} />
     {/snippet}
     <div class="page">
     {#if sub === ''}<Overview bind:view reload={load} />
