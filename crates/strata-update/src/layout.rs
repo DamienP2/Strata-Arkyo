@@ -158,16 +158,28 @@ impl Layout {
         let run = |args: Vec<String>| {
             let bin = bin.clone();
             async move {
-                let out = tokio::time::timeout(
-                    Duration::from_secs(120),
-                    tokio::process::Command::new(&bin)
-                        .args(&args)
-                        .env_remove("STRATA_DATA_DIR")
-                        .output(),
-                )
-                .await
-                .map_err(|_| "délai dépassé".to_string())?
-                .map_err(|e| e.to_string())?;
+                // « Text file busy » (ETXTBSY) : un exécutable qu'on vient d'écrire peut rester
+                // brièvement ouvert en écriture dans un processus fils lancé au même moment
+                // ailleurs ; on réessaie quelques fois avant de conclure à un échec.
+                let mut tries = 0;
+                let out = loop {
+                    let res = tokio::time::timeout(
+                        Duration::from_secs(120),
+                        tokio::process::Command::new(&bin)
+                            .args(&args)
+                            .env_remove("STRATA_DATA_DIR")
+                            .output(),
+                    )
+                    .await
+                    .map_err(|_| "délai dépassé".to_string())?;
+                    match res {
+                        Err(e) if e.raw_os_error() == Some(26) && tries < 20 => {
+                            tries += 1;
+                            tokio::time::sleep(Duration::from_millis(50)).await;
+                        }
+                        r => break r.map_err(|e| e.to_string())?,
+                    }
+                };
                 let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
                 if out.status.success() {
                     Ok(text)
