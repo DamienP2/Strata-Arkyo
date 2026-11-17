@@ -3,8 +3,10 @@
   export interface CtxItem {
     label?: string;
     icon?: string;
-    /** Précision affichée sous le libellé. */
+    /** Précision affichée sous le libellé (à éviter : une ligne courte par action). */
     hint?: string;
+    /** Valeur courte alignée à droite, en mono (« 0,5 U »). */
+    right?: string;
     danger?: boolean;
     disabled?: boolean;
     /** Infobulle (raison d'un article désactivé). */
@@ -92,7 +94,6 @@
   oncontextmenu={(e) => e.preventDefault()}>
   {#if stack.length}
     <button type="button" role="menuitem" class="ctx-back" onclick={leave}><Icon name="chevr" size="sm" /><span>Retour</span></button>
-    <div class="ctx-title" aria-hidden="true">{level.title}</div>
     <hr>
   {/if}
   {#each level.items as it, i}
@@ -102,6 +103,7 @@
       <button type="button" role="menuitem" class:danger={it.danger} disabled={it.disabled} title={it.title} aria-haspopup={it.sub ? 'menu' : undefined} data-sub={it.sub ? i : undefined} onclick={() => pick(it)}>
         {#if it.icon}<Icon name={it.icon} size="sm" />{/if}
         <span class="ctx-l">{it.label}{#if it.hint}<span class="pm-sub">{it.hint}</span>{/if}</span>
+        {#if it.right}<span class="ctx-r mono">{it.right}</span>{/if}
         {#if it.sub}<span class="ctx-chev"><Icon name="chevr" size="sm" /></span>{/if}
       </button>
     {/if}
@@ -113,5 +115,7 @@
   .ctx-l { flex: 1; min-width: 0; }
   .ctx-chev { margin-left: auto; display: inline-flex; }
   .ctx-back :global(.ic) { transform: rotate(180deg); }
-  .ctx-title, .ctx-head { padding: 6px 10px 2px; font: 600 var(--fs-2xs, 11.5px)/1.3 var(--font); letter-spacing: .05em; text-transform: uppercase; color: var(--fg-3); }
+  .ctx-r { margin-left: auto; padding-left: 16px; font-size: 11.5px; color: var(--text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  button:disabled .ctx-r { color: inherit; }
+  .ctx-head { padding: 6px 10px 2px; font: 600 var(--fs-2xs, 11.5px)/1.3 var(--font); letter-spacing: .05em; text-transform: uppercase; color: var(--fg-3); }
 </style>

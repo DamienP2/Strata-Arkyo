@@ -1,7 +1,10 @@
 <script lang="ts">
-  // Élévations de racks (section 9) : écran de conception, une personne à la fois.
-  // Vues cumulables (avant, arrière, côté) côte à côte, à la même échelle et alignées sur les U ;
-  // positions au demi-U ; menu contextuel (clic droit, touche Menu, Maj+F10).
+  // Élévations de racks (section 9) : écran de conception. Une baie (avec prise de main), ou toutes
+  // les baies côte à côte (`/racks/tout`, main prise le temps de chaque geste) : même scène, mêmes
+  // panneaux, mêmes gestes. Vues cumulables (avant, arrière, côté) à la même échelle et alignées
+  // sur les U ; positions au demi-U ; zoom (Ctrl+molette, pincement, Ctrl+= / Ctrl+- / Ctrl+0) ;
+  // menu contextuel (clic droit, touche Menu, Maj+F10). Un équipement glissé d'une baie à une autre
+  // change d'élément dans l'inventaire (un exemplaire à la fois) et y est posé à l'endroit lâché.
   import { untrack, onDestroy, tick } from 'svelte';
   import Icon from '../../components/Icon.svelte';
   import Vu from '../../components/Vu.svelte';
@@ -13,7 +16,7 @@
   import { ask } from '../../lib/ask.svelte';
   import { canvasKeys } from '../../lib/canvaskeys';
   import { can } from '../../lib/session.svelte';
-  import { toast, fail } from '../../lib/toast.svelte';
+  import { toast, toasts, dismiss, fail } from '../../lib/toast.svelte';
   import { route, navigate } from '../../lib/router.svelte';
   import { join } from '../../lib/live.svelte';
   import { nf, relative, pl } from '../../lib/format';
@@ -24,24 +27,25 @@
   import PanelFace from '../../components/PanelFace.svelte';
   import ProjectPanel from './ProjectPanel.svelte';
   import Rack3D from '../../components/Rack3D.svelte';
-  import AllRacks from './AllRacks.svelte';
   import RackPicker from '../../components/RackPicker.svelte';
   import AddArticle from './AddArticle.svelte';
   import Inspector from '../../components/Inspector.svelte';
   import FieldError from '../../components/FieldError.svelte';
   import { ApiError } from '../../lib/api';
   import { blankClick } from '../../lib/blankclick';
-  import { isWhole, rangeTxt, occTxt, fmtU, sideGeom, FRONT_RAIL_MM } from '../../lib/rackgeom';
+  import { isWhole, rangeTxt, occTxt, aimTxt, fmtU, parseU, sideGeom, FRONT_RAIL_MM } from '../../lib/rackgeom';
+  import { ZMIN, ZMAX, zoomStep, readZoom, saveZoom } from '../../lib/rackzoom';
 
   // `fixed` : éditeur d'un seul élément, intégré à une autre page (casquette d'un mobilier).
-  let { view, fixed = null }: { view: ProjectView; fixed?: string | null } = $props();
+  let { view, fixed = null, reload }: { view: ProjectView; fixed?: string | null; reload?: () => Promise<void> } = $props();
   type Face = 'front' | 'rear' | 'rear_inner';
   /** Vue affichée : une face, ou le côté (profondeurs). */
   type View = Face | 'side';
   type W = 'full' | 'half' | 'third' | 'quarter';
   interface Placement { id: string; article_id: string; instance_id: string | null; face: Face; u_start: number; width: W; col: number; circuit_id: string | null; shelf_id: string | null; rev: number }
-  interface RackEl { placement: Placement; label: string; tag: string | null; custom?: string | null; nature: string; height_u: number; depth_mm: number | null; rear_reserve_mm: number | null; weight_kg: number | null; power_w: number | null; function: string | null; category: string | null; brand: string | null; accessory: Accessory | null; article_rev: number; type_id?: string | null; visual?: string | null; item_id?: string | null }
-  interface Pending { article_id: string; instance_id?: string; tag?: string; label: string; nature: string; height_u: number | null; width: W | null; rackable: boolean; function: string | null; accessory: Accessory | null; type_id?: string | null; visual?: string | null }
+  /** `cid` : baie de l'élément (ajouté au chargement). */
+  interface RackEl { cid: string; placement: Placement; label: string; tag: string | null; custom?: string | null; nature: string; height_u: number; depth_mm: number | null; rear_reserve_mm: number | null; weight_kg: number | null; power_w: number | null; function: string | null; category: string | null; brand: string | null; accessory: Accessory | null; article_rev: number; type_id?: string | null; visual?: string | null; item_id?: string | null }
+  interface Pending { cid: string; article_id: string; article_rev?: number; instance_id?: string; tag?: string; label: string; nature: string; height_u: number | null; width: W | null; rackable: boolean; function: string | null; accessory: Accessory | null; type_id?: string | null; visual?: string | null }
   interface VPdu { article_id: string; rev: number; label: string; accessory: { kind: 'vertical_pdu'; length_mm: number; outlets: number; side: 'left' | 'right'; circuit_id?: string | null }; circuit: string | null; fed: number; free: number; over: boolean }
   interface Circuit { id: string; name: string; phase: 'L1' | 'L2' | 'L3'; rating_a: number; rev: number }
   interface Rack {
@@ -56,50 +60,87 @@
   // Les casquettes s'équipent depuis le mobilier : elles ne figurent pas dans les racks.
   const racks = $derived(view.containers.filter((c) => c.rackable && c.kind !== 'casquette'));
   const all = $derived(!fixed && route.path.split('/')[4] === 'tout');
+  /** Vue côte à côte : emplacement choisi (dans l'adresse), sinon tous. */
+  const loc = $derived(all ? (route.path.split('/')[5] ?? null) : null);
   const cid = $derived(fixed ?? (all ? null : (route.path.split('/')[4] ?? racks[0]?.id ?? null)));
   $effect(() => { if (!fixed && !route.path.split('/')[4] && racks[0]) navigate(`/projets/${view.project.id}/racks/${racks[0].id}`, true); });
+  /** Baies côte à côte : rangées par emplacement (puis celles sans emplacement). */
+  const allList = $derived.by(() => {
+    const out = view.locations.flatMap((l) => (loc && l.id !== loc ? [] : racks.filter((c) => c.location_id === l.id)));
+    if (!loc) out.push(...racks.filter((c) => !view.locations.some((l) => l.id === c.location_id)));
+    return out;
+  });
+  const withRacks = $derived(view.locations.filter((l) => racks.some((c) => c.location_id === l.id)));
+  const ids = $derived<string[]>(all ? allList.map((c) => c.id) : cid ? [cid] : []);
+  const idsKey = $derived(ids.join(','));
+  const contOf = (id: string | null | undefined) => (id ? (view.containers.find((c) => c.id === id) ?? null) : null);
 
-  let rack = $state<Rack | null>(null);
+  /** Élévations chargées, par baie. */
+  let store = $state<Record<string, Rack>>({});
+  let loaded = $state(false);
+  /** Vue d'une baie : son élévation. */
+  const rack = $derived(!all && cid ? (store[cid] ?? null) : null);
+  /** Baies affichées (une, ou toutes côte à côte). */
+  const shownRacks = $derived(ids.map((id) => store[id]).filter((r): r is Rack => !!r));
+  const rid = (R: Rack): string => R.container.id;
   let mode = $state<'real' | 'schematic'>('real');
   let show3d = $state(false);
   let armed = $state<Pending | null>(null);
   let sel = $state<string | null>(null);
   let newer = $state(false);
   let requested = $state<string | null>(null);
-  // « Ajouter du matériel » : la boîte de l'inventaire, réglée sur l'élément affiché.
+  // « Ajouter du matériel » : la boîte de l'inventaire, réglée sur la baie choisie.
   let adding = $state(false);
+  let addCid = $state<string | null>(null);
   const canAdd = $derived(can('projets', 'ecriture'));
-  const shownC = $derived(view.containers.find((c) => c.id === cid) ?? null);
+  const shownC = $derived(contOf(cid));
+  const addC = $derived(contOf(addCid));
   const canDesign = $derived(can('conception', 'ecriture'));
+  /** Vue d'une baie : la main est à soi. */
   const mine = $derived(!!rack?.lock?.mine);
+  /** Modifiable ? Vue d'une baie : main prise ; côte à côte : rôle de conception et personne d'autre n'a la main. */
+  function canEdit(id: string | null | undefined): boolean {
+    const R = id ? store[id] : null;
+    if (!R) return false;
+    return all ? canDesign && (!R.lock || R.lock.mine) : !!R.lock?.mine;
+  }
+  const anyEdit = $derived(all ? shownRacks.some((R) => canEdit(rid(R))) : mine);
   // Proportions réelles d'un 19" : façade 482,6 mm pour 44,45 mm par U (≈ 10,86).
   const U = 34;
   const BW = Math.round(U * 10.86) - 22;
-  const units = $derived(rack?.container.height_u ?? 0);
+  const unitsOf = (R: Rack | null | undefined): number => R?.container.height_u ?? 0;
 
-  // ----- Vues cumulables : avant, arrière (intérieure), côté ; au moins une, choix mémorisé -----
+  // ----- Vues cumulables : avant, arrière (intérieure), côté ; au moins une, choix mémorisé (par écran) -----
   const VIEW_ORDER: View[] = ['front', 'rear', 'rear_inner', 'side'];
-  const readViews = (): View[] => {
-    try { const v = JSON.parse(localStorage.getItem('rack-views') ?? 'null'); if (Array.isArray(v)) { const ok = v.filter((x): x is View => VIEW_ORDER.includes(x)); if (ok.length) return ok; } } catch { /* stockage indisponible */ }
+  const viewsKey = () => (all ? 'rack-views-all' : 'rack-views');
+  const readViews = (key: string): View[] => {
+    try { const v = JSON.parse(localStorage.getItem(key) ?? 'null'); if (Array.isArray(v)) { const ok = v.filter((x): x is View => VIEW_ORDER.includes(x)); if (ok.length) return ok; } } catch { /* stockage indisponible */ }
     return ['front'];
   };
-  let views = $state<View[]>(readViews());
-  $effect(() => { const v = views; try { localStorage.setItem('rack-views', JSON.stringify(v)); } catch { /* stockage indisponible */ } });
-  const shown = $derived.by((): View[] => {
-    const av: View[] = [...(rack?.faces ?? ['front', 'rear']), 'side'];
+  let views = $state<View[]>(readViews(untrack(viewsKey)));
+  function setViews(v: View[]) { views = v; try { localStorage.setItem(viewsKey(), JSON.stringify(v)); } catch { /* stockage indisponible */ } }
+  /** Vues affichées pour une baie (ses faces, plus le côté). */
+  function shownOf(R: Rack | null | undefined): View[] {
+    const av: View[] = [...(R?.faces ?? ['front', 'rear']), 'side'];
+    const v = VIEW_ORDER.filter((x) => views.includes(x) && av.includes(x));
+    return v.length ? v : ['front'];
+  }
+  /** Faces proposées dans la barre : celles de la baie, ou de l'une des baies côte à côte. */
+  const barFaces = $derived<Face[]>(all ? (['front', 'rear', 'rear_inner'] as Face[]).filter((f) => shownRacks.some((R) => R.faces.includes(f))) : (rack?.faces ?? ['front', 'rear']));
+  const shownT = $derived.by((): View[] => {
+    const av: View[] = [...barFaces, 'side'];
     const v = VIEW_ORDER.filter((x) => views.includes(x) && av.includes(x));
     return v.length ? v : ['front'];
   });
-  const faceViews = $derived(shown.filter((v): v is Face => v !== 'side'));
   /** Face des poses quand la vue ne la dit pas (vue de côté seule) : la première face affichée. */
-  const mainFace = $derived<Face>(faceViews[0] ?? 'front');
+  const mainFace = (R: Rack | null | undefined): Face => (shownOf(R).find((v): v is Face => v !== 'side') ?? 'front');
   function toggleView(v: View) {
-    if (shown.includes(v)) { if (shown.length > 1) views = shown.filter((x) => x !== v); }
-    else views = VIEW_ORDER.filter((x) => x === v || shown.includes(x));
+    if (shownT.includes(v)) { if (shownT.length > 1) setViews(shownT.filter((x) => x !== v)); }
+    else setViews(VIEW_ORDER.filter((x) => x === v || shownT.includes(x)));
     aim = null;
   }
   /** Montre une face (ajoutée aux vues affichées) : un équipement déplacé ou désigné reste visible. */
-  function reveal(f: Face) { if (!shown.includes(f)) views = VIEW_ORDER.filter((x) => x === f || shown.includes(x)); }
+  function reveal(f: Face) { if (!shownT.includes(f)) setViews(VIEW_ORDER.filter((x) => x === f || shownT.includes(x))); }
 
   // Téléphone : la baie est mise à l'échelle de la largeur disponible (pas de défilement
   // horizontal de la page) ; la liste « À placer » devient un panneau repliable fixé en bas.
@@ -111,50 +152,123 @@
     return () => mq.removeEventListener('change', on);
   });
   let stageW = $state(0), stageH = $state(0);
+  let scroller = $state<HTMLElement>();
   let sheetOpen = $state(false);
-  // « Ajuster » met toutes les vues dans la place disponible (hauteur et largeur mesurées) ; réglage mémorisé.
-  let fitH = $state((() => { try { return localStorage.getItem('rack-fit') !== '0'; } catch { return true; } })());
-  $effect(() => { try { localStorage.setItem('rack-fit', fitH ? '1' : '0'); } catch { /* indisponible */ } });
   // Vue de côté à la même échelle que les façades : 34 px pour 44,45 mm.
   const PX_MM = U / 44.45;
-  const depth = $derived<number>(rack?.container.depth_mm ?? 800);
-  const SW = $derived(Math.round(depth * PX_MM));
+  const depthOf = (R: Rack | null | undefined): number => R?.container.depth_mm ?? 800;
+  const swOf = (R: Rack) => Math.round(depthOf(R) * PX_MM);
   /** Largeur naturelle (zoom 1) d'une vue, graduations comprises (CSS : .rack, .rack-scale, .side-body). */
-  function viewW(v: View, i: number): number {
-    const scales = (i === 0 ? 28 : 0) + (i === shown.length - 1 ? 28 : 0);
-    if (v === 'side') return scales + 10 + SW + 10;
-    const vp = (vpOf(v).some((x) => x.accessory.side === 'left') ? 26 : 0) + (vpOf(v).some((x) => x.accessory.side === 'right') ? 26 : 0);
+  function viewW(R: Rack, v: View, i: number, n: number): number {
+    const scales = (i === 0 ? 28 : 0) + (i === n - 1 ? 28 : 0);
+    if (v === 'side') return scales + 10 + swOf(R) + 10;
+    const vp = (vpOf(R, v).some((x) => x.accessory.side === 'left') ? 26 : 0) + (vpOf(R, v).some((x) => x.accessory.side === 'right') ? 26 : 0);
     return scales + 10 + BW + 22 + vp;
   }
-  const naturalW = $derived(shown.reduce((n, v, i) => n + viewW(v, i), 0) + (shown.length - 1) * 14);
+  const natW = (R: Rack) => { const s = shownOf(R); return s.reduce((n, v, i) => n + viewW(R, v, i, s.length), 0) + (s.length - 1) * 14; };
   /** Hauteur naturelle : légende de vue (22 + 6), cadre (22 + 24), socle (9), cote de profondeur. */
-  const naturalH = $derived(units * U + 22 + 6 + 46 + 9 + (shown.includes('side') ? 30 : 0));
-  const zoom = $derived.by(() => {
-    if (!stageW || !units) return 1;
-    // Marges de la scène : 12 px de chaque côté (voir .rk-stage).
-    const fw = (stageW - 24) / naturalW, fh = (stageH - 24) / naturalH;
-    if (narrow) return Math.max(0.15, Math.min(1, fw));
-    if (fitH && stageH) return Math.max(0.3, Math.min(1, fw, fh));
-    return 1;
+  const natH = (R: Rack) => unitsOf(R) * U + 22 + 6 + 46 + 9 + (shownOf(R).includes('side') ? 30 : 0);
+  /** Côte à côte : écart entre baies ; en-tête de baie (voir .all-racks, .ar-head), à taille fixe quel que soit le zoom. */
+  const AR_GAP = 28, AR_HEAD = 38;
+  const natural = $derived.by(() => {
+    if (all) return { w: shownRacks.reduce((n, R) => n + natW(R), 0) + Math.max(0, shownRacks.length - 1) * AR_GAP, h: Math.max(0, ...shownRacks.map(natH)) };
+    return rack ? { w: natW(rack), h: natH(rack) } : { w: 0, h: 0 };
   });
-  const cols = (w: W) => ({ full: 1, half: 2, third: 3, quarter: 4 })[w];
 
-  async function load() {
-    if (!cid) return;
-    try {
-      rack = await api.get<Rack>(`/containers/${cid}/rack`); newer = false;
-      // L'élément armé suit le rechargement (mêmes données, nouvel objet).
-      if (armed) { const k = armed.instance_id ?? armed.article_id; armed = rack.pending.find((x) => (x.instance_id ?? x.article_id) === k) ?? null; }
-      if (moving) { const id = moving.placement.id; moving = rack.elements.find((x) => x.placement.id === id) ?? null; }
-    } catch (e) { fail(e); }
+  // ----- Zoom : « Ajuster » (toutes les vues dans la place disponible) ou paliers de 25 à 400 %, mémorisé par écran -----
+  const zKey = () => (all ? 'rack-zoom-all' : fixed ? 'rack-zoom-equip' : 'rack-zoom');
+  let zset = $state<number | 'fit'>(readZoom(untrack(zKey)));
+  /** Marges de la scène (voir .rk-stage) : 12 px autour, 56 px sous les vues pour le contrôle de zoom. */
+  const PAD_W = 24, PAD_H = 68;
+  const fitZ = $derived.by(() => {
+    if (!stageW || !natural.w || !natural.h) return 1;
+    const fw = (stageW - PAD_W) / natural.w, fh = (stageH - PAD_H - (all ? AR_HEAD : 0)) / natural.h;
+    if (narrow) return Math.max(0.15, Math.min(1, fw));
+    // « Ajuster » montre tout : jusqu'à 30 % pour une baie (comme avant), plus petit côte à côte.
+    return Math.max(all ? 0.1 : 0.3, Math.min(1, fw, fh));
+  });
+  const zoom = $derived(zset === 'fit' ? fitZ : zset);
+  const fitOn = $derived(zset === 'fit');
+  let zAnchor: { fx: number; fy: number; x: number; y: number } | null = null;
+  /** Change le zoom en gardant fixe le point visé (pointeur, sinon le centre de la scène). */
+  function setZoom(z: number | 'fit', at?: { x: number; y: number }) {
+    const s = scroller, content = s?.querySelector<HTMLElement>('.rk-zoomed');
+    if (s && content && z !== 'fit') {
+      const sr = s.getBoundingClientRect(), r = content.getBoundingClientRect();
+      const x = at?.x ?? sr.left + sr.width / 2, y = at?.y ?? sr.top + sr.height / 2;
+      zAnchor = { fx: (x - r.left) / (r.width || 1), fy: (y - r.top) / (r.height || 1), x, y };
+    } else zAnchor = null;
+    zset = z === 'fit' ? 'fit' : Math.min(ZMAX, Math.max(ZMIN, Math.round(z * 100) / 100));
+    saveZoom(zKey(), zset);
+    tick().then(() => {
+      const a = zAnchor, s2 = scroller, c2 = s2?.querySelector<HTMLElement>('.rk-zoomed');
+      zAnchor = null;
+      if (!a || !s2 || !c2) return;
+      const r = c2.getBoundingClientRect();
+      s2.scrollLeft += r.left + a.fx * r.width - a.x;
+      s2.scrollTop += r.top + a.fy * r.height - a.y;
+    });
   }
+  /** Palier suivant ou précédent ; sous 25 % (« Ajuster » côte à côte), seul le zoom avant agit. */
+  function zoomBy(dir: 1 | -1) { const z = zoomStep(zoom, dir); if ((z - zoom) * dir > 1e-9) setZoom(z); }
+  // Ctrl+molette (et pincement sur pavé tactile, vu comme Ctrl+molette) : zoom autour du pointeur ;
+  // molette seule : défilement de la scène. Les crans d'une même image sont cumulés.
+  let wheelAcc: { f: number; x: number; y: number } | null = null;
+  function onWheel(e: WheelEvent) {
+    if (!(e.ctrlKey || e.metaKey) || show3d) return;
+    e.preventDefault();
+    const d = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
+    if (!wheelAcc) {
+      wheelAcc = { f: 1, x: e.clientX, y: e.clientY };
+      requestAnimationFrame(() => { const w = wheelAcc; wheelAcc = null; if (w && !(w.f < 1 && zoom <= ZMIN + 1e-9)) setZoom(Math.max(Math.min(zoom, ZMIN), zoom * w.f), w); });
+    }
+    wheelAcc.f *= Math.exp(-Math.max(-60, Math.min(60, d)) * 0.006);
+    wheelAcc.x = e.clientX; wheelAcc.y = e.clientY;
+  }
+  $effect(() => {
+    const s = scroller;
+    if (!s) return;
+    s.addEventListener('wheel', onWheel, { passive: false });
+    return () => s.removeEventListener('wheel', onWheel);
+  });
+  /** Fait défiler la scène (jamais la page) pour montrer un élément. */
+  function showInStage(el: Element | null) {
+    const s = scroller;
+    if (!s || !el) return;
+    const r = el.getBoundingClientRect(), sr = s.getBoundingClientRect();
+    s.scrollTo({ top: s.scrollTop + r.top - sr.top - (sr.height - r.height) / 2, left: s.scrollLeft + r.left - sr.left - (sr.width - r.width) / 2, behavior: 'smooth' });
+  }
+  const cols = (w: W) => ({ full: 1, half: 2, third: 3, quarter: 4 })[w] ?? 1;
 
-  // Verrou : prise de main à l'ouverture, battement toutes les 20 s, libération à la sortie
-  // ou après 10 minutes sans action.
+  /** Recharge des baies (par défaut : celles affichées). L'élément armé ou déplacé suit le rechargement. */
+  let scopeNow = '';
+  async function load(which: string[] = ids) {
+    const scope = scopeNow;
+    await Promise.all([...new Set(which)].map(async (id) => {
+      try {
+        const r = await api.get<Rack>(`/containers/${id}/rack`);
+        if (scope !== scopeNow) return;
+        for (const e of r.elements) e.cid = id;
+        for (const p of r.pending) p.cid = id;
+        store[id] = r;
+      } catch (e) { fail(e); }
+    }));
+    if (scope !== scopeNow) return;
+    if (!all) newer = false;
+    loaded = true;
+    if (armed) { const k = pk(armed), c = armed.cid; armed = store[c]?.pending.find((x) => pk(x) === k) ?? null; }
+    if (moving) { const id = moving.placement.id; moving = elById(id); }
+  }
+  const pk = (p: { instance_id?: string | null; article_id: string }) => p.instance_id ?? p.article_id;
+  const allEls = $derived(shownRacks.flatMap((R) => R.elements));
+  const elById = (id: string): RackEl | null => { for (const R of Object.values(store)) { const e = R.elements.find((x) => x.placement.id === id); if (e) return e; } return null; };
+
+  // Verrou (vue d'une baie) : prise de main à l'ouverture, battement toutes les 20 s, libération à
+  // la sortie ou après 10 minutes sans action. Côte à côte : la main est prise le temps du geste (act).
   let beat: ReturnType<typeof setInterval> | null = null;
   let lastAction = Date.now();
   async function take() {
-    if (!cid || !canDesign) return;
+    if (!cid || all || !canDesign) return;
     try {
       const r = await api.post<{ mine: boolean; account_name: string }>(`/containers/${cid}/rack/lock`);
       if (r.mine && !beat) beat = setInterval(heartbeat, 20_000);
@@ -173,23 +287,66 @@
     stopBeat();
     if (!id) return;
     try { await api.del(`/containers/${id}/rack/lock`); } catch { /* déjà libre */ }
-    if (!destroyed && id === cid) await load();
+    if (!destroyed && !all && id === cid) await load([id]);
   }
   async function requestHand() {
     try { await api.post(`/containers/${cid}/rack/lock/request`); toast(`Demande envoyée à ${rack?.lock?.account_name}.`, 'info'); } catch (e) { fail(e); }
   }
+  /** Exécute une modification. Côte à côte : prend la main sur les baies du geste (un geste à la
+   *  fois), exécute, puis rend la main. Vue d'une baie : la main est déjà prise. */
+  let chain: Promise<unknown> = Promise.resolve();
+  let busyN = $state(0);
+  function act<T>(cids: string[], run: () => Promise<T>): Promise<T> {
+    lastAction = Date.now();
+    if (!all) return run();
+    const go = async () => {
+      busyN++;
+      const held: string[] = [];
+      try {
+        for (const id of new Set(cids)) {
+          if (store[id]?.lock?.mine) continue;
+          const r = await api.post<{ mine: boolean; account_name: string }>(`/containers/${id}/rack/lock`);
+          if (!r.mine) throw new ApiError(409, 'locked', `${r.account_name} modifie « ${contOf(id)?.name ?? 'ce rack'} » : réessayez plus tard.`);
+          held.push(id);
+        }
+        return await run();
+      } finally {
+        for (const id of held) { try { await api.del(`/containers/${id}/rack/lock`); } catch { /* déjà libre */ } }
+        busyN--;
+      }
+    };
+    const p = chain.then(go, go);
+    chain = p.catch(() => undefined);
+    return p;
+  }
 
   let current: string | null = null;
+  let lastMode: boolean | null = null;
+  // Changement de baie ou d'écran : tout repart de zéro (sélection, pose, menu) ; vues et zoom de l'écran.
   $effect(() => {
-    const id = cid;
-    if (!id) return;
+    const key = all ? `all:${loc ?? ''}` : (cid ?? '');
+    if (!key) return;
     untrack(() => {
-      if (current && current !== id) release(current);
-      current = id; rack = null; sel = null; armed = null; moving = null; requested = null; ctx = null;
-      load().then(take);
+      const single = all ? null : cid;
+      if (current && current !== single) release(current);
+      current = single;
+      if (lastMode !== null && lastMode !== all) { views = readViews(viewsKey()); zset = readZoom(zKey()); }
+      lastMode = all;
+      scopeNow = key; store = {}; loaded = false;
+      sel = null; armed = null; moving = null; requested = null; ctx = null; show3d = all ? false : show3d;
+      load().then(() => { if (single) take(); });
     });
   });
+  // Côte à côte : une baie ajoutée à la liste est chargée.
+  $effect(() => { void idsKey; untrack(() => { if (all && loaded) { const miss = ids.filter((id) => !store[id]); if (miss.length) load(miss); } }); });
+  const soon: Record<string, ReturnType<typeof setTimeout>> = {};
   $effect(() => join(`project:${view.project.id}`, (c) => {
+    if (all) {
+      // Côte à côte : une baie modifiée ou dont la main change est relue (regroupé sur 250 ms).
+      if (!ids.includes(c.id) || (c.kind !== 'rack' && c.kind !== 'lock')) return;
+      clearTimeout(soon[c.id]); soon[c.id] = setTimeout(() => { if (!destroyed && all) load([c.id]); }, 250);
+      return;
+    }
     if (c.id !== cid) return;
     if (c.kind === 'rack' && c.action === 'saved' && !mine) newer = true;
     if (c.kind === 'lock' && c.action === 'request' && mine) requested = c.actor;
@@ -198,25 +355,25 @@
     if (c.kind === 'lock' && c.action === 'released' && !mine) load();
   }));
   const leave = () => { if (current && beat) fetch(`/api/containers/${current}/rack/lock`, { method: 'DELETE', headers: { 'X-Strata-Request': '1' }, keepalive: true }); };
-  onDestroy(() => { destroyed = true; stopBeat(); if (current) release(current); });
+  onDestroy(() => { destroyed = true; stopBeat(); for (const t of Object.values(soon)) clearTimeout(t); if (current) release(current); });
 
   // ?i=<exemplaire> (lien « Poser » de l'inventaire) : l'exemplaire posé est sélectionné et montré,
   // sinon il est armé dans « À placer », prêt à poser.
   let handledI: string | null = null;
   $effect(() => {
-    const iid = route.query.get('i'), r = rack, at = cid;
-    if (!iid || !r || !at || handledI === `${at}:${iid}`) return;
+    const iid = route.query.get('i'), ok = loaded, at = all ? `all:${loc ?? ''}` : cid;
+    if (!iid || !ok || !at || handledI === `${at}:${iid}`) return;
     untrack(() => {
       handledI = `${at}:${iid}`;
-      const el = r.elements.find((e) => e.placement.instance_id === iid);
+      const el = allEls.find((e) => e.placement.instance_id === iid);
       if (el) {
         armed = null; sel = el.placement.id;
         if (!el.placement.shelf_id) reveal(el.placement.face);
         show3d = false;
-        tick().then(() => document.querySelector<HTMLElement>(`.rack-screen .ritem[data-pl="${CSS.escape(el.placement.shelf_id ?? el.placement.id)}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }));
+        tick().then(() => showInStage(document.querySelector(`.rack-screen .ritem[data-pl="${CSS.escape(el.placement.shelf_id ?? el.placement.id)}"]`)));
         return;
       }
-      const p = r.pending.find((x) => x.instance_id === iid);
+      const p = shownRacks.flatMap((R) => R.pending).find((x) => x.instance_id === iid);
       if (p?.rackable) { sel = null; show3d = false; arm(p, true); }
       else if (p) toast(`« ${p.tag ?? p.label} » est hors format rack : posez-le sur une étagère du rack.`, 'info');
     });
@@ -224,123 +381,204 @@
 
   // ----- Pose et déplacement -----
   /** Éléments posés sur une face, dans l'ordre visuel du haut vers le bas (parcours au clavier). */
-  const faceEls = (f: Face) => (rack?.elements.filter((e) => e.placement.face === f && !e.placement.shelf_id) ?? []).sort((a, b) => b.placement.u_start - a.placement.u_start || a.placement.col - b.placement.col);
-  const onShelf = (id: string) => rack?.elements.filter((e) => e.placement.shelf_id === id) ?? [];
+  const faceEls = (R: Rack | null | undefined, f: Face) => (R?.elements.filter((e) => e.placement.face === f && !e.placement.shelf_id) ?? []).sort((a, b) => b.placement.u_start - a.placement.u_start || a.placement.col - b.placement.col);
+  const onShelf = (e: RackEl) => store[e.cid]?.elements.filter((x) => x.placement.shelf_id === e.placement.id) ?? [];
   const isShelf = (e: RackEl) => e.accessory?.kind === 'shelf';
   const panelOf = (e: { accessory: Accessory | null }) => (e.accessory?.kind === 'panel' ? e.accessory.panel : null);
   let editPanel = $state<RackEl | null>(null);
-  const shelfOf = (e: RackEl) => rack?.elements.find((x) => x.placement.id === e.placement.shelf_id);
+  const shelfOf = (e: RackEl) => store[e.cid]?.elements.find((x) => x.placement.id === e.placement.shelf_id);
   async function putOnShelf(shelf: RackEl, p: Pending) {
-    lastAction = Date.now();
-    try { await api.post(`/containers/${cid}/placements`, { article_id: p.article_id, instance_id: p.instance_id ?? null, face: shelf.placement.face, u_start: shelf.placement.u_start, shelf_id: shelf.placement.id }); await load(); }
-    catch (e) { fail(e); }
+    try {
+      await act([shelf.cid], () => api.post(`/containers/${shelf.cid}/placements`, { article_id: p.article_id, instance_id: p.instance_id ?? null, face: shelf.placement.face, u_start: shelf.placement.u_start, shelf_id: shelf.placement.id }));
+      await load([shelf.cid]);
+    } catch (e) { fail(e); }
   }
-  const selected = $derived(rack?.elements.find((e) => e.placement.id === sel) ?? null);
+  const selected = $derived(sel ? (allEls.find((e) => e.placement.id === sel) ?? null) : null);
+  /** Baie de l'élément sélectionné. */
+  const selR = $derived(selected ? (store[selected.cid] ?? null) : null);
   let placing = false;
-  async function placeAt(u: number, col: number, p: Pending | null, f: Face) {
+  /** Pose un élément « à placer » dans la baie `to` (côte à côte : il y change d'élément s'il venait d'une autre). */
+  async function placeAt(u: number, col: number, p: Pending | null, f: Face, to: string | null = p?.cid ?? null) {
     // Une pose à la fois : le clic suivant attend la réponse du serveur.
-    if (!p || !mine || placing) return;
-    lastAction = Date.now();
-    const wasArmed = armed === p;
+    if (!p || !to || !canEdit(to) || placing) return;
+    const from = p.cid, dest = contOf(to), wasArmed = armed === p, h = p.height_u ?? 1;
     placing = true;
     try {
-      const r = await api.post<{ adjusted: boolean; warning: string | null; placement: Placement }>(`/containers/${cid}/placements`, { article_id: p.article_id, instance_id: p.instance_id ?? null, face: f, u_start: u, col });
-      const id = r.placement.id, h = p.height_u ?? 1;
-      toast(`« ${p.tag ?? p.label} » posé en ${rangeTxt(r.placement.u_start, h)}.`, 'ok', { run: async () => { await api.del(`/placements/${id}`); if (sel === id) sel = null; await load(); } });
-      if (r.warning) toast(r.warning, 'warn');
-      armed = null; aim = null; sel = id; await load(); flash(id);
-      const next = wasArmed ? rack?.pending.find((x) => x.article_id === p.article_id && x.rackable) : null;
+      const id = await act([to], async (): Promise<string | null> => {
+        let article = p.article_id;
+        if (from !== to) article = (await api.post<{ id: string }>(`/articles/${p.article_id}/move`, { rev: p.article_rev, container_id: to, location_id: dest?.location_id ?? null, instance_id: p.instance_id ?? null })).id;
+        let r: { adjusted: boolean; warning: string | null; placement: Placement };
+        try { r = await api.post(`/containers/${to}/placements`, { article_id: article, instance_id: p.instance_id ?? null, face: f, u_start: u, col }); }
+        catch (x) { if (from === to) throw x; toast(`« ${p.tag ?? p.label} » est dans « ${dest?.name} », à placer : ${(x as Error).message}`, 'warn'); return null; }
+        const id = r.placement.id;
+        toast(`« ${p.tag ?? p.label} » posé ${from !== to ? `dans « ${dest?.name} » ` : ''}en ${rangeTxt(r.placement.u_start, h)}.`, 'ok', { run: async () => {
+          await act([to], async () => { await api.del(`/placements/${id}`); if (from !== to) await sendBack({ instance_id: p.instance_id ?? null, article_id: article }, to, from); });
+          if (sel === id) sel = null;
+          await load([to, from]); await reload?.();
+        } });
+        if (r.warning) toast(r.warning, 'warn');
+        armed = null; aim = null; sel = id;
+        return id;
+      });
+      await load([to, from]);
+      if (id) flash(id);
+      if (from !== to) await reload?.();
+      const next = wasArmed ? store[from]?.pending.find((x) => x.article_id === p.article_id && x.rackable) : null;
       if (next) armed = next;
-    } catch (e) { fail(e); } finally { placing = false; }
+    } catch (e) { fail(e); await load([to, from]); } finally { placing = false; }
+  }
+  /** Annulation d'un changement de baie : l'élément « à placer » dans `at` retourne dans `home`. */
+  async function sendBack(k: { instance_id: string | null; article_id: string }, at: string, home: string): Promise<string | null> {
+    const r = await api.get<Rack>(`/containers/${at}/rack`);
+    const q = r.pending.find((x) => (k.instance_id ? x.instance_id === k.instance_id : x.article_id === k.article_id));
+    if (!q) return null;
+    const m = await api.post<{ id: string }>(`/articles/${q.article_id}/move`, { rev: q.article_rev, container_id: home, location_id: contOf(home)?.location_id ?? null, instance_id: q.instance_id ?? null });
+    return m.id;
   }
   async function patch(e: RackEl, change: Partial<Placement>) {
-    lastAction = Date.now();
     const p = { ...e.placement, ...change };
-    try { await api.patch(`/placements/${p.id}`, { rev: e.placement.rev, face: p.face, u_start: p.u_start, width: p.width, col: p.col, circuit_id: p.circuit_id }); await load(); }
-    catch (x) { fail(x); await load(); }
+    try { await act([e.cid], () => api.patch(`/placements/${p.id}`, { rev: e.placement.rev, face: p.face, u_start: p.u_start, width: p.width, col: p.col, circuit_id: p.circuit_id })); await load([e.cid]); }
+    catch (x) { fail(x); await load([e.cid]); }
   }
   /** Retire un équipement du rack (ou de l'étagère) : il redevient « à placer ». Notification avec
    *  Annuler (reposé au même U, à la même face, à la même colonne), focus sur son entrée « À placer ». */
   async function unplace(e: RackEl) {
-    lastAction = Date.now();
-    const p = e.placement, key = p.instance_id ?? p.article_id, where = p.shelf_id ? 'de l’étagère' : 'du rack';
+    const p = e.placement, c = e.cid, key = p.instance_id ?? p.article_id, where = p.shelf_id ? 'de l’étagère' : 'du rack';
     try {
-      await api.del(`/placements/${p.id}`); sel = null; await load();
+      await act([c], () => api.del(`/placements/${p.id}`)); sel = null; await load([c]);
       toast(`« ${e.tag ?? e.label} » retiré ${where} : il est à placer.`, 'ok', { run: async () => {
-        await api.post(`/containers/${cid}/placements`, { article_id: p.article_id, instance_id: p.instance_id, face: p.face, u_start: p.u_start, width: p.width, col: p.col, circuit_id: p.circuit_id, shelf_id: p.shelf_id });
-        await load();
+        await act([c], () => api.post(`/containers/${c}/placements`, { article_id: p.article_id, instance_id: p.instance_id, face: p.face, u_start: p.u_start, width: p.width, col: p.col, circuit_id: p.circuit_id, shelf_id: p.shelf_id }));
+        await load([c]);
       } });
       await tick();
-      (document.querySelector<HTMLElement>(`[data-pend="${CSS.escape(key)}"]`) ?? document.querySelector<HTMLElement>('.rack-screen .rack-body'))?.focus();
-    } catch (x) { fail(x); }
+      (document.querySelector<HTMLElement>(`[data-pend="${CSS.escape(key)}"]`) ?? document.querySelector<HTMLElement>('.rack-screen .rack-body'))?.focus({ preventScroll: true });
+    } catch (x) { fail(x); await load([c]); }
   }
   // ----- Panneau de l'équipement sélectionné : position et libellé modifiables -----
   const hOf = (e: { height_u: number }) => e.height_u || 1;
   /** Place libre et dans les limites ? Renvoie le message d'erreur, sinon null. */
-  function checkSpot(e: RackEl, u: number, f: Face, col = e.placement.col): string | null {
-    const h = hOf(e), top = units - h + 1;
+  function checkSpot(e: RackEl, u: number, f: Face, col = e.placement.col, R: Rack | null = store[e.cid] ?? null): string | null {
+    const h = hOf(e), units = unitsOf(R), top = units - h + 1;
     if (!Number.isFinite(u) || !isWhole(u * 2)) return 'Un U entier ou un demi-U est attendu, par exemple 12 ou 12,5.';
     if (top < 1) return 'L’équipement est plus haut que le rack.';
     if (u < 1 || u > top + 1e-9) return `Entre U1 et U${fmtU(top)} pour cet équipement de ${fmtU(e.height_u)} U.`;
-    const hit = blocker(h, e.placement.width, col, u, f, e.placement.id);
+    const hit = blocker(R, h, e.placement.width, col, u, f, e.placement.id);
     return hit ? `Position occupée par « ${hit.custom || hit.label} ».` : null;
   }
   const nameOf = (e: RackEl) => e.custom || e.tag || e.label;
   /** Élément posé qui occupe déjà une partie de la place visée (même face, colonnes qui se chevauchent). */
-  function blocker(h: number, w: W, col: number, u: number, f: Face, skip?: string): RackEl | null {
+  function blocker(R: Rack | null | undefined, h: number, w: W, col: number, u: number, f: Face, skip?: string): RackEl | null {
     const n = cols(w), a0 = col / n, a1 = (col + 1) / n;
-    return rack?.elements.find((o) => {
+    return R?.elements.find((o) => {
       if (o.placement.id === skip || o.placement.shelf_id || o.placement.face !== f) return false;
       const m = cols(o.placement.width), b0 = o.placement.col / m, b1 = (o.placement.col + 1) / m;
       const ou = o.placement.u_start, oh = hOf(o);
       return u < ou + oh - 1e-9 && ou < u + h - 1e-9 && a0 < b1 - 1e-9 && b0 < a1 - 1e-9;
     }) ?? null;
   }
-  let uDraft = $state<number | null>(null);
+  /** Champ « U de départ » : texte libre (12, 12,5, 12.5, U12,5), flèches au demi-U. */
+  let uDraft = $state('');
   let posErr = $state<{ field: 'u' | 'face'; message: string } | null>(null);
   let labelDraft = $state('');
   let labelErr = $state<string | null>(null);
   // Brouillons repris à chaque changement de sélection ou rechargement de l'élévation.
   $effect(() => {
     const e = selected;
-    untrack(() => { uDraft = e?.placement.u_start ?? null; labelDraft = e?.custom ?? ''; });
+    untrack(() => { uDraft = e ? fmtU(e.placement.u_start) : ''; labelDraft = e?.custom ?? ''; });
   });
   $effect(() => { void sel; untrack(() => { posErr = null; labelErr = null; }); });
   let movingNow = false;
-  /** Déplace l'équipement (même appel que le glisser) ; erreur affichée sous le champ, toast avec Annuler. */
-  async function moveTo(e: RackEl, change: { u_start?: number; face?: Face; col?: number }, field: 'u' | 'face') {
-    const p = e.placement, u = change.u_start ?? p.u_start, f = change.face ?? p.face, col = change.col ?? p.col;
+  /** Suite de petits déplacements (flèches, menu) d'un même élément : une seule notification, dont
+   *  « Annuler » ramène à la position d'avant la suite. */
+  let series: { id: string; from: { u: number; face: Face; col: number }; toast: number } | null = null;
+  /** Déplace l'équipement dans sa baie (même appel que le glisser) ; erreur affichée sous le champ, toast avec Annuler. */
+  async function moveTo(e: RackEl, change: { u_start?: number; face?: Face; col?: number }, field: 'u' | 'face', nudged = false) {
+    const p = e.placement, c = e.cid, u = change.u_start ?? p.u_start, f = change.face ?? p.face, col = change.col ?? p.col;
     if (u === p.u_start && f === p.face && col === p.col) { posErr = null; return; }
     const bad = checkSpot(e, u, f, col);
-    if (bad) { posErr = { field, message: bad }; return; }
+    if (bad) { if (nudged) toast(`« ${nameOf(e)} » : ${bad.charAt(0).toLowerCase()}${bad.slice(1)}`, 'warn'); else posErr = { field, message: bad }; return; }
     if (movingNow) return;
     posErr = null;
-    lastAction = Date.now();
-    const name = e.custom || e.tag || e.label;
+    const name = nameOf(e);
+    const go = series && series.id === p.id && nudged && toasts.some((t) => t.id === series!.toast) ? series : null;
+    const from = go ? go.from : { u: p.u_start, face: p.face, col: p.col };
     movingNow = true;
     try {
-      await api.patch(`/placements/${p.id}`, { rev: p.rev, face: f, u_start: u, width: p.width, col, circuit_id: p.circuit_id });
-      await load();
+      await act([c], () => api.patch(`/placements/${p.id}`, { rev: p.rev, face: f, u_start: u, width: p.width, col, circuit_id: p.circuit_id }));
+      await load([c]);
       // Changement de face : la face d'arrivée est montrée (ajoutée aux vues).
       if (f !== p.face) reveal(f);
       flash(p.id);
-      toast(`« ${name} » déplacé en ${rangeTxt(u, hOf(e))}${f !== p.face ? `, face ${FACES[f].toLowerCase()}` : ''}.`, 'ok', { run: async () => {
-        const now = rack?.elements.find((x) => x.placement.id === p.id);
+      if (go) dismiss(go.toast);
+      const tid = toast(`« ${name} » déplacé en ${aimTxt(u, hOf(e))}${f !== p.face ? `, face ${FACES[f].toLowerCase()}` : ''}.`, 'ok', { run: async () => {
+        if (series?.id === p.id) series = null;
+        const now = elById(p.id);
         if (!now) return false;
-        await api.patch(`/placements/${p.id}`, { rev: now.placement.rev, face: p.face, u_start: p.u_start, width: p.width, col: p.col, circuit_id: now.placement.circuit_id });
-        await load();
+        await act([c], () => api.patch(`/placements/${p.id}`, { rev: now.placement.rev, face: from.face, u_start: from.u, width: p.width, col: from.col, circuit_id: now.placement.circuit_id }));
+        await load([c]);
       } });
+      series = nudged ? { id: p.id, from, toast: tid } : null;
     } catch (x) {
       const m = x instanceof ApiError ? (x.field('u_start') ?? x.field('face')) : undefined;
-      if (m) posErr = { field, message: m }; else fail(x);
-      await load();
+      if (m && !nudged) posErr = { field, message: m }; else fail(x);
+      await load([c]);
     } finally { movingNow = false; }
+    if (queued && queued.id === p.id) { const q = queued; queued = null; const now = elById(q.id); if (now) nudge(now, q.d); }
+  }
+  /** Petit déplacement (flèches, menu) : ± 0,5 U ou ± 1 U ; les appuis pendant l'enregistrement s'additionnent. */
+  let queued: { id: string; d: number } | null = null;
+  function nudge(e: RackEl, d: number) {
+    if (!canEdit(e.cid) || e.placement.shelf_id) return;
+    if (movingNow) { queued = { id: e.placement.id, d: (queued?.id === e.placement.id ? queued.d : 0) + d }; return; }
+    moveTo(e, { u_start: e.placement.u_start + d }, 'u', true);
+  }
+  /** Raison pour laquelle un petit déplacement est impossible (ou null). */
+  const nudgeWhy = (e: RackEl, d: number) => checkSpot(e, e.placement.u_start + d, e.placement.face);
+  /** Déplace un équipement posé dans une autre baie (côte à côte) : retiré, changé d'élément, posé ; avec Annuler. */
+  async function moveAcross(e: RackEl, to: string, u: number, f: Face, col: number) {
+    const from = e.cid, p = e.placement, dest = contOf(to), name = nameOf(e);
+    if (movingNow || !canEdit(from) || !canEdit(to)) return;
+    movingNow = true;
+    try {
+      await act([from, to], async () => {
+        await api.del(`/placements/${p.id}`);
+        const moved = await api.post<{ id: string }>(`/articles/${p.article_id}/move`, { rev: e.article_rev, container_id: to, location_id: dest?.location_id ?? null, instance_id: p.instance_id });
+        let r: { adjusted: boolean; placement: Placement };
+        try { r = await api.post(`/containers/${to}/placements`, { article_id: moved.id, instance_id: p.instance_id, face: f, u_start: u, width: p.width, col }); }
+        catch (x) { sel = null; toast(`« ${name} » est dans « ${dest?.name} », à placer : ${(x as Error).message}`, 'warn'); return; }
+        const nid = r.placement.id;
+        sel = nid;
+        toast(`« ${name} » déplacé dans « ${dest?.name} » en ${aimTxt(r.placement.u_start, hOf(e))}.`, 'ok', { run: async () => {
+          await act([to, from], async () => {
+            await api.del(`/placements/${nid}`);
+            const back = await sendBack({ instance_id: p.instance_id, article_id: moved.id }, to, from);
+            if (back) await api.post(`/containers/${from}/placements`, { article_id: back, instance_id: p.instance_id, face: p.face, u_start: p.u_start, width: p.width, col: p.col, circuit_id: p.circuit_id });
+          });
+          if (sel === nid) sel = null;
+          await load([from, to]); await reload?.();
+        } });
+      });
+      await load([from, to]);
+      if (sel) flash(sel);
+      await reload?.();
+    } catch (x) { fail(x); await load([from, to]); } finally { movingNow = false; }
   }
   function commitU(e: RackEl) {
-    const u = uDraft;
-    if (u === e.placement.u_start) { posErr = null; return; }
-    if (u == null || Number.isNaN(u)) { posErr = { field: 'u', message: 'Un numéro d’U est attendu, par exemple 12 ou 12,5.' }; return; }
+    const u = parseU(uDraft);
+    if (u === e.placement.u_start) { posErr = null; uDraft = fmtU(u); return; }
+    if (u == null) { posErr = { field: 'u', message: 'Un numéro d’U est attendu, par exemple 12 ou 12,5.' }; return; }
     moveTo(e, { u_start: u }, 'u');
+  }
+  /** Flèches dans le champ « U de départ » : ± 0,5 U (Maj : ± 1 U), à valider par Entrée. */
+  function uKey(k: KeyboardEvent, e: RackEl) {
+    if (k.key === 'ArrowUp' || k.key === 'ArrowDown') {
+      k.preventDefault();
+      const top = Math.max(1, unitsOf(store[e.cid]) - hOf(e) + 1), cur = parseU(uDraft) ?? e.placement.u_start;
+      const d = (k.shiftKey ? 1 : 0.5) * (k.key === 'ArrowUp' ? 1 : -1);
+      uDraft = fmtU(Math.min(top, Math.max(1, Math.round((cur + d) * 2) / 2)));
+      return;
+    }
+    cellKey(k, () => { uDraft = fmtU(e.placement.u_start); posErr = null; });
   }
   // Libellé personnalisé de l'exemplaire (même appel que l'inventaire) ; révision suivie localement.
   const instCache = $state<Record<string, Instance>>({});
@@ -360,8 +598,8 @@
     labelErr = null;
     try {
       await saveLabel(i, next);
-      await load();
-      toast(next ? `Libellé de « ${i.tag} » enregistré.` : `Libellé de « ${i.tag} » retiré.`, 'ok', { run: async () => { await saveLabel(i, before); await load(); } });
+      await load([e.cid]);
+      toast(next ? `Libellé de « ${i.tag} » enregistré.` : `Libellé de « ${i.tag} » retiré.`, 'ok', { run: async () => { await saveLabel(i, before); await load([e.cid]); } });
     } catch (x) {
       const m = x instanceof ApiError ? x.field('label') : undefined;
       if (m) labelErr = m; else fail(x);
@@ -398,14 +636,14 @@
       run: async () => { const r = await api.post<{ removed: number }>(`/containers/${cid}/placements/clear`); toast(`${r.removed} équipement${pl(r.removed)} remis à placer.`); await load(); },
     });
   }
-  // ----- Visée : fantôme de l'équipement à poser ou à déplacer, aimanté au U (ou au demi-U) -----
+  // ----- Visée : fantôme de l'équipement à poser ou à déplacer, aimanté au U ou au demi-U -----
   // Sujet : équipement glissé depuis le rack, déplacé au clavier (« Déplacer »), glissé depuis
   // « À placer », ou armé (clic, clavier).
   let dragging = $state<RackEl | null>(null);
   let moving = $state<RackEl | null>(null);
   let dragP = $state<Pending | null>(null);
-  /** Place visée : U de départ (bas de l'équipement), colonne, face et vue où elle s'affiche. */
-  interface Aim { u: number; col: number; face: Face; view: View }
+  /** Place visée : baie, U de départ (bas de l'équipement), colonne, face et vue où elle s'affiche. */
+  interface Aim { cid: string; u: number; col: number; face: Face; view: View }
   let aim = $state<Aim | null>(null);
   /** Écart, en U, entre le bas de l'équipement et le pointeur (le fantôme suit la prise). */
   let grabOff = 0;
@@ -413,52 +651,63 @@
   const subject = $derived<Subject | null>(dragging ? { move: dragging } : moving ? { move: moving } : dragP ? { p: dragP } : armed ? { p: armed } : null);
   const subjH = (s: Subject) => (s.move ? hOf(s.move) : (s.p.height_u || 1));
   const subjW = (s: Subject): W => (s.move ? s.move.placement.width : (s.p.width ?? 'full'));
-  /** Pas de la visée : un demi-U pour un équipement d'un demi-U, pour un équipement déjà posé au
-   *  demi-U, ou quand la face compte déjà des demi-U (la pose le permet) ; Alt force le demi-U. */
-  function stepFor(s: Subject | null, f: Face, alt = false): number {
+  const subjFrom = (s: Subject) => (s.move ? s.move.cid : s.p.cid);
+  /** Pas de la visée : un équipement déjà posé se déplace toujours au demi-U ; une pose depuis
+   *  « À placer » s'aimante au U entier (au demi-U pour un élément d'un demi-U, ou avec Alt). */
+  function stepFor(s: Subject | null, alt = false): number {
     if (alt) return 0.5;
     if (!s) return 1;
-    if (!isWhole(subjH(s)) || (s.move && !isWhole(s.move.placement.u_start))) return 0.5;
-    return faceEls(f).some((e) => e.placement.id !== s.move?.placement.id && (!isWhole(e.placement.u_start) || !isWhole(hOf(e)))) ? 0.5 : 1;
+    if (s.move) return 0.5;
+    return isWhole(subjH(s)) ? 1 : 0.5;
   }
   /** Face visée depuis une vue : la vue de côté garde la face de l'équipement déplacé. */
-  const faceOfView = (v: View, s: Subject | null = subject): Face => (v === 'side' ? (s?.move?.placement.face ?? mainFace) : v);
+  const faceOfView = (R: Rack, v: View, s: Subject | null = subject): Face => (v === 'side' ? (s?.move && s.move.cid === rid(R) ? s.move.placement.face : mainFace(R)) : v);
   /** Place visée : hauteur, colonne, plage « U36–U39 » et raison courte si la pose est impossible. */
   function previewAt(s: Subject | null, at: Aim | null) {
-    if (!s || !at || show3d) return null;
-    const h = subjH(s), w = subjW(s), n = cols(w), col = Math.min(n - 1, Math.max(0, at.col)), u = at.u;
+    const R = at ? store[at.cid] : null;
+    if (!s || !at || !R || show3d) return null;
+    const units = unitsOf(R), h = subjH(s), w = subjW(s), n = cols(w), col = Math.min(n - 1, Math.max(0, at.col)), u = at.u;
     let why: string | null = null;
-    if (u - 1 + h > units + 1e-9) why = 'Dépasse le haut du rack';
+    if (!canEdit(at.cid)) why = R.lock && !R.lock.mine ? `${R.lock.account_name} a la main` : 'Lecture seule';
+    else if (u - 1 + h > units + 1e-9) why = 'Dépasse le haut du rack';
     else if (u < 1) why = 'Dépasse le bas du rack';
-    else { const b = blocker(h, w, col, u, at.face, s.move?.placement.id); if (b) why = `Occupé par ${b.custom || b.label}`; }
-    const same = !!s.move && s.move.placement.face === at.face && s.move.placement.u_start === u && s.move.placement.col === col;
-    return { u, h, n, col, why, same, view: at.view, face: at.face, name: s.move ? (s.move.custom || s.move.label) : s.p.label, range: rangeTxt(u, h) };
+    else { const b = blocker(R, h, w, col, u, at.face, s.move?.placement.id); if (b) why = `Occupé par ${b.custom || b.label}`; }
+    const same = !!s.move && s.move.cid === at.cid && s.move.placement.face === at.face && s.move.placement.u_start === u && s.move.placement.col === col;
+    return { cid: at.cid, u, h, n, col, why, same, view: at.view, face: at.face, name: s.move ? (s.move.custom || s.move.label) : s.p.label, range: aimTxt(u, h) };
   }
   const preview = $derived(previewAt(subject, aim));
-  /** U visé par le pointeur (aimanté au pas), moins la prise ; colonne d'après la largeur du sujet. */
-  function aimFromEvent(ev: MouseEvent, el: HTMLElement, v: View, s: Subject | null = subject): Aim {
-    const r = el.getBoundingClientRect(), f = faceOfView(v, s);
+  /** U visé par le pointeur (aimanté au pas), moins la prise ; colonne d'après la largeur du sujet.
+   *  Coordonnées d'écran de part et d'autre (rectangle affiché, zoom compris). */
+  function aimFromEvent(ev: MouseEvent, el: HTMLElement, R: Rack, v: View, s: Subject | null = subject): Aim {
+    const r = el.getBoundingClientRect(), f = faceOfView(R, v, s), units = unitsOf(R);
     const per = r.height / (units || 1) || 1;
     const fb = Math.max(0, Math.min(units - 1e-6, (r.bottom - ev.clientY) / per));
-    const st = stepFor(s, f, ev.altKey);
+    const st = stepFor(s, ev.altKey);
     const u = Math.floor((fb - grabOff) / st + 1e-9) * st + 1;
     const n = s ? cols(subjW(s)) : 1;
     const col = v === 'side' ? (s?.move?.placement.col ?? 0) : Math.min(n - 1, Math.max(0, Math.floor(((ev.clientX - r.left) / r.width) * n)));
-    return { u, col, face: f, view: v };
+    return { cid: rid(R), u, col, face: f, view: v };
   }
-  /** Numéro d'U touché par la place visée (graduations partagées par toutes les vues). */
-  const hotU = (n: number) => !!preview && !preview.same && n < preview.u + preview.h - 1e-9 && preview.u < n + 1 - 1e-9 && n >= 1 && n <= units;
+  /** Part d'un numéro d'U touchée par la place visée : tout l'U, sa moitié haute ou sa moitié basse. */
+  function hotOf(R: Rack, n: number): '' | 'full' | 'top' | 'bot' {
+    const pv = preview;
+    if (!pv || pv.same || pv.cid !== rid(R)) return '';
+    const a = Math.max(pv.u - 1, n - 1), b = Math.min(pv.u - 1 + pv.h, n);
+    if (b - a < 1e-9) return '';
+    if (b - a > 1 - 1e-9) return 'full';
+    return a > n - 1 + 1e-9 ? 'top' : 'bot';
+  }
   /** Bandes libres d'une face pendant une visée, au demi-U. */
-  function freeRuns(f: Face) {
-    if (!subject || !rack) return [];
+  function freeRuns(R: Rack, f: Face) {
+    if (!subject) return [];
     const busy = new Set<number>();
-    for (const e of faceEls(f)) {
+    for (const e of faceEls(R, f)) {
       if (subject.move && e.placement.id === subject.move.placement.id) continue;
       const a = Math.round((e.placement.u_start - 1) * 2), b = Math.round((e.placement.u_start - 1 + hOf(e)) * 2);
       for (let k = a; k < b; k++) busy.add(k);
     }
     const out: { u: number; n: number }[] = [];
-    for (let k = 0; k < units * 2; k++) if (!busy.has(k)) { const last = out[out.length - 1]; if (last && last.u + last.n === k) last.n++; else out.push({ u: k, n: 1 }); }
+    for (let k = 0; k < unitsOf(R) * 2; k++) if (!busy.has(k)) { const last = out[out.length - 1]; if (last && last.u + last.n === k) last.n++; else out.push({ u: k, n: 1 }); }
     return out.map((r) => ({ b: r.u / 2, h: r.n / 2 }));
   }
   // Pose réussie : l'équipement clignote (accent) ; place impossible : le fantôme tremble.
@@ -469,28 +718,35 @@
     toast(`Impossible de poser ici : ${why.charAt(0).toLowerCase()}${why.slice(1)}.`, 'warn');
     shake = true; setTimeout(() => (shake = false), 420);
   }
-  /** Valide la visée : pose, déplacement, ou refus indiqué (rien n'est écrit). */
+  /** Valide la visée : pose, déplacement (dans la baie ou vers une autre), ou refus indiqué (rien n'est écrit). */
   function commit(s: Subject | null, at: Aim | null) {
     const pv = previewAt(s, at);
     if (!s || !pv || !at) return;
     if (pv.why) { reject(pv.why); return; }
-    if (s.move) { moving = null; aim = null; if (!pv.same) { sel = s.move.placement.id; moveTo(s.move, { u_start: pv.u, face: at.face, col: pv.col }, 'u'); } return; }
-    placeAt(pv.u, pv.col, s.p, at.face);
+    if (s.move) {
+      moving = null; aim = null;
+      if (pv.same) return;
+      sel = s.move.placement.id;
+      if (s.move.cid === at.cid) moveTo(s.move, { u_start: pv.u, face: at.face, col: pv.col }, 'u');
+      else moveAcross(s.move, at.cid, pv.u, at.face, pv.col);
+      return;
+    }
+    placeAt(pv.u, pv.col, s.p, at.face, at.cid);
   }
   // Image de glisser transparente : seul le fantôme aimanté montre la place.
   const BLANK = typeof Image !== 'undefined' ? Object.assign(new Image(), { src: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7' }) : null;
   function startMove(ev: DragEvent, e: RackEl) {
     const r = (ev.currentTarget as HTMLElement).getBoundingClientRect(), h = hOf(e);
-    const st = stepFor({ move: e }, e.placement.face);
+    const st = stepFor({ move: e });
     grabOff = Math.max(0, Math.min(h - st, Math.floor((((r.bottom - ev.clientY) / (r.height || 1)) * h) / st) * st));
-    dragging = e; armed = null; moving = null; aim = null;
+    dragging = e; armed = null; moving = null; aim = null; ctx = null;
     if (ev.dataTransfer) { ev.dataTransfer.effectAllowed = 'move'; ev.dataTransfer.setData('text/plain', nameOf(e)); if (BLANK) ev.dataTransfer.setDragImage(BLANK, 0, 0); }
   }
   const grabOf = (h: number, st: number) => Math.floor(h / 2 / st) * st;
   function startPend(ev: DragEvent, p: Pending) {
     const h = p.height_u || 1;
     grabOff = grabOf(h, isWhole(h) ? 1 : 0.5);
-    dragP = p; armed = null; moving = null; aim = null;
+    dragP = p; armed = null; moving = null; aim = null; ctx = null;
     if (ev.dataTransfer) { ev.dataTransfer.effectAllowed = 'copyMove'; ev.dataTransfer.setData('text/plain', p.label); if (BLANK) ev.dataTransfer.setDragImage(BLANK, 0, 0); }
   }
   /** Fin du glisser : un lâcher sur une place impossible (refusé par le navigateur) est indiqué. */
@@ -501,31 +757,37 @@
     if (lastBad && (!leftAt || Date.now() - leftAt < 80)) reject(lastBad);
     dragging = null; dragP = null; aim = null; lastBad = null; leftAt = 0;
   }
-  function dragOver(ev: DragEvent, v: View) {
-    if (!mine || !(dragging || dragP)) return;
+  function dragOver(ev: DragEvent, R: Rack, v: View) {
+    const s = subject;
+    if (!s || !(dragging || dragP) || !canEdit(subjFrom(s))) return;
     ev.preventDefault();
-    aim = aimFromEvent(ev, ev.currentTarget as HTMLElement, v);
+    aim = aimFromEvent(ev, ev.currentTarget as HTMLElement, R, v);
     leftAt = 0;
-    const pv = previewAt(subject, aim);
+    const pv = previewAt(s, aim);
     lastBad = pv?.why ?? null;
     if (ev.dataTransfer) ev.dataTransfer.dropEffect = pv?.why ? 'none' : 'move';
   }
-  function drop(ev: DragEvent, el: HTMLElement, v: View) {
+  function dragLeave(ev: DragEvent, R: Rack, v: View) {
+    if ((ev.currentTarget as HTMLElement).contains(ev.relatedTarget as Node)) return;
+    if (aim?.view === v && aim.cid === rid(R)) aim = null;
+    leftAt = Date.now();
+  }
+  function drop(ev: DragEvent, R: Rack, v: View) {
     ev.preventDefault();
-    const s = subject, at = aimFromEvent(ev, el, v, s);
+    const s = subject, at = aimFromEvent(ev, ev.currentTarget as HTMLElement, R, v, s);
     lastBad = null;
     commit(s, at);
   }
   /** Survol, sortie et clic d'une vue (pose armée ou déplacement au clavier). */
   const aiming = $derived(!!armed || !!moving);
-  function bodyMove(e: MouseEvent, v: View) { if (aiming) aim = aimFromEvent(e, e.currentTarget as HTMLElement, v); }
-  function bodyLeave(v: View) { if (aiming && !moving && aim?.view === v) aim = null; }
-  function bodyClick(e: MouseEvent, v: View) {
-    if (aiming) commit(subject, aimFromEvent(e, e.currentTarget as HTMLElement, v));
+  function bodyMove(e: MouseEvent, R: Rack, v: View) { if (aiming) aim = aimFromEvent(e, e.currentTarget as HTMLElement, R, v); }
+  function bodyLeave(R: Rack, v: View) { if (aiming && !moving && aim?.view === v && aim.cid === rid(R)) aim = null; }
+  function bodyClick(e: MouseEvent, R: Rack, v: View) {
+    if (aiming) commit(subject, aimFromEvent(e, e.currentTarget as HTMLElement, R, v));
     else if (!(e.target as Element).closest('.ritem, .sbar')) sel = null;
   }
 
-  // ----- Circuits -----
+  // ----- Circuits (vue d'une baie) -----
   let circ = $state({ name: '', phase: 'L1' as 'L1' | 'L2' | 'L3', rating_a: 16 });
   async function addCircuit(ev: SubmitEvent) {
     ev.preventDefault();
@@ -553,15 +815,13 @@
   /** Textes : en schématique, les accessoires gardent leur nom (pas de façade dessinée). */
   const rl = (e: RackEl): [string, string] => (mode === 'schematic' && e.nature === 'accessory' ? [e.label, ''] : rackLines(e));
   /** PDU verticaux visibles : seulement dans les vues arrière. */
-  const vpOf = (f: View): VPdu[] => (f === 'rear' || f === 'rear_inner' ? (rack?.vpdus ?? []) : []);
+  const vpOf = (R: Rack, f: View): VPdu[] => (f === 'rear' || f === 'rear_inner' ? (R.vpdus ?? []) : []);
   const typeOf = (e: RackEl) => (e.nature === 'accessory' ? accFace(e as any) : visualOf(e));
-  const dw = (e: RackEl) => !!rack?.warnings.some((w) => w.placement_id === e.placement.id);
+  const dw = (e: RackEl) => !!store[e.cid]?.warnings.some((w) => w.placement_id === e.placement.id);
   const elTitle = (e: RackEl) => `${e.custom ? `${e.custom} · ` : ''}${e.tag ? `${e.tag} · ` : ''}${e.label} · U${fmtU(e.placement.u_start)}`;
   // Vue de côté (même logique que la planche, lib/rackgeom) : profondeur de chaque élément depuis
   // ses rails, réserve de câblage (secours) derrière, cotes en mm centrées.
-  const sideBars = $derived(rack ? sideGeom(rack.elements.filter((e) => !e.placement.shelf_id), depth, rack.container.rear_rails_mm) : []);
-  const wanted = $derived(rack?.pending.filter((p) => p.rackable) ?? []);
-  const notRackable = $derived(rack?.pending.filter((p) => !p.rackable) ?? []);
+  const sideBarsOf = (R: Rack) => sideGeom(R.elements.filter((e) => !e.placement.shelf_id), depthOf(R), R.container.rear_rails_mm);
   // À placer, rangé par catégorie : équipements par fonction (Vidéo, Audio…), puis panels et
   // accessoires ; dans chaque catégorie, par nom.
   const catOf = (p: Pending): { key: string; label: string; color: string; order: number } => {
@@ -573,69 +833,81 @@
     const f = fk ? refById('functions', fk) : null;
     return f ? { key: f.id, label: f.name, color: famColor(f.id), order: f.position ?? 500 } : { key: '~none', label: 'Autres équipements', color: famColor(null), order: 999 };
   };
+  const byCat = (a: Pending, b: Pending) => catOf(a).order - catOf(b).order || a.label.localeCompare(b.label, 'fr') || (a.tag ?? '').localeCompare(b.tag ?? '');
+  const wanted = $derived(rack?.pending.filter((p) => p.rackable) ?? []);
+  const notRackable = $derived(rack?.pending.filter((p) => !p.rackable) ?? []);
   const wantedGroups = $derived.by(() => {
     const m = new Map<string, { key: string; label: string; color: string; order: number; list: Pending[] }>();
     for (const p of wanted) { const c = catOf(p); if (!m.has(c.key)) m.set(c.key, { ...c, list: [] }); m.get(c.key)!.list.push(p); }
     for (const g of m.values()) g.list.sort((a, b) => a.label.localeCompare(b.label, 'fr') || (a.tag ?? '').localeCompare(b.tag ?? ''));
     return [...m.values()].sort((a, b) => a.order - b.order || a.label.localeCompare(b.label, 'fr'));
   });
+  /** Côte à côte : « À placer » de chaque baie. */
+  const pendGroups = $derived(shownRacks.map((R) => ({ R, list: R.pending.filter((p) => p.rackable).sort(byCat), off: R.pending.filter((p) => !p.rackable) })));
+  const nPend = $derived(pendGroups.reduce((n, g) => n + g.list.length, 0));
+  /** Éléments « à placer » de la baie (vue d'une baie : sa liste ; côte à côte : celle de la baie visée). */
+  const wantedOf = (id: string) => store[id]?.pending.filter((p) => p.rackable) ?? [];
   const FACES: Record<View, string> = { front: 'Avant', rear: 'Arrière', rear_inner: 'Arrière intérieure', side: 'Côté' };
   const widthTxt = (w: W | null) => (w && w !== 'full' ? ` · ${w === 'half' ? '½' : w === 'third' ? '⅓' : '¼'}` : '');
 
   // ----- Occupation : U réellement posés (pas le matériel affecté encore à placer) -----
   /** U posés sur une face (hors étagères), au prorata de la largeur (½, ⅓, ¼). */
-  const posedOn = (f: Face) => (rack?.elements ?? []).filter((e) => e.placement.face === f && !e.placement.shelf_id).reduce((n, e) => n + e.height_u / cols(e.placement.width), 0);
-  const posedU = $derived(rack ? Math.max(0, ...rack.faces.map(posedOn)) : 0);
+  const posedOn = (R: Rack | null | undefined, f: Face) => (R?.elements ?? []).filter((e) => e.placement.face === f && !e.placement.shelf_id).reduce((n, e) => n + e.height_u / cols(e.placement.width), 0);
+  const posedOf = (R: Rack | null | undefined) => (R ? Math.max(0, ...R.faces.map((f) => posedOn(R, f))) : 0);
+  const posedU = $derived(posedOf(rack));
   const pendingU = $derived(wanted.reduce((n, p) => n + (p.height_u ?? 0), 0));
+  /** Côte à côte : totaux des baies affichées. */
+  const sum = $derived(shownRacks.reduce((s, R) => ({ u: s.u + posedOf(R), total: s.total + unitsOf(R), kg: s.kg + R.totals.weight_kg, w: s.w + R.totals.power_w }), { u: 0, total: 0, kg: 0, w: 0 }));
 
-  // ----- Menu contextuel (clic droit, touche Menu, Maj+F10) -----
+  // ----- Menu contextuel (clic droit, touche Menu, Maj+F10) : une ligne courte par action -----
   let ctx = $state<{ x: number; y: number; items: CtxItem[]; label: string; back: HTMLElement | null } | null>(null);
-  /** Pose à faire après l'ajout de matériel lancé depuis le menu (« Ajouter un équipement ici »). */
-  let addAt = $state<{ u: number; face: Face; before: Set<string> } | null>(null);
+  /** Pose à faire après l'ajout de matériel lancé depuis le menu (« Ajouter un équipement »). */
+  let addAt = $state<{ cid: string; u: number; face: Face; before: Set<string> } | null>(null);
   const RO = 'Prenez la main sur l’élévation pour la modifier.';
+  const roWhy = (id: string) => { const R = store[id]; return all && R?.lock && !R.lock.mine ? `${R.lock.account_name} a la main sur ce rack.` : all ? 'Votre rôle ne permet pas de concevoir.' : RO; };
   /** Raison pour laquelle une hauteur ne tient pas à ce U (ou null). */
-  function noFit(h: number, u: number, f: Face, w: W = 'full', col = 0): string | null {
-    if (u - 1 + h > units + 1e-9) return 'Dépasse le haut du rack';
-    const b = blocker(h, w, col, u, f);
+  function noFit(R: Rack | null | undefined, h: number, u: number, f: Face, w: W = 'full', col = 0): string | null {
+    if (u - 1 + h > unitsOf(R) + 1e-9) return 'Dépasse le haut du rack';
+    const b = blocker(R, h, w, col, u, f);
     return b ? `Occupé par ${b.custom || b.label}` : null;
   }
   /** Accessoires proposés au U cliqué : plaques (dont 0,5 U), passe-câbles, étagère, tiroir, laçage. */
-  const ACCS: { kind: string; label: string; hs: number[]; make: (h: number, f: Face) => Accessory; hint?: string }[] = [
+  const ACCS: { kind: string; label: string; hs: number[]; make: (h: number, f: Face) => Accessory }[] = [
     { kind: 'blank', label: 'Plaque pleine', hs: [0.5, 1, 2, 3, 4], make: (h) => ({ kind: 'plate', variant: 'blank', height_u: h }) },
     { kind: 'brush', label: 'Passe-câbles', hs: [1, 2], make: (h) => ({ kind: 'plate', variant: 'brush', height_u: h }) },
     { kind: 'vented', label: 'Plaque aérée', hs: [1, 2], make: (h) => ({ kind: 'plate', variant: 'vented', height_u: h }) },
-    { kind: 'shelf', label: 'Étagère', hs: [1, 2], hint: '450 mm', make: (h) => ({ kind: 'shelf', depth_mm: 450, height_u: h }) },
-    { kind: 'drawer', label: 'Tiroir', hs: [1, 2, 3, 4], hint: '400 mm', make: (h) => ({ kind: 'drawer', depth_mm: 400, height_u: h }) },
+    { kind: 'shelf', label: 'Étagère', hs: [1, 2], make: (h) => ({ kind: 'shelf', depth_mm: 450, height_u: h }) },
+    { kind: 'drawer', label: 'Tiroir', hs: [1, 2, 3, 4], make: (h) => ({ kind: 'drawer', depth_mm: 400, height_u: h }) },
     { kind: 'lacing', label: 'Barre de laçage', hs: [1], make: (h, f) => ({ kind: 'lacing_bar', depth_mm: f === 'front' ? 0 : 100, height_u: h }) },
   ];
-  async function addAccAt(acc: Accessory, label: string, u: number, f: Face) {
-    if (!cid || !mine) return;
+  async function addAccAt(acc: Accessory, label: string, u: number, f: Face, at: string) {
+    if (!canEdit(at)) return;
     lastAction = Date.now();
     try {
-      const r = await api.post<{ article: Article }>(`/projects/${view.project.id}/articles`, { container_id: cid, location_id: null, nature: 'accessory', accessory: acc, quantity: 1 });
+      const r = await api.post<{ article: Article }>(`/projects/${view.project.id}/articles`, { container_id: at, location_id: null, nature: 'accessory', accessory: acc, quantity: 1 });
       const art = r.article.id;
       try {
-        const pl = await api.post<{ placement: Placement }>(`/containers/${cid}/placements`, { article_id: art, instance_id: null, face: f, u_start: u, col: 0 });
+        const pl = await act([at], () => api.post<{ placement: Placement }>(`/containers/${at}/placements`, { article_id: art, instance_id: null, face: f, u_start: u, col: 0 }));
         const id = pl.placement.id;
-        sel = id; await load(); flash(id);
-        toast(`« ${label} » ajouté en ${rangeTxt(pl.placement.u_start, (acc as { height_u?: number }).height_u ?? 1)}.`, 'ok', { run: async () => { await api.del(`/articles/${art}`); if (sel === id) sel = null; await load(); } });
-      } catch (x) { await load(); toast(`« ${label} » ajouté à placer : ${(x as Error).message}`, 'warn'); }
+        sel = id; await load([at]); flash(id);
+        toast(`« ${label} » ajouté en ${rangeTxt(pl.placement.u_start, (acc as { height_u?: number }).height_u ?? 1)}.`, 'ok', { run: async () => { await api.del(`/articles/${art}`); if (sel === id) sel = null; await load([at]); } });
+      } catch (x) { await load([at]); toast(`« ${label} » ajouté à placer : ${(x as Error).message}`, 'warn'); }
     } catch (x) { fail(x); }
   }
   /** Duplique un accessoire simple (plaque, étagère, tiroir, laçage) juste au-dessus, sinon au plus près. */
   async function duplicate(e: RackEl) {
-    const a = e.accessory;
-    if (!a || !cid || !mine) return;
-    const h = hOf(e), f = e.placement.face;
+    const a = e.accessory, R = store[e.cid];
+    if (!a || !canEdit(e.cid)) return;
+    const h = hOf(e), f = e.placement.face, units = unitsOf(R);
     let u: number | null = null;
-    for (let d = 0; d <= units * 2 && u == null; d++) for (const c of [e.placement.u_start + h + d * 0.5, e.placement.u_start - h - d * 0.5]) if (u == null && c >= 1 && !noFit(h, c, f) && isWhole(c * 2)) u = c;
+    for (let d = 0; d <= units * 2 && u == null; d++) for (const c of [e.placement.u_start + h + d * 0.5, e.placement.u_start - h - d * 0.5]) if (u == null && c >= 1 && !noFit(R, h, c, f) && isWhole(c * 2)) u = c;
     if (u == null) { toast('Plus de place libre pour un double sur cette face.', 'warn'); return; }
-    await addAccAt(a, e.label, u, f);
+    await addAccAt(a, e.label, u, f, e.cid);
   }
   /** Supprime l'élément de l'inventaire (après confirmation) : exemplaire seul (son ID part avec lui) ou accessoire. */
   async function removeFromInventory(e: RackEl) {
     const art = view.articles.find((a) => a.id === e.placement.article_id);
-    const iid = e.placement.instance_id, name = nameOf(e);
+    const iid = e.placement.instance_id, name = nameOf(e), c = e.cid;
     await ask({
       title: `Supprimer « ${name} » de l’inventaire ?`, eyebrow: 'Inventaire',
       text: iid ? 'L’exemplaire quitte le rack et l’inventaire du projet, avec son ID. Le câblage qui le relie disparaît aussi.' : 'L’accessoire quitte le rack et l’inventaire du projet.',
@@ -644,11 +916,11 @@
         lastAction = Date.now();
         if (iid && art && art.quantity > 1) {
           // Plusieurs exemplaires : celui-ci est d'abord séparé (sa propre ligne), puis supprimé.
-          const moved = await api.post<{ id: string }>(`/articles/${art.id}/move`, { rev: art.rev, container_id: cid, location_id: shownC?.location_id ?? null, instance_id: iid });
+          const moved = await api.post<{ id: string }>(`/articles/${art.id}/move`, { rev: art.rev, container_id: c, location_id: contOf(c)?.location_id ?? null, instance_id: iid });
           await api.del(`/articles/${moved.id}`);
         } else await api.del(`/articles/${e.placement.article_id}`);
         if (sel === e.placement.id) sel = null;
-        await load();
+        await load([c]);
         toast(`« ${name} » supprimé de l’inventaire.`);
       },
     });
@@ -658,66 +930,64 @@
     sel = e.placement.id; await tick();
     document.querySelector<HTMLElement>('.rack-screen .pane.right :is(input, select, button)')?.focus();
   }
+  const bodySel = (c: string, v: View) => `.rack-screen [data-rack="${CSS.escape(c)}"][data-view="${v}"] :is(.rack-body, .side-body)`;
   /** Déplacer au clavier ou à la souris : la visée part de la position actuelle. */
   async function startMoving(e: RackEl, v: View) {
-    if (!mine) return;
+    if (!canEdit(e.cid)) return;
     armed = null; sel = e.placement.id; moving = e;
     grabOff = 0;
     const vv: View = v === 'side' || v === e.placement.face ? v : e.placement.face;
     if (vv !== 'side') reveal(vv);
-    aim = { u: e.placement.u_start, col: e.placement.col, face: e.placement.face, view: vv };
+    aim = { cid: e.cid, u: e.placement.u_start, col: e.placement.col, face: e.placement.face, view: vv };
     await tick();
-    document.querySelector<HTMLElement>(`.rack-screen [data-view="${vv}"] .rack-body, .rack-screen [data-view="${vv}"] .side-body`)?.focus();
+    document.querySelector<HTMLElement>(bodySel(e.cid, vv))?.focus({ preventScroll: true });
   }
   function elementMenu(e: RackEl, x: number, y: number, v: View, back: HTMLElement | null) {
     sel = e.placement.id;
+    const ok = canEdit(e.cid), ro = ok ? undefined : roWhy(e.cid);
     const simple = e.nature === 'accessory' && !!e.accessory && e.accessory.kind !== 'panel' && e.accessory.kind !== 'vertical_pdu';
+    const step = (d: number): CtxItem => { const why = ok ? nudgeWhy(e, d) : ro; return { label: d > 0 ? 'Monter' : 'Descendre', right: `${fmtU(Math.abs(d))} U`, disabled: !!why, title: why ?? undefined, run: () => nudge(e, d) }; };
     const items: CtxItem[] = [
-      { heading: nameOf(e) },
-      { label: mine ? 'Modifier' : 'Voir le détail', icon: 'pen', hint: 'Panneau de droite', run: () => editSel(e) },
-      { label: 'Déplacer', icon: 'hand', hint: 'Flèches puis Entrée, ou clic à la nouvelle place', disabled: !mine || !!e.placement.shelf_id, title: !mine ? RO : e.placement.shelf_id ? 'Posé sur une étagère : il en suit la position.' : undefined, run: () => startMoving(e, v) },
+      { label: ok ? 'Modifier' : 'Voir', icon: 'pen', run: () => editSel(e) },
+      { label: 'Déplacer', icon: 'hand', disabled: !ok || !!e.placement.shelf_id, title: ro ?? (e.placement.shelf_id ? 'Posé sur une étagère : il en suit la position.' : undefined),
+        sub: [{ label: 'Choisir la place', icon: 'hand', run: () => startMoving(e, v) }, { sep: true }, step(0.5), step(-0.5), step(1), step(-1)] },
     ];
-    if (simple) items.push({ label: 'Dupliquer', icon: 'copy', hint: 'Au-dessus, ou à la place libre la plus proche', disabled: !mine || !canAdd, title: !mine ? RO : undefined, run: () => duplicate(e) });
-    if (panelOf(e)) items.push({ label: mine ? 'Modifier le panel' : 'Voir le panel', icon: 'grid', run: () => (editPanel = e) });
+    if (simple) items.push({ label: 'Dupliquer', icon: 'copy', disabled: !ok || !canAdd, title: ro, run: () => duplicate(e) });
+    if (panelOf(e)) items.push({ label: ok ? 'Modifier le panel' : 'Voir le panel', icon: 'grid', run: () => (editPanel = e) });
     if (e.item_id && e.nature !== 'accessory') items.push({ label: 'Ouvrir la fiche', icon: 'file', run: () => navigate(`/catalogue/equipment/${e.item_id}`) });
     items.push({ sep: true });
-    items.push({ label: e.placement.shelf_id ? 'Retirer de l’étagère' : 'Retirer du rack', icon: 'x', hint: 'Il redevient à placer (Suppr)', disabled: !mine, title: !mine ? RO : undefined, run: () => unplace(e) });
-    items.push({ label: 'Supprimer de l’inventaire…', icon: 'trash', danger: true, disabled: !mine || !canAdd, title: !mine ? RO : !canAdd ? 'Votre rôle ne permet pas de modifier l’inventaire.' : undefined, run: () => removeFromInventory(e) });
+    items.push({ label: e.placement.shelf_id ? 'Retirer de l’étagère' : 'Retirer du rack', icon: 'x', danger: true, disabled: !ok, title: ro, run: () => unplace(e) });
+    items.push({ label: 'Supprimer', icon: 'trash', danger: true, disabled: !ok || !canAdd, title: ro ?? (!canAdd ? 'Votre rôle ne permet pas de modifier l’inventaire.' : undefined), run: () => removeFromInventory(e) });
     ctx = { x, y, items, label: `Actions sur ${nameOf(e)}`, back };
   }
-  function emptyMenu(u: number, f: Face, x: number, y: number, back: HTMLElement | null) {
-    const where = `U${fmtU(u)} · ${FACES[f].toLowerCase()}`;
-    const accItems: CtxItem[] = [];
-    for (const a of ACCS) {
-      accItems.push({ heading: a.label });
-      for (const h of a.hs) { const why = noFit(h, u, f); accItems.push({ label: `${a.label} ${fmtU(h)} U`, hint: a.kind === 'lacing' ? (f === 'front' ? 'sans déport' : 'déport 100 mm') : a.hint, disabled: !!why, title: why ?? undefined, run: () => addAccAt(a.make(h, f), `${a.label} ${fmtU(h)} U`, u, f) }); }
-    }
-    const pendItems: CtxItem[] = wanted.map((p) => { const why = noFit(p.height_u || 1, u, f, p.width ?? 'full'); return { label: p.label, hint: `${p.tag ? `${p.tag} · ` : ''}${fmtU(p.height_u ?? 1)} U${widthTxt(p.width)}`, disabled: !!why, title: why ?? undefined, run: () => placeAt(u, 0, p, f) }; });
-    const ro = !mine ? RO : null;
+  function emptyMenu(R: Rack, u: number, f: Face, x: number, y: number, back: HTMLElement | null) {
+    const at = rid(R), ok = canEdit(at), ro = ok ? null : roWhy(at), list = wantedOf(at);
+    const accItems: CtxItem[] = ACCS.flatMap((a) => a.hs.map((h): CtxItem => { const why = noFit(R, h, u, f); return { label: a.label, right: `${fmtU(h)} U`, disabled: !!why, title: why ?? undefined, run: () => addAccAt(a.make(h, f), `${a.label} ${fmtU(h)} U`, u, f, at) }; }));
+    const pendItems: CtxItem[] = list.map((p) => { const why = noFit(R, p.height_u || 1, u, f, p.width ?? 'full'); const twin = list.some((o) => o !== p && o.label === p.label); return { label: twin && p.tag ? `${p.label} · ${p.tag}` : p.label, right: `${fmtU(p.height_u ?? 1)} U${widthTxt(p.width)}`, disabled: !!why, title: why ?? p.tag ?? undefined, run: () => placeAt(u, 0, p, f, at) }; });
     const items: CtxItem[] = [
-      { heading: where },
-      { label: 'Ajouter un accessoire ici', icon: 'panel', sub: accItems, disabled: !mine || !canAdd, title: ro ?? (!canAdd ? 'Votre rôle ne permet pas de modifier l’inventaire.' : undefined) },
-      { label: 'Ajouter un équipement ici…', icon: 'plus', hint: 'Fenêtre « Ajouter du matériel », puis pose à ce U', disabled: !mine || !canAdd || !shownC, title: ro ?? undefined, run: () => { addAt = { u, face: f, before: new Set(rack?.pending.map((p) => p.instance_id ?? p.article_id)) }; adding = true; } },
-      { label: 'Poser un élément « À placer » ici', icon: 'server', sub: pendItems.length ? pendItems : [{ label: 'Tout est posé.', disabled: true }], disabled: !mine || !wanted.length, title: ro ?? (!wanted.length ? 'Rien à placer.' : undefined) },
+      { heading: `U${fmtU(u)}` },
+      { label: 'Ajouter un accessoire', icon: 'panel', sub: accItems, disabled: !ok || !canAdd, title: ro ?? (!canAdd ? 'Votre rôle ne permet pas de modifier l’inventaire.' : undefined) },
+      { label: 'Ajouter un équipement', icon: 'plus', disabled: !ok || !canAdd, title: ro ?? undefined, run: () => { addAt = { cid: at, u, face: f, before: new Set(R.pending.map(pk)) }; addCid = at; adding = true; } },
+      { label: 'Poser ici', icon: 'server', sub: pendItems, disabled: !ok || !list.length, title: ro ?? (!list.length ? 'Rien à placer.' : undefined) },
     ];
-    ctx = { x, y, items, label: `Actions à ${where}`, back };
+    ctx = { x, y, items, label: `Actions à U${fmtU(u)}, ${FACES[f].toLowerCase()}`, back };
   }
   /** Clic droit dans une vue : sur un élément, ses actions ; dans le vide, les ajouts au U cliqué. */
-  function onCtx(ev: MouseEvent, v: View) {
+  function onCtx(ev: MouseEvent, R: Rack, v: View) {
     if (show3d || aiming || dragging || dragP) return;
     ev.preventDefault();
     const body = ev.currentTarget as HTMLElement;
     const hit = (ev.target as Element).closest<HTMLElement>('[data-pl]');
-    const e = hit ? rack?.elements.find((x) => x.placement.id === hit.dataset.pl) : null;
+    const e = hit ? R.elements.find((x) => x.placement.id === hit.dataset.pl) : null;
     if (e) { elementMenu(e, ev.clientX, ev.clientY, v, hit); return; }
-    const f = faceOfView(v, null);
+    const f = faceOfView(R, v, null), units = unitsOf(R);
     const r = body.getBoundingClientRect(), per = r.height / (units || 1) || 1;
     const fb = Math.max(0, Math.min(units - 1e-6, (r.bottom - ev.clientY) / per));
     const under = Math.floor(fb) + 1;
     // Depuis le bas de l'U cliqué s'il est libre, sinon depuis sa moitié haute (demi-U).
-    const lowFree = !noFit(0.5, under, f), highFree = !noFit(0.5, under + 0.5, f);
+    const lowFree = !noFit(R, 0.5, under, f), highFree = !noFit(R, 0.5, under + 0.5, f);
     const u = lowFree ? under : highFree ? under + 0.5 : fb % 1 < 0.5 ? under : under + 0.5;
-    emptyMenu(u, f, ev.clientX, ev.clientY, body);
+    emptyMenu(R, u, f, ev.clientX, ev.clientY, body);
   }
   /** Touche Menu ou Maj+F10 sur un élément (ou sur l'élément sélectionné). */
   function keyMenu(e: RackEl, el: HTMLElement | null, v: View) {
@@ -725,40 +995,53 @@
     elementMenu(e, r ? r.left + Math.min(40, r.width / 2) : innerWidth / 2, r ? r.top + r.height / 2 : innerHeight / 2, v, el);
   }
   const isMenuKey = (k: KeyboardEvent) => k.key === 'ContextMenu' || (k.key === 'F10' && k.shiftKey);
-  /** Matériel ajouté depuis « Ajouter un équipement ici » : le premier exemplaire rackable arrivé est posé au U choisi. */
+  /** Matériel ajouté depuis « Ajouter un équipement » : le premier exemplaire rackable arrivé est posé au U choisi. */
   async function afterAdd() {
-    await load();
     const a = addAt;
-    if (!a || !rack) return;
-    const p = rack.pending.find((x) => x.rackable && !a.before.has(x.instance_id ?? x.article_id));
+    await load(a ? [a.cid] : addCid ? [addCid] : ids);
+    const R = a ? store[a.cid] : null;
+    if (!a || !R) return;
+    const p = R.pending.find((x) => x.rackable && !a.before.has(pk(x)));
     if (!p) return;
     addAt = null;
-    const why = noFit(p.height_u || 1, a.u, a.face, p.width ?? 'full');
+    const why = noFit(R, p.height_u || 1, a.u, a.face, p.width ?? 'full');
     if (why) { toast(`« ${p.label} » est à placer : ${why.toLowerCase()} en U${fmtU(a.u)}.`, 'warn'); return; }
-    await placeAt(a.u, 0, p, a.face);
+    await placeAt(a.u, 0, p, a.face, a.cid);
   }
 
   // ----- Clavier -----
   // Échap remonte d'un seul niveau (menu, déplacement ou équipement armé, puis sélection) ;
-  // Suppr retire l'équipement sélectionné (annulable) ; Menu ou Maj+F10 ouvre ses actions.
+  // Suppr retire l'équipement sélectionné (annulable) ; Menu ou Maj+F10 ouvre ses actions ;
+  // ↑↓ déplacent l'équipement sélectionné de 0,5 U (Maj : 1 U) ; Ctrl+= / Ctrl+- / Ctrl+0 : zoom.
   $effect(() => canvasKeys({
     onEscape: () => { if (moving) { moving = null; aim = null; } else if (armed) { armed = null; aim = null; } else if (sel) sel = null; },
-    onDelete: () => { if (mine && selected && !moving) unplace(selected); },
-    onKey: (k) => { if (isMenuKey(k) && selected && !show3d) { keyMenu(selected, null, selected.placement.shelf_id ? mainFace : selected.placement.face); return true; } },
+    onDelete: () => { if (selected && canEdit(selected.cid) && !moving) unplace(selected); },
+    onKey: (k) => {
+      const mod = (k.ctrlKey || k.metaKey) && !k.altKey;
+      if (mod && !show3d) {
+        if (k.key === '+' || k.key === '=' || k.code === 'NumpadAdd') { zoomBy(1); return true; }
+        if (k.key === '-' || k.code === 'NumpadSubtract') { zoomBy(-1); return true; }
+        if (k.key === '0' || k.code === 'Digit0' || k.code === 'Numpad0') { setZoom('fit'); return true; }
+      }
+      if (isMenuKey(k) && selected && !show3d) { keyMenu(selected, null, selected.placement.shelf_id ? mainFace(selR) : selected.placement.face); return true; }
+      if ((k.key === 'ArrowUp' || k.key === 'ArrowDown') && !mod && !k.altKey && selected && !aiming && !show3d && !selected.placement.shelf_id && canEdit(selected.cid)) {
+        nudge(selected, (k.shiftKey ? 1 : 0.5) * (k.key === 'ArrowUp' ? 1 : -1)); return true;
+      }
+    },
   }));
   // Clic dans le vide (fond du dessin, zone vide, hors du rack) : désélectionne. Pas pendant une pose.
   $effect(() => blankClick({ enabled: () => !!sel && !armed && !moving && !dragging && !dragP && !ctx, onBlank: () => (sel = null) }));
   /** Pose au clavier : une fois l'équipement armé (ou « Déplacer »), flèches haut/bas pour choisir le U
-   *  (pas d'un demi-U quand c'est possible, Alt pour le forcer), Entrée pour poser. */
-  function rackKey(e: KeyboardEvent, v: View) {
+   *  (déplacement : 0,5 U, Maj 1 U ; pose : 1 U, Alt pour le demi-U, Maj 5 pas), Entrée pour poser. */
+  function rackKey(e: KeyboardEvent, R: Rack, v: View) {
     const s = subject;
     if (!s || !aiming) return;
-    const f = faceOfView(v, s), h = subjH(s), st = stepFor(s, f, e.altKey);
-    const top = Math.max(1, Math.floor((units - h) / st + 1e-9) * st + 1);
-    const at: Aim = aim && aim.view === v ? aim : s.move ? { u: s.move.placement.u_start, col: s.move.placement.col, face: f, view: v } : { u: top, col: 0, face: f, view: v };
-    const n = cols(subjW(s)), k = e.shiftKey ? 5 : 1;
-    if (e.key === 'ArrowUp') aim = { ...at, u: Math.min(top, at.u + k * st) };
-    else if (e.key === 'ArrowDown') aim = { ...at, u: Math.max(1, at.u - k * st) };
+    const f = faceOfView(R, v, s), h = subjH(s), st = stepFor(s, e.altKey), c = rid(R);
+    const top = Math.max(1, Math.floor((unitsOf(R) - h) / st + 1e-9) * st + 1);
+    const at: Aim = aim && aim.view === v && aim.cid === c ? aim : s.move && s.move.cid === c ? { cid: c, u: s.move.placement.u_start, col: s.move.placement.col, face: f, view: v } : { cid: c, u: top, col: 0, face: f, view: v };
+    const n = cols(subjW(s)), d = s.move ? (e.shiftKey ? 1 : 0.5) : (e.shiftKey ? 5 : 1) * st;
+    if (e.key === 'ArrowUp') aim = { ...at, u: Math.min(top, at.u + d) };
+    else if (e.key === 'ArrowDown') aim = { ...at, u: Math.max(1, at.u - d) };
     else if (e.key === 'ArrowLeft' && n > 1 && v !== 'side') aim = { ...at, col: Math.max(0, at.col - 1) };
     else if (e.key === 'ArrowRight' && n > 1 && v !== 'side') aim = { ...at, col: Math.min(n - 1, at.col + 1) };
     else if (e.key === 'Enter' || e.key === ' ') commit(s, at);
@@ -769,35 +1052,33 @@
     armed = !force && armed === p ? null : p;
     moving = null; aim = null; grabOff = armed ? grabOf(armed.height_u || 1, isWhole(armed.height_u || 1) ? 1 : 0.5) : 0;
     if (armed && narrow) sheetOpen = false;
-    if (armed) { await tick(); document.querySelector<HTMLElement>('.rack-screen .rack-body, .rack-screen .side-body')?.focus(); }
+    if (armed) { await tick(); document.querySelector<HTMLElement>(`${bodySel(armed.cid, mainFace(store[armed.cid]))}, .rack-screen :is(.rack-body, .side-body)`)?.focus({ preventScroll: true }); }
   }
-  const bodyLabel = (v: View) => {
-    const s = subject;
-    if (!s || !aiming) return v === 'side' ? 'Vue de côté : profondeurs et réserves de câblage' : `Élévation ${FACES[v].toLowerCase()}`;
-    const pv = preview && preview.view === v ? preview : null;
-    return `Élévation ${FACES[v].toLowerCase()} : position de ${s.move ? nameOf(s.move) : s.p.label}${pv ? `, ${pv.range}${pv.why ? `, ${pv.why.toLowerCase()}` : ', libre'}` : ''} (flèches haut et bas, Alt pour le demi-U, Entrée pour poser, Échap pour annuler)`;
+  const bodyLabel = (R: Rack, v: View) => {
+    const s = subject, name = all ? `${R.container.name}, ` : '';
+    if (!s || !aiming) return v === 'side' ? `${name}vue de côté : profondeurs et réserves de câblage` : `${name}élévation ${FACES[v].toLowerCase()}`;
+    const pv = preview && preview.view === v && preview.cid === rid(R) ? preview : null;
+    return `${name}élévation ${FACES[v].toLowerCase()} : position de ${s.move ? nameOf(s.move) : s.p.label}${pv ? `, ${pv.range}${pv.why ? `, ${pv.why.toLowerCase()}` : ', libre'}` : ''} (flèches haut et bas${s.move ? ' : 0,5 U, Maj 1 U' : ', Alt pour le demi-U'}, Entrée pour poser, Échap pour annuler)`;
   };
   const RENDERS = [{ value: 'real', label: 'Réel' }, { value: 'schematic', label: 'Schématique' }, { value: '3d', label: '3D', icon: 'box' }] as const;
+  const RENDERS2 = [{ value: 'real', label: 'Réel' }, { value: 'schematic', label: 'Schématique' }] as const;
 </script>
 
 <svelte:window onbeforeunload={leave} />
 
-{#if all && racks.length}
-  <AllRacks {view} loc={route.path.split('/')[5] ?? null} />
-{:else if !racks.length && !fixed}
+{#if !racks.length && !fixed}
   <EmptyState icon="server" message="Aucun rack dans ce projet" hint="Ajoutez un rack ou un flight-case depuis l’inventaire.">
     {#snippet action()}<a class="btn primary" href="/projets/{view.project.id}/inventaire"><Icon name="plus" size="sm" />Ajouter un élément</a>{/snippet}
   </EmptyState>
-{:else if rack}
-  {@const t = rack.totals}
-  <div class="rack-screen card" class:solo={!fixed} style="padding:0;overflow:hidden">
-    {#if !mine || requested}<div class="lockbar" class:mine class:other={!mine}>
+{:else if all ? loaded : rack}
+  <div class="rack-screen card" class:solo={!fixed} class:all style="padding:0;overflow:hidden">
+    {#if rack && (!mine || requested)}<div class="lockbar" class:mine class:other={!mine}>
       {#if mine}
         <span class="lk"><span class="key-i"><Icon name="lock" /></span><span><b>{requested}</b> demande la main.</span></span>
         <span class="sp"><button class="btn sm" onclick={() => { requested = null; release(); }}>Céder la main</button></span>
       {:else if rack.lock}
         <span class="lk"><span class="key-i"><Icon name="lock" /></span><span><b>{rack.lock.account_name}</b> a la main depuis {relative(rack.lock.taken_at)}. Vous voyez la dernière version enregistrée.</span></span>
-        <span class="sp">{#if newer}<button class="btn sm" onclick={load}><Icon name="refresh" size="sm" />Nouvelle version : recharger</button>{/if}{#if canDesign}<button class="btn sm" onclick={requestHand}>Demander la main</button>{/if}</span>
+        <span class="sp">{#if newer}<button class="btn sm" onclick={() => load()}><Icon name="refresh" size="sm" />Nouvelle version : recharger</button>{/if}{#if canDesign}<button class="btn sm" onclick={requestHand}>Demander la main</button>{/if}</span>
       {:else}
         <span class="lk"><span class="key-i"><Icon name="unlock" /></span><span>Personne ne modifie cette élévation.</span></span>
         <span class="sp">{#if canDesign}<button class="btn sm primary" onclick={take}>Prendre la main</button>{:else}<span class="muted small">Lecture seule : votre rôle ne permet pas de concevoir.</span>{/if}</span>
@@ -805,76 +1086,117 @@
     </div>{/if}
     <!-- Barre : groupes qui passent à la ligne d'un bloc ; tous les contrôles en 34 px, centrés sur la même ligne. -->
     <div class="dtool rk-tool">
-      {#if !fixed}<div class="tg tg-pick"><RackPicker {view} value={cid ?? ''} onpick={(v) => navigate(`/projets/${view.project.id}/racks/${v.replace(':', '/')}`)} /></div>{/if}
+      {#if !fixed}<div class="tg tg-pick"><RackPicker {view} value={all ? (loc ? `tout:${loc}` : 'tout') : (cid ?? '')} onpick={(v) => navigate(`/projets/${view.project.id}/racks/${v.replace(':', '/')}`)} /></div>{/if}
+      {#if all && withRacks.length > 1}
+        <!-- Filtre d'emplacement : des liens (l'emplacement choisi est dans l'adresse). -->
+        <div class="tg"><nav class="seg ar-locs" aria-label="Emplacement">
+          <a href="/projets/{view.project.id}/racks/tout" class:on={!loc} aria-current={!loc ? 'page' : undefined}>Tous</a>
+          {#each withRacks as l (l.id)}<a href="/projets/{view.project.id}/racks/tout/{l.id}" class:on={loc === l.id} aria-current={loc === l.id ? 'page' : undefined}>{l.name}</a>{/each}
+        </nav></div>
+      {/if}
       <div class="tg tg-view">
         <!-- En 3D, les vues et les textes n'ont pas d'effet : ils sont masqués (le cadrage est dans la vue 3D). -->
         {#if !show3d}
           <div class="seg" role="group" aria-label="Vues affichées (cumulables)">
-            {#each [...rack.faces, 'side' as const] as v (v)}
-              {@const on = shown.includes(v)}
-              <button type="button" class:on aria-pressed={on} title={on && shown.length === 1 ? 'Au moins une vue reste affichée' : on ? `Masquer la vue ${FACES[v].toLowerCase()}` : `Afficher aussi la vue ${FACES[v].toLowerCase()}`} onclick={() => toggleView(v)}>{v === 'rear_inner' ? 'Arr. int.' : FACES[v]}</button>
+            {#each [...barFaces, 'side' as const] as v (v)}
+              {@const on = shownT.includes(v)}
+              <button type="button" class:on aria-pressed={on} title={on && shownT.length === 1 ? 'Au moins une vue reste affichée' : on ? `Masquer la vue ${FACES[v].toLowerCase()}` : `Afficher aussi la vue ${FACES[v].toLowerCase()}`} onclick={() => toggleView(v)}>{v === 'rear_inner' ? 'Arr. int.' : FACES[v]}</button>
             {/each}
           </div>
         {/if}
-        <Seg label="Rendu" value={show3d ? '3d' : mode} options={[...RENDERS]} onchange={(v) => { if (v === '3d') { show3d = true; armed = null; moving = null; } else { mode = v; show3d = false; } }} />
+        {#if all}<Seg label="Rendu" value={mode} options={[...RENDERS2]} onchange={(v) => (mode = v)} />
+        {:else}<Seg label="Rendu" value={show3d ? '3d' : mode} options={[...RENDERS]} onchange={(v) => { if (v === '3d') { show3d = true; armed = null; moving = null; } else { mode = v; show3d = false; } }} />{/if}
       </div>
       {#if !show3d}<div class="tg tg-opt">
         <label class="rtx" title="Textes affichés sur les équipements"><span class="flabel">Textes</span><select class="input" value={rackText.v} onchange={(e) => setRackText((e.target as HTMLSelectElement).value as RackText)}>{#each Object.entries(RACK_TEXT) as [k, l]}<option value={k}>{l}</option>{/each}</select></label>
-        <button class="btn ghost" aria-pressed={fitH} title="Ajuster les vues à la place disponible (hauteur et largeur)" onclick={() => (fitH = !fitH)}><Icon name="fit" size="sm" />Ajuster</button>
+        {#if busyN}<span class="spin" role="status" aria-label="Enregistrement"></span>{/if}
       </div>{/if}
       <div class="tg tg-meters">
-        <span class="meter" class:err={!!t.total_u && posedU > t.total_u} title="U posés dans le rack{pendingU ? ` ; ${fmtU(pendingU)} U de matériel affecté reste à placer` : ''}"><span>U</span><Vu value={(posedU / (t.total_u || 1)) * 100} mode="load" n={16} /><span class="mono">{fmtU(posedU)} / {t.total_u} U</span>{#if pendingU}<span class="muted small mu-pend">+ {fmtU(pendingU)} U à placer</span>{/if}</span>
-        <span class="meter" class:err={t.over_weight}><span>Poids</span><Vu value={rack.container.max_weight_kg ? (t.weight_kg / rack.container.max_weight_kg) * 100 : 0} mode="load" n={16} /><span class="mono">{nf(t.weight_kg, 1)}{rack.container.max_weight_kg ? ` / ${nf(rack.container.max_weight_kg)}` : ''} kg</span></span>
-        <span class="meter" class:err={t.over_power}><span>Puiss.</span><Vu value={rack.container.max_power_w ? (t.power_w / rack.container.max_power_w) * 100 : 0} mode="load" n={16} /><span class="mono">{nf(t.power_w)}{rack.container.max_power_w ? ` / ${nf(rack.container.max_power_w)}` : ''} W</span></span>
+        {#if rack}
+          {@const t = rack.totals}
+          <span class="meter" class:err={!!t.total_u && posedU > t.total_u} title="U posés dans le rack{pendingU ? ` ; ${fmtU(pendingU)} U de matériel affecté reste à placer` : ''}"><span>U</span><Vu value={(posedU / (t.total_u || 1)) * 100} mode="load" n={16} /><span class="mono">{fmtU(posedU)} / {t.total_u} U</span>{#if pendingU}<span class="muted small mu-pend">+ {fmtU(pendingU)} U à placer</span>{/if}</span>
+          <span class="meter" class:err={t.over_weight}><span>Poids</span><Vu value={rack.container.max_weight_kg ? (t.weight_kg / rack.container.max_weight_kg) * 100 : 0} mode="load" n={16} /><span class="mono">{nf(t.weight_kg, 1)}{rack.container.max_weight_kg ? ` / ${nf(rack.container.max_weight_kg)}` : ''} kg</span></span>
+          <span class="meter" class:err={t.over_power}><span>Puiss.</span><Vu value={rack.container.max_power_w ? (t.power_w / rack.container.max_power_w) * 100 : 0} mode="load" n={16} /><span class="mono">{nf(t.power_w)}{rack.container.max_power_w ? ` / ${nf(rack.container.max_power_w)}` : ''} W</span></span>
+        {:else}
+          <span class="meter" title="U posés dans les racks affichés"><span>U</span><Vu value={(sum.u / (sum.total || 1)) * 100} mode="load" n={16} /><span class="mono">{fmtU(sum.u)} / {sum.total} U</span>{#if nPend}<span class="muted small mu-pend">+ {nPend} à placer</span>{/if}</span>
+          <span class="meter"><span>Poids</span><span class="mono">{nf(sum.kg, 1)} kg</span></span>
+          <span class="meter"><span>Puiss.</span><span class="mono">{nf(sum.w)} W</span></span>
+        {/if}
       </div>
     </div>
 
-    <div class="design-body" class:ro={!mine}>
+    <div class="design-body" class:ro={!anyEdit}>
       <aside class="pane left" class:open={sheetOpen} aria-label="À placer">
         <button class="sheet-h" aria-expanded={sheetOpen} onclick={() => (sheetOpen = !sheetOpen)}>
-          <span><b>À placer</b> <span class="muted">· {wanted.length}</span></span>
+          <span><b>À placer</b> <span class="muted">· {all ? nPend : wanted.length}</span></span>
           {#if armed}<span class="sheet-armed">{armed.label} · touchez une position</span>{/if}
           <Icon name="chevd" size="sm" />
         </button>
         <section>
-          <h2 class="sheet-t" title={mine && !show3d ? 'Glissez un équipement dans le rack, ou choisissez-le puis sa position (clic, ou flèches et Entrée). Clic droit dans le rack pour ajouter ou poser à un U précis. Échap pour annuler.' : undefined}>À placer <span class="muted">· {wanted.length}</span></h2>
-          {#if canAdd && shownC}<button class="btn sm add-mat" onclick={() => { addAt = null; adding = true; }}><Icon name="plus" size="sm" />Ajouter du matériel</button>{/if}
-          {#each wantedGroups as g (g.key)}
-            <div class="pcat eyebrow"><i style="--c:{g.color}"></i><span>{g.label}</span><b>{g.list.length}</b></div>
-          {#each g.list as p (p.instance_id ?? p.article_id)}
-            <button class="pend mini" class:on={armed === p} class:dragging={dragP === p} aria-pressed={armed === p} data-pend={p.instance_id ?? p.article_id} disabled={!mine || show3d} onclick={() => arm(p)}
-              draggable={mine && !show3d} ondragstart={(ev) => startPend(ev, p)} ondragend={endDrag} title="{p.label}{p.tag ? ` · ${p.tag}` : ''}">
-              <i class="pm-c" style="--c:{famColor(p.function)}"></i><span class="pm-l">{p.label}</span>{#if p.tag}<span class="pm-t">{p.tag}</span>{/if}<span class="pm-u">{fmtU(p.height_u ?? 0)} U{widthTxt(p.width)}</span>
-            </button>
-          {/each}
-          {:else}<p class="small muted">Tout est posé.</p>{/each}
-          {#if notRackable.length}
-            <h2 style="margin-top:8px" title="Hors format rack : choisissez une étagère posée dans le rack, puis « Poser ».">Sur étagère <span class="muted">· {notRackable.length}</span></h2>
-            {#each notRackable as p (p.instance_id ?? p.article_id)}<div class="pend mini" style="cursor:default" data-pend={p.instance_id ?? p.article_id} tabindex="-1" title="{p.label}{p.tag ? ` · ${p.tag}` : ''}"><i class="pm-c" style="--c:{famColor(p.function)}"></i><span class="pm-l">{p.label}</span>{#if p.tag}<span class="pm-t">{p.tag}</span>{/if}</div>{/each}
+          {#if rack}
+            <h2 class="sheet-t" title={mine && !show3d ? 'Glissez un équipement dans le rack, ou choisissez-le puis sa position (clic, ou flèches et Entrée). Clic droit dans le rack pour ajouter ou poser à un U précis. Échap pour annuler.' : undefined}>À placer <span class="muted">· {wanted.length}</span></h2>
+            {#if canAdd && shownC}<button class="btn sm add-mat" onclick={() => { addAt = null; addCid = cid; adding = true; }}><Icon name="plus" size="sm" />Ajouter du matériel</button>{/if}
+            {#each wantedGroups as g (g.key)}
+              <div class="pcat eyebrow"><i style="--c:{g.color}"></i><span>{g.label}</span><b>{g.list.length}</b></div>
+              {#each g.list as p (pk(p))}{@render pendRow(p)}{/each}
+            {:else}<p class="small muted">Tout est posé.</p>{/each}
+            {#if notRackable.length}
+              <h2 style="margin-top:8px" title="Hors format rack : choisissez une étagère posée dans le rack, puis « Poser ».">Sur étagère <span class="muted">· {notRackable.length}</span></h2>
+              {#each notRackable as p (pk(p))}{@render offRow(p)}{/each}
+            {/if}
+          {:else}
+            <h2 class="sheet-t" title={anyEdit ? 'Glissez un élément dans un rack, ou choisissez-le puis sa position ; vers un autre rack, il change d’élément dans l’inventaire. Clic droit dans un rack pour ajouter ou poser à un U précis.' : undefined}>À placer <span class="muted">· {nPend}</span></h2>
+            {#each pendGroups as g (rid(g.R))}
+              {#if g.list.length || g.off.length}
+                <div class="pcat eyebrow ar-pcat"><span>{g.R.container.name}</span><b>{g.list.length}</b>
+                  {#if canAdd}<button class="icon-btn xs ghost" aria-label="Ajouter du matériel dans {g.R.container.name}" title="Ajouter du matériel" onclick={() => { addAt = null; addCid = rid(g.R); adding = true; }}><Icon name="plus" /></button>{/if}</div>
+                {#each g.list as p (pk(p))}{@render pendRow(p)}{/each}
+                {#each g.off as p (pk(p))}{@render offRow(p)}{/each}
+              {/if}
+            {/each}
+            {#if !nPend}<p class="small muted">Tout est posé.</p>{/if}
+            {#if canAdd && !pendGroups.some((g) => g.list.length || g.off.length)}
+              <div class="ar-addall">{#each shownRacks as R (rid(R))}<button class="btn sm ghost" onclick={() => { addAt = null; addCid = rid(R); adding = true; }}><Icon name="plus" size="sm" />{R.container.name}</button>{/each}</div>
+            {/if}
           {/if}
         </section>
       </aside>
 
-      <div class="rack-stage rk-stage" class:stage3d={show3d} bind:clientWidth={stageW} bind:clientHeight={stageH}>
-        {#if show3d}
-          <Rack3D container={rack.container} elements={rack.elements} vpdus={rack.vpdus ?? []} title={rack.container.name} />
-        {:else}
-          <!-- Vues côte à côte, même échelle, alignées sur les U : graduations à gauche de la première et à droite de la dernière. -->
-          <div class="rk-row" style:zoom={zoom < 1 ? zoom : undefined}>
-            {#each shown as v, vi (v)}
-              <div class="rk-view" data-view={v}>
-                <div class="rk-cap"><b>{FACES[v]}</b>{#if v === 'side'}<span class="mono">P {nf(depth)} mm</span>{/if}</div>
-                {#if v === 'side'}{@render sideView(vi === 0, vi === shown.length - 1)}{:else}{@render faceView(v, vi === 0, vi === shown.length - 1)}{/if}
-              </div>
-            {/each}
+      <div class="rk-stagebox" class:stage3d={show3d}>
+        <div class="rack-stage rk-stage" class:stage3d={show3d} bind:this={scroller} bind:clientWidth={stageW} bind:clientHeight={stageH}>
+          {#if show3d && rack}
+            <Rack3D container={rack.container} elements={rack.elements} vpdus={rack.vpdus ?? []} title={rack.container.name} />
+          {:else if all}
+            <div class="all-racks rk-zoomed" style:zoom={zoom !== 1 ? zoom : undefined}>
+              {#each shownRacks as R (rid(R))}
+                <div class="ar-col">
+                  <div class="ar-head" style:zoom={zoom !== 1 ? 1 / zoom : undefined}><b>{R.container.name}</b><span class="muted small">{view.locations.find((l) => l.id === R.container.location_id)?.name ?? ''}{view.locations.some((l) => l.id === R.container.location_id) ? ' · ' : ''}{unitsOf(R)} U</span>
+                    {#if R.lock && !R.lock.mine}<span class="chip warn" title="{R.lock.account_name} a la main : lecture seule"><Icon name="lock" />{R.lock.account_name}</span>{/if}
+                    <a class="icon-btn sm ghost" href="/projets/{view.project.id}/racks/{rid(R)}" aria-label="Ouvrir le rack {R.container.name}" title="Ouvrir ce rack"><Icon name="arrowr" size="sm" /></a></div>
+                  {@render rackRow(R)}
+                </div>
+              {:else}<p class="small muted">Aucun rack à cet emplacement.</p>{/each}
+            </div>
+          {:else if rack}
+            <div class="rk-zoomed" style:zoom={zoom !== 1 ? zoom : undefined}>{@render rackRow(rack)}</div>
+          {/if}
+        </div>
+        {#if !show3d}
+          <div class="rk-zoom" role="group" aria-label="Zoom">
+            <button class="icon-btn sm ghost" title="Zoom arrière (Ctrl+-)" aria-label="Zoom arrière" disabled={zoom <= ZMIN + 1e-9} onclick={() => zoomBy(-1)}><Icon name="zout" size="sm" /></button>
+            <button class="rk-zpct mono" title="Taille réelle (100 %)" aria-label="Zoom {Math.round(zoom * 100)} %, revenir à 100 %" onclick={() => setZoom(1)}>{Math.round(zoom * 100)} %</button>
+            <button class="icon-btn sm ghost" title="Zoom avant (Ctrl+=)" aria-label="Zoom avant" disabled={zoom >= ZMAX - 1e-9} onclick={() => zoomBy(1)}><Icon name="zin" size="sm" /></button>
+            <button class="btn sm ghost rk-fit" aria-pressed={fitOn} title="Ajuster les vues à la place disponible (Ctrl+0)" onclick={() => setZoom('fit')}><Icon name="fit" size="sm" />Ajuster</button>
           </div>
         {/if}
       </div>
 
       <aside class="pane right">
-        {#if selected}
+        {#if selected && selR}
           {@const p = selected.placement}
           {@const e = selected}
+          {@const R = selR}
+          {@const ok = canEdit(e.cid)}
           {@const inst = instOf(e)}
           {@const ports = e.item_id ? portsCache[e.item_id] : null}
           <Inspector eyebrow={e.nature === 'accessory' ? (panelOf(e) ? 'Panel' : 'Accessoire') : 'Équipement'} title={e.custom || e.label}
@@ -888,26 +1210,28 @@
                 </div>
               </div>
             {/snippet}
-            {#each rack.warnings.filter((w) => w.placement_id === p.id) as w}<div class="alert warn"><Icon name="alert" /><span>{w.message}</span></div>{/each}
+            {#each R.warnings.filter((w) => w.placement_id === p.id) as w}<div class="alert warn"><Icon name="alert" /><span>{w.message}</span></div>{/each}
             <section class="insp-sec">
               <h3>Position</h3>
+              {#if all}<div class="insp-row"><span class="insp-k">Rack</span><span class="insp-v">{R.container.name}</span></div>{/if}
               {#if p.shelf_id}
                 <div class="insp-row"><span class="insp-k">Étagère</span><span class="insp-v">{shelfOf(e)?.custom || shelfOf(e)?.label || 'Étagère'} · U{fmtU(p.u_start)}</span></div>
               {:else}
-                {@const st = stepFor({ move: e }, p.face)}
+                {@const top = Math.max(1, unitsOf(R) - hOf(e) + 1)}
                 <div class="insp-row">
                   <label class="insp-k" for="rk-u">U de départ</label>
-                  {#if mine}
-                    <span class="insp-v insp-num"><input class="cell mono" id="rk-u" type="number" inputmode="decimal" min="1" max={Math.max(1, units - hOf(e) + 1)} step={st} bind:value={uDraft} aria-invalid={posErr?.field === 'u' ? 'true' : undefined} aria-describedby={posErr?.field === 'u' ? 'rk-u-err' : 'rk-u-help'}
-                      onblur={() => commitU(e)} onkeydown={(k) => cellKey(k, () => { uDraft = p.u_start; posErr = null; })}><span class="u">U</span></span>
+                  {#if ok}
+                    <span class="insp-v insp-num"><input class="cell mono" id="rk-u" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" role="spinbutton" aria-valuemin={1} aria-valuemax={top} aria-valuenow={p.u_start} aria-valuetext="U{fmtU(p.u_start)}"
+                      title="Au demi-U près (12 ou 12,5) · ↑↓ 0,5 U · Maj+↑↓ 1 U" bind:value={uDraft} aria-invalid={posErr?.field === 'u' ? 'true' : undefined} aria-describedby={posErr?.field === 'u' ? 'rk-u-err' : 'rk-u-help'}
+                      onblur={() => commitU(e)} onkeydown={(k) => uKey(k, e)}><span class="u">U</span></span>
                   {:else}<span class="insp-v mono" id="rk-u">U{fmtU(p.u_start)}</span>{/if}
-                  {#if posErr?.field === 'u'}<FieldError message={posErr.message} for="rk-u" />{:else}<span class="help" id="rk-u-help">Occupe {occTxt(p.u_start, hOf(e))}.{mine ? ` Pas de ${st === 1 ? '1 U' : '0,5 U'}.` : ''}</span>{/if}
+                  {#if posErr?.field === 'u'}<FieldError message={posErr.message} for="rk-u" />{:else}<span class="help" id="rk-u-help">Occupe {occTxt(p.u_start, hOf(e))}.</span>{/if}
                 </div>
                 <div class="insp-row">
                   <label class="insp-k" for="rk-face">Face</label>
-                  {#if mine && rack.faces.length > 1}
+                  {#if ok && R.faces.length > 1}
                     <span class="insp-v"><select class="cell" id="rk-face" value={p.face} aria-invalid={posErr?.field === 'face' ? 'true' : undefined} aria-describedby={posErr?.field === 'face' ? 'rk-face-err' : undefined}
-                      onchange={(ev) => { const f = (ev.target as HTMLSelectElement).value as Face; moveTo(e, { face: f }, 'face'); }}>{#each rack.faces as f}<option value={f}>{FACES[f]}</option>{/each}</select></span>
+                      onchange={(ev) => { const f = (ev.target as HTMLSelectElement).value as Face; moveTo(e, { face: f }, 'face'); }}>{#each R.faces as f}<option value={f}>{FACES[f]}</option>{/each}</select></span>
                   {:else}<span class="insp-v" id="rk-face">{FACES[p.face]}</span>{/if}
                   {#if posErr?.field === 'face'}<FieldError message={posErr.message} for="rk-face" />{/if}
                 </div>
@@ -916,9 +1240,9 @@
               {#if e.nature !== 'accessory' || p.shelf_id}
                 <div class="insp-row">
                   <label class="insp-k" for="rk-c">Circuit</label>
-                  {#if mine}
-                    <span class="insp-v"><select class="cell" id="rk-c" value={p.circuit_id ?? ''} onchange={(ev) => patch(e, { circuit_id: (ev.target as HTMLSelectElement).value || null })}><option value="">Non branché</option>{#each rack.circuits as c}<option value={c.id}>{c.name} · {c.phase} · {c.rating_a} A</option>{/each}</select></span>
-                  {:else}<span class="insp-v" id="rk-c">{rack.circuits.find((c) => c.id === p.circuit_id)?.name ?? 'Non branché'}</span>{/if}
+                  {#if ok}
+                    <span class="insp-v"><select class="cell" id="rk-c" value={p.circuit_id ?? ''} onchange={(ev) => patch(e, { circuit_id: (ev.target as HTMLSelectElement).value || null })}><option value="">Non branché</option>{#each R.circuits as c}<option value={c.id}>{c.name} · {c.phase} · {c.rating_a} A</option>{/each}</select></span>
+                  {:else}<span class="insp-v" id="rk-c">{R.circuits.find((c) => c.id === p.circuit_id)?.name ?? 'Non branché'}</span>{/if}
                 </div>
               {/if}
               {#if p.shelf_id}<p class="insp-note">Posé sur une étagère : il en suit la position.</p>{/if}
@@ -954,28 +1278,31 @@
               <section class="insp-sec">
                 <h3>Panel</h3>
                 <div class="pside"><span class="muted small">{pn.slots.length} connecteur{pn.slots.length > 1 ? 's' : ''} sur {pn.height_u * pn.per_u} · {pn.groups.length} groupe{pn.groups.length > 1 ? 's' : ''}</span>
-                  <button class="btn sm" onclick={() => (editPanel = e)}><Icon name="grid" size="sm" />{mine ? 'Modifier le panel' : 'Voir le panel'}</button></div>
+                  <button class="btn sm" onclick={() => (editPanel = e)}><Icon name="grid" size="sm" />{ok ? 'Modifier le panel' : 'Voir le panel'}</button></div>
               </section>
             {/if}
             {#if isShelf(e)}
+              {@const off = R.pending.filter((x) => !x.rackable)}
               <section class="insp-sec">
-                <h3>Sur l’étagère · {onShelf(p.id).length} / 10</h3>
+                <h3>Sur l’étagère · {onShelf(e).length} / 10</h3>
                 <div class="stack" style="gap:6px">
-                  {#each onShelf(p.id) as x (x.placement.id)}<button class="pend" style="padding:8px 10px" onclick={() => (sel = x.placement.id)}><span class="pend-t"><b>{x.custom || x.label}</b><span>{x.tag ?? ''}</span></span></button>{:else}<p class="insp-note" style="margin:0">Rien n’est posé sur cette étagère.</p>{/each}
-                  {#if mine && notRackable.length && onShelf(p.id).length < 10}
-                    {#each notRackable as np (np.instance_id ?? np.article_id)}<button class="btn sm" style="justify-content:flex-start" onclick={() => putOnShelf(e, np)}><Icon name="plus" size="sm" />Poser {np.label}{np.tag ? ` · ${np.tag}` : ''}</button>{/each}
+                  {#each onShelf(e) as x (x.placement.id)}<button class="pend" style="padding:8px 10px" onclick={() => (sel = x.placement.id)}><span class="pend-t"><b>{x.custom || x.label}</b><span>{x.tag ?? ''}</span></span></button>{:else}<p class="insp-note" style="margin:0">Rien n’est posé sur cette étagère.</p>{/each}
+                  {#if ok && off.length && onShelf(e).length < 10}
+                    {#each off as np (pk(np))}<button class="btn sm" style="justify-content:flex-start" onclick={() => putOnShelf(e, np)}><Icon name="plus" size="sm" />Poser {np.label}{np.tag ? ` · ${np.tag}` : ''}</button>{/each}
                   {/if}
                 </div>
               </section>
             {/if}
             {#snippet actions()}
-              {#if mine && !p.shelf_id}<button class="btn sm ghost" title="Déplacer au clavier (flèches puis Entrée) ou à la souris (clic à la nouvelle place)" onclick={() => startMoving(e, p.face)}><Icon name="hand" size="sm" />Déplacer</button>{/if}
+              {#if ok && !p.shelf_id}<button class="btn sm ghost" title="Déplacer au clavier (flèches puis Entrée) ou à la souris (clic à la nouvelle place)" onclick={() => startMoving(e, p.face)}><Icon name="hand" size="sm" />Déplacer</button>{/if}
+              {#if all}<a class="btn sm ghost" href="/projets/{view.project.id}/racks/{e.cid}{p.instance_id ? `?i=${p.instance_id}` : ''}"><Icon name="arrowr" size="sm" />Ouvrir dans le rack</a>{/if}
               {#if e.item_id && e.nature !== 'accessory'}<a class="btn sm ghost" href="/catalogue/equipment/{e.item_id}"><Icon name="file" size="sm" />Ouvrir la fiche</a>{/if}
-              {#if cid}<a class="btn sm ghost" href="/projets/{view.project.id}/synoptique/element/{cid}"><Icon name="syn" size="sm" />Voir dans le synoptique</a>{/if}
-              {#if mine}<button class="btn sm ghost danger" title="{p.shelf_id ? 'Retirer de l’étagère' : 'Retirer du rack'} (Suppr) : il redevient à placer" onclick={() => unplace(e)}><Icon name="x" size="sm" />{p.shelf_id ? 'Retirer de l’étagère' : 'Retirer du rack'}</button>{/if}
+              <a class="btn sm ghost" href="/projets/{view.project.id}/synoptique/element/{e.cid}"><Icon name="syn" size="sm" />Voir dans le synoptique</a>
+              {#if ok}<button class="btn sm ghost danger" title="{p.shelf_id ? 'Retirer de l’étagère' : 'Retirer du rack'} (Suppr) : il redevient à placer" onclick={() => unplace(e)}><Icon name="x" size="sm" />{p.shelf_id ? 'Retirer de l’étagère' : 'Retirer du rack'}</button>{/if}
             {/snippet}
           </Inspector>
-        {:else}
+        {:else if rack}
+        {@const t = rack.totals}
         <section>
           <h2>Énergie par phase</h2>
           {#each rack.electrical.phases as ph}
@@ -1011,7 +1338,7 @@
         {/if}
         <section>
           <h2>Totaux</h2>
-          <dl class="kv"><dt>Hauteur posée</dt><dd>{fmtU(posedU)} / {t.total_u} U</dd>{#if pendingU}<dt>À placer</dt><dd>{fmtU(pendingU)} U{t.total_u && posedU + pendingU > t.total_u ? ` · dépasse de ${fmtU(posedU + pendingU - t.total_u)} U une fois tout posé` : ''}</dd>{/if}<dt>Poids</dt><dd>{nf(t.weight_kg, 1)} kg</dd><dt>Puissance</dt><dd>{nf(t.power_w)} W</dd><dt>Dissipation</dt><dd>{nf(t.power_w * 3.412)} BTU/h</dd><dt>Profondeur utile</dt><dd>{nf(depth)} mm</dd></dl>
+          <dl class="kv"><dt>Hauteur posée</dt><dd>{fmtU(posedU)} / {t.total_u} U</dd>{#if pendingU}<dt>À placer</dt><dd>{fmtU(pendingU)} U{t.total_u && posedU + pendingU > t.total_u ? ` · dépasse de ${fmtU(posedU + pendingU - t.total_u)} U une fois tout posé` : ''}</dd>{/if}<dt>Poids</dt><dd>{nf(t.weight_kg, 1)} kg</dd><dt>Puissance</dt><dd>{nf(t.power_w)} W</dd><dt>Dissipation</dt><dd>{nf(t.power_w * 3.412)} BTU/h</dd><dt>Profondeur utile</dt><dd>{nf(depthOf(rack))} mm</dd></dl>
           {#each rack.warnings as w}<div class="alert warn"><Icon name="alert" /><span>{w.message}</span></div>{/each}
           {#if mode === 'schematic' && !show3d && legend.length}<span class="lbl-t">Familles de signal</span><div class="legend" style="grid-template-columns:1fr">{#each legend as [k, name] (k)}<div><span class="sw" style="--c:{famColor(k || null)}"></span>{name}</div>{/each}</div>{/if}
         </section>
@@ -1020,16 +1347,61 @@
             <button class="btn sm ghost danger" title="Tous les équipements posés redeviennent « à placer » (après confirmation)" onclick={clearRack}><Icon name="undo" size="sm" />Vider le rack</button>
           </section>
         {/if}
+        {:else}
+          <section>
+            <h2>Totaux</h2>
+            <dl class="kv"><dt>Racks</dt><dd>{shownRacks.length}</dd><dt>Hauteur posée</dt><dd>{fmtU(sum.u)} / {sum.total} U</dd><dt>Poids</dt><dd>{nf(sum.kg, 1)} kg</dd><dt>Puissance</dt><dd>{nf(sum.w)} W</dd><dt>Dissipation</dt><dd>{nf(sum.w * 3.412)} BTU/h</dd>{#if nPend}<dt>À placer</dt><dd>{nPend} élément{pl(nPend)}</dd>{/if}</dl>
+          </section>
+          <section>
+            <h2>Par rack</h2>
+            {#each shownRacks as R (rid(R))}
+              <a class="ar-tot" href="/projets/{view.project.id}/racks/{rid(R)}" title="Ouvrir le rack {R.container.name}">
+                <span class="ar-tn"><b>{R.container.name}</b><small>{nf(R.totals.weight_kg, 1)} kg · {nf(R.totals.power_w)} W{R.warnings.length ? ` · ${R.warnings.length} alerte${pl(R.warnings.length)}` : ''}</small></span>
+                <span class="ar-tu mono" class:err={R.totals.over_u}>{fmtU(posedOf(R))} / {unitsOf(R)} U</span>
+              </a>
+            {/each}
+            {#if mode === 'schematic'}
+              {@const lg = [...new Map(allEls.filter((e) => e.nature !== 'accessory').map((e) => [e.function ?? '', e.function ? (refById('functions', e.function)?.name ?? e.function) : 'Sans famille'] as const)).entries()]}
+              {#if lg.length}<span class="lbl-t">Familles de signal</span><div class="legend" style="grid-template-columns:1fr">{#each lg as [k, name] (k)}<div><span class="sw" style="--c:{famColor(k || null)}"></span>{name}</div>{/each}</div>{/if}
+            {/if}
+          </section>
         {/if}
       </aside>
     </div>
   </div>
-{:else}<Loading label="Chargement du rack" />{/if}
+{:else}<Loading label={all ? 'Chargement des racks' : 'Chargement du rack'} />{/if}
+
+<!-- Élément « à placer » : clic pour l'armer, ou glisser dans un rack. -->
+{#snippet pendRow(p: Pending)}
+  {@const ok = canEdit(p.cid)}
+  <button class="pend mini" class:on={armed === p} class:dragging={dragP === p} aria-pressed={armed === p} data-pend={pk(p)} disabled={!ok || show3d} onclick={() => arm(p)}
+    draggable={ok && !show3d} ondragstart={(ev) => startPend(ev, p)} ondragend={endDrag} title="{p.label}{p.tag ? ` · ${p.tag}` : ''}">
+    <i class="pm-c" style="--c:{famColor(p.function)}"></i><span class="pm-l">{p.label}</span>{#if p.tag}<span class="pm-t">{p.tag}</span>{/if}<span class="pm-u">{fmtU(p.height_u ?? 0)} U{widthTxt(p.width)}</span>
+  </button>
+{/snippet}
+{#snippet offRow(p: Pending)}
+  <div class="pend mini" style="cursor:default" data-pend={pk(p)} tabindex="-1" title="{p.label}{p.tag ? ` · ${p.tag}` : ''}"><i class="pm-c" style="--c:{famColor(p.function)}"></i><span class="pm-l">{p.label}</span>{#if p.tag}<span class="pm-t">{p.tag}</span>{/if}</div>
+{/snippet}
+
+<!-- Vues d'une baie côte à côte, même échelle, alignées sur les U : graduations à gauche de la première et à droite de la dernière. -->
+{#snippet rackRow(R: Rack)}
+  {@const sv = shownOf(R)}
+  <div class="rk-row">
+    {#each sv as v, vi (v)}
+      <div class="rk-view" data-view={v} data-rack={rid(R)}>
+        <div class="rk-cap"><b>{FACES[v]}</b>{#if v === 'side'}<span class="mono">P {nf(depthOf(R))} mm</span>{/if}</div>
+        {#if v === 'side'}{@render sideView(R, vi === 0, vi === sv.length - 1)}{:else}{@render faceView(R, v, vi === 0, vi === sv.length - 1)}{/if}
+      </div>
+    {/each}
+  </div>
+{/snippet}
 
 <!-- Vue d'une face : élévation, glisser-déposer, pose armée, déplacement, clic droit. -->
-{#snippet faceView(f: Face, first: boolean, last: boolean)}
-  {@const vp = vpOf(f)}
-  {@const pv = preview && preview.view === f && !preview.same ? preview : null}
+{#snippet faceView(R: Rack, f: Face, first: boolean, last: boolean)}
+  {@const vp = vpOf(R, f)}
+  {@const units = unitsOf(R)}
+  {@const ok = canEdit(rid(R))}
+  {@const pv = preview && preview.cid === rid(R) && preview.view === f && !preview.same ? preview : null}
   <div class="rack" class:placing={aiming} class:vpl={vp.some((v) => v.accessory.side === 'left')} class:vpr={vp.some((v) => v.accessory.side === 'right')} style="--units:{units};--u:{U}px;--bw:{BW}px;grid-template-columns:{first ? '28px ' : ''}auto{last ? ' 28px' : ''}">
     <!-- PDU verticaux : couloirs arrière, gauche et droite vus de l'arrière. -->
     {#each vp as v, i (v.article_id)}
@@ -1038,54 +1410,56 @@
       {@const k = vp.filter((x, j) => j < i && x.accessory.side === v.accessory.side).length}
       <div class="vpdu" style="{left ? 'left' : 'right'}:{6 + k * 20}px;bottom:calc(24px + {(units * U - h) / 2}px);height:{h}px;--n:{v.accessory.outlets}" title={v.label}><i></i></div>
     {/each}
-    {#if first}{@render scale()}{/if}
-    <div class="rack-body" class:aiming={!!subject} class:no={!!pv?.why} role="grid" tabindex={aiming ? 0 : -1} aria-label={bodyLabel(f)}
-      onmousemove={(e) => bodyMove(e, f)}
-      onmouseleave={() => bodyLeave(f)}
-      onclick={(e) => bodyClick(e, f)}
-      onkeydown={(e) => rackKey(e, f)}
-      oncontextmenu={(e) => onCtx(e, f)}
-      ondragover={(e) => dragOver(e, f)}
-      ondragleave={(e) => { if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) { if (aim?.view === f) aim = null; leftAt = Date.now(); } }}
-      ondrop={(e) => drop(e, e.currentTarget as HTMLElement, f)}>
-      {#if subject}{#each freeRuns(f) as r (r.b)}<span class="rfree" style="bottom:calc({r.b} * var(--u));height:calc({r.h} * var(--u))"></span>{/each}{/if}
-      {#each faceEls(f) as e (e.placement.id)}
-        <div class="ritem {e.nature === 'accessory' ? 'acc' : ''} {ALU.has(typeOf(e)) && mode === 'real' ? 'alu' : ''} {e.height_u <= 1 ? 'u1' : ''} {e.height_u < 1 ? 'uh' : ''} {e.placement.width !== 'full' ? `half c${e.placement.col}` : ''}" class:sel={sel === e.placement.id} class:dw={dw(e)} class:draggable={mine} class:dragging={dragging === e || moving === e} class:flash={flashId === e.placement.id}
-          style={style(e)} data-pl={e.placement.id} role="button" tabindex="0" draggable={mine} aria-pressed={sel === e.placement.id} aria-haspopup="menu" aria-label={elTitle(e)} title={elTitle(e)}
+    {#if first}{@render scale(R)}{/if}
+    <div class="rack-body" class:aiming={!!subject} class:no={!!pv?.why} role="grid" tabindex={aiming ? 0 : -1} aria-label={bodyLabel(R, f)}
+      onmousemove={(e) => bodyMove(e, R, f)}
+      onmouseleave={() => bodyLeave(R, f)}
+      onclick={(e) => bodyClick(e, R, f)}
+      onkeydown={(e) => rackKey(e, R, f)}
+      oncontextmenu={(e) => onCtx(e, R, f)}
+      ondragover={(e) => dragOver(e, R, f)}
+      ondragleave={(e) => dragLeave(e, R, f)}
+      ondrop={(e) => drop(e, R, f)}>
+      {#if subject}{#each freeRuns(R, f) as r (r.b)}<span class="rfree" style="bottom:calc({r.b} * var(--u));height:calc({r.h} * var(--u))"></span>{/each}{/if}
+      {#each faceEls(R, f) as e (e.placement.id)}
+        <div class="ritem {e.nature === 'accessory' ? 'acc' : ''} {ALU.has(typeOf(e)) && mode === 'real' ? 'alu' : ''} {e.height_u <= 1 ? 'u1' : ''} {e.height_u < 1 ? 'uh' : ''} {e.placement.width !== 'full' ? `half c${e.placement.col}` : ''}" class:sel={sel === e.placement.id} class:dw={dw(e)} class:draggable={ok} class:dragging={dragging === e || moving === e} class:flash={flashId === e.placement.id}
+          style={style(e)} data-pl={e.placement.id} role="button" tabindex="0" draggable={ok} aria-pressed={sel === e.placement.id} aria-haspopup="menu" aria-label={elTitle(e)} title={elTitle(e)}
           onclick={() => { if (!aiming) sel = e.placement.id; }} onkeydown={(k) => { if (k.key === 'Enter' || k.key === ' ') { if (aiming) return; k.preventDefault(); sel = e.placement.id; } else if (isMenuKey(k)) { k.preventDefault(); k.stopPropagation(); keyMenu(e, k.currentTarget as HTMLElement, f); } }}
           ondragstart={(ev) => startMove(ev, e)} ondragend={endDrag}>
-          {#if e.nature !== 'accessory'}<i class="led"></i>{/if}<span class="rl" class:two={!!rl(e)[1]}>{#if rl(e)[0]}<b class="rn" class:id={!!e.tag && rl(e)[0] === e.tag}>{rl(e)[0]}</b>{/if}{#if rl(e)[1]}<small>{rl(e)[1]}</small>{/if}</span>{#if isShelf(e) && onShelf(e.placement.id).length}<span class="shelf-load">{#each onShelf(e.placement.id) as x (x.placement.id)}<span class="sh-it" style="--c:{famColor(x.function)}">{x.label}</span>{/each}</span>{:else if mode === 'real' && panelOf(e)}<span class="pdec"><PanelFace panel={panelOf(e)!} /></span>{:else if mode === 'real'}<span class="dec">{@html decor(typeOf(e))}</span>{:else}<span class="dec"></span>{/if}
+          {#if e.nature !== 'accessory'}<i class="led"></i>{/if}<span class="rl" class:two={!!rl(e)[1]}>{#if rl(e)[0]}<b class="rn" class:id={!!e.tag && rl(e)[0] === e.tag}>{rl(e)[0]}</b>{/if}{#if rl(e)[1]}<small>{rl(e)[1]}</small>{/if}</span>{#if isShelf(e) && onShelf(e).length}<span class="shelf-load">{#each onShelf(e) as x (x.placement.id)}<span class="sh-it" style="--c:{famColor(x.function)}">{x.label}</span>{/each}</span>{:else if mode === 'real' && panelOf(e)}<span class="pdec"><PanelFace panel={panelOf(e)!} /></span>{:else if mode === 'real'}<span class="dec">{@html decor(typeOf(e))}</span>{:else}<span class="dec"></span>{/if}
         </div>
       {/each}
       {#if pv}{@render ghost(pv)}{/if}
     </div>
-    {#if last}{@render scale()}{/if}
+    {#if last}{@render scale(R)}{/if}
   </div>
 {/snippet}
 
 <!-- Vue de côté : élévation technique à plat (profondeur de chaque élément depuis ses rails,
      réserve de câblage hachurée), cotes horizontales centrées en mm, profondeur utile en pied. -->
-{#snippet sideView(first: boolean, last: boolean)}
-  {@const pv = preview && preview.view === 'side' && !preview.same ? preview : null}
-  <div class="rack rk-side" class:placing={aiming} style="--units:{units};--u:{U}px;--sw:{SW}px;grid-template-columns:{first ? '28px ' : ''}auto{last ? ' 28px' : ''}">
-    {#if first}{@render scale()}{/if}
+{#snippet sideView(R: Rack, first: boolean, last: boolean)}
+  {@const pv = preview && preview.cid === rid(R) && preview.view === 'side' && !preview.same ? preview : null}
+  {@const depth = depthOf(R)}
+  {@const ok = canEdit(rid(R))}
+  <div class="rack rk-side" class:placing={aiming} style="--units:{unitsOf(R)};--u:{U}px;--sw:{swOf(R)}px;grid-template-columns:{first ? '28px ' : ''}auto{last ? ' 28px' : ''}">
+    {#if first}{@render scale(R)}{/if}
     <div class="side-wrap">
-      <div class="side-body" class:aiming={!!subject} class:no={!!pv?.why} role="grid" tabindex={aiming ? 0 : -1} aria-label={bodyLabel('side')}
-        onmousemove={(e) => bodyMove(e, 'side')}
-        onmouseleave={() => bodyLeave('side')}
-        onclick={(e) => bodyClick(e, 'side')}
-        onkeydown={(e) => rackKey(e, 'side')}
-        oncontextmenu={(e) => onCtx(e, 'side')}
-        ondragover={(e) => dragOver(e, 'side')}
-        ondragleave={(e) => { if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) { if (aim?.view === 'side') aim = null; leftAt = Date.now(); } }}
-        ondrop={(e) => drop(e, e.currentTarget as HTMLElement, 'side')}>
+      <div class="side-body" class:aiming={!!subject} class:no={!!pv?.why} role="grid" tabindex={aiming ? 0 : -1} aria-label={bodyLabel(R, 'side')}
+        onmousemove={(e) => bodyMove(e, R, 'side')}
+        onmouseleave={() => bodyLeave(R, 'side')}
+        onclick={(e) => bodyClick(e, R, 'side')}
+        onkeydown={(e) => rackKey(e, R, 'side')}
+        oncontextmenu={(e) => onCtx(e, R, 'side')}
+        ondragover={(e) => dragOver(e, R, 'side')}
+        ondragleave={(e) => dragLeave(e, R, 'side')}
+        ondrop={(e) => drop(e, R, 'side')}>
         <i class="s-rail" style="left:{(FRONT_RAIL_MM / depth) * 100}%"></i>
-        <i class="s-rail" style="left:{((depth - (rack?.container.rear_rails_mm ?? 70)) / depth) * 100}%"></i>
-        {#each sideBars as b (b.e.placement.id)}
+        <i class="s-rail" style="left:{((depth - (R.container.rear_rails_mm ?? 70)) / depth) * 100}%"></i>
+        {#each sideBarsOf(R) as b (b.e.placement.id)}
           {@const e = b.e as RackEl}
           {@const big = e.height_u >= 0.9}
           {#if b.res > 0}<span class="sres" class:over={b.over} style="bottom:calc({e.placement.u_start - 1} * var(--u) + 1px);height:calc({e.height_u} * var(--u) - 2px);left:{(b.rx / depth) * 100}%;width:{(b.rw / depth) * 100}%" title="Réserve de câblage : {nf(b.res)} mm{b.over ? ' (dépasse la profondeur utile)' : ''}">{#if big && b.rw * PX_MM > 40}<span class="cote"><i></i><b>{nf(Math.round(b.res))}</b></span>{/if}</span>{/if}
-          <span class="sbar" class:acc={e.nature === 'accessory'} class:sel={sel === e.placement.id} class:dragging={dragging === e || moving === e} class:flash={flashId === e.placement.id} class:draggable={mine} data-pl={e.placement.id} role="button" tabindex="0" draggable={mine} aria-pressed={sel === e.placement.id} aria-haspopup="menu"
+          <span class="sbar" class:acc={e.nature === 'accessory'} class:sel={sel === e.placement.id} class:dragging={dragging === e || moving === e} class:flash={flashId === e.placement.id} class:draggable={ok} data-pl={e.placement.id} role="button" tabindex="0" draggable={ok} aria-pressed={sel === e.placement.id} aria-haspopup="menu"
             style="--c:{famColor(e.function)};bottom:calc({e.placement.u_start - 1} * var(--u) + 1px);height:calc({e.height_u} * var(--u) - 2px);left:{(b.x / depth) * 100}%;width:{(b.w / depth) * 100}%"
             title="{elTitle(e)} · {FACES[e.placement.face].toLowerCase()} · profondeur {e.depth_mm ? `${nf(e.depth_mm)} mm` : `non renseignée (${nf(b.d)} mm supposés)`}{b.res ? ` · réserve câbles ${nf(b.res)} mm` : ''}" aria-label="{elTitle(e)}, profondeur {nf(b.d)} mm"
             onclick={() => { if (!aiming) sel = e.placement.id; }} onkeydown={(k) => { if (k.key === 'Enter' || k.key === ' ') { if (aiming) return; k.preventDefault(); sel = e.placement.id; } else if (isMenuKey(k)) { k.preventDefault(); k.stopPropagation(); keyMenu(e, k.currentTarget as HTMLElement, 'side'); } }}
@@ -1098,15 +1472,17 @@
       <!-- Profondeur totale utile : cote centrée sous la vue. -->
       <div class="s-total" aria-label="Profondeur utile {nf(depth)} mm"><span class="s-end">Avant</span><span class="cote tot"><i></i><b>{nf(depth)} mm</b></span><span class="s-end">Arrière</span></div>
     </div>
-    {#if last}{@render scale()}{/if}
+    {#if last}{@render scale(R)}{/if}
   </div>
 {/snippet}
 
-{#snippet scale()}
-  <div class="rack-scale">{#each Array(units) as _, i}<span class:hot={hotU(units - i)} class:no={hotU(units - i) && !!preview?.why}>{units - i}</span>{/each}</div>
+{#snippet scale(R: Rack)}
+  {@const units = unitsOf(R)}
+  <div class="rack-scale">{#each Array(units) as _, i}{@const hot = hotOf(R, units - i)}<span class:hot={!!hot} class:top={hot === 'top'} class:bot={hot === 'bot'} class:no={!!hot && !!preview?.why}>{units - i}</span>{/each}</div>
 {/snippet}
 
 {#snippet ghost(pv: NonNullable<typeof preview>)}
+  {@const units = unitsOf(store[pv.cid])}
   {@const u0 = Math.max(1, pv.u)}
   {@const u1 = Math.min(units + 1, pv.u + pv.h)}
   <div class="aim" class:no={!!pv.why} class:shake aria-hidden="true" style="bottom:calc({u0 - 1} * var(--u) + 1px);height:calc({Math.max(0.5, u1 - u0)} * var(--u) - 2px);left:calc({pv.view === 'side' ? 0 : (100 * pv.col) / pv.n}% + 2px);width:calc({pv.view === 'side' ? 100 : 100 / pv.n}% - 4px)">
@@ -1114,10 +1490,10 @@
   </div>
 {/snippet}
 
-{#if adding && shownC}<AddArticle {view} container={shownC} locationId={shownC.location_id} onclose={() => { adding = false; addAt = null; }} ondone={afterAdd} />{/if}
+{#if adding && addC}<AddArticle {view} container={addC} locationId={addC.location_id} onclose={() => { adding = false; addAt = null; }} ondone={afterAdd} />{/if}
 
 {#if editPanel}
-  <ProjectPanel article={{ id: editPanel.placement.article_id, rev: editPanel.article_rev, accessory: editPanel.accessory, label: editPanel.label } as Article} readonly={!mine} eyebrow="Panel du rack" onclose={() => (editPanel = null)} ondone={load} />
+  <ProjectPanel article={{ id: editPanel.placement.article_id, rev: editPanel.article_rev, accessory: editPanel.accessory, label: editPanel.label } as Article} readonly={!canEdit(editPanel.cid)} eyebrow="Panel du rack" onclose={() => (editPanel = null)} ondone={() => load(editPanel ? [editPanel.cid] : ids)} />
 {/if}
 
 {#if ctx}<ContextMenu x={ctx?.x ?? 0} y={ctx?.y ?? 0} items={ctx?.items ?? []} label={ctx?.label ?? ''} back={ctx?.back ?? null} onclose={() => (ctx = null)} />{/if}
@@ -1149,6 +1525,11 @@
   .aim-why { font-weight: 700; }
   .rack-scale span.hot { color: var(--aim); font-weight: 700; }
   .rack-scale span.hot.no { color: var(--aim-no); }
+  /* Demi-U visé : la moitié touchée de l'U est marquée sur la graduation. */
+  .rack-scale span.hot.top, .rack-scale span.hot.bot { --hb: color-mix(in srgb, var(--aim) 30%, transparent); }
+  .rack-scale span.hot.no:is(.top, .bot) { --hb: color-mix(in srgb, var(--aim-no) 30%, transparent); }
+  .rack-scale span.hot.top { background: linear-gradient(to bottom, var(--hb) 50%, transparent 50%); }
+  .rack-scale span.hot.bot { background: linear-gradient(to top, var(--hb) 50%, transparent 50%); }
   .aim.shake { animation: aim-shake .4s ease; }
   .ritem.flash, .sbar.flash { animation: rk-flash 1.2s ease-out; z-index: 3; }
   @keyframes aim-shake { 20%, 60% { transform: translateX(-5px); } 40%, 80% { transform: translateX(5px); } }
@@ -1169,9 +1550,40 @@
   .pm-u { flex: none; font: 600 11px/1 var(--mono) !important; padding: 3px 6px; border-radius: 5px; background: var(--sunken); color: var(--fg-2) !important; }
   .rack-stage.stage3d { padding: 0; display: block; align-self: stretch; }
 
-  /* ----- Scène : vues côte à côte, sans marge perdue ----- */
-  .rk-stage:not(.stage3d) { padding: 12px; align-items: flex-start; }
+  /* ----- Scène : vues côte à côte, sans marge perdue ; elle défile seule, le zoom flotte en bas à droite ----- */
+  .rk-stagebox { position: relative; min-width: 0; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+  .rk-stagebox > .rack-stage { min-width: 0; min-height: 0; }
+  .rk-stage:not(.stage3d) { padding: 12px 12px 56px; align-items: flex-start; }
+  .rk-zoomed { flex: none; margin: 0 auto; }
   .rk-row { display: flex; align-items: flex-start; gap: 14px; margin: 0 auto; }
+  /* Contrôle de zoom : même aspect que celui du synoptique. */
+  .rk-zoom { position: absolute; right: 12px; bottom: 12px; z-index: 5; display: flex; align-items: center; gap: 2px; padding: 3px; border-radius: 9px; border: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 88%, transparent); box-shadow: 0 4px 14px -6px rgba(0, 0, 0, .35); backdrop-filter: blur(6px); }
+  .rk-zpct { min-width: 50px; height: var(--hit-min, 28px); padding: 0 4px; border: 0; border-radius: 6px; background: none; color: var(--text-2); font-size: 12px; text-align: center; cursor: pointer; font-variant-numeric: tabular-nums; }
+  .rk-zpct:hover { background: var(--panel-3); color: var(--text); }
+  .rk-fit[aria-pressed='true'] { color: var(--accent); }
+  /* ----- Côte à côte : une colonne par baie, en-tête, vues ----- */
+  .all-racks { display: flex; gap: 28px; align-items: flex-start; margin: 0 auto; }
+  .ar-col { flex: none; display: flex; flex-direction: column; gap: 8px; }
+  .ar-head { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 4px; min-width: 0; }
+  .ar-head b { font: 650 var(--fs-md, 13.5px) var(--display); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); }
+  .ar-head .muted { margin-right: auto; white-space: nowrap; }
+  .ar-pcat .icon-btn { margin-left: 2px; }
+  .ar-addall { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+  /* Liens du filtre d'emplacement : même aspect que les boutons d'une commande segmentée. */
+  .ar-locs a { display: inline-flex; align-items: center; height: var(--btn-h-sm, 30px); padding: 0 11px; border-radius: var(--btn-r-sm, 7px); font-size: var(--fs-ctl-sm, 13px); font-weight: 550; color: var(--fg-2); text-decoration: none; white-space: nowrap; }
+  .ar-locs a:hover { color: var(--fg); }
+  .ar-locs a.on { background: var(--key-bg); color: var(--fg); font-weight: 650; box-shadow: var(--key); }
+  .ar-locs a:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  /* Totaux par rack : une ligne cliquable par rack. */
+  .ar-tot { display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: var(--r-sm, 8px); color: var(--fg); text-decoration: none; border-bottom: 1px solid var(--line); }
+  .ar-tot:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+  .ar-tot:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .ar-tn { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.3; }
+  .ar-tn b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ar-tn small { font-size: var(--fs-sm, 12.5px); color: var(--fg-3); }
+  .ar-tu { flex: none; font-size: 12.5px; color: var(--fg-2); }
+  .ar-tu.err { color: var(--err); font-weight: 700; }
+  .pcat span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .rk-view { flex: none; display: flex; flex-direction: column; gap: 6px; }
   /* Légende de vue : à plat, même hauteur pour toutes les vues (les U restent alignés). */
   .rk-cap { height: 22px; display: flex; align-items: center; justify-content: center; gap: 8px; font: 600 var(--fs-2xs, 11.5px)/1 var(--font); letter-spacing: .05em; text-transform: uppercase; color: var(--fg-3); }
@@ -1226,8 +1638,8 @@
   .rack-screen:not(.solo) .design-body { height: calc(100dvh - 216px); min-height: 560px; }
   @media (max-width: 1100px) { .rack-screen:not(.solo) .design-body { grid-template-columns: minmax(0, 1fr); height: auto; } }
   .sheet-h { display: none; }
+  @media (max-width: 860px) { .rk-stagebox { order: 1; } }
   @media (max-width: 767px) {
-    .rack-stage:not(.stage3d) { overflow-x: hidden; }
     /* « À placer » : panneau fixé en bas, replié sur sa barre de titre. */
     .pane.left { position: fixed; z-index: 30; left: 0; right: 0; bottom: 0; order: 9; gap: 0; padding: 0 16px calc(10px + env(safe-area-inset-bottom, 0px)); max-height: 55vh; max-height: 55dvh; overflow: auto; border-radius: 16px 16px 0 0; background: var(--surface); box-shadow: 0 -10px 30px -12px rgba(0, 0, 0, .35), 0 -1px 0 var(--line); }
     .pane.left:not(.open) > section { display: none; }

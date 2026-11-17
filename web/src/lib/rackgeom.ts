@@ -23,6 +23,17 @@ export function occTxt(u: number, h: number): string {
 }
 /** Plage courte (notifications, fantôme) : « U12–U13 » au U entier, sinon le détail des demi-U. */
 export const rangeTxt = (u: number, h: number) => (isWhole(u) && isWhole(h) ? (h > 1 ? `U${u}–U${u + h - 1}` : `U${u}`) : occTxt(u, h));
+/** Place visée (fantôme, notifications de déplacement) : « U12–U13 » au U entier, sinon la
+ *  position de départ puis le détail : « U12,5 · haut de U12 à bas de U13 ». */
+export const aimTxt = (u: number, h: number) => (isWhole(u) && isWhole(h) ? rangeTxt(u, h) : `U${fmtU(u)} · ${occTxt(u, h)}`);
+/** Saisie d'un U : « 12 », « 12,5 », « 12.5 », « U12,5 » ; null si ce n'est pas un nombre. */
+export function parseU(s: string | number | null | undefined): number | null {
+  if (typeof s === 'number') return Number.isFinite(s) ? s : null;
+  const t = (s ?? '').trim().replace(/^u\s*/i, '').replace(',', '.').replace(/\s+/g, '');
+  if (!t || !/^[+-]?(\d+([.]\d*)?|[.]\d+)$/.test(t)) return null;
+  const n = Number(t);
+  return Number.isFinite(n) ? n : null;
+}
 
 // ----- Vue de côté -----
 /** Rail avant : à 70 mm de la face avant de la baie ; rail arrière : `rear_rails_mm` (70 par défaut) avant le fond. */

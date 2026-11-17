@@ -171,7 +171,7 @@
     {:else if sub === 'dossier'}<Dossier {view} />
     {:else if sub === 'taches'}<Tasks bind:view reload={load} />
     {:else if sub === 'historique'}<History projectId={id} />
-    {:else if sub === 'racks'}<Racks {view} />
+    {:else if sub === 'racks'}<Racks {view} reload={load} />
     {:else if sub === 'mobilier'}<Furniture {view} reload={load} />
     {:else}<EmptyState icon="search" message="Cette section n’existe pas." hint="Choisissez une section dans la barre latérale.">{#snippet action()}<a class="btn" href="/projets/{id}">Vue d’ensemble</a>{/snippet}</EmptyState>{/if}
     </div>
