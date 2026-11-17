@@ -22,8 +22,8 @@ export interface El3D {
   kind: string; // type de face (faceplate.ts)
   alu: boolean; accessory: any | null; ports: Port3D[]; famColor: string;
   shelf_id: string | null;
-  /** Nommage commun aux rendus : étiquette blanche = libellé de l'exemplaire, à défaut son ID
-   *  (`title`) ; sérigraphie = marque et modèle (`model`). */
+  /** Nommage commun aux rendus : première ligne = libellé de l'exemplaire, à défaut son ID
+   *  (`title`) ; seconde ligne, plus petite = marque et modèle (`model`). */
   title?: string; model?: string;
   /** Couleur (famille de signal) de chaque emplacement d'un panel, par index. */
   slotColors?: Record<number, string>;
@@ -132,7 +132,9 @@ function faceCanvases(e: El3D, wPx: number, hPx: number) {
       }
     }
   }
-  const x0 = ear + wPx * 0.02, x1 = wPx - ear - wPx * 0.02;
+  // Poignées (2 U et plus, pleine largeur) : à 34 mm du bord intérieur ; texte et décor commencent après.
+  const grip = e.nature !== 'accessory' && e.height_u >= 2 && e.width === 'full' ? 0.04 * 2400 : 0;
+  const x0 = Math.max(ear + wPx * 0.02, grip), x1 = wPx - x0;
   const t = e.kind;
   // Ouïes de ventilation.
   const vents = (xa: number, xb: number) => {
@@ -140,6 +142,7 @@ function faceCanvases(e: El3D, wPx: number, hPx: number) {
     for (let i = 0; i < n; i++) { const xx = xa + i * 9; roundRect(g, xx, hPx * 0.18, 5, hPx * 0.64, 2.5); g.fillStyle = '#050506'; g.fill(); gr.fillStyle = '#fff'; gr.fillRect(xx, hPx * 0.18, 5, hPx * 0.64); }
   };
   const lcd = (x: number, w: number, text: string, color: string) => {
+    if (x < xd - 1 || x + w > x1 + 1) return; // afficheur entier ou rien (jamais un texte coupé)
     const h = Math.min(hPx * 0.46, 46), y = (hPx - h) / 2;
     roundRect(g, x - 2, y - 2, w + 4, h + 4, 4); g.fillStyle = '#0b0c0d'; g.fill();
     roundRect(g, x, y, w, h, 3); g.fillStyle = '#071410'; g.fill();
@@ -155,44 +158,56 @@ function faceCanvases(e: El3D, wPx: number, hPx: number) {
   };
   const keys = (x: number, n: number) => { for (let i = 0; i < n; i++) { roundRect(g, x + i * 26, hPx * 0.3, 20, hPx * 0.4, 3); g.fillStyle = i % 4 === 0 ? '#3a3d42' : '#2b2d31'; g.fill(); g.strokeStyle = '#111'; g.stroke(); } };
   const bays = (x: number, n: number) => { for (let i = 0; i < n; i++) { roundRect(g, x + i * 64, hPx * 0.14, 58, hPx * 0.72, 3); g.fillStyle = '#16171a'; g.fill(); g.fillStyle = '#3c3f44'; g.fillRect(x + i * 64 + 6, hPx * 0.5, 30, 3); led(x + i * 64 + 48, hPx * 0.3, i % 3 ? '#45f58a' : '#4aa3ff'); } };
-  const brand = (e.brand ?? '').toUpperCase();
-  g.font = `600 ${Math.round(Math.min(hPx * 0.2, 20))}px ${SANS3}`; g.textBaseline = 'top';
-  g.fillStyle = alu ? '#2a2c30' : '#c8ccd2';
-  // Sérigraphie : en haut à gauche sur 2 U et plus ; en bas à droite, discrète, sur 1 U.
-  const tall = e.height_u >= 1.5;
-  const mark = brand || e.label.split(' ')[0]!.toUpperCase();
-  if (e.nature !== 'accessory' && tall) {
-    g.fillText(mark, x0, hPx * 0.06);
-    g.font = `400 ${Math.round(Math.min(hPx * 0.12, 15))}px ${SANS3}`; g.fillStyle = alu ? '#4a4d52' : '#8b9096';
-    g.fillText((e.model ?? e.label).slice(0, 40), x0, hPx * 0.06 + Math.min(hPx * 0.17, 22));
-  } else if (e.nature !== 'accessory') {
-    g.font = `600 ${Math.round(hPx * 0.17)}px ${SANS3}`; g.textAlign = 'right'; g.textBaseline = 'bottom';
-    g.fillText(mark.slice(0, 18), x1 - 6, hPx * 0.94); g.textAlign = 'left'; g.textBaseline = 'top';
+  // Texte, comme l'élévation 2D : libellé de l'exemplaire (à défaut son ID, en chasse fixe) puis,
+  // dessous et plus petit (≈ 72 %), marque et modèle en gris neutre. Zone réservée à gauche, que
+  // le décor ne recouvre jamais (il commence après) ; « … » si une ligne est trop longue ; la
+  // seconde ligne seulement si la façade a la hauteur des deux (pas en 0,5 U).
+  let xd = x0;
+  if (e.nature !== 'accessory') {
+    const model = e.model ?? e.label, lab = e.title || e.tag || '';
+    const l1 = lab || model, l2 = lab && lab !== model ? model : '';
+    const f1 = Math.round(Math.max(10, Math.min(hPx * 0.3, 22))), f2 = Math.round(f1 * 0.72);
+    const two = !!l2 && hPx >= 80 && hPx >= (f1 + f2) * 1.25 + 8;
+    const font1 = `600 ${f1}px ${l1 === e.tag ? MONO3 : SANS3}`, font2 = `400 ${f2}px ${SANS3}`;
+    const maxW = (x1 - x0) * (e.width === 'full' ? 0.5 : 0.62);
+    const ell = (s: string, font: string) => {
+      g.font = font; if (g.measureText(s).width <= maxW) return s;
+      let n = s.length; while (n > 1 && g.measureText(s.slice(0, n).trimEnd() + '…').width > maxW) n--;
+      return s.slice(0, n).trimEnd() + '…';
+    };
+    const t1 = ell(l1, font1), t2 = two ? ell(l2, font2) : '';
+    g.font = font1; let w = g.measureText(t1).width;
+    if (t2) { g.font = font2; w = Math.max(w, g.measureText(t2).width); }
+    const H = two ? (f1 + f2) * 1.2 : f1 * 1.2, y0 = (hPx - H) / 2;
+    g.textBaseline = 'top'; g.textAlign = 'left';
+    g.font = font1; g.fillStyle = alu ? '#15171a' : '#e8ebee'; g.fillText(t1, x0, y0 + f1 * 0.1);
+    if (t2) { g.font = font2; g.fillStyle = alu ? '#4a4d52' : '#8f98a3'; g.fillText(t2, x0, y0 + f1 * 1.2 + f2 * 0.1); }
+    xd = x0 + w + Math.max(12, wPx * 0.015);
   }
-  // Étiquette blanche : libellé de l'exemplaire, à défaut son ID (en chasse fixe).
-  const lab = e.nature === 'accessory' ? '' : (e.title ?? e.tag ?? '');
-  if (lab) { g.font = `600 12px ${lab === e.tag ? MONO3 : SANS3}`; const txt = lab.slice(0, 28), tw = g.measureText(txt).width + 14; roundRect(g, x1 - tw, hPx * 0.08, tw, 18, 3); g.fillStyle = '#f4f4f0'; g.fill(); g.fillStyle = '#15171a'; g.fillText(txt, x1 - tw + 7, hPx * 0.08 + 3); }
-  const mid = (x0 + x1) / 2, avail = x1 - x0;
+  const mid = (xd + x1) / 2, avail = Math.max(0, x1 - xd);
+  // Le décor reste dans sa zone : rien ne déborde sur le texte ni hors de la façade.
+  for (const k of [g, ge, gr]) { k.save(); k.beginPath(); k.rect(xd, 0, avail, hPx); k.clip(); }
   switch (t) {
-    case 'ups': lcd(x0, 120, '230V', '#ffb02e'); vents(x0 + 150, x1 - 80); led(x1 - 30, hPx / 2, '#45f58a'); break;
-    case 'router': lcd(x0, 140, '12G-SDI', '#6cf2c2'); keys(x0 + 170, Math.min(16, Math.floor((avail - 230) / 26))); led(x1 - 20, hPx / 2, '#45f58a'); break;
-    case 'mixer': vents(x0, x0 + avail * 0.4); lcd(mid, 110, 'M/E 1', '#7cc8ff'); led(x1 - 20, hPx / 2, '#45f58a'); break;
-    case 'replay': case 'server': bays(x0, Math.max(2, Math.floor(avail * 0.7 / 64))); led(x1 - 20, hPx / 2, '#45f58a'); if (t === 'replay') lcd(x1 - 150, 110, 'REC', '#ff5a4f'); break;
-    case 'cards': for (let i = 0; i < Math.floor(avail / 34); i++) { roundRect(g, x0 + i * 34, hPx * 0.08, 28, hPx * 0.84, 2); g.fillStyle = '#1a1b1e'; g.fill(); g.fillStyle = '#b8bcc2'; g.fillRect(x0 + i * 34 + 10, hPx * 0.7, 8, 8); led(x0 + i * 34 + 14, hPx * 0.2, i % 5 ? '#45f58a' : '#ffb02e'); } break;
-    case 'scope': { const w = Math.min(avail * 0.45, 260); roundRect(g, x0, hPx * 0.12, w, hPx * 0.76, 4); g.fillStyle = '#05080a'; g.fill(); ge.strokeStyle = '#5cf29a'; ge.lineWidth = 2; ge.beginPath(); for (let i = 0; i < 40; i++) ge.lineTo(x0 + 8 + i * (w - 16) / 40, hPx * (0.3 + 0.4 * r())); ge.stroke(); g.strokeStyle = 'rgba(92,242,154,.8)'; g.stroke(); keys(x0 + w + 20, 4); break; }
-    case 'sync': lcd(x0, 120, 'PTP LOCK', '#6cf2c2'); led(x0 + 140, hPx / 2, '#45f58a'); led(x0 + 160, hPx / 2, '#45f58a'); break;
-    case 'mv': lcd(x0, 90, 'MV', '#7cc8ff'); vents(x0 + 120, x1 - 40); break;
-    case 'rec': bays(x0, 2); lcd(x0 + 150, 120, '00:42:17', '#ff5a4f'); break;
-    case 'intercom': lcd(x0, 110, 'IC-1', '#ffb02e'); keys(x0 + 130, 8); break;
-    case 'ccu': lcd(x0, 100, 'CAM 3', '#7cc8ff'); keys(x0 + 120, 6); break;
-    case 'rx': lcd(x0, 140, '606.125', '#7cc8ff'); lcd(x0 + 170, 140, '614.450', '#7cc8ff'); break;
+    case 'ups': lcd(xd, 120, '230V', '#ffb02e'); vents(xd + 150, x1 - 80); led(x1 - 30, hPx / 2, '#45f58a'); break;
+    case 'router': lcd(xd, 140, '12G-SDI', '#6cf2c2'); keys(xd + 170, Math.min(16, Math.floor((avail - 230) / 26))); led(x1 - 20, hPx / 2, '#45f58a'); break;
+    case 'mixer': vents(xd, xd + avail * 0.4); lcd(mid, 110, 'M/E 1', '#7cc8ff'); led(x1 - 20, hPx / 2, '#45f58a'); break;
+    case 'replay': case 'server': bays(xd, Math.max(2, Math.floor(avail * 0.7 / 64))); led(x1 - 20, hPx / 2, '#45f58a'); if (t === 'replay') lcd(x1 - 150, 110, 'REC', '#ff5a4f'); break;
+    case 'cards': for (let i = 0; i < Math.floor(avail / 34); i++) { roundRect(g, xd + i * 34, hPx * 0.08, 28, hPx * 0.84, 2); g.fillStyle = '#1a1b1e'; g.fill(); g.fillStyle = '#b8bcc2'; g.fillRect(xd + i * 34 + 10, hPx * 0.7, 8, 8); led(xd + i * 34 + 14, hPx * 0.2, i % 5 ? '#45f58a' : '#ffb02e'); } break;
+    case 'scope': { const w = Math.min(avail * 0.45, 260); roundRect(g, xd, hPx * 0.12, w, hPx * 0.76, 4); g.fillStyle = '#05080a'; g.fill(); ge.strokeStyle = '#5cf29a'; ge.lineWidth = 2; ge.beginPath(); for (let i = 0; i < 40; i++) ge.lineTo(xd + 8 + i * (w - 16) / 40, hPx * (0.3 + 0.4 * r())); ge.stroke(); g.strokeStyle = 'rgba(92,242,154,.8)'; g.stroke(); keys(xd + w + 20, 4); break; }
+    case 'sync': lcd(xd, 120, 'PTP LOCK', '#6cf2c2'); led(xd + 140, hPx / 2, '#45f58a'); led(xd + 160, hPx / 2, '#45f58a'); break;
+    case 'mv': lcd(xd, 90, 'MV', '#7cc8ff'); vents(xd + 120, x1 - 40); break;
+    case 'rec': bays(xd, 2); lcd(xd + 150, 120, '00:42:17', '#ff5a4f'); break;
+    case 'intercom': lcd(xd, 110, 'IC-1', '#ffb02e'); keys(xd + 130, 8); break;
+    case 'ccu': lcd(xd, 100, 'CAM 3', '#7cc8ff'); keys(xd + 120, 6); break;
+    case 'rx': lcd(xd, 140, '606.125', '#7cc8ff'); lcd(xd + 170, 140, '614.450', '#7cc8ff'); break;
     case 'monitor': case 'monitor2': case 'monitor3': case 'monitor4': {
       // Écrans 16/9 sur presque toute la hauteur, côte à côte, chacun avec sa mire et son UMD.
       const n = t === 'monitor' ? 1 : Number(t.slice(7));
       const keysW = 30, room = avail - keysW, gap = room * 0.03;
       let hh = hPx * 0.8, w = hh * 16 / 9;
+      if (room < 24) break;
       if (n * w + (n - 1) * gap > room) { w = (room - (n - 1) * gap) / n; hh = w * 9 / 16; }
-      const y = (hPx - hh) / 2, start = x0 + (room - (n * w + (n - 1) * gap)) / 2;
+      const y = (hPx - hh) / 2, start = xd + (room - (n * w + (n - 1) * gap)) / 2;
       const top = ['#bfbfbf', '#bfbf00', '#00bfbf', '#00bf00', '#bf00bf', '#bf0000', '#0000bf'];
       const mid2 = ['#0000bf', '#131313', '#bf00bf', '#131313', '#00bfbf', '#131313', '#bfbfbf'];
       for (let k = 0; k < n; k++) {
@@ -212,13 +227,14 @@ function faceCanvases(e: El3D, wPx: number, hPx: number) {
       for (let i = 0; i < 5; i++) { roundRect(g, x1 - 18, hPx * 0.2 + i * hPx * 0.13, 12, hPx * 0.08, 2); g.fillStyle = '#8f969e'; g.fill(); }
       break;
     }
-    case 'vent': vents(x0, x1); break;
-    case 'brush': { roundRect(g, x0, hPx * 0.3, avail, hPx * 0.4, 6); g.fillStyle = '#060607'; g.fill(); for (let i = 0; i < avail; i += 2) { g.strokeStyle = `rgba(30,30,32,${0.5 + r() * 0.5})`; g.beginPath(); g.moveTo(x0 + i, hPx * 0.3); g.lineTo(x0 + i + (r() - 0.5) * 3, hPx * 0.5); g.moveTo(x0 + i, hPx * 0.7); g.lineTo(x0 + i + (r() - 0.5) * 3, hPx * 0.5); g.stroke(); } break; }
+    case 'vent': vents(xd, x1); break;
+    case 'brush': { roundRect(g, xd, hPx * 0.3, avail, hPx * 0.4, 6); g.fillStyle = '#060607'; g.fill(); for (let i = 0; i < avail; i += 2) { g.strokeStyle = `rgba(30,30,32,${0.5 + r() * 0.5})`; g.beginPath(); g.moveTo(xd + i, hPx * 0.3); g.lineTo(xd + i + (r() - 0.5) * 3, hPx * 0.5); g.moveTo(xd + i, hPx * 0.7); g.lineTo(xd + i + (r() - 0.5) * 3, hPx * 0.5); g.stroke(); } break; }
     case 'drawer': { roundRect(g, mid - 80, hPx * 0.38, 160, hPx * 0.24, 6); g.fillStyle = '#9aa0a8'; g.fill(); break; }
-    case 'pdu': for (let i = 0; i < Math.floor(avail / 46); i++) { roundRect(g, x0 + i * 46, hPx * 0.16, 38, hPx * 0.68, 4); g.fillStyle = '#0d0e10'; g.fill(); } led(x1 - 10, hPx / 2, '#ff5a4f'); break;
+    case 'pdu': for (let i = 0; i < Math.floor(avail / 46); i++) { roundRect(g, xd + i * 46, hPx * 0.16, 38, hPx * 0.68, 4); g.fillStyle = '#0d0e10'; g.fill(); } led(x1 - 10, hPx / 2, '#ff5a4f'); break;
     case 'switch': case 'bnc': case 'xlr': case 'rjp': case 'stage': case 'dist': case 'blank': break;
     default: if (e.nature !== 'accessory') { vents(mid, x1 - 40); led(x1 - 20, hPx / 2, '#45f58a'); }
   }
+  for (const k of [g, ge, gr]) k.restore();
   return { map: tex(c), emissive: tex(ce), rough: tex(cr, false) };
 }
 

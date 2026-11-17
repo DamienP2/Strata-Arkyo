@@ -14,6 +14,7 @@
   import { inkOn } from '../lib/color';
   import { accFace, screensOf, visualOf } from '../lib/faceplate';
   import { sideGeom } from '../lib/rackgeom';
+  import { fitText, textInk, textWidth } from '../lib/fit';
   import {
     BLOCK, CASQ_W, CASQ_EXTRA, FRAME, RACK_NUM, RACK_VIEWS, DESK_VIEWS, SYN_MM, U_MM,
     casqProfile, deskExtent, groupLayout, isDrawing, itemSize, pageSize, rackGeom, rackBodyH, scaleOf, shotKey, usableW, viewsOf, zoomOf,
@@ -37,7 +38,24 @@
   const INK = HEX.ink, DARK = HEX.dark, LINE = '#3A4048';
   /** Plus petit corps imprimé : 6 pt ≈ 2,15 mm. Un libellé qui ne tient pas à ce corps n'est pas dessiné. */
   const MIN = 2.15;
-  const fsU = (eh: number, max: number) => Math.max(MIN, Math.min(max, eh * 0.42));
+  // Textes des façades. Deux lignes (libellé puis modèle) : chacune occupe sa boîte de police
+  // (1,21 corps, 1,32 en chasse fixe), marge comprise. Une ligne seule : son encre réelle (mesurée)
+  // tient dans la hauteur avec une marge, à 6 pt au moins ; sinon elle n'est pas dessinée.
+  const LH = 1.21, ASC = 0.97, LHM = 1.32, ASCM = 1.02, VPAD = 0.3, IPAD = 0.1;
+  const SANS_M = '"Inter Variable", Inter, Helvetica, Arial, sans-serif', MONO_M = '"JetBrains Mono", JetBrainsMono, Courier, monospace';
+  const font100 = (bold: boolean, mono: boolean) => `${bold ? 700 : 400} 100px ${mono ? MONO_M : SANS_M}`;
+  /** Corps d'une ligne seule `s` dans une façade de hauteur `eh` (0 : elle ne tient pas). */
+  const lineFs = (s: string, eh: number, max: number, bold = false, mono = false) => {
+    const [a, d] = textInk(s, font100(bold, mono)), k = (a + d) / 100 || 1;
+    const f = Math.min(max, Math.max(MIN, eh * 0.42), (eh - 0.2 - 2 * IPAD) / k);
+    return f >= MIN - 1e-9 ? f : 0;
+  };
+  /** Ligne de base d'une ligne seule, son encre centrée dans la façade. */
+  const midBase = (s: string, ey: number, eh: number, fs: number, bold = false, mono = false) => { const [a, d] = textInk(s, font100(bold, mono)); return ey + eh / 2 + ((a - d) / 200) * fs; };
+  /** Texte d'une façade raccourci par « … » pour tenir dans `w` mm, mesuré avec la police réelle (5 % de marge). */
+  const fitE = (s: string, w: number, fs: number, bold = false, mono = false) => fitText(s, (w / fs) * 100 * 0.95, font100(bold, mono));
+  /** Largeur d'un texte de façade, en mm. */
+  const wE = (s: string, fs: number, bold = false, mono = false) => (textWidth(s, font100(bold, mono)) * fs) / 100;
   const size = $derived(pageSize(sheet));
   const k = $derived(sheet.scale);
   const maxW = $derived(usableW(sheet));
@@ -117,7 +135,6 @@
     {@const ex = x1 + ew * (e.placement.col ?? 0)}
     {@const eh = e.height_u * g.u}
     {@const ey = y1 + (n - (e.placement.u_start - 1) - e.height_u) * g.u}
-    {@const fs = fsU(eh, 2.8)}
     {@const panel = e.accessory?.kind === 'panel' ? e.accessory.panel : null}
     {@const acc = e.nature === 'accessory' && !panel}
     {@const inner = e.placement.face === 'rear_inner'}
@@ -127,16 +144,23 @@
     {@const rl = rackLines(e, 'both')}
     <!-- Schématique : aplat de la famille de signal ; la catégorie passe en texte, en petit. -->
     {@const lines = acc ? [carried.length ? `${schem ? `${e.label} · ` : ''}${carried.join(', ')}` : schem ? e.label : '', ''] : schem ? [rl[0], [e.category, rl[1]].filter(Boolean).join(' · ')] : rl}
-    {@const idFont = !acc && !e.custom?.trim() && !!e.tag && lines[0] === e.tag ? MONO : F}
+    {@const mono = !acc && !e.custom?.trim() && !!e.tag && lines[0] === e.tag}
+    {@const idFont = mono ? MONO : F}
     {@const t = acc ? accFace(e) : visualOf(e)}
+    <!-- Texte : libellé (ou ID) puis, dessous et plus petit (≈ 72 %, jamais sous 6 pt), marque et
+         modèle ; la seconde ligne n'est dessinée que si les deux tiennent dans la hauteur. -->
     {@const fs1 = Math.max(MIN, Math.min(2.8, eh * 0.3))}
-    {@const fs2 = Math.max(MIN, fs1 * 0.82)}
-    {@const two = !!lines[1] && eh >= fs1 + fs2 + 1.2}
-    <!-- Façade réelle : la silhouette prend la place que le texte laisse, à droite. -->
-    {@const need = !lines[0] ? 0 : two ? Math.max(est(lines[0], fs1) * 1.1, est(lines[1], fs2)) : est(lines[0], fs) * 1.1 + (lines[1] ? est(lines[1], MIN) + 3 : 0)}
-    {@const sw = acc ? ew - 4 : Math.min(ew * 0.45, ew - 4.6 - need, Math.max(12, eh * 5))}
-    {@const sil = mode === 'real' && !panel && eh >= 1.3 && (acc ? !lines[0] : sw >= 3.5)}
+    {@const fs2 = Math.max(MIN, fs1 * 0.72)}
+    {@const lh1 = mono ? LHM : LH}
+    {@const two = !!lines[0] && !!lines[1] && eh - 0.2 >= lh1 * fs1 + LH * fs2 + 2 * VPAD}
+    {@const fs = two ? fs1 : lines[0] ? lineFs(lines[0], eh, 2.8, !acc, mono) : 0}
+    <!-- Façade réelle : la silhouette prend la place que le texte laisse, à droite (au plus 45 %). -->
+    {@const need = !lines[0] || !fs ? 0 : two ? Math.max(wE(lines[0], fs1, !acc, mono), wE(lines[1], fs2)) : wE(lines[0], fs, !acc, mono)}
+    <!-- Le texte garde sa largeur entière (marges et « … » compris) ; une façade étroite (⅓, ¼) le garde seul, sans silhouette. -->
+    {@const sw = acc ? ew - 4 : ew < 14 ? 0 : Math.min(ew * 0.45, ew - 5.6 - need / 0.95, Math.max(12, eh * 5))}
+    {@const sil = mode === 'real' && !panel && eh >= 1.3 && (acc ? !lines[0] || !fs : sw >= 3.5)}
     {@const tw = ew - (acc ? 2.4 : 3.4) - (sil && !acc ? sw + 2 : 0)}
+    <g class="fp" data-pl={e.placement.id}>
     <rect x={ex + 0.15} y={ey + 0.1} width={ew - 0.3} height={eh - 0.2} fill={schem ? (acc ? '#EEF0F2' : cc) : acc ? '#EEF0F2' : '#F6F7F9'} stroke={schem && !acc ? cc : LINE} stroke-width="0.22" stroke-dasharray={inner ? '1 0.6' : undefined} />
     {#if !acc && !schem}<rect x={ex + 0.15} y={ey + 0.1} width={Math.min(1.4, ew * 0.08)} height={eh - 0.2} fill={color(e)} />{/if}
     {#if sil}{@render facade(t, acc ? ex + 2 : ex + ew - sw - 1.2, ey + eh * 0.2, sw, eh * 0.6)}{/if}
@@ -149,21 +173,21 @@
         <circle cx={ex + ew * 0.36 + (col + s.width / 2) * pw} cy={ey + (row + 0.5) * (eh / panel.height_u)} r={Math.min(pw * 0.36, (eh / panel.height_u) * 0.3)} fill="#FFFFFF" stroke={slotColor(panel, s)} stroke-width="0.25" />
       {/each}
       {@const pl = rackLines(e, 'label')[0] || e.label}
-      {#if eh >= 1.6}<text x={ex + 2} y={ey + eh / 2 + fs * 0.35} font-family={F} font-size={fs} fill={INK}>{fit(pl, ew * 0.33, fs)}</text>{/if}
-    {:else if eh >= 1.6 && lines[0]}
+      {@const pfs = lineFs(pl, eh, 2.8)}
+      {#if pfs}<text x={ex + 2} y={midBase(pl, ey, eh, pfs)} font-family={F} font-size={pfs} fill={INK}>{fitE(pl, ew * 0.33, pfs)}</text>{/if}
+    {:else if fs && lines[0]}
       {@const ink = schem && !acc ? inkOn(cc) : acc ? DARK : INK}
       {@const sub = schem && !acc ? inkOn(cc) : DARK}
       {@const tx = ex + (acc ? 1.2 : 2.2)}
       {#if two}
-        {@const top = ey + (eh - fs1 - fs2 - 0.5) / 2}
-        <text x={tx} y={top + fs1 * 0.82} font-family={idFont} font-size={fs1} fill={ink} font-weight="bold">{fit(lines[0], tw, fs1)}</text>
-        <text x={tx} y={top + fs1 + 0.5 + fs2 * 0.8} font-family={F} font-size={fs2} fill={sub}>{fit(lines[1], tw, fs2)}</text>
+        {@const top = ey + (eh - lh1 * fs1 - LH * fs2) / 2}
+        <text x={tx} y={top + (mono ? ASCM : ASC) * fs1} font-family={idFont} font-size={fs1} fill={ink} font-weight="bold">{fitE(lines[0], tw, fs1, true, mono)}</text>
+        <text x={tx} y={top + lh1 * fs1 + ASC * fs2} font-family={F} font-size={fs2} fill={sub}>{fitE(lines[1], tw, fs2)}</text>
       {:else}
-        {@const both = !!lines[1] && (est(lines[0], fs) * 1.1 + est(lines[1], MIN) + 3 < tw)}
-        <text x={tx} y={ey + eh / 2 + fs * 0.35} font-family={idFont} font-size={fs} fill={ink} font-weight={acc ? 'normal' : 'bold'}>{fit(lines[0], tw, fs)}</text>
-        {#if both}<text x={tx + tw} y={ey + eh / 2 + MIN * 0.35} font-family={F} font-size={MIN} fill={sub} text-anchor="end">{lines[1]}</text>{/if}
+        <text x={tx} y={midBase(lines[0], ey, eh, fs, !acc, mono)} font-family={idFont} font-size={fs} fill={ink} font-weight={acc ? 'normal' : 'bold'}>{fitE(lines[0], tw, fs, !acc, mono)}</text>
       {/if}
     {/if}
+    </g>
   {/each}
   {#if face === 'rear'}
     <!-- PDU verticaux, sur les montants (vue arrière : gauche et droite comme vus de l'arrière). -->
@@ -204,7 +228,6 @@
     {@const ed = sb.w / kk}
     {@const front = sb.front}
     {@const ex = x0 + sb.x / kk}
-    {@const fs = fsU(eh, 2.4)}
     {@const resmm = sb.res}
     {@const rw = sb.rw / kk}
     {@const rx = x0 + sb.rx / kk}
@@ -219,7 +242,8 @@
       {@const cw = est(cote, MIN) + 1.6}
       {@const label = named ? rackLines(e, 'both')[0] : ''}
       {@const lw = ed - cw - 2.4}
-      {#if label && lw > 6}<text x={ex + (front ? 1.2 : cw + 1.2)} y={ey + eh / 2 + fs * 0.35} font-family={F} font-size={fs} fill={INK}>{fit(label, lw, fs)}</text>{/if}
+      {@const fs = label ? lineFs(label, eh, 2.4) : 0}
+      {#if label && lw > 6 && fs}<text x={ex + (front ? 1.2 : cw + 1.2)} y={midBase(label, ey, eh, fs)} font-family={F} font-size={fs} fill={INK}>{fitE(label, lw, fs)}</text>{/if}
       {#if ed > cw}<text x={front ? ex + ed - 0.8 : ex + 0.8} y={ey + eh / 2 + MIN * 0.35} font-family={MONO} font-size={MIN} fill={DARK} text-anchor={front ? 'end' : 'start'}>{cote}</text>{/if}
       {#if rw > est(String(Math.round(resmm)), MIN) + 1}<text x={rx + rw / 2} y={ey + eh / 2 + MIN * 0.35} font-family={MONO} font-size={MIN} fill={DARK} text-anchor="middle">{Math.round(resmm)}</text>{/if}
     {/if}
@@ -306,11 +330,11 @@
           {@const ex = ix + ew * (e.placement.col ?? 0)}
           {@const eh = e.height_u * uh}
           {@const ey = iy + (c.units - (e.placement.u_start - 1) - e.height_u) * uh}
-          {@const fs = fsU(eh, 2.2)}
           <rect x={ex + 0.1} y={ey + 0.08} width={ew - 0.2} height={Math.max(0.2, eh - 0.16)} fill="#F6F7F9" stroke={LINE} stroke-width="0.16" />
           <rect x={ex + 0.1} y={ey + 0.08} width={Math.min(0.8, ew * 0.08)} height={Math.max(0.2, eh - 0.16)} fill={color(e)} />
           {@const lab = rackLines(e, 'label')[0]}
-          {#if eh >= 1.6 && lab}<text x={ex + 1.3} y={ey + eh / 2 + fs * 0.35} font-family={F} font-size={fs} fill={INK}>{fit(lab, ew - 2, fs)}</text>{/if}
+          {@const fs = lab ? lineFs(lab, eh, 2.2) : 0}
+          {#if fs && lab}<text x={ex + 1.3} y={midBase(lab, ey, eh, fs)} font-family={F} font-size={fs} fill={INK}>{fitE(lab, ew - 2, fs)}</text>{/if}
         {/each}
         {#if cw > 14 && !(ctx.racks[c.id]?.elements ?? []).some((x) => x.placement.face === 'front')}<text x={cx + cw / 2} y={top - Hc / 2 + 1} font-family={F} font-size={Math.max(MIN, Math.min(2.4, cw / 12))} fill={DARK} text-anchor="middle">{fit(c.name, cw - 3, Math.max(MIN, Math.min(2.4, cw / 12)))}</text>{/if}
       {/each}

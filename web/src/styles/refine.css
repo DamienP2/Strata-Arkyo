@@ -146,29 +146,42 @@ select.input{padding-right:30px;background-position:calc(100% - 16px) 52%,calc(1
 /* Moniteurs en rack : écrans 16/9 exacts, aussi grands que la façade le permet (hauteur
    ou largeur), mire SMPTE, tally et UMD ; pas de touches. */
 .ritem:has(.mwrap){padding-left:6px;padding-right:6px}
-.ritem:has(.mwrap) .dec{flex:1 1 auto;justify-content:center;padding:0;height:100%}
-/* Le texte d'un moniteur s'affiche comme un UMD : bandeau centré en bas de l'image. */
-.ritem:has(.mwrap) .rl{position:absolute;z-index:1;left:50%;bottom:3px;transform:translateX(-50%);max-width:94%;white-space:nowrap;flex-wrap:nowrap;padding:1px 7px;border-radius:2px;background:rgba(6,7,9,.86);flex-direction:row!important;align-items:baseline!important;gap:6px!important}
-.ritem:has(.mwrap) .rl .rn{font-size:11px;color:#EEF0F3}
-.ritem:has(.mwrap) .rl small{font-size:11px;color:#8EE6A8}
-.ritem.u1:has(.mwrap) .rl{left:8px;bottom:auto;top:50%;transform:translateY(-50%);max-width:34%;white-space:normal;flex-wrap:wrap}
+.ritem:has(.mwrap) .dec{flex:1 1 0;justify-content:center;padding:0;height:100%}
 .ritem:has(.mwrap) .led{display:none}
 .dec .mwrap{container-type:size;display:flex;align-items:center;justify-content:center;gap:6px;flex:1 1 auto;width:100%;height:100%;min-width:0;padding:2px 0;box-sizing:border-box}
 .dec .mscr{position:relative;display:block;flex:none;aspect-ratio:16/9;height:auto;width:min(calc((100cqw - (var(--n) - 1) * 6px) / var(--n)), calc(100cqh * 16 / 9));border-radius:1.5px;background:#000;box-shadow:0 0 0 1.5px #0a0b0d,0 0 0 2.5px #4a5058;overflow:hidden}
 .dec .mscr svg{display:block;width:100%;height:100%;opacity:.95}
 .dec .mscr .umd{position:absolute;left:0;right:0;bottom:0;height:10%;min-height:2px;background:#0b0c0e;box-shadow:inset 3px 0 0 #3bd16f}
 .dec .mkeys{display:none}
-/* Textes des équipements : taille fixe et régulière quelle que soit la hauteur, nom puis
-   libellé personnalisé, sur une pastille discrète qui reste lisible sur tous les décors. */
-.ritem .rl{display:flex;flex-wrap:wrap;align-items:baseline;column-gap:6px;row-gap:0;min-width:0;flex:0 1 auto;max-width:62%;max-height:calc(100% - 4px);overflow:hidden;white-space:normal;padding:2px 6px;border-radius:3px;background:rgba(0,0,0,.32);line-height:1.2}
-.ritem.alu .rl{background:rgba(0,0,0,.32)}
-.ritem:not(.u1) .rl.two{flex-direction:column;align-items:flex-start;gap:1px}
+/* Textes des équipements : libellé (ou ID) sur la première ligne, marque et modèle sur la
+   seconde, plus petits (≈ 72 %) et en couleur secondaire neutre, quel que soit le décor ; jamais
+   côte à côte, jamais coupés. Le bloc a une largeur garantie (le décor se réduit ou disparaît),
+   une ligne trop longue finit par « … » ; la taille suit la hauteur de la façade et le zoom
+   (--z, bornée pour rester lisible) ; la seconde ligne s'efface quand la place manque. */
+.ritem{container:fp/size}
+.ritem .rl{--rl-fs:min(max(11px,calc(7.5px / var(--z,1))),calc((100cqh - 3px) / 1.2));display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:0;min-width:0;flex:0 1 auto;max-width:max(62%,min(104px,100%));max-height:100%;overflow:hidden;white-space:nowrap;padding:1px 6px;border-radius:3px;background:rgba(0,0,0,.32);line-height:1.2;box-sizing:border-box}
+.ritem.u1 .rl{max-width:max(50%,min(104px,100%))}
+.ritem.sch .rl{max-width:100%}
+/* Façades étroites (⅓ et ¼ de largeur) : marges et voyant réduits, toute la place au texte. */
+.ritem.nw{padding:0 4px;gap:4px}
+.ritem.nw .led{display:none}
+.ritem.nw .rl{max-width:100%;padding:1px 4px}
+.ritem.nw .dec{display:none}
+/* Reste trop étroit pour un décor lisible (½ largeur avec texte long) : rien plutôt qu'un bout coupé. */
+@container (max-width:40px){.ritem .dec>:not(.mwrap),.ritem .dec>.mwrap:not([style="--n:1"]){display:none}}
 .ritem .rl:empty{display:none}
-.ritem .rl .rn{font:600 11px/1.2 var(--font);letter-spacing:.01em;color:var(--fp-ink);overflow-wrap:anywhere;text-overflow:clip;max-width:100%}
-.ritem .rl .rn.id{font:700 11px/1.2 var(--mono);letter-spacing:.04em}
-.ritem .rl small{font:500 11px/1.2 var(--font);color:var(--fp-mute);overflow-wrap:anywhere;max-width:100%}
+.ritem .rl>*{display:block;flex:none;max-width:100%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-shadow:none}
+.ritem .rl .rn{font:600 var(--rl-fs)/1.2 var(--font);letter-spacing:.01em;color:var(--fp-ink)}
+.ritem .rl .rn.id{font:700 var(--rl-fs)/1.2 var(--mono);letter-spacing:.04em}
+.ritem .rl small{font:500 calc(var(--rl-fs) * .72)/1.25 var(--font);letter-spacing:.01em;color:var(--fp-mute)}
+/* Deux lignes : il faut la place des deux, avec une marge ; sinon le libellé seul. */
+@container fp (max-height:27px){.ritem .rl small{display:none}}
+.ritem.one .rl small{display:none}
 .ritem.acc .rl{background:none;padding:0}
 .ritem.acc .rl .rn{font-weight:500;color:var(--fp-mute)}
+/* Schématique : le nom d'un accessoire sur l'aplat garde la pastille, lisible sur toutes les couleurs. */
+.ritem.sch.acc .rl{background:rgba(0,0,0,.32);padding:1px 6px}
+.ritem.sch.acc .rl .rn{color:var(--fp-ink)}
 /* Barre de laçage : barre ronde sur fond ajouré */
 .ritem .lace{position:relative;flex:1;align-self:center;height:6px;margin:0 2px;border-radius:3px;background:#A9B0B8}
 .ritem .lace::before,.ritem .lace::after{content:"";position:absolute;top:50%;width:14px;height:14px;transform:translateY(-50%);border-radius:50%;background:radial-gradient(circle,#050607 0 3.5px,#A9B0B8 4px)}
@@ -257,7 +270,7 @@ select.input.sm{padding-right:26px;background-position:calc(100% - 14px) 52%,cal
 .dec .d-grille{flex:0 1 auto;width:55%;height:72%;border-radius:2px;background:repeating-linear-gradient(180deg,#07080A 0 2px,transparent 2px 5px);box-shadow:inset 0 0 0 1px rgba(0,0,0,.4)}
 .dec .d-grille.s{width:22%;height:56%}
 /* Enregistreur : vignette d'image, deux fentes de carte, touches de transport. */
-.dec .d-thumb{flex:none;height:min(84cqh,46px);width:calc(min(84cqh,46px) * 16 / 9);border-radius:1.5px;background:#000;box-shadow:0 0 0 1.5px #000,0 0 0 2.5px #4A5058;overflow:hidden}
+.dec .d-thumb{flex:none;height:auto;aspect-ratio:16/9;width:min(calc(min(84cqh,46px) * 16 / 9),55cqw);border-radius:1.5px;background:#000;box-shadow:0 0 0 1.5px #000,0 0 0 2.5px #4A5058;overflow:hidden}
 .dec .d-thumb svg{display:block;width:100%;height:100%}
 .dec .d-sd{width:30px;height:5px;border-radius:1px;background:#050607;box-shadow:0 0 0 1px #59606A}
 .dec .d-trans{display:flex;gap:4px;height:auto}
@@ -267,7 +280,7 @@ select.input.sm{padding-right:26px;background-position:calc(100% - 14px) 52%,cal
 .dec .d-caddies{flex:0 1 auto;width:50%;height:84%;background:linear-gradient(180deg,transparent 42%,#AEB5BD 42% 54%,transparent 54%) 0 0/40px 100% repeat-x,linear-gradient(#16191D 0 0) 0 0/40px 100% repeat-x;-webkit-mask:linear-gradient(90deg,#000 0 36px,transparent 36px) 0 0/40px 100% repeat-x;mask:linear-gradient(90deg,#000 0 36px,transparent 36px) 0 0/40px 100% repeat-x}
 .dec .d-recbtn{width:max(10px,28cqh);max-width:18px;height:auto;aspect-ratio:1;border-radius:50%;background:#D8352A}
 /* Multiviewer : mosaïque 2×2 et voyants. */
-.dec .d-mosaic{flex:none;display:grid;grid-template-columns:1fr 1fr;gap:1px;height:min(84cqh,46px);width:calc(min(84cqh,46px) * 16 / 9);box-sizing:border-box;padding:1px;background:#000;box-shadow:0 0 0 1.5px #4A5058;border-radius:1.5px}
+.dec .d-mosaic{flex:none;display:grid;grid-template-columns:1fr 1fr;gap:1px;height:auto;aspect-ratio:16/9;width:min(calc(min(84cqh,46px) * 16 / 9),55cqw);box-sizing:border-box;padding:1px;background:#000;box-shadow:0 0 0 1.5px #4A5058;border-radius:1.5px}
 .dec .d-mosaic i{display:block;height:auto;background:#2459E0}
 .dec .d-mosaic i:nth-child(2){background:#16A34A}.dec .d-mosaic i:nth-child(3){background:#D97706}.dec .d-mosaic i:nth-child(4){background:#5B636D}
 /* Châssis de cartes : fines cartes verticales avec voyant. */
@@ -311,14 +324,12 @@ select.input.sm{padding-right:26px;background-position:calc(100% - 14px) 52%,cal
 /* Étagère : rack visible au-dessus, plateau en bas avec rebord et équerres latérales. */
 .ritem.acc:has(.d-shelf){--fp-bg:transparent;background:transparent!important;box-shadow:none!important}
 .dec .d-shelf{position:relative;align-self:stretch;height:100%;background:linear-gradient(#3A4047 0 0) 0 100%/100% 3px no-repeat}
-/* En 1U, le texte laisse la place au décor : il passe sur deux lignes plutôt que de le masquer. */
-.ritem.u1 .rl{max-width:46%}
 /* Façade étroite (1U avec texte, demi-largeur) : on garde l'essentiel du décor, sans le couper. */
 @container (max-width:240px){
   .dec .d-sd+.d-sd,.dec .d-usb,.dec .d-leds.s,.dec .d-btns,.dec .d-jack,.dec .d-sfp,.dec .d-trans i:nth-child(-n+2){display:none}
   .dec .d-ports{width:110px}
 }
-@container (max-width:150px){ .dec .d-knob,.dec .d-pwr,.dec .lcd{display:none} .dec .d-ports{width:52px} }
+@container (max-width:150px){ .dec .d-knob,.dec .d-pwr,.dec .lcd,.dec .d-sd,.dec .d-leds:not(.w){display:none} .dec .d-ports{width:52px} }
 /* Symboles plats : pas de relief, de reflet ni de halo sur les décors. */
 .dec .lcd,.dec .lcd.amb,.dec .d-tc,.dec .d-blcd{text-shadow:none;box-shadow:inset 0 0 0 1px rgba(0,0,0,.5)}
 .dec .d-pwr{box-shadow:inset 0 0 0 1.6px #A9B0B8}

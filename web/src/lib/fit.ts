@@ -20,8 +20,24 @@ export function textWidth(text: string, font = PORT_FONT): number {
   return w;
 }
 
+/** Encre d'un texte au-dessus et au-dessous de sa ligne de base, en pixels (approximation
+ *  sans canvas : capitales et descendantes d'Inter). */
+export function textInk(text: string, font = PORT_FONT): [number, number] {
+  const k = font + '\u0001' + text;
+  const hit = inks.get(k);
+  if (hit) return hit;
+  if (!ctx && typeof document !== 'undefined') ctx = document.createElement('canvas').getContext('2d');
+  const px = Number(/(\d+(?:\.\d+)?)px/.exec(font)?.[1] ?? 12);
+  let v: [number, number] = [px * 0.94, px * 0.24];
+  if (ctx) { ctx.font = font; const m = ctx.measureText(text); if (m.actualBoundingBoxAscent || m.actualBoundingBoxDescent) v = [m.actualBoundingBoxAscent, m.actualBoundingBoxDescent]; }
+  if (inks.size > 4000) inks.clear();
+  inks.set(k, v);
+  return v;
+}
+const inks = new Map<string, [number, number]>();
+
 /** Oublie les mesures (à appeler quand une police web vient d'arriver). */
-export function resetTextWidths(): void { cache.clear(); }
+export function resetTextWidths(): void { cache.clear(); inks.clear(); }
 
 /** Raccourcit `text` pour tenir dans `max` pixels, en gardant le numéro final (« IN… 12 »). */
 export function fitText(text: string, max: number, font = PORT_FONT): string {

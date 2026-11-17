@@ -812,13 +812,19 @@
     const n = cols(e.placement.width), l = (100 * e.placement.col) / n, w = 100 / n, c = famColor(e.function);
     return `--c:${c};bottom:calc(${e.placement.u_start - 1} * var(--u) + 1px);height:calc(${e.height_u} * var(--u) - 2px);left:calc(${l}% + 2px);width:calc(${w}% - 4px)` + (mode === 'schematic' ? `;--fp-bg:linear-gradient(180deg,color-mix(in srgb,${c} 72%,#fff),${c});--fp-ink:#fff` : '');
   }
+  /** Corps du libellé des façades (px, avant zoom) : 11 px, davantage au zoom faible pour
+   *  rester lisible (même calcul que --rl-fs, styles/refine.css). */
+  const rlFs = $derived(Math.max(11, 7.5 / zoom));
+  /** Libellé seul : la façade n'a pas la hauteur des deux lignes (libellé puis modèle, ≈ 72 %) avec une marge. */
+  const oneLine = (e: RackEl) => e.height_u * U - 2 < rlFs * (1.2 + 0.72 * 1.25) + 4;
   /** Textes : en schématique, les accessoires gardent leur nom (pas de façade dessinée). */
   const rl = (e: RackEl): [string, string] => (mode === 'schematic' && e.nature === 'accessory' ? [e.label, ''] : rackLines(e));
   /** PDU verticaux visibles : seulement dans les vues arrière. */
   const vpOf = (R: Rack, f: View): VPdu[] => (f === 'rear' || f === 'rear_inner' ? (R.vpdus ?? []) : []);
   const typeOf = (e: RackEl) => (e.nature === 'accessory' ? accFace(e as any) : visualOf(e));
   const dw = (e: RackEl) => !!store[e.cid]?.warnings.some((w) => w.placement_id === e.placement.id);
-  const elTitle = (e: RackEl) => `${e.custom ? `${e.custom} · ` : ''}${e.tag ? `${e.tag} · ` : ''}${e.label} · U${fmtU(e.placement.u_start)}`;
+  /** Infobulle : texte complet (libellé, ID, marque et modèle), même quand la façade le raccourcit. */
+  const elTitle = (e: RackEl) => `${e.custom ? `${e.custom} · ` : ''}${e.tag ? `${e.tag} · ` : ''}${modelOf(e)} · U${fmtU(e.placement.u_start)}`;
   // Vue de côté (même logique que la planche, lib/rackgeom) : profondeur de chaque élément depuis
   // ses rails, réserve de câblage (secours) derrière, cotes en mm centrées.
   const sideBarsOf = (R: Rack) => sideGeom(R.elements.filter((e) => !e.placement.shelf_id), depthOf(R), R.container.rear_rails_mm);
@@ -1167,7 +1173,7 @@
           {#if show3d && rack}
             <Rack3D container={rack.container} elements={rack.elements} vpdus={rack.vpdus ?? []} title={rack.container.name} />
           {:else if all}
-            <div class="all-racks rk-zoomed" style:zoom={zoom !== 1 ? zoom : undefined}>
+            <div class="all-racks rk-zoomed" style:zoom={zoom !== 1 ? zoom : undefined} style:--z={zoom}>
               {#each shownRacks as R (rid(R))}
                 <div class="ar-col">
                   <div class="ar-head" style:zoom={zoom !== 1 ? 1 / zoom : undefined}><b>{R.container.name}</b><span class="muted small">{view.locations.find((l) => l.id === R.container.location_id)?.name ?? ''}{view.locations.some((l) => l.id === R.container.location_id) ? ' · ' : ''}{unitsOf(R)} U</span>
@@ -1178,7 +1184,7 @@
               {:else}<p class="small muted">Aucun rack à cet emplacement.</p>{/each}
             </div>
           {:else if rack}
-            <div class="rk-zoomed" style:zoom={zoom !== 1 ? zoom : undefined}>{@render rackRow(rack)}</div>
+            <div class="rk-zoomed" style:zoom={zoom !== 1 ? zoom : undefined} style:--z={zoom}>{@render rackRow(rack)}</div>
           {/if}
         </div>
         {#if !show3d}
@@ -1204,7 +1210,7 @@
             {#snippet thumb()}
               <div class="ithumb" bind:clientWidth={thumbW}>
                 <div class="ithumb-in" style="--u:{U}px;width:{BW}px;height:{e.height_u * U}px;zoom:{thumbZoom(e)}">
-                  <div class="ritem {e.nature === 'accessory' ? 'acc' : ''} {ALU.has(typeOf(e)) && mode === 'real' ? 'alu' : ''} {e.height_u <= 1 ? 'u1' : ''}" style="{style(e).replace(/;?(bottom|height|left|width):[^;]*/g, '')};left:0;right:0;top:0;bottom:0" aria-hidden="true">
+                  <div class="ritem {e.nature === 'accessory' ? 'acc' : ''} {ALU.has(typeOf(e)) && mode === 'real' ? 'alu' : ''} {e.height_u <= 1 ? 'u1' : ''} {e.height_u < 1 ? 'uh' : ''} {mode === 'schematic' ? 'sch' : ''}" style="{style(e).replace(/;?(bottom|height|left|width):[^;]*/g, '')};left:0;right:0;top:0;bottom:0" aria-hidden="true">
                     {#if e.nature !== 'accessory'}<i class="led"></i>{/if}<span class="rl" class:two={!!rl(e)[1]}>{#if rl(e)[0]}<b class="rn" class:id={!!e.tag && rl(e)[0] === e.tag}>{rl(e)[0]}</b>{/if}{#if rl(e)[1]}<small>{rl(e)[1]}</small>{/if}</span>{#if mode === 'real' && panelOf(e)}<span class="pdec"><PanelFace panel={panelOf(e)!} /></span>{:else if mode === 'real'}<span class="dec">{@html decor(typeOf(e))}</span>{:else}<span class="dec"></span>{/if}
                   </div>
                 </div>
@@ -1422,7 +1428,7 @@
       ondrop={(e) => drop(e, R, f)}>
       {#if subject}{#each freeRuns(R, f) as r (r.b)}<span class="rfree" style="bottom:calc({r.b} * var(--u));height:calc({r.h} * var(--u))"></span>{/each}{/if}
       {#each faceEls(R, f) as e (e.placement.id)}
-        <div class="ritem {e.nature === 'accessory' ? 'acc' : ''} {ALU.has(typeOf(e)) && mode === 'real' ? 'alu' : ''} {e.height_u <= 1 ? 'u1' : ''} {e.height_u < 1 ? 'uh' : ''} {e.placement.width !== 'full' ? `half c${e.placement.col}` : ''}" class:sel={sel === e.placement.id} class:dw={dw(e)} class:draggable={ok} class:dragging={dragging === e || moving === e} class:flash={flashId === e.placement.id}
+        <div class="ritem {e.nature === 'accessory' ? 'acc' : ''} {ALU.has(typeOf(e)) && mode === 'real' ? 'alu' : ''} {e.height_u <= 1 ? 'u1' : ''} {e.height_u < 1 ? 'uh' : ''} {e.placement.width !== 'full' ? `half c${e.placement.col}` : ''} {e.placement.width === 'third' || e.placement.width === 'quarter' ? 'nw' : ''} {mode === 'schematic' ? 'sch' : ''} {oneLine(e) ? 'one' : ''}" class:sel={sel === e.placement.id} class:dw={dw(e)} class:draggable={ok} class:dragging={dragging === e || moving === e} class:flash={flashId === e.placement.id}
           style={style(e)} data-pl={e.placement.id} role="button" tabindex="0" draggable={ok} aria-pressed={sel === e.placement.id} aria-haspopup="menu" aria-label={elTitle(e)} title={elTitle(e)}
           onclick={() => { if (!aiming) sel = e.placement.id; }} onkeydown={(k) => { if (k.key === 'Enter' || k.key === ' ') { if (aiming) return; k.preventDefault(); sel = e.placement.id; } else if (isMenuKey(k)) { k.preventDefault(); k.stopPropagation(); keyMenu(e, k.currentTarget as HTMLElement, f); } }}
           ondragstart={(ev) => startMove(ev, e)} ondragend={endDrag}>
@@ -1540,7 +1546,6 @@
   }
   /* Demi-U : façade de 17 px, textes sur une ligne, vis au milieu. */
   .ritem.uh { font-size: 11px; }
-  .ritem.uh :global(.rl small) { display: none; }
   .pcat i { width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
   .pcat b { margin-left: auto; font: 600 11px var(--mono); padding: 1px 7px; border-radius: 99px; background: var(--surface-3); color: var(--fg-2); }
   .pend.mini { flex-direction: row; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; min-height: 34px; }
