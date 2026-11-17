@@ -136,9 +136,9 @@ input[type=range]{accent-color:var(--accent)}
    La zone de travail remplit la hauteur visible sous l'en-tête, sans défilement de page :
    colonne flexible de .ws-main à .design-body (les panneaux et la scène défilent seuls). */
 @media (min-width:768px){
-  .ws-main:has(>.page>.rack-screen.solo){overflow:hidden;padding-bottom:12px}
-  .ws-main:has(>.page>.rack-screen.solo)>.ws-top{margin-bottom:12px}
-  .ws-main>.page:has(>.rack-screen.solo){flex:1 1 0;min-height:0;display:flex;flex-direction:column;gap:12px}
+  .ws-main:has(>.page>.rack-screen.solo){overflow:hidden;padding-bottom:0}
+  .ws-main:has(>.page>.rack-screen.solo)>.ws-top{margin-bottom:0}
+  .ws-main>.page:has(>.rack-screen.solo){flex:1 1 0;min-height:0;display:flex;flex-direction:column;gap:0}
   .rack-screen.solo{flex:1 1 0;min-height:0;display:flex;flex-direction:column}
   .rack-screen.solo>.design-body{flex:1 1 0;min-height:0;height:auto}
   .rack-screen.solo .pane{padding:16px;gap:18px}
