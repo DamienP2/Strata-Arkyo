@@ -61,7 +61,9 @@ struct TPlacement {
     article: usize,
     nth: Option<usize>,
     face: RackFace,
-    u_start: i64,
+    /// Au demi-U près (les modèles enregistrés avec un U entier se relisent tels quels).
+    #[serde(serialize_with = "strata_domain::rack::half_u::serialize")]
+    u_start: f64,
     width: Width,
     col: i64,
     circuit: Option<usize>,
@@ -91,7 +93,7 @@ fn summary(c: &Content, items: &HashMap<String, ItemView>) -> Value {
     ]);
     let height = |a: &TArticle| match (&a.accessory, a.item_id.as_ref().and_then(|i| items.get(i)))
     {
-        (Some(acc), _) => Some(acc.height_u() as f64),
+        (Some(acc), _) => Some(acc.height_u()),
         (None, Some(it)) if it.rackable => it.height_u,
         _ => None,
     };

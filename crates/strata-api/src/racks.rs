@@ -124,7 +124,7 @@ impl Ctx {
     fn geometry(&self, a: &Article) -> Option<(f64, Width)> {
         match (&a.accessory, self.item(a)) {
             (Some(acc), _) if acc.is_vertical() => None,
-            (Some(acc), _) => Some((acc.height_u() as f64, Width::Full)),
+            (Some(acc), _) => Some((acc.height_u(), Width::Full)),
             (None, Some(it)) if it.rackable => Some((it.height_u.unwrap_or(1.0), it.width)),
             _ => None,
         }
@@ -189,7 +189,7 @@ async fn rack_view(st: &AppState, c: &Container, token: &str) -> ApiResult<Value
     for a in ctx.articles.iter().filter(|a| a.host.is_none()) {
         // Un module est dans son châssis : il ne se pose pas seul.
         let geo = ctx.geometry(a);
-        let base = json!({ "article_id": a.id, "label": article_label(a, &ctx.items), "nature": a.nature, "height_u": geo.map(|g| g.0), "width": geo.map(|g| g.1), "rackable": geo.is_some(), "function": ctx.item(a).and_then(|i| i.function.clone()), "accessory": a.accessory, "type_id": ctx.item(a).and_then(|i| i.type_id.clone()), "visual": ctx.item(a).and_then(|i| i.visual.clone()) });
+        let base = json!({ "article_id": a.id, "article_rev": a.rev, "label": article_label(a, &ctx.items), "nature": a.nature, "height_u": geo.map(|g| g.0), "width": geo.map(|g| g.1), "rackable": geo.is_some(), "function": ctx.item(a).and_then(|i| i.function.clone()), "accessory": a.accessory, "type_id": ctx.item(a).and_then(|i| i.type_id.clone()), "visual": ctx.item(a).and_then(|i| i.visual.clone()) });
         match a.nature {
             ArticleNature::Equipment => {
                 for i in inv
@@ -398,7 +398,8 @@ struct PlaceBody {
     article_id: String,
     instance_id: Option<String>,
     face: RackFace,
-    u_start: i64,
+    /// Au demi-U près : 12 ou 12.5.
+    u_start: f64,
     width: Option<Width>,
     #[serde(default)]
     col: i64,
@@ -571,7 +572,7 @@ async fn place(
                     circuit_id: b.circuit_id.clone(),
                     shelf_id: None,
                 },
-                u != b.u_start,
+                (u - b.u_start).abs() > 1e-9,
             )
         }
     };
@@ -612,7 +613,7 @@ async fn place(
 struct MoveBody {
     rev: i64,
     face: RackFace,
-    u_start: i64,
+    u_start: f64,
     width: Width,
     #[serde(default)]
     col: i64,
@@ -882,7 +883,7 @@ pub(crate) async fn overflow(
         .await?
         .iter()
         .filter_map(|p| ctx.slot(p))
-        .filter(|s| (s.u_start - 1) as f64 + s.height_u > new_height + 1e-9)
+        .filter(|s| s.u_start - 1.0 + s.height_u > new_height + 1e-9)
         .map(|s| (s.id, s.label))
         .collect())
 }

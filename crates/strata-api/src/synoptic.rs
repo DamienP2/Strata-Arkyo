@@ -189,7 +189,7 @@ pub(crate) async fn project_nodes(store: &Store, pid: &str) -> ApiResult<Vec<Nod
                     && p.shelf_id.is_none()
             })
             .map(|p| RackSpot {
-                center_mm: ((p.u_start - 1) as f64 + h / 2.0) * 44.45,
+                center_mm: (p.u_start - 1.0 + h / 2.0) * 44.45,
                 front: p.face == RackFace::Front,
             })
     };

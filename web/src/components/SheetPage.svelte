@@ -13,6 +13,7 @@
   import { HEX } from '../lib/pdfkit';
   import { inkOn } from '../lib/color';
   import { accFace, screensOf, visualOf } from '../lib/faceplate';
+  import { sideGeom } from '../lib/rackgeom';
   import {
     BLOCK, CASQ_W, CASQ_EXTRA, FRAME, RACK_NUM, RACK_VIEWS, DESK_VIEWS, SYN_MM, U_MM,
     casqProfile, deskExtent, groupLayout, isDrawing, itemSize, pageSize, rackGeom, rackBodyH, scaleOf, shotKey, usableW, viewsOf, zoomOf,
@@ -194,17 +195,19 @@
     {@const L = Math.min(b.h - 2 * g.pad, v.accessory.length_mm / kk)}
     <rect x={rr + 4 / kk} y={y + (b.h - L) / 2} width={45 / kk} height={L} rx="0.3" fill="#2B2F35" stroke={INK} stroke-width="0.25" />
   {/each}
-  {#each (r?.elements ?? []).filter((e) => !e.placement.shelf_id) as e (e.placement.id)}
+  <!-- Même géométrie que la vue de côté de l'écran (lib/rackgeom) : corps depuis les rails, réserve derrière. -->
+  {#each sideGeom((r?.elements ?? []).filter((e) => !e.placement.shelf_id), r?.depth_mm ?? 800, r?.c?.rear_rails_mm) as sb (sb.e.placement.id)}
+    {@const e = sb.e}
     {@const eh = e.height_u * g.u}
     {@const ey = y1 + (n - (e.placement.u_start - 1) - e.height_u) * g.u}
-    {@const dmm = e.depth_mm ?? (e.nature === 'accessory' ? 30 : 300)}
-    {@const ed = Math.min(D - 2 / kk, dmm / kk)}
-    {@const front = e.placement.face === 'front'}
-    {@const ex = front ? fr : rr - ed}
+    {@const dmm = sb.d}
+    {@const ed = sb.w / kk}
+    {@const front = sb.front}
+    {@const ex = x0 + sb.x / kk}
     {@const fs = fsU(eh, 2.4)}
-    {@const resmm = e.nature === 'accessory' ? 0 : (e.rear_reserve_mm ?? 80)}
-    {@const rw = Math.max(0, Math.min(resmm / kk, front ? x0 + D - (ex + ed) : ex - x0))}
-    {@const rx = front ? ex + ed : ex - rw}
+    {@const resmm = sb.res}
+    {@const rw = sb.rw / kk}
+    {@const rx = x0 + sb.rx / kk}
     {#if rw > 0.3}
       <rect x={rx} y={ey + 0.1} width={rw} height={eh - 0.2} fill="#FFFFFF" stroke="#8A919B" stroke-width="0.15" stroke-dasharray="0.8 0.5" />
       {#each hatch(rx, ey + 0.1, rw, eh - 0.2, 1.2) as [a, bb, c, d]}<line x1={a} y1={bb} x2={c} y2={d} stroke="#8A919B" stroke-width="0.12" />{/each}

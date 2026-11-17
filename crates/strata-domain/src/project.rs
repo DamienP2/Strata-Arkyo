@@ -509,9 +509,11 @@ pub enum PduSide {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Accessory {
+    /// Plaque : de 0,5 à 8 U, au demi-U près (plaque pleine d'un demi-U).
     Plate {
         variant: PlateVariant,
-        height_u: u32,
+        #[serde(serialize_with = "crate::rack::half_u::serialize")]
+        height_u: f64,
     },
     Shelf {
         depth_mm: u32,
@@ -546,14 +548,15 @@ pub enum Accessory {
 }
 
 impl Accessory {
-    pub fn height_u(&self) -> u32 {
+    /// Hauteur en U (une plaque peut faire un demi-U).
+    pub fn height_u(&self) -> f64 {
         match self {
-            Accessory::Plate { height_u, .. }
-            | Accessory::Shelf { height_u, .. }
+            Accessory::Plate { height_u, .. } => *height_u,
+            Accessory::Shelf { height_u, .. }
             | Accessory::Drawer { height_u, .. }
-            | Accessory::LacingBar { height_u, .. } => *height_u,
-            Accessory::Panel { panel } => panel.height_u,
-            Accessory::VerticalPdu { .. } => 0,
+            | Accessory::LacingBar { height_u, .. } => *height_u as f64,
+            Accessory::Panel { panel } => panel.height_u as f64,
+            Accessory::VerticalPdu { .. } => 0.0,
         }
     }
 
@@ -583,7 +586,7 @@ impl Accessory {
                     PlateVariant::Brush => "passe-câble",
                     PlateVariant::Vented => "aérée",
                 };
-                format!("Plaque {v} {height_u}U")
+                format!("Plaque {v} {}U", crate::rack::u_text(*height_u))
             }
             Accessory::Shelf { depth_mm, height_u } => {
                 format!("Étagère {height_u}U · {depth_mm}mm")
@@ -638,7 +641,14 @@ impl Accessory {
             }
             return e;
         }
-        if !(1..=8).contains(&self.height_u()) {
+        if let Accessory::Plate { height_u, .. } = self {
+            if !crate::rack::on_half(*height_u) || !(0.5..=8.0).contains(height_u) {
+                e.push(err(
+                    "accessory.height_u",
+                    "De 0,5 à 8 U, au demi-U près.",
+                ));
+            }
+        } else if !(1.0..=8.0).contains(&self.height_u()) {
             e.push(err("accessory.height_u", "De 1 à 8 U."));
         }
         match self {
@@ -1025,6 +1035,45 @@ mod tests {
             .validate()
             .len()
                 == 1
+        );
+    }
+
+    #[test]
+    fn half_u_plates() {
+        let p = |h: f64| Accessory::Plate {
+            variant: PlateVariant::Blank,
+            height_u: h,
+        };
+        assert!(p(0.5).validate().is_empty(), "plaque pleine d'un demi-U");
+        assert!(p(1.5).validate().is_empty());
+        assert_eq!(p(0.5).validate().len(), 0);
+        assert_eq!(p(0.25).validate().len(), 1, "hors du demi-U");
+        assert_eq!(p(0.0).validate().len(), 1);
+        assert_eq!(p(9.0).validate().len(), 1);
+        assert_eq!(p(0.5).label(), "Plaque pleine 0,5U");
+        assert_eq!(p(2.0).label(), "Plaque pleine 2U");
+        assert_eq!(p(0.5).height_u(), 0.5);
+        // Ancien format (entier) relu, et entier réécrit sans décimale.
+        let old: Accessory =
+            serde_json::from_str(r#"{"kind":"plate","variant":"blank","height_u":1}"#).unwrap();
+        assert_eq!(old, p(1.0));
+        assert_eq!(
+            serde_json::to_string(&p(1.0)).unwrap(),
+            r#"{"kind":"plate","variant":"blank","height_u":1}"#
+        );
+        assert_eq!(
+            serde_json::to_string(&p(0.5)).unwrap(),
+            r#"{"kind":"plate","variant":"blank","height_u":0.5}"#
+        );
+        // Les autres accessoires restent au U entier.
+        assert_eq!(
+            Accessory::Shelf {
+                depth_mm: 450,
+                height_u: 0
+            }
+            .validate()
+            .len(),
+            1
         );
     }
 }

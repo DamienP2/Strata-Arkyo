@@ -137,3 +137,37 @@ input[type=range]{accent-color:var(--accent)}
   .btn.sm,.seg button,.icon-btn.sm,.stepper button,.sv{min-height:40px;min-width:40px}
   input[type=checkbox]{width:20px;height:20px}
 }
+
+/* ===== Racks (vue d'un rack et vue « tous les racks ») =====
+   La zone de travail remplit la hauteur visible sous l'en-tête, sans défilement de page :
+   colonne flexible de .ws-main à .design-body (les panneaux et la scène défilent seuls). */
+@media (min-width:768px){
+  .ws-main:has(>.page>.rack-screen.solo){overflow:hidden;padding-bottom:12px}
+  .ws-main:has(>.page>.rack-screen.solo)>.ws-top{margin-bottom:12px}
+  .ws-main>.page:has(>.rack-screen.solo){flex:1 1 0;min-height:0;display:flex;flex-direction:column;gap:12px}
+  .rack-screen.solo{flex:1 1 0;min-height:0;display:flex;flex-direction:column}
+  .rack-screen.solo>.design-body{flex:1 1 0;min-height:0;height:auto}
+  .rack-screen.solo .pane{padding:16px;gap:18px}
+}
+/* Fenêtre étroite : le titre est masqué (voir plus haut) ; sa ligne vide ne prend pas de place. */
+@media (max-width:860px){
+  .ws-main:has(>.page>.rack-screen.solo)>.ws-top .ph-row:not(:has(.ph-count,.ph-slot>*)){display:none}
+}
+/* Fenêtre moyenne : « À placer » et le détail empilés à gauche, la scène à droite. */
+@media (min-width:768px) and (max-width:1100px){
+  .rack-screen.solo>.design-body{display:grid;grid-template-columns:240px minmax(0,1fr);grid-template-rows:minmax(0,1fr) minmax(0,1fr)}
+  .rack-screen.solo>.design-body:has(>.pane.right .insp){grid-template-rows:minmax(0,2fr) minmax(0,3fr)}
+  .rack-screen.solo>.design-body>.pane.left{grid-column:1;grid-row:1;order:0;overflow:auto;box-shadow:1px 0 0 var(--line),0 1px 0 var(--line)}
+  .rack-screen.solo>.design-body>.pane.right{grid-column:1;grid-row:2;order:0;overflow:auto;box-shadow:1px 0 0 var(--line)}
+  .rack-screen.solo>.design-body>.rack-stage{grid-column:2;grid-row:1/3;order:0}
+}
+/* Barre du haut : groupes qui passent à la ligne d'un bloc, contrôles de 34 px centrés sur la même ligne. */
+.dtool.rk-tool{container-type:inline-size;align-items:center;gap:8px 14px;padding-block:8px}
+.rk-tool .tg{display:flex;align-items:center;gap:8px;flex-wrap:nowrap;min-width:0}
+.rk-tool .tg-meters{margin-left:auto;gap:14px}
+.rk-tool .seg{flex:none}
+.rk-tool select.input{height:var(--btn-h);width:auto}
+.rk-tool .meter{height:var(--btn-h);grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:auto;gap:8px;white-space:nowrap}
+.rk-tool .meter .vu{width:56px;min-width:56px}
+@container (max-width:900px){.rk-tool .meter .vu,.rk-tool .mu-pend{display:none}}
+@container (max-width:560px){.rk-tool .tg-meters{margin-left:0}.rk-tool .tg{flex-wrap:wrap}}

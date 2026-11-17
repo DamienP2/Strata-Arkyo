@@ -15,7 +15,9 @@ pub struct Placement {
     pub article_id: String,
     pub instance_id: Option<String>,
     pub face: RackFace,
-    pub u_start: i64,
+    /// Position de départ en U, au demi-U près (colonne SQLite numérique : 12 ou 12.5).
+    #[serde(serialize_with = "strata_domain::rack::half_u::serialize")]
+    pub u_start: f64,
     pub width: Width,
     pub col: i64,
     pub circuit_id: Option<String>,
@@ -58,6 +60,14 @@ fn ser<T: Serialize>(v: &T) -> String {
         .unwrap_or_default()
 }
 
+/// Position lue en base : entière (anciennes poses, U entier) ou réelle (demi-U). La colonne
+/// a l'affinité INTEGER : SQLite garde 12 en entier et 12.5 en réel, sans migration.
+fn u_of(r: &SqliteRow) -> f64 {
+    r.try_get::<f64, _>("u_start")
+        .or_else(|_| r.try_get::<i64, _>("u_start").map(|v| v as f64))
+        .unwrap_or(1.0)
+}
+
 impl Placement {
     fn from_row(r: &SqliteRow) -> Placement {
         Placement {
@@ -67,7 +77,7 @@ impl Placement {
             article_id: r.get("article_id"),
             instance_id: r.get("instance_id"),
             face: de(r.get("face")).unwrap_or(RackFace::Front),
-            u_start: r.get("u_start"),
+            u_start: u_of(r),
             width: de(r.get("width")).unwrap_or(Width::Full),
             col: r.get("col"),
             circuit_id: r.get("circuit_id"),
@@ -108,7 +118,7 @@ impl Lock {
 #[derive(Debug, Clone)]
 pub struct PlaceSpec {
     pub face: RackFace,
-    pub u_start: i64,
+    pub u_start: f64,
     pub width: Width,
     pub col: i64,
     pub circuit_id: Option<String>,
@@ -516,7 +526,7 @@ mod tests {
         let inst = s.article_instances(&a.id).await.unwrap();
         let spec = PlaceSpec {
             face: RackFace::Front,
-            u_start: 1,
+            u_start: 1.0,
             width: Width::Full,
             col: 0,
             circuit_id: None,

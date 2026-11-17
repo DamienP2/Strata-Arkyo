@@ -16,6 +16,7 @@
   import { modal } from '../../lib/modal';
   import { loadRefs, refList, refName, refById, familyColor, summary, pathOf, type CatalogItem, type RefItem } from '../../lib/catalog.svelte';
   import { CONTAINER_KINDS, type Article, type Container, type ProjectView } from '../../lib/projects';
+  import { fmtU } from '../../lib/rackgeom';
 
   let { view, container, locationId, onclose, ondone }: { view: ProjectView; container: Container | null; locationId: string; onclose: () => void; ondone: () => void | Promise<void> } = $props();
 
@@ -187,10 +188,10 @@
     const k = accKind;
     const a = k === 'plate' ? { kind: 'plate', variant: acc.variant, height_u: acc.height_u } : k === 'vertical_pdu' ? { kind: 'vertical_pdu', length_mm: acc.length_mm, outlets: acc.outlets, side: acc.side } : { kind: k, depth_mm: acc.depth_mm, height_u: acc.height_u };
     const name = ACC.find((x) => x.k === k)!.label;
-    const label = k === 'plate' ? `${name} ${PLATE[acc.variant]} ${acc.height_u} U` : k === 'vertical_pdu' ? `${name} ${acc.outlets} prises` : k === 'lacing_bar' ? `${name} ${acc.height_u} U` : `${name} ${acc.height_u} U · ${acc.depth_mm} mm`;
+    const label = k === 'plate' ? `${name} ${PLATE[acc.variant]} ${fmtU(acc.height_u)} U` : k === 'vertical_pdu' ? `${name} ${acc.outlets} prises` : k === 'lacing_bar' ? `${name} ${acc.height_u} U` : `${name} ${acc.height_u} U · ${acc.depth_mm} mm`;
     return add({ nature: 'accessory', accessory: a }, 'acc', label, 1);
   }
-  function pickAcc(k: AccKind) { accKind = k; if (k === 'lacing_bar') acc.depth_mm = 100; else if (acc.depth_mm === 100) acc.depth_mm = 450; }
+  function pickAcc(k: AccKind) { accKind = k; if (k !== 'plate' && acc.height_u < 1) acc.height_u = 1; if (k === 'lacing_bar') acc.depth_mm = 100; else if (acc.depth_mm === 100) acc.depth_mm = 450; }
 
   // ----- Téléphone : les catégories passent dans une liste déroulante -----
   let mobileFacet = $derived(genre === 'accessory' ? `acc:${accKind}` : facet);
@@ -353,7 +354,7 @@
                 <p class="muted small">Monté à l’arrière, dans le couloir entre le montant et le flanc : il n’occupe aucun U et s’affiche en vue arrière et en 3D.</p>
               {:else}
                 <div class="fg3">
-                  <div class="field"><label for="ac-u">Hauteur</label><select class="input" id="ac-u" bind:value={acc.height_u}>{#each [1, 2, 3, 4, 5, 6, 7, 8] as u}<option value={u}>{u} U</option>{/each}</select></div>
+                  <div class="field"><label for="ac-u">Hauteur</label><select class="input" id="ac-u" bind:value={acc.height_u}>{#each accKind === 'plate' ? [0.5, 1, 2, 3, 4, 5, 6, 7, 8] : [1, 2, 3, 4, 5, 6, 7, 8] as u}<option value={u}>{fmtU(u)} U</option>{/each}</select></div>
                   {#if accKind === 'plate'}<div class="field"><label for="ac-v">Variante</label><select class="input" id="ac-v" bind:value={acc.variant}><option value="blank">Pleine</option><option value="brush">Passe-câble</option><option value="vented">Aérée</option></select></div>
                   {:else if accKind === 'lacing_bar'}<div class="field"><label for="ac-d">Déport depuis le rail</label><select class="input" id="ac-d" bind:value={acc.depth_mm}>{#each [0, 50, 75, 100, 150, 200] as d}<option value={d}>{d} mm</option>{/each}</select><span class="help">Se pose en face arrière, derrière les équipements à attacher.</span></div>
                   {:else}<div class="field"><label for="ac-d">Profondeur</label><select class="input" id="ac-d" bind:value={acc.depth_mm}>{#each accKind === 'drawer' ? [200, 250, 300, 350, 400, 450, 500] : [200, 300, 350, 400, 450, 500, 600, 700, 800, 1000, 1200] as d}<option value={d}>{d} mm</option>{/each}</select></div>{/if}

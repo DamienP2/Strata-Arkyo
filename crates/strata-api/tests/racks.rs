@@ -440,6 +440,109 @@ async fn placement_rules() {
     assert_eq!(r.body["removed"], 4);
 }
 
+/// Demi-U : plaques pleines de 0,5 U, pose et déplacement au demi-U, positions hors grille refusées.
+#[tokio::test]
+async fn half_unit_plates_and_moves() {
+    let Setup {
+        app, o, pid, cid, ..
+    } = setup().await;
+    call(
+        &app,
+        "POST",
+        &format!("/api/containers/{cid}/rack/lock"),
+        None,
+        Some(&o),
+    )
+    .await;
+    let plate = |h: f64| json!({"container_id": cid, "nature": "accessory", "quantity": 1, "accessory": {"kind": "plate", "variant": "blank", "height_u": h}});
+    let mut ids = Vec::new();
+    for _ in 0..2 {
+        let a = call(
+            &app,
+            "POST",
+            &format!("/api/projects/{pid}/articles"),
+            Some(plate(0.5)),
+            Some(&o),
+        )
+        .await;
+        assert_eq!(a.status, StatusCode::CREATED, "{}", a.body);
+        assert_eq!(a.body["article"]["accessory"]["height_u"], 0.5);
+        ids.push(a.body["article"]["id"].as_str().unwrap().to_string());
+    }
+    // Hauteur hors du demi-U : refusée.
+    let r = call(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid}/articles"),
+        Some(plate(0.3)),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY, "{}", r.body);
+    // Deux plaques d'un demi-U dans le même U : bas puis haut de U4.
+    let a = call(
+        &app,
+        "POST",
+        &format!("/api/containers/{cid}/placements"),
+        Some(json!({"article_id": ids[0], "face": "front", "u_start": 4})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(a.status, StatusCode::CREATED, "{}", a.body);
+    assert_eq!(a.body["placement"]["u_start"], 4, "entier sans décimale");
+    let b = call(
+        &app,
+        "POST",
+        &format!("/api/containers/{cid}/placements"),
+        Some(json!({"article_id": ids[1], "face": "front", "u_start": 4.5})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(b.status, StatusCode::CREATED, "{}", b.body);
+    assert_eq!(b.body["placement"]["u_start"], 4.5);
+    assert_eq!(b.body["adjusted"], false);
+    // Hors de la grille du demi-U.
+    let bid = b.body["placement"]["id"].as_str().unwrap().to_string();
+    let r = call(
+        &app,
+        "PATCH",
+        &format!("/api/placements/{bid}"),
+        Some(json!({"rev": 1, "face": "front", "u_start": 6.25, "width": "full"})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY, "{}", r.body);
+    // Déplacement d'un demi-U, relu tel quel dans l'élévation.
+    let r = call(
+        &app,
+        "PATCH",
+        &format!("/api/placements/{bid}"),
+        Some(json!({"rev": 1, "face": "front", "u_start": 7.5, "width": "full"})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.body);
+    let rack = call(
+        &app,
+        "GET",
+        &format!("/api/containers/{cid}/rack"),
+        None,
+        Some(&o),
+    )
+    .await;
+    let us: Vec<f64> = rack.body["elements"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["placement"]["u_start"].as_f64().unwrap())
+        .collect();
+    assert_eq!(us, vec![4.0, 7.5]);
+    assert_eq!(rack.body["elements"][1]["height_u"], 0.5);
+    assert_eq!(rack.body["elements"][1]["label"], "Plaque pleine 0,5U");
+    // Occupation : deux demi-U.
+    assert_eq!(rack.body["totals"]["placed_u"].as_f64(), Some(1.0));
+}
+
 #[tokio::test]
 async fn one_editor_at_a_time() {
     let Setup {

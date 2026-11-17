@@ -167,7 +167,10 @@ fn short(k: &str, v: &Value) -> Option<String> {
             None
         }
         Value::String(s) if s.chars().count() <= 40 => Some(s.clone()),
-        Value::Number(n) if k == "u_start" => Some(format!("U{n}")),
+        Value::Number(n) if k == "u_start" => Some(format!(
+            "U{}",
+            strata_domain::rack::u_text(n.as_f64().unwrap_or_default())
+        )),
         Value::Number(n) => Some(n.to_string().replace('.', ",")),
         Value::Bool(b) => Some(if *b { "oui" } else { "non" }.into()),
         _ => None,

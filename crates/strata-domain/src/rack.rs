@@ -1,5 +1,9 @@
 //! Racks (cahier des charges, section 9) : placement au demi-U, collisions, ajustement
 //! de la position, profondeur utile, bilan électrique par circuit et par phase.
+//!
+//! Les positions sont en U, au demi-U près : `u_start` = 12,5 pose le bas de l'élément au
+//! milieu de U12. Un élément d'un demi-U (plaque pleine 0,5 U, petit appareil) laisse
+//! ainsi l'autre moitié de l'U libre.
 
 use crate::catalog::Width;
 use serde::{Deserialize, Serialize};
@@ -22,14 +26,46 @@ pub fn columns(w: Width) -> u32 {
     }
 }
 
+/// La valeur tombe-t-elle sur la grille du demi-U (12, 12,5…) ?
+pub fn on_half(u: f64) -> bool {
+    u.is_finite() && ((u * 2.0) - (u * 2.0).round()).abs() < 1e-9
+}
+
+/// La valeur est-elle un nombre entier d'U ?
+pub fn on_whole(u: f64) -> bool {
+    u.is_finite() && (u - u.round()).abs() < 1e-9
+}
+
+/// Sérialise une position ou une hauteur en U : entier quand il l'est (12, pas 12.0), sinon
+/// au demi-U (12.5). Les anciens clients et l'historique lisent ainsi les mêmes valeurs.
+pub mod half_u {
+    use serde::Serializer;
+    pub fn serialize<S: Serializer>(v: &f64, s: S) -> Result<S::Ok, S::Error> {
+        if super::on_whole(*v) && v.abs() < 1e15 {
+            s.serialize_i64(v.round() as i64)
+        } else {
+            s.serialize_f64(*v)
+        }
+    }
+}
+
+/// Texte d'une position en U, à la française : « 12 » ou « 12,5 ».
+pub fn u_text(u: f64) -> String {
+    if on_whole(u) {
+        format!("{}", u.round() as i64)
+    } else {
+        format!("{u:.1}").replace('.', ",")
+    }
+}
+
 /// Un élément posé (ou à poser) dans une élévation.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Slot {
     pub id: String,
     pub label: String,
     pub face: RackFace,
-    /// Position de départ, 1 = bas du rack.
-    pub u_start: i64,
+    /// Position de départ, 1 = bas du rack, au demi-U près (12,5 = milieu de U12).
+    pub u_start: f64,
     pub height_u: f64,
     pub width: Width,
     pub col: u32,
@@ -37,7 +73,7 @@ pub struct Slot {
 
 impl Slot {
     fn u_range(&self) -> (f64, f64) {
-        let a = (self.u_start - 1) as f64;
+        let a = self.u_start - 1.0;
         (a, a + self.height_u)
     }
     fn h_range(&self) -> (f64, f64) {
@@ -63,6 +99,8 @@ pub enum PlaceError {
     TooBig { message: String },
     Occupied { message: String, by: String },
     BadColumn { message: String },
+    /// Position hors de la grille du demi-U.
+    BadStep { message: String },
 }
 
 impl PlaceError {
@@ -70,7 +108,8 @@ impl PlaceError {
         match self {
             PlaceError::TooBig { message }
             | PlaceError::Occupied { message, .. }
-            | PlaceError::BadColumn { message } => message,
+            | PlaceError::BadColumn { message }
+            | PlaceError::BadStep { message } => message,
         }
     }
 }
@@ -82,7 +121,12 @@ pub fn check_place(rack_u: f64, s: &Slot, others: &[Slot]) -> Result<(), PlaceEr
             message: format!("Colonne de 1 à {} pour cette largeur.", columns(s.width)),
         });
     }
-    if s.u_start < 1 || (s.u_start - 1) as f64 + s.height_u > rack_u + 1e-9 {
+    if !on_half(s.u_start) {
+        return Err(PlaceError::BadStep {
+            message: "Position au demi-U près : par exemple 12 ou 12,5.".into(),
+        });
+    }
+    if s.u_start < 1.0 - 1e-9 || s.u_start - 1.0 + s.height_u > rack_u + 1e-9 {
         return Err(PlaceError::TooBig {
             message: "L'élément dépasse la taille du rack.".into(),
         });
@@ -98,19 +142,33 @@ pub fn check_place(rack_u: f64, s: &Slot, others: &[Slot]) -> Result<(), PlaceEr
 
 /// Ajuste une position demandée : un dépôt trop haut est ramené sous le haut du rack ;
 /// un élément de plusieurs U cherche la place libre la plus proche (± hauteur − 1,
-/// en alternant bas et haut). Renvoie la position retenue, ou l'erreur de la demande.
-pub fn adjust(rack_u: f64, s: &Slot, others: &[Slot]) -> Result<i64, PlaceError> {
-    let span = s.height_u.ceil() as i64;
-    let top = (rack_u.floor() as i64 - span + 1).max(1);
-    let wanted = s.u_start.clamp(1, top);
+/// en alternant bas et haut). La recherche avance par U entier, ou par demi-U quand la
+/// position ou la hauteur tombent sur un demi-U. Renvoie la position retenue, ou l'erreur
+/// de la demande.
+pub fn adjust(rack_u: f64, s: &Slot, others: &[Slot]) -> Result<f64, PlaceError> {
+    if !on_half(s.u_start) {
+        return Err(PlaceError::BadStep {
+            message: "Position au demi-U près : par exemple 12 ou 12,5.".into(),
+        });
+    }
+    let step = if on_whole(s.u_start) && on_whole(s.height_u) {
+        1.0
+    } else {
+        0.5
+    };
+    // Plus haute position de départ sur la grille du pas (au moins U1).
+    let top = (((rack_u - s.height_u) / step + 1e-9).floor() * step + 1.0).max(1.0);
+    let wanted = s.u_start.clamp(1.0, top);
+    let steps = ((s.height_u / step) - 1e-9).ceil().max(1.0) as i64;
     let mut t = s.clone();
     t.u_start = wanted;
     if check_place(rack_u, &t, others).is_ok() {
         return Ok(wanted);
     }
-    for d in 1..span.max(1) {
+    for d in 1..steps {
+        let d = d as f64 * step;
         for cand in [wanted - d, wanted + d] {
-            if cand >= 1 && cand <= top {
+            if cand >= 1.0 - 1e-9 && cand <= top + 1e-9 {
                 t.u_start = cand;
                 if check_place(rack_u, &t, others).is_ok() {
                     return Ok(cand);
@@ -264,7 +322,7 @@ pub fn electrical(circuits: &[CircuitSpec], loads: &[(Option<String>, f64)]) -> 
 mod tests {
     use super::*;
 
-    fn s(id: &str, u: i64, h: f64, w: Width, col: u32) -> Slot {
+    fn s(id: &str, u: f64, h: f64, w: Width, col: u32) -> Slot {
         Slot {
             id: id.into(),
             label: id.into(),
@@ -279,65 +337,117 @@ mod tests {
     #[test]
     fn collisions_and_bounds() {
         let others = vec![
-            s("mix", 10, 2.0, Width::Full, 0),
-            s("half", 20, 1.0, Width::Half, 0),
+            s("mix", 10.0, 2.0, Width::Full, 0),
+            s("half", 20.0, 1.0, Width::Half, 0),
         ];
         assert!(
-            check_place(42.0, &s("a", 12, 1.0, Width::Full, 0), &others).is_ok(),
+            check_place(42.0, &s("a", 12.0, 1.0, Width::Full, 0), &others).is_ok(),
             "contigu au-dessus"
         );
         assert!(
-            check_place(42.0, &s("a", 9, 1.0, Width::Full, 0), &others).is_ok(),
+            check_place(42.0, &s("a", 9.0, 1.0, Width::Full, 0), &others).is_ok(),
             "contigu au-dessous"
         );
         assert!(matches!(
-            check_place(42.0, &s("a", 11, 1.0, Width::Full, 0), &others),
+            check_place(42.0, &s("a", 11.0, 1.0, Width::Full, 0), &others),
             Err(PlaceError::Occupied { .. })
         ));
         assert!(
-            check_place(42.0, &s("b", 20, 1.0, Width::Half, 1), &others).is_ok(),
+            check_place(42.0, &s("b", 20.0, 1.0, Width::Half, 1), &others).is_ok(),
             "l'autre moitié est libre"
         );
         assert!(matches!(
-            check_place(42.0, &s("c", 20, 1.0, Width::Third, 1), &others),
+            check_place(42.0, &s("c", 20.0, 1.0, Width::Third, 1), &others),
             Err(PlaceError::Occupied { .. })
         ));
         assert!(matches!(
-            check_place(42.0, &s("d", 42, 2.0, Width::Full, 0), &others),
+            check_place(42.0, &s("d", 42.0, 2.0, Width::Full, 0), &others),
             Err(PlaceError::TooBig { .. })
         ));
         assert!(
-            check_place(42.0, &s("e", 41, 1.5, Width::Full, 0), &others).is_ok(),
+            check_place(42.0, &s("e", 41.0, 1.5, Width::Full, 0), &others).is_ok(),
             "demi-U"
         );
-        let mut rear = s("f", 10, 2.0, Width::Full, 0);
+        let mut rear = s("f", 10.0, 2.0, Width::Full, 0);
         rear.face = RackFace::Rear;
         assert!(check_place(42.0, &rear, &others).is_ok(), "autre face");
     }
 
     #[test]
     fn adjustment() {
-        let others = vec![s("mix", 10, 2.0, Width::Full, 0)];
+        let others = vec![s("mix", 10.0, 2.0, Width::Full, 0)];
         assert_eq!(
-            adjust(42.0, &s("a", 50, 3.0, Width::Full, 0), &others).unwrap(),
-            40,
+            adjust(42.0, &s("a", 50.0, 3.0, Width::Full, 0), &others).unwrap(),
+            40.0,
             "ramené sous le haut"
         );
         assert_eq!(
-            adjust(42.0, &s("a", 11, 2.0, Width::Full, 0), &others).unwrap(),
-            12,
+            adjust(42.0, &s("a", 11.0, 2.0, Width::Full, 0), &others).unwrap(),
+            12.0,
             "place libre la plus proche"
         );
         assert_eq!(
-            adjust(42.0, &s("a", 10, 3.0, Width::Full, 0), &others).unwrap(),
-            12,
+            adjust(42.0, &s("a", 10.0, 3.0, Width::Full, 0), &others).unwrap(),
+            12.0,
             "en alternant bas et haut"
         );
         assert!(
-            adjust(42.0, &s("a", 10, 1.0, Width::Full, 0), &others).is_err(),
+            adjust(42.0, &s("a", 10.0, 1.0, Width::Full, 0), &others).is_err(),
             "1 U : pas de recherche"
         );
     }
+
+    #[test]
+    fn half_units() {
+        // Une plaque d'un demi-U au bas de U12 laisse la moitié haute libre.
+        let others = vec![s("plaque", 12.0, 0.5, Width::Full, 0)];
+        assert!(
+            check_place(42.0, &s("p2", 12.5, 0.5, Width::Full, 0), &others).is_ok(),
+            "moitié haute de U12"
+        );
+        assert!(matches!(
+            check_place(42.0, &s("p3", 12.0, 0.5, Width::Full, 0), &others),
+            Err(PlaceError::Occupied { .. })
+        ));
+        // Un 1 U décalé d'un demi-U : moitié haute de U12 et moitié basse de U13.
+        assert!(check_place(42.0, &s("a", 12.5, 1.0, Width::Full, 0), &others).is_ok());
+        assert!(matches!(
+            check_place(42.0, &s("a", 11.5, 1.0, Width::Full, 0), &others),
+            Err(PlaceError::Occupied { .. })
+        ));
+        // Hors de la grille du demi-U.
+        assert!(matches!(
+            check_place(42.0, &s("a", 12.25, 1.0, Width::Full, 0), &others),
+            Err(PlaceError::BadStep { .. })
+        ));
+        // Haut du rack : un demi-U tient en U42,5, pas un U entier.
+        assert!(check_place(42.0, &s("t", 42.5, 0.5, Width::Full, 0), &[]).is_ok());
+        assert!(check_place(42.0, &s("t", 42.5, 1.0, Width::Full, 0), &[]).is_err());
+        // Ajustement au demi-U : ramené sous le haut, puis place libre la plus proche.
+        assert_eq!(adjust(42.0, &s("a", 50.0, 0.5, Width::Full, 0), &[]).unwrap(), 42.5);
+        assert_eq!(adjust(42.0, &s("a", 50.0, 1.5, Width::Full, 0), &[]).unwrap(), 41.5);
+        assert_eq!(
+            adjust(42.0, &s("a", 12.0, 1.5, Width::Full, 0), &others).unwrap(),
+            12.5,
+            "un demi-U plus haut"
+        );
+        assert!(adjust(42.0, &s("a", 12.0, 0.5, Width::Full, 0), &others).is_err());
+        assert!(matches!(
+            adjust(42.0, &s("a", 3.3, 1.0, Width::Full, 0), &[]),
+            Err(PlaceError::BadStep { .. })
+        ));
+        assert_eq!(u_text(12.0), "12");
+        assert_eq!(u_text(12.5), "12,5");
+        assert_eq!(
+            serde_json::to_string(&Wrap(12.0)).unwrap(),
+            "12",
+            "entier sans décimale"
+        );
+        assert_eq!(serde_json::to_string(&Wrap(12.5)).unwrap(), "12.5");
+    }
+
+    #[derive(serde::Serialize)]
+    struct Wrap(#[serde(serialize_with = "half_u::serialize")] f64);
 
     #[test]
     fn electrical_balance() {

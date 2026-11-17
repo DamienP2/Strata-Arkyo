@@ -58,12 +58,12 @@
 
 <style>
   .rp { position: relative; }
-  .rp-btn { display: flex; align-items: center; gap: 10px; min-width: 280px; max-width: 420px; height: 40px; padding: 0 12px 0 5px; border: 0; border-radius: var(--btn-r, 8px); background: var(--btn-bg, var(--surface)); box-shadow: inset 0 0 0 1px var(--btn-edge, var(--line-2)); color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
+  .rp-btn { display: flex; align-items: center; gap: 10px; min-width: 260px; max-width: 420px; height: var(--btn-h, 34px); padding: 0 12px 0 4px; border: 0; border-radius: var(--btn-r, 8px); background: var(--btn-bg, var(--surface)); box-shadow: inset 0 0 0 1px var(--btn-edge, var(--line-2)); color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
   .rp-btn:hover { background: var(--btn-bg-h, var(--surface-2)); }
   .rp-btn:focus-visible, .rp-all:focus-visible, .rp-it:focus-visible, .rp-gall:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .rp-ic { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 8px; background: var(--surface-3); color: var(--fg-2); flex: none; }
-  .rp-t { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.15; }
-  .rp-t b { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rp-ic { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 6px; background: var(--surface-3); color: var(--fg-2); flex: none; }
+  .rp-t { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.12; }
+  .rp-t b { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .rp-t small { font-size: 12px; color: var(--fg-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .rp-pop { position: absolute; left: 0; top: calc(100% + 6px); z-index: 50; width: 420px; max-height: min(70vh, 560px); overflow: auto; padding: 6px; border-radius: 12px; background: var(--surface); box-shadow: 0 0 0 1px var(--line-2), 0 24px 48px -16px rgba(0, 0, 0, .55); }
   .rp-all, .rp-it { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; border: 0; border-radius: 8px; background: none; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }

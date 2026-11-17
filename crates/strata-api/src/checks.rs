@@ -63,11 +63,12 @@ async fn lines(store: &Store, c: &Container) -> ApiResult<Vec<Line>> {
     }];
     for a in arts {
         let mine: Vec<_> = placements.iter().filter(|p| p.article_id == a.id).collect();
-        let top = mine.iter().map(|p| p.u_start).max();
+        // Ordre de haut en bas, au demi-U près.
+        let top = mine.iter().map(|p| (p.u_start * 2.0).round() as i64).max();
         let us = |iid: Option<&str>| {
             mine.iter()
                 .find(|p| p.instance_id.as_deref() == iid)
-                .map(|p| format!("U{}", p.u_start))
+                .map(|p| format!("U{}", strata_domain::rack::u_text(p.u_start)))
         };
         let label = article_label(a, &items);
         let (family, kind, detail) = match (a.nature, &a.accessory) {

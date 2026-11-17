@@ -241,7 +241,7 @@ pub(crate) fn load_of(a: &Article, items: &HashMap<String, ItemView>) -> Article
     match (&a.accessory, a.item_id.as_ref().and_then(|i| items.get(i))) {
         (Some(acc), _) => ArticleLoad {
             quantity: q,
-            height_u: Some(acc.height_u() as f64),
+            height_u: Some(acc.height_u()),
             weight_kg: 0.0,
             power_w: 0.0,
             ..Default::default()
@@ -1121,7 +1121,7 @@ fn fit_warnings(
     }
     let h = match (item, acc) {
         (Some(i), _) if i.rackable => i.height_u,
-        (_, Some(a)) => Some(a.height_u() as f64),
+        (_, Some(a)) => Some(a.height_u()),
         _ => None,
     };
     if let (Some(h), Some(total)) = (h, c.data.height_u) {
