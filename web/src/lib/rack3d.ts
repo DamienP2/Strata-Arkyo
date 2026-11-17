@@ -162,8 +162,40 @@ function faceCanvases(e: El3D, wPx: number, hPx: number) {
   // dessous et plus petit (≈ 72 %), marque et modèle en gris neutre. Zone réservée à gauche, que
   // le décor ne recouvre jamais (il commence après) ; « … » si une ligne est trop longue ; la
   // seconde ligne seulement si la façade a la hauteur des deux (pas en 0,5 U).
-  let xd = x0;
-  if (e.nature !== 'accessory') {
+  let xd = x0, monBottom = hPx;
+  const isMon = /^monitor\d?$/.test(t);
+  if (e.nature !== 'accessory' && isMon) {
+    // Moniteur : écran(s) en haut, libellé puis modèle centrés dessous, comme un UMD. Deux lignes
+    // si la façade est assez haute, sinon une seule (libellé puis modèle plus petit).
+    const model = e.model ?? e.label, lab = e.title || e.tag || '';
+    const l1 = lab || model, l2 = lab && lab !== model ? model : '';
+    const f1 = Math.round(Math.max(10, Math.min(hPx * 0.2, 20))), f2 = Math.round(f1 * 0.78);
+    const two = !!l2 && (f1 + f2) * 1.2 <= hPx * 0.4;
+    const font1 = `600 ${f1}px ${l1 === e.tag ? MONO3 : SANS3}`, font2 = `400 ${f2}px ${SANS3}`;
+    const xr = x1 - 30, cx = (x0 + xr) / 2, maxW = Math.max(0, xr - x0);
+    const ell = (s: string, font: string, mw: number) => {
+      g.font = font; if (g.measureText(s).width <= mw) return s;
+      let n = s.length; while (n > 1 && g.measureText(s.slice(0, n).trimEnd() + '…').width > mw) n--;
+      return n > 1 ? s.slice(0, n).trimEnd() + '…' : '';
+    };
+    const H = two ? (f1 + f2) * 1.2 : f1 * 1.2, y0 = hPx - H - hPx * 0.05;
+    const c1 = alu ? '#15171a' : '#e8ebee', c2 = alu ? '#4a4d52' : '#8f98a3';
+    g.textBaseline = 'top';
+    if (two) {
+      g.textAlign = 'center';
+      g.font = font1; g.fillStyle = c1; g.fillText(ell(l1, font1, maxW), cx, y0 + f1 * 0.1);
+      g.font = font2; g.fillStyle = c2; g.fillText(ell(l2, font2, maxW), cx, y0 + f1 * 1.2 + f2 * 0.1);
+    } else {
+      const t1 = ell(l1, font1, l2 ? maxW * 0.6 : maxW); g.font = font1; const w1 = g.measureText(t1).width;
+      const gap = f1 * 0.5, t2 = l2 ? ell(l2, font2, maxW - w1 - gap) : '';
+      g.font = font2; const w2 = t2 ? g.measureText(t2).width + gap : 0;
+      const sx = cx - (w1 + w2) / 2; g.textAlign = 'left';
+      g.font = font1; g.fillStyle = c1; g.fillText(t1, sx, y0 + f1 * 0.1);
+      if (t2) { g.font = font2; g.fillStyle = c2; g.fillText(t2, sx + w1 + gap, y0 + f1 * 0.1 + (f1 - f2) * 0.8); }
+    }
+    g.textAlign = 'left';
+    monBottom = y0 - hPx * 0.03;
+  } else if (e.nature !== 'accessory') {
     const model = e.model ?? e.label, lab = e.title || e.tag || '';
     const l1 = lab || model, l2 = lab && lab !== model ? model : '';
     const f1 = Math.round(Math.max(10, Math.min(hPx * 0.3, 22))), f2 = Math.round(f1 * 0.72);
@@ -204,10 +236,11 @@ function faceCanvases(e: El3D, wPx: number, hPx: number) {
       // Écrans 16/9 sur presque toute la hauteur, côte à côte, chacun avec sa mire et son UMD.
       const n = t === 'monitor' ? 1 : Number(t.slice(7));
       const keysW = 30, room = avail - keysW, gap = room * 0.03;
-      let hh = hPx * 0.8, w = hh * 16 / 9;
-      if (room < 24) break;
+      const top0 = hPx * 0.07, ah = Math.max(0, monBottom - top0);
+      let hh = ah, w = hh * 16 / 9;
+      if (room < 24 || ah < 6) break;
       if (n * w + (n - 1) * gap > room) { w = (room - (n - 1) * gap) / n; hh = w * 9 / 16; }
-      const y = (hPx - hh) / 2, start = xd + (room - (n * w + (n - 1) * gap)) / 2;
+      const y = top0 + (ah - hh) / 2, start = xd + (room - (n * w + (n - 1) * gap)) / 2;
       const top = ['#bfbfbf', '#bfbf00', '#00bfbf', '#00bf00', '#bf00bf', '#bf0000', '#0000bf'];
       const mid2 = ['#0000bf', '#131313', '#bf00bf', '#131313', '#00bfbf', '#131313', '#bfbfbf'];
       for (let k = 0; k < n; k++) {
