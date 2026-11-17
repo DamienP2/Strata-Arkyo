@@ -148,7 +148,7 @@
   {#if missing && missing.points.some(keep)}
     <details class="card compact rc-miss">
       <summary><Icon name="alert" size="sm" />{missing.points.length} liaison{missing.points.length > 1 ? 's' : ''} dont une extrémité n’existe plus (équipement ou port supprimé), hors recette<a class="ag-all small" href="/projets/{pid}/cables?cable={missing.points.map((p) => p.key.slice(6)).join(',')}" onclick={(e) => e.stopPropagation()}>Voir ces câbles</a></summary>
-      <p class="muted small">À corriger dans le synoptique (rebrancher ou supprimer le câble) : elles ne comptent pas dans l’avancement.</p>
+      <button type="button" class="ux3-info" title="À corriger dans le synoptique (rebrancher ou supprimer le câble) : elles ne comptent pas dans l’avancement." aria-label="À corriger dans le synoptique (rebrancher ou supprimer le câble) : elles ne comptent pas dans l’avancement."><Icon name="info" size="sm" /></button>
       {#each missing.points.filter(keep) as p (p.key)}{@render row(p)}{/each}
     </details>
   {/if}

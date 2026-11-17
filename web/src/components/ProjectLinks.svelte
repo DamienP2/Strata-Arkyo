@@ -70,7 +70,7 @@
       <span class="flabel">Lien vers un autre projet</span>
       {#if mine}{@render row(mine)}
       {:else if canDesign}
-        {#if !d.candidates.length}<p class="muted small" style="margin:0">Aucun port externe libre dans les autres projets.</p>
+        {#if !d.candidates.length}<button type="button" class="ux3-info" title="Aucun port externe libre dans les autres projets." aria-label="Aucun port externe libre dans les autres projets."><Icon name="info" size="sm" /></button>
         {:else}
           <select class="input sm" bind:value={proj} aria-label="Projet"><option value="">Choisir un projet</option>{#each d.candidates as c}<option value={c.project_id}>{c.project_name}</option>{/each}</select>
           {#if proj}<select class="input sm" bind:value={port} aria-label="Port externe"><option value="">Choisir un port externe</option>{#each ports as p}<option value={p.cable_id}>{p.number ? `${p.number} · ` : ''}{p.label}</option>{/each}</select>{/if}
@@ -81,7 +81,7 @@
   {:else if d.links.length || d.free.length}
     <section class="card links">
       <div class="card-head"><h2>Liens avec d’autres projets</h2><span class="muted small">{d.free.length} port{d.free.length > 1 ? 's' : ''} externe{d.free.length > 1 ? 's' : ''} non lié{d.free.length > 1 ? 's' : ''}</span></div>
-      {#each d.links as l (l.id)}{@render row(l)}{:else}<p class="muted small">Aucun lien. Sélectionnez un port externe dans le synoptique pour le relier à un autre projet.</p>{/each}
+      {#each d.links as l (l.id)}{@render row(l)}{:else}<p class="muted small" title="Sélectionnez un port externe dans le synoptique pour le relier à un autre projet.">Aucun lien</p>{/each}
     </section>
   {/if}
 {/if}

@@ -10,7 +10,8 @@ export interface Remote { type: 'cursor' | 'select'; room: string; member: Prese
 type RemoteHandler = (r: Remote) => void;
 const remotes = new Map<string, Set<RemoteHandler>>();
 
-export const live = $state<{ connected: boolean; presence: Record<string, PresenceMember[]> }>({ connected: false, presence: {} });
+/** `wanted` : au moins une salle est suivie (la connexion est alors attendue). */
+export const live = $state<{ connected: boolean; wanted: boolean; presence: Record<string, PresenceMember[]> }>({ connected: false, wanted: false, presence: {} });
 
 let ws: WebSocket | null = null;
 let wanted = new Map<string, Set<Handler>>();
@@ -62,6 +63,7 @@ export function join(room: string, handler: Handler): () => void {
   const first = !wanted.has(room);
   if (first) wanted.set(room, new Set());
   wanted.get(room)!.add(handler);
+  live.wanted = true;
   if (!ws) connect();
   else if (first) send({ type: 'join', room });
   return () => {
@@ -72,6 +74,7 @@ export function join(room: string, handler: Handler): () => void {
       send({ type: 'leave', room });
       delete live.presence[room];
     }
+    live.wanted = wanted.size > 0;
     if (!wanted.size && ws) { closedByUs = true; ws.close(); }
   };
 }

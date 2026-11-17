@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Icon from './Icon.svelte';
   // Changement de son propre mot de passe : l'ancien, puis deux fois le nouveau.
   import FieldError from './FieldError.svelte';
   import { api, ApiError } from '../lib/api';
@@ -30,7 +31,7 @@
 
 <form onsubmit={submit} class="stack">
   <div class="field"><label for="cur">{currentLabel}</label><input class="input" id="cur" type="password" autocomplete="current-password" bind:value={current} required aria-invalid={currentErr ? 'true' : undefined} aria-describedby={currentErr ? 'cur-err' : undefined}><FieldError message={currentErr} for="cur" /></div>
-  <div class="field"><label for="new">Nouveau mot de passe</label><input class="input" id="new" type="password" autocomplete="new-password" bind:value={next} required minlength="8" aria-invalid={nextErr ? 'true' : undefined} aria-describedby={nextErr ? 'new-err' : 'new-help'}>{#if nextErr}<FieldError message={nextErr} for="new" />{:else}<span class="help" id="new-help">8 caractères au moins. Vos autres sessions seront fermées.</span>{/if}</div>
+  <div class="field"><label for="new">Nouveau mot de passe</label><input class="input" id="new" type="password" autocomplete="new-password" bind:value={next} required minlength="8" aria-invalid={nextErr ? 'true' : undefined} aria-describedby={nextErr ? 'new-err' : 'new-help'}>{#if nextErr}<FieldError message={nextErr} for="new" />{:else}<button type="button" class="ux3-info" id="new-help" title="8 caractères au moins. Vos autres sessions seront fermées." aria-label="8 caractères au moins. Vos autres sessions seront fermées."><Icon name="info" size="sm" /></button>{/if}</div>
   <div class="field"><label for="new2">Confirmation</label><input class="input" id="new2" type="password" autocomplete="new-password" bind:value={confirm} required aria-invalid={mismatch ? 'true' : undefined} aria-describedby={mismatch ? 'new2-err' : undefined}><FieldError message={mismatch ? 'Les deux mots de passe diffèrent.' : null} for="new2" /></div>
   {#if error}<div class="alert err" role="alert">{error}</div>{/if}
   <button class="btn primary" disabled={busy || mismatch}>{#if busy}<span class="spin" aria-hidden="true"></span>{/if}{submitLabel}</button>

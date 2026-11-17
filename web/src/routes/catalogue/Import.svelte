@@ -84,14 +84,14 @@
   <div class="bar"><i style="width:{step * 20}%"></i></div>
 
   {#if step === 1}
-    <p class="muted">Déposez un tableur : CSV (UTF-8 ou Windows-1252, séparateur deviné), Excel (.xlsx, .xls) ou OpenDocument (.ods). La première ligne doit porter les en-têtes ; les colonnes sont reconnues même avec d’autres noms (« Désignation », « Fabricant », « Conso (W) »). Rien n’est écrit avant la dernière étape.</p>
+    <button type="button" class="ux3-info" title="Déposez un tableur : CSV (UTF-8 ou Windows-1252, séparateur deviné), Excel (.xlsx, .xls) ou OpenDocument (.ods). La première ligne doit porter les en-têtes ; les colonnes sont reconnues même avec d’autres noms (« Désignation », « Fabricant », « Conso (W) »). Rien n’est écrit avant la dernière étape." aria-label="Déposez un tableur : CSV (UTF-8 ou Windows-1252, séparateur deviné), Excel (.xlsx, .xls) ou OpenDocument (.ods). La première ligne doit porter les en-têtes ; les colonnes sont reconnues même avec d’autres noms (« Désignation », « Fabricant », « Conso (W) »). Rien n’est écrit avant la dernière étape."><Icon name="info" size="sm" /></button>
     <button type="button" class="drop" class:on={dragging} onclick={() => input?.click()}
       ondragover={(e) => { e.preventDefault(); dragging = true; }} ondragleave={() => (dragging = false)}
       ondrop={(e) => { e.preventDefault(); dragging = false; const f = e.dataTransfer?.files[0]; if (f) send(f); }}>
-      {#if busy}<span class="spin"></span>Lecture du fichier{:else}<Icon name="upload" /><b>Choisir un fichier</b><span class="muted">ou le glisser ici · 20 Mo et 5 000 lignes au plus</span>{/if}
+      {#if busy}<span class="spin"></span>Lecture du fichier{:else}<Icon name="upload" /><b title="Ou le glisser ici · 20 Mo et 5 000 lignes au plus">Choisir un fichier</b>{/if}
     </button>
     <input type="file" accept=".csv,.txt,.tsv,.xlsx,.xlsm,.xls,.ods" bind:this={input} hidden onchange={() => { const f = input?.files?.[0]; if (f) send(f); }}>
-    <p class="muted small">Astuce : un export du catalogue (« Export et échange ») se réimporte tel quel.</p>
+    <button type="button" class="ux3-info" title="Astuce : un export du catalogue (« Export et échange ») se réimporte tel quel." aria-label="Astuce : un export du catalogue (« Export et échange ») se réimporte tel quel."><Icon name="info" size="sm" /></button>
   {:else if step === 2 && a}
     <p class="muted">{a.filename} · {nf(a.row_count)} ligne{a.row_count > 1 ? 's' : ''}. Vérifiez à quel champ correspond chaque colonne ; une colonne ignorée n’est pas lue.</p>
     <div class="tbl-wrap">
@@ -142,7 +142,7 @@
     {/if}
     <div class="field"><span class="flabel">Si un équipement existe déjà (même référence, ou même nom et même marque)</span>
       <Seg label="Équipement existant" bind:value={strategy} options={[{ value: 'skip', label: 'Garder l’existant' }, { value: 'update', label: 'Le mettre à jour' }, { value: 'create', label: 'Créer quand même' }]} />
-      <span class="help">« Mettre à jour » ne remplace que les colonnes importées ; les ports et le reste de la fiche sont gardés.</span>
+      <button type="button" class="ux3-info" title="« Mettre à jour » ne remplace que les colonnes importées ; les ports et le reste de la fiche sont gardés." aria-label="« Mettre à jour » ne remplace que les colonnes importées ; les ports et le reste de la fiche sont gardés."><Icon name="info" size="sm" /></button>
     </div>
     {#if error}<div class="alert err">{error}</div>{/if}
     <div class="row-actions"><button class="btn ghost" onclick={() => (step = 2)}>Retour</button><button class="btn primary" onclick={() => run(true)} disabled={busy}>{#if busy}<span class="spin"></span>{/if}Faire un essai à blanc</button></div>

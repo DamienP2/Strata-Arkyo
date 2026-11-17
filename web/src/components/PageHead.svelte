@@ -6,13 +6,14 @@
 </script>
 
 <script lang="ts">
-  // Gabarit unique d'en-tête de page : fil d'Ariane cliquable, titre (26 px) et compteur,
-  // action principale à droite sur la ligne du titre ; description d'une ligne, méta, puis
-  // recherche et filtres en dessous.
+  // Gabarit unique d'en-tête de page (design commun Strata, .settings-head) : fil d'Ariane, titre
+  // (22 px, 800) et compteur, action principale à droite ; méta, puis recherche et filtres dessous.
+  // Pas de texte explicatif : la description éventuelle passe dans l'infobulle du « i ».
   import type { Snippet } from 'svelte';
+  import Icon from './Icon.svelte';
   let { crumbs = [], title, count = '', desc = '', info, actions, children, ws = false, portal = false }: {
     crumbs?: Crumb[]; title: string; count?: string;
-    /** Description d'une ligne sous le titre (le texte complet reste en infobulle) : l'en-tête garde la même hauteur partout. */
+    /** Précision sur la page : infobulle du « i » après le titre, jamais affichée en texte. */
     desc?: string;
     /** Ligne d'information sous le titre (date de modification, métadonnées du projet). Libellés en Inter, jamais en mono. */
     info?: Snippet;
@@ -31,25 +32,19 @@
     </nav>
   {/if}
   <div class="ph-row">
-    <div class="ph-title"><h1>{title}</h1>{#if count}<span class="ph-count">{count}</span>{/if}</div>
+    <div class="ph-title"><h1>{title}</h1>{#if desc}<button type="button" class="ux3-info" title={desc} aria-label={desc}><Icon name="info" size="sm" /></button>{/if}{#if count}<span class="ph-count">{count}</span>{/if}</div>
     {#if actions}<div class="ph-actions">{@render actions()}</div>{:else if portal}<div class="ph-actions ph-slot"></div>{/if}
   </div>
-  {#if desc}<p class="ph-desc" title={desc}>{desc}</p>{/if}
   {#if info}<div class="ph-meta">{@render info()}</div>{/if}
   {#if children}<div class="ph-tools">{@render children()}</div>{/if}
 </header>
 
 <style>
-  /* Espace de travail avec méta (pages projet) : la méta se range à droite du fil d'Ariane, pour
-     garder une barre aussi basse que celle du catalogue (fil, puis titre et actions). */
+  /* Espace de travail avec méta (pages projet) : la méta se range à droite du fil d'Ariane. */
   @media (min-width: 861px) {
     .ph.ph-ws-info { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 3px 24px; }
     .ph-ws-info > * { grid-column: 1 / -1; }
     .ph-ws-info > .ph-crumbs { grid-column: 1; grid-row: 1; }
     .ph-ws-info > .ph-meta { grid-column: 2; grid-row: 1; display: flex; justify-content: flex-end; min-width: 0; }
-  }
-  .ph-desc { margin: 0; max-width: 100%; font-size: var(--fs-md); line-height: 1.4; color: var(--fg-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  @media (max-width: 860px) {
-    .ws-top .ph-desc { display: none; }
   }
 </style>

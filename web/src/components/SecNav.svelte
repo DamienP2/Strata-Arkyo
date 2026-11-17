@@ -63,17 +63,17 @@
   /* Menu mobile : entrées de 44px (cible tactile). */
   :global(.sn-panel) .snb { display: flex; width: 100%; height: 44px; padding: 0 12px; font-size: var(--fs-md, 13.5px); border-radius: var(--r-sm, 8px); }
   /* Bouton du menu mobile : reprend l'ancien résumé du <details> (.sn-pick summary). */
-  .subnav :global(.sn-sum) { display: flex; align-items: center; gap: 10px; width: 100%; height: auto; min-height: 56px; padding: 6px 14px 6px 16px; border: 0; border-radius: 16px; background: var(--surface); box-shadow: var(--e1); color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
+  .subnav :global(.sn-sum) { display: flex; align-items: center; gap: 10px; width: 100%; height: auto; min-height: 40px; padding: 4px 10px 4px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); box-shadow: none; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
   .subnav :global(.sn-sum:hover) { background: var(--surface); }
   .subnav :global(.sn-sum:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
   .subnav :global(.sn-sum .sn-label) { padding: 0; }
   .sn-cur { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
-  .sn-cur b { font: 650 var(--fs-lg, 16px)/1.15 var(--display); letter-spacing: -.015em; }
+  .sn-cur b { font-weight: 700; font-size: 14px; line-height: 1.2; }
   .chev { display: inline-grid; margin-left: auto; transition: transform .2s var(--ease); }
   .subnav :global(.sn-sum[aria-expanded="true"] .chev) { transform: rotate(180deg); }
-  .subnav :global(.sn-sum:has(.sn-cur.one)) { min-height: 48px; padding-block: 4px; }
+  .subnav :global(.sn-sum:has(.sn-cur.one)) { min-height: 40px; padding-block: 4px; }
   .sn-cur.one { flex: 1; }
-  .sn-cur.one b { display: flex; align-items: baseline; gap: 6px; min-width: 0; font-size: var(--fs-lg, 16px); }
+  .sn-cur.one b { display: flex; align-items: baseline; gap: 6px; min-width: 0; font-size: 14px; }
   .sn-ctx { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-2); font-weight: 600; }
   .sn-sep { flex: none; color: var(--fg-3); }
   .sn-sec { flex: none; max-width: 70%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

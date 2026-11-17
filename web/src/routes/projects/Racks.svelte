@@ -591,8 +591,7 @@
           <Icon name="chevd" size="sm" />
         </button>
         <section>
-          <h2 class="sheet-t">À placer <span class="muted">· {wanted.length}</span></h2>
-          {#if mine && !show3d}<p class="small muted">Glissez un équipement dans le rack, ou choisissez-le puis sa position (clic, ou flèches et Entrée). Échap pour annuler.</p>{/if}
+          <h2 class="sheet-t" title={mine && !show3d ? 'Glissez un équipement dans le rack, ou choisissez-le puis sa position (clic, ou flèches et Entrée). Échap pour annuler.' : undefined}>À placer <span class="muted">· {wanted.length}</span></h2>
           {#if canAdd && shownC}<button class="btn sm add-mat" onclick={() => (adding = true)}><Icon name="plus" size="sm" />Ajouter du matériel</button>{/if}
           {#each wantedGroups as g (g.key)}
             <div class="pcat eyebrow"><i style="--c:{g.color}"></i><span>{g.label}</span><b>{g.list.length}</b></div>

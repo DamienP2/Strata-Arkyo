@@ -120,7 +120,7 @@
         {#if presta}
           <fieldset class="wz-period">
             <legend class="eyebrow">Exploitation</legend>
-            <p class="muted small">Tournage ou événement : un seul jour si début et fin sont identiques.</p>
+            <button type="button" class="ux3-info" title="Tournage ou événement : un seul jour si début et fin sont identiques." aria-label="Tournage ou événement : un seul jour si début et fin sont identiques."><Icon name="info" size="sm" /></button>
             <div class="form-grid">
               <div class="field"><label for="wz-ss">Début</label><input class="input" type="date" id="wz-ss" bind:value={d.shoot_start} min={d.planning_start || today} {...inv('shoot_start', 'wz-ss')}><FieldError message={errors.shoot_start} for="wz-ss" /></div>
               <div class="field"><label for="wz-se">Fin</label><input class="input" type="date" id="wz-se" bind:value={d.shoot_end} min={d.shoot_start || today} {...inv('shoot_end', 'wz-se')}><FieldError message={errors.shoot_end} for="wz-se" /></div>

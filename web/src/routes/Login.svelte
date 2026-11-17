@@ -27,11 +27,10 @@
       <div class="gate-brand"><Brand stacked /></div>
       <form onsubmit={submit}>
         <div class="field"><label for="login">E-mail ou identifiant</label><input class="input" id="login" autocomplete="username" bind:value={login} required></div>
-        <div class="field"><label for="pw">Mot de passe</label><input class="input" id="pw" type="password" autocomplete="current-password" bind:value={password} required></div>
+        <div class="field"><span class="lbl-row"><label for="pw">Mot de passe</label><button type="button" class="ux3-info" title="Mot de passe oublié : demandez à un administrateur du site de le réinitialiser." aria-label="Mot de passe oublié"><Icon name="info" size="sm" /></button></span><input class="input" id="pw" type="password" autocomplete="current-password" bind:value={password} required></div>
         {#if error}<div class="alert err" role="alert">{error}</div>{/if}
         <button class="btn primary" disabled={busy}>{#if busy}<span class="spin"></span>{:else}<Icon name="login" size="sm" />{/if}Se connecter</button>
       </form>
     </div>
-    <p class="gate-foot">Mot de passe oublié : demandez à un administrateur du site de le réinitialiser.</p>
   </div>
 </div>

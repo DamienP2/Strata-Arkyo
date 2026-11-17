@@ -84,7 +84,7 @@
     </section>
     <section class="card stack">
       <div class="card-head"><h2>Emplacement</h2></div>
-      <div class="field"><label for="bd">Dossier des sauvegardes</label><input class="input mono" id="bd" bind:value={dir}><span class="help">Idéalement un disque réseau (NAS) monté sur le serveur, pour survivre à une panne de la machine.</span></div>
+      <div class="field"><label for="bd">Dossier des sauvegardes</label><input class="input mono" id="bd" bind:value={dir}><button type="button" class="ux3-info" title="Idéalement un disque réseau (NAS) monté sur le serveur, pour survivre à une panne de la machine." aria-label="Idéalement un disque réseau (NAS) monté sur le serveur, pour survivre à une panne de la machine."><Icon name="info" size="sm" /></button></div>
       <div class="row-actions" style="justify-content:flex-start"><button class="btn" onclick={saveDir} disabled={!!busy || dir === st.dir}>Enregistrer</button></div>
     </section>
   </div>
@@ -117,7 +117,7 @@
 {:else}<Loading label="Chargement des sauvegardes" />{/if}
 
 <section class="card stack" style="margin-top:20px">
-  <div class="card-head"><div><h2>Points de restauration des projets</h2><span class="muted small">Un point automatique est pris si le projet a changé ; les 48 derniers sont gardés par projet.</span></div></div>
+  <div class="card-head"><div><h2>Points de restauration des projets</h2><button type="button" class="ux3-info" title="Un point automatique est pris si le projet a changé ; les 48 derniers sont gardés par projet." aria-label="Un point automatique est pris si le projet a changé ; les 48 derniers sont gardés par projet."><Icon name="info" size="sm" /></button></div></div>
   <div class="bk-freq">
     <span class="flabel" aria-hidden="true">Fréquence des points de restauration</span>
     <Seg label="Fréquence des points de restauration" bind:value={pInterval} options={FREQ.map(([h, l]) => ({ value: h, label: l }))} onchange={setInterval_} />
@@ -126,7 +126,7 @@
 </section>
 
 <section class="card stack" style="margin-top:20px">
-  <div class="card-head"><div><h2>Projets supprimés</h2><span class="muted small">Un projet supprimé se récupère depuis son dernier point de restauration.</span></div></div>
+  <div class="card-head"><div><h2>Projets supprimés</h2><button type="button" class="ux3-info" title="Un projet supprimé se récupère depuis son dernier point de restauration." aria-label="Un projet supprimé se récupère depuis son dernier point de restauration."><Icon name="info" size="sm" /></button></div></div>
   {#each orphans as o (o.id)}
     <div style="display:flex;gap:10px;align-items:center;border-top:1px solid var(--line);padding:6px 0"><span style="flex:1"><b>{o.project_name}</b> <span class="muted small">{o.label ?? 'point'} · {dateTime(o.created_at)}</span></span><button class="icon-btn sm" title="Télécharger le point de restauration" aria-label="Télécharger le point de restauration" onclick={() => download(`/points/${o.id}/download`)}><Icon name="download" size="sm" /></button><button class="btn sm" onclick={() => restoreOrphan(o)}>Restaurer</button></div>
   {:else}<EmptyState card={false} icon="folder" message="Aucun projet supprimé à récupérer" hint="Un projet supprimé apparaît ici tant qu’il lui reste un point de restauration." />{/each}

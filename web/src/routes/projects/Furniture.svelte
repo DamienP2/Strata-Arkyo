@@ -521,8 +521,7 @@
           <Icon name="chevd" size="sm" />
         </button>
         <section>
-          <h2 class="sheet-t">À placer <span class="muted">· {wanted.length}</span></h2>
-          {#if writable && !show3d}<p class="small muted">Glissez un équipement sur une casquette ou un poste du dessin, ou choisissez-le puis cliquez sur la cible. Échap pour annuler.</p>{/if}
+          <h2 class="sheet-t" title={writable && !show3d ? 'Glissez un équipement sur une casquette ou un poste du dessin, ou choisissez-le puis cliquez sur la cible. Échap pour annuler.' : undefined}>À placer <span class="muted">· {wanted.length}</span></h2>
           {#if writable}<button class="btn sm add-mat" onclick={() => (adding = true)} title="Ajouter du matériel {selC ? `dans ${shortName(selC)}` : `à ${desk.name}`}"><Icon name="plus" size="sm" />Ajouter du matériel</button>{/if}
           {#each wantedGroups as g (g.key)}
             <div class="pcat eyebrow"><i style="--c:{g.color}"></i><span>{g.label}</span><b>{g.list.length}</b></div>
@@ -568,7 +567,7 @@
                 </div>
                 {#if (racks[c.id]?.pending.length ?? 0) > 0}<span class="cq-pend2">{racks[c.id]!.pending.length} à placer</span>{/if}
               </div>
-            {:else}<p class="muted small cq-none">Aucune casquette : « Ajouter une casquette » dans le panneau de droite.</p>{/each}
+            {:else}<p class="muted small cq-none">Aucune casquette</p>{/each}
           </div>
         {:else}
           <div class="plan" style="height:{planH + 40}px;padding-left:{padL}px;padding-right:{padR}px" role="presentation" onpointermove={moveDrag} onpointerup={endDrag}>
@@ -610,7 +609,7 @@
                 </div>
               {/each}
             </div>
-            {#if !casq.length}<p class="plan-hint muted small">Ajoutez une casquette (panneau de droite) : elle se pose sur le plateau et se glisse à sa place.</p>{/if}
+            {#if !casq.length}<button type="button" class="ux3-info" title="Ajoutez une casquette (panneau de droite) : elle se pose sur le plateau et se glisse à sa place." aria-label="Ajoutez une casquette (panneau de droite) : elle se pose sur le plateau et se glisse à sa place."><Icon name="info" size="sm" /></button>{/if}
           </div>
         {/if}
       </div>
@@ -698,7 +697,7 @@
               <h2>Postes <span class="muted">· {posts.length}</span></h2>
               {#each posts as p, i (p.id)}
                 <button class="cq-row" onclick={() => pick('p', p.id)}><b>{i + 1} · {p.role || 'Poste'}</b><span class="muted small mono">{p.instance_ids.length} ex.</span>{#if p.name}<span class="muted small">{p.name}</span>{/if}</button>
-              {:else}<p class="muted small" style="margin:0">Aucun poste : un poste (rôle, opérateur) reçoit le matériel à portée de main.</p>{/each}
+              {:else}<p class="muted small" style="margin:0" title="Un poste (rôle, opérateur) reçoit le matériel à portée de main.">Aucun poste</p>{/each}
               {#if writable}<button class="btn sm" style="align-self:flex-start" onclick={addPost}><Icon name="plus" size="sm" />Ajouter un poste</button>{/if}
             </section>
           {/if}
@@ -723,7 +722,7 @@
     <div class="stack">
       <div class="field"><label for="nd-loc">Emplacement</label><select class="input" id="nd-loc" bind:value={newDesk.location_id}>{#each view.locations as l}<option value={l.id}>{l.name}{l.code && l.code !== l.name ? ` · ${l.code}` : ''}</option>{/each}</select></div>
       <div class="field"><label for="nd-name">Nom</label><input class="input" id="nd-name" bind:value={newDesk.name} required maxlength="120" placeholder="Pupitre réalisateur, console son"></div>
-      <p class="muted small">Mobilier de 2 400 × 900 mm, 750 mm de haut : les cotes se règlent ensuite dans le panneau de droite.</p>
+      <button type="button" class="ux3-info" title="Mobilier de 2 400 × 900 mm, 750 mm de haut : les cotes se règlent ensuite dans le panneau de droite." aria-label="Mobilier de 2 400 × 900 mm, 750 mm de haut : les cotes se règlent ensuite dans le panneau de droite."><Icon name="info" size="sm" /></button>
     </div>
   </Dialog>
 {/if}
@@ -733,7 +732,7 @@
   .mob-equip :global(.rack-screen) { border-radius: 0; box-shadow: none; }
   .mob-casq a { display: inline-flex; align-items: center; height: var(--btn-h-sm, 30px); padding: 0 11px; border-radius: var(--btn-r-sm, 7px); font-size: var(--fs-ctl-sm, 13px); font-weight: 550; color: var(--fg-2); text-decoration: none; white-space: nowrap; }
   .mob-casq a:hover { color: var(--fg); }
-  .mob-casq a.on { background: var(--key-bg); color: var(--fg); font-weight: 650; box-shadow: var(--key); }
+  .mob-casq a.on { background: var(--key-bg); color: var(--fg); font-weight: 650; box-shadow: var(--key-sh); }
   .mob-casq a:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
   /* Hauteur fixe : le dessin défile seul, les panneaux latéraux restent visibles (comme les racks).
      L'écran remplit la hauteur sous l'en-tête de projet (~108 px) et la marge basse de la page

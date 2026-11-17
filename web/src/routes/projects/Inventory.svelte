@@ -877,7 +877,7 @@
   <Dialog title={locEdit.id ? 'Modifier l’emplacement' : 'Nouvel emplacement'} eyebrow={view.project.name} onclose={() => (locEdit = null)} onsubmit={saveLoc} submitLabel={locEdit.id ? 'Enregistrer' : 'Créer'}>
     <div class="stack">
       <div class="field"><label for="l-name">Nom</label><input class="input" class:err={!!locErr.name} id="l-name" bind:value={locEdit.name} required maxlength="120" placeholder="Ex. Bord terrain" aria-invalid={!!locErr.name} aria-describedby={locErr.name ? 'l-name-err' : undefined}><FieldError for="l-name" message={locErr.name} /></div>
-      <div class="field"><label for="l-code">Code câble</label><input class="input mono" class:err={!!locErr.code} id="l-code" bind:value={locEdit.code} maxlength="5" placeholder="Tiré du nom" aria-invalid={!!locErr.code} aria-describedby={locErr.code ? 'l-code-help l-code-err' : 'l-code-help'}><span class="help" id="l-code-help">5 caractères au plus ; il entre dans la numérotation des câbles.</span><FieldError for="l-code" message={locErr.code} /></div>
+      <div class="field"><label for="l-code">Code câble</label><input class="input mono" class:err={!!locErr.code} id="l-code" bind:value={locEdit.code} maxlength="5" placeholder="Tiré du nom" aria-invalid={!!locErr.code} aria-describedby={locErr.code ? 'l-code-help l-code-err' : 'l-code-help'}><button type="button" class="ux3-info" id="l-code-help" title="5 caractères au plus ; il entre dans la numérotation des câbles." aria-label="5 caractères au plus ; il entre dans la numérotation des câbles."><Icon name="info" size="sm" /></button><FieldError for="l-code" message={locErr.code} /></div>
     </div>
   </Dialog>
 {/if}
@@ -910,7 +910,7 @@
             </optgroup>
           {/each}
         </select>
-        {#if hasAcc}<span class="help" id="mv-t-help">Un accessoire se pose dans un élément rackable : les autres destinations sont grisées.</span>{/if}
+        {#if hasAcc}<button type="button" class="ux3-info" id="mv-t-help" title="Un accessoire se pose dans un élément rackable : les autres destinations sont grisées." aria-label="Un accessoire se pose dans un élément rackable : les autres destinations sont grisées."><Icon name="info" size="sm" /></button>{/if}
       </div>
     </div>
   </Dialog>

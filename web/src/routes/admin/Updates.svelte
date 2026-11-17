@@ -83,7 +83,7 @@
       {:else if newer}
         <div class="card-head"><div><p class="eyebrow">Disponible · canal {available.channel}</p><p class="mono ver">{available.version}</p></div><span class="muted small">{bytes(available.size)}</span></div>
         {#if available.notes?.length}<ul class="notes">{#each available.notes as n}<li>{n}</li>{/each}</ul>{/if}
-        <p class="muted small">Une sauvegarde complète est prise avant la bascule. Si la nouvelle version ne démarre pas, le site revient seul à la version actuelle.</p>
+        <button type="button" class="ux3-info" title="Une sauvegarde complète est prise avant la bascule. Si la nouvelle version ne démarre pas, le site revient seul à la version actuelle." aria-label="Une sauvegarde complète est prise avant la bascule. Si la nouvelle version ne démarre pas, le site revient seul à la version actuelle."><Icon name="info" size="sm" /></button>
         <div class="row-actions" style="justify-content:flex-start">
           <button class="btn primary" onclick={() => install('now')} disabled={!!busy || !st.managed} title={st.managed ? undefined : unmanaged}>{#if busy === 'now'}<span class="spin"></span>{:else}<Icon name="download" />{/if}Installer maintenant</button>
           <button class="btn" onclick={() => install('night')} disabled={!!busy || !st.managed} title={st.managed ? undefined : unmanaged}><Icon name="clock" />Cette nuit</button>

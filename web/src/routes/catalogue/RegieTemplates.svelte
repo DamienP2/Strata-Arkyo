@@ -69,8 +69,6 @@
     toast(`« ${r.name} » supprimé.`); await load();
   }
 </script>
-
-<p class="muted" style="max-width:70ch">Un modèle de régie assemble des modèles d’éléments dans un ordre donné. Créez-en un ici ou depuis l’onglet Régies d’un projet (« Enregistrer comme modèle »), puis recopiez-le dans n’importe quel projet : chaque élément est recréé avec son contenu.</p>
 {#if writable && list?.length}<HeadActions><button class="btn primary" onclick={() => openEdit(null)}><Icon name="plus" />Nouveau modèle de régie</button></HeadActions>{/if}
 
 {#if list === null}<Loading label="Chargement des modèles de régie" />
@@ -122,7 +120,7 @@
             <option value="">Ajouter un modèle d’élément</option>
             {#each templates as t}<option value={t.id}>{t.name} · {CONTAINER_KINDS[t.container.kind as keyof typeof CONTAINER_KINDS]?.label}{t.status !== 'active' ? ` (${STATUS[t.status]})` : ''}</option>{/each}
           </select>
-        {:else}<p class="muted small">Aucun modèle d’élément : créez-en depuis l’inventaire d’un projet.</p>{/if}
+        {:else}<p class="muted small" title="Créez-en depuis l’inventaire d’un projet.">Aucun modèle d’élément</p>{/if}
         <FieldError message={errs.members} />
       </div>
       <div class="field"><label for="rt-no">Notes (facultatif)</label><textarea class="input" id="rt-no" rows="2" bind:value={edit.notes} maxlength="2000"></textarea></div>

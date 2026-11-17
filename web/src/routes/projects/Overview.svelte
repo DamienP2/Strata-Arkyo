@@ -532,7 +532,7 @@
             <dd>
               {#if editing === 'description' && form}
                 <form class="ov-inl ov-inl-ta" onsubmit={(e) => { e.preventDefault(); save(); }} use:inlineKeys>
-                  <span class="ov-inl-f"><textarea class="input" id="ov-in-description" aria-label="Description" rows="3" value={form.description ?? ''} oninput={txt('description')} maxlength="4000" {...inv('description', 'ov-in-description')}></textarea><span class="help">Entrée pour enregistrer, Maj+Entrée pour aller à la ligne.</span><FieldError message={errors.description} for="ov-in-description" /></span>
+                  <span class="ov-inl-f"><textarea class="input" id="ov-in-description" aria-label="Description" rows="3" value={form.description ?? ''} oninput={txt('description')} maxlength="4000" {...inv('description', 'ov-in-description')}></textarea><button type="button" class="ux3-info" title="Entrée pour enregistrer, Maj+Entrée pour aller à la ligne." aria-label="Entrée pour enregistrer, Maj+Entrée pour aller à la ligne."><Icon name="info" size="sm" /></button><FieldError message={errors.description} for="ov-in-description" /></span>
                   {@render inlineActs('description')}
                 </form>
               {:else}<span class="v ov-pre" class:empty={!p.description}>{p.description ?? 'Aucune description'}</span>{@render pen('description', p.description ? 'Modifier la description' : 'Ajouter une description', !p.description)}{/if}
@@ -564,7 +564,7 @@
             {/each}
             {#if elements.length > SIL_MAX}<li class="ov-sil-more"><a class="ov-sil" href="/projets/{pid}/inventaire"><span class="vis plus">+{elements.length - SIL_MAX}</span><span class="nm">autres éléments</span></a></li>{/if}
           </ul>
-        {:else}<p class="muted small ov-noel">Aucun élément : ajoutez un rack, une valise ou du mobilier depuis l’inventaire.</p>{/if}
+        {:else}<p class="muted small ov-noel" title="Ajoutez un rack, une valise ou du mobilier depuis l’inventaire.">Aucun élément</p>{/if}
         <div class="ov-kpis">
           <div><b>{nf(pieces)}</b><span>pièce{pieces > 1 ? 's' : ''}</span></div>
           <div><b>{nf(weight, 1)} kg</b><span>poids</span></div>

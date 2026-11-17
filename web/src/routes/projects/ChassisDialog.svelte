@@ -68,7 +68,7 @@
       {/if}
     {/each}
   </div>
-  <p class="muted small" style="margin:10px 0 0">Les ports des modules s’ajoutent au châssis dans le synoptique (« S3 · SDI IN »). Chaque module garde son ID, son numéro de série et son poids.</p>
+  <button type="button" class="ux3-info" title="Les ports des modules s’ajoutent au châssis dans le synoptique (« S3 · SDI IN »). Chaque module garde son ID, son numéro de série et son poids." aria-label="Les ports des modules s’ajoutent au châssis dans le synoptique (« S3 · SDI IN »). Chaque module garde son ID, son numéro de série et son poids."><Icon name="info" size="sm" /></button>
   {#if pick != null}
     <div class="pickr">
       <div class="ph"><b>Emplacement {pick}</b><input class="input" type="search" placeholder="Nom ou référence du module" bind:value={q} aria-label="Rechercher un module" data-no-dirty></div>
@@ -77,7 +77,7 @@
         {#each comps.filter((c) => !q.trim() || `${c.name} ${c.reference ?? ''}`.toLowerCase().includes(q.trim().toLowerCase())).slice(0, 80) as c (c.id)}
           {@const ok = fits(pick, c.slots)}
           <button class="pr" disabled={!ok || busy} onclick={() => add(c)}><b>{c.name}</b><span class="muted small">{c.reference ?? ''}</span><span class="w mono">{c.slots} empl.{ok ? '' : ' · ne tient pas'}</span></button>
-        {:else}<p class="muted small">Aucun module au catalogue : dans la fiche d’une carte, onglet Modules, choisissez « Module ».</p>{/each}
+        {:else}<p class="muted small" title="Dans la fiche d’une carte, onglet Modules, choisissez « Module ».">Aucun module au catalogue</p>{/each}
       {/if}
     </div>
   {/if}

@@ -86,7 +86,7 @@
           {#each LEVELS as [lv, lvl]}<input type="radio" name="p-{d}" value={lv} bind:group={editing.permissions[d]} aria-label="{l} : {lvl}">{/each}
         {/each}
       </div>
-      <p class="muted small">Vous ne pouvez pas accorder un niveau supérieur au vôtre.</p>
+      <button type="button" class="ux3-info" title="Vous ne pouvez pas accorder un niveau supérieur au vôtre." aria-label="Vous ne pouvez pas accorder un niveau supérieur au vôtre."><Icon name="info" size="sm" /></button>
       {#if error}<div class="alert err" role="alert">{error}</div>{/if}
     </div>
   </Dialog>

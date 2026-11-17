@@ -1,24 +1,39 @@
-// Thème clair, sombre ou réglage du système, mémorisé sur cet appareil.
+// Thème sombre (par défaut), clair, ou celui du système, mémorisé sur cet appareil.
+// Le sombre est le défaut du CSS ; le clair pose data-theme="light" sur <html>. Le script
+// d'index.html applique le choix avant la première image.
 
-type Theme = 'light' | 'dark' | 'system';
+export type Theme = 'dark' | 'light' | 'system';
+export const THEMES: Theme[] = ['dark', 'light', 'system'];
+const KEY = 'strata.theme';
+
 function read(): Theme {
-  try { return (localStorage.getItem('sa-theme') as Theme) || 'system'; } catch { return 'system'; }
+  try {
+    const v = localStorage.getItem(KEY) ?? localStorage.getItem('sa-theme');
+    return v === 'light' || v === 'system' || v === 'dark' ? v : 'dark';
+  } catch { return 'dark'; }
 }
 
 export const theme = $state({ value: read() as Theme });
 
+const mq = typeof matchMedia === 'undefined' ? null : matchMedia('(prefers-color-scheme: light)');
+
 export function isDark(): boolean {
-  return theme.value === 'dark' || (theme.value === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+  return theme.value === 'dark' || (theme.value === 'system' && !mq?.matches);
 }
 
 export function applyTheme() {
-  const el = document.documentElement;
-  if (theme.value === 'system') delete el.dataset.theme;
-  else el.dataset.theme = theme.value;
+  document.documentElement.dataset.theme = isDark() ? 'dark' : 'light';
+}
+
+mq?.addEventListener('change', () => { if (theme.value === 'system') applyTheme(); });
+
+export function setTheme(t: Theme) {
+  if (!THEMES.includes(t)) return;
+  theme.value = t;
+  try { localStorage.setItem(KEY, t); } catch { /* stockage indisponible */ }
+  applyTheme();
 }
 
 export function toggleTheme() {
-  theme.value = isDark() ? 'light' : 'dark';
-  try { localStorage.setItem('sa-theme', theme.value); } catch { /* stockage indisponible */ }
-  applyTheme();
+  setTheme(isDark() ? 'light' : 'dark');
 }

@@ -106,7 +106,7 @@
             {#if container && can('projets', 'ecriture')}<button type="button" class="btn sm ghost" onclick={() => saveRules('element')}><Icon name="pen" size="sm" />Garder pour {container.name}</button>{/if}
             {#if can('parametres', 'ecriture')}<button type="button" class="btn sm ghost" onclick={() => saveRules('site')}><Icon name="pen" size="sm" />Garder pour le site</button>{/if}
           </div>
-          <span class="muted small">Préfixe et suffixe viennent du signal (à défaut, de sa fonction) ; sens 1 entrée, 2 sortie, 3 bidirectionnel. Un compteur par préfixe et par sens ; un numéro déjà pris est sauté et n’est jamais recyclé. Les liaisons entre éléments se numérotent au niveau du projet.</span>
+          <button type="button" class="ux3-info" title="Préfixe et suffixe viennent du signal (à défaut, de sa fonction) ; sens 1 entrée, 2 sortie, 3 bidirectionnel. Un compteur par préfixe et par sens ; un numéro déjà pris est sauté et n’est jamais recyclé. Les liaisons entre éléments se numérotent au niveau du projet." aria-label="Préfixe et suffixe viennent du signal (à défaut, de sa fonction) ; sens 1 entrée, 2 sortie, 3 bidirectionnel. Un compteur par préfixe et par sens ; un numéro déjà pris est sauté et n’est jamais recyclé. Les liaisons entre éléments se numérotent au niveau du projet."><Icon name="info" size="sm" /></button>
         </section>
       {/if}
     </div>

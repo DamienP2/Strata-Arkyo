@@ -1,6 +1,6 @@
 import { mount } from 'svelte';
-// Polices embarquées : le site fonctionne sans accès à Internet.
-import '@fontsource-variable/bricolage-grotesque/opsz.css';
+// Polices embarquées : le site fonctionne sans accès à Internet. Inter pour toute l'interface
+// (design commun Strata) ; JetBrains Mono reste celle des dessins métier (racks, synoptiques, panels).
 import '@fontsource-variable/inter/index.css';
 import '@fontsource/jetbrains-mono/latin-500.css';
 import '@fontsource/jetbrains-mono/latin-600.css';
@@ -9,8 +9,13 @@ import './styles/strates.css';
 import './styles/app.css';
 import './styles/refine.css';
 import './styles/harmonie.css';
+import './styles/strata.css';
 import App from './App.svelte';
 import { applyTheme } from './lib/theme.svelte';
+import { installTooltips } from './lib/tooltips';
+import { installDropdowns } from './lib/dropdown';
 
 applyTheme();
+installTooltips();
+installDropdowns();
 mount(App, { target: document.getElementById('app')! });

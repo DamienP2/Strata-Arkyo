@@ -5,169 +5,144 @@
    (§ 2 jetons, § 3 composants). Hors jetons, pas d'hexadécimal sauf papier,
    façades, 3D et exports. Ordre de chargement : strates, app, refine, harmonie.
    ===================================================================== */
+/* ---------- Jetons du design commun Strata (thème sombre par défaut) ----------
+   Valeurs exactes du design commun de la famille Strata. Les noms historiques de l'app
+   (--surface, --fg…) sont des alias de ces jetons ; les jetons métier (signaux, toiles,
+   baies, illustrations) gardent leurs valeurs : le dessin des racks, des synoptiques,
+   des planches et des plans ne change pas. */
 :root{
+  --bg:#0b0c12; --panel:#12141d; --panel-2:#181b26; --panel-3:#1f2331;
+  --line:#262a3a; --line-2:#323750;
+  --text:#e6e8f2; --text-2:#a3a8bf; --text-3:#8a90ad;
+  --accent:#8fa3ff; --accent-2:#bfcaff; --accent-soft:rgba(143,163,255,.16);
+  --on-accent:#0b1236;
+  --live:#ff3b5c; --live-soft:rgba(255,59,92,.16);
+  --live-btn:#e11d48;
+  --pvw:#22c55e;
+  --warn:#f5a524;
+  --key:#f5c542; --mask:#2dd4bf;
+  --radius:8px;
+  --fs-11:11px; --fs-12:12px; --fs-13:13px; --fs-15:15px; --fs-20:20px;
+  --h-control:32px;
+  --h-control-dense:28px;
+  --hit-min:28px;
+  --mono:ui-monospace,'SF Mono','Cascadia Mono',Consolas,'DejaVu Sans Mono',monospace;
+  color-scheme:dark;
+  /* Teintes de texte en couleur (sombre : teintes pâles) */
+  --t-red:#ff8aa0; --t-green:#4ade80; --t-blue:#7dd3fc; --t-yellow:#fde047; --t-pink:#f9a8d4; --t-violet:#c4b5fd; --t-orange:#fdba74;
+  --pvw-fill:#22c55e; --warn-fill:#f5a524;
+  --op-2:#1c1f2c;
+  --topbar-bg:linear-gradient(180deg,#141623,#10121a);
+  --page-bg:radial-gradient(ellipse at top,#141725 0%,#0b0c12 60%);
+  --login-bg:radial-gradient(ellipse at 30% 0%,#1d1840 0%,#0b0c12 60%);
+  --sh-menu:0 16px 40px rgba(0,0,0,.5); --sh-dd:0 14px 40px rgba(0,0,0,.5); --sh-modal:0 30px 80px rgba(0,0,0,.5);
+  --sh-login:0 30px 80px rgba(0,0,0,.45); --sh-toast:0 8px 30px rgba(0,0,0,.4); --sh-tip:0 8px 24px rgba(0,0,0,.45);
+  --sh-card-h:0 14px 34px rgba(0,0,0,.35); --sh-save:0 12px 40px rgba(0,0,0,.5);
+  /* Police des dessins métier (racks, synoptiques, panels, planches) : inchangée. */
+  --mono-draw:'JetBrains Mono',ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+
+  /* Alias historiques de l'app vers les jetons du design */
+  --bg-glow:transparent;
+  --surface:var(--panel); --surface-2:var(--panel-2); --surface-3:var(--panel-3); --sunken:#0e1018;
+  --line-soft:rgba(255,255,255,.06);
+  --fg:var(--text); --fg-2:var(--text-2); --fg-3:var(--text-3); --fg-4:var(--text-3);
+  --primary-fg:var(--on-accent);
+  --ok:var(--pvw); --ok-soft:rgba(34,197,94,.14); --warn-soft:rgba(245,165,36,.14); --err:var(--t-red); --err-soft:var(--live-soft); --info:var(--text-2); --info-soft:var(--panel-3);
+  --live-ink:var(--t-green);
+  --urg:var(--err); --soon:var(--warn); --st-fini:var(--ok); --lock-soft:var(--warn-soft);
+  --e1:0 0 0 1px var(--line);
+  --e2:0 0 0 1px var(--line-2),var(--sh-card-h);
+  --e3:0 0 0 1px var(--line-2),var(--sh-menu);
+  --e-inst:0 0 0 1px var(--line);
+  --well:inset 0 0 0 1px var(--line);
+  --key-sh:inset 0 0 0 1px var(--line);
+  --key-ink:none;
+  --key-bg:var(--panel-3);
+  --key-bg-h:var(--line);
+  --primary-bg:var(--panel-3);
+  --key-led:var(--accent);
+  --scrim:rgba(5,6,10,.65);
+  --grain:none;
+  --display:'Inter Variable','Inter',system-ui,sans-serif;
+  --font:'Inter Variable','Inter',system-ui,sans-serif;
+  --fs-2xs:11px; --fs-xs:12px; --fs-sm:12px; --fs-ctl-sm:12px; --fs-md:13px; --fs-lg:15px; --fs-xl:20px; --fs-2xl:22px; --fs-3xl:40px;
+  --r-sm:6px; --r-md:12px; --r-lg:14px; --r-xl:14px;
+  --ease:cubic-bezier(.2,.7,.2,1);
+  --btn-h:var(--h-control); --btn-r:6px; --btn-h-sm:var(--h-control-dense); --btn-r-sm:6px;
+  --btn-bg:var(--panel-3); --btn-bg-h:var(--line); --btn-edge:var(--line);
+  --btn-pri:var(--accent); --btn-pri-h:var(--accent-2); --btn-pri-fg:var(--on-accent);
+  --btn-danger:var(--live-btn); --btn-danger-fg:#ffffff;
+  --input-bg:var(--panel-3); --input-edge:var(--line); --input-edge-h:var(--line-2); --input-bg-off:var(--panel-2);
+  --card-bg:var(--panel); --card-sh:0 0 0 1px var(--line);
+  --mast-bg:var(--topbar-bg); --side-bg:var(--panel);
+  --bar-line:var(--line); --mast-sh:none;
+  --body-bg:var(--bg);
+
+  /* Jetons métier : valeurs inchangées (thème sombre) */
+  --lock:#F5A524; --lock-ink:#FFC061;
+  --led-g:#3EDB87; --led-y:#F6B73C; --led-r:#FF5A4C; --seg-off:#283046;
+  --tally-k:100%; --gauge-face:#2A2416; --gauge-ink:#F1D592; --gauge-ndl:#FFE2A6; --wk-c:rgba(255,255,255,.04);
+  --st-prep:#97A0FF; --st-pret:#3CC7DA; --st-cours:#FF9E4F; --st-annule:#A0A8B8;
+  --sig-v:#6E9BFF; --sig-a:#45CB87; --sig-l:#F4C53A; --sig-c:#B18CF5; --sig-p:#FF7468; --sig-n:#35C8D8; --sig-s:#F370C0; --sig-i:#C9935F; --sig-f:#FF9A4A; --sig-ip:#9C8BFF;
+  --canvas:#0E1119; --dot:#2E3550; --node-bg:#1A1F2E; --node-edge:#3D4560;
+  --tag-hi:#F6F4EE; --tag-bg:#E4E1D9; --tag-lo:#C7C3B9; --tag-edge:#8E8A82; --tag-fg:#141518;
+  --glow:drop-shadow(0 0 2.5px currentColor); --node-shadow:drop-shadow(0 1px 1px rgba(0,0,0,.6)) drop-shadow(0 8px 14px rgba(0,0,0,.55));
+  --stage-a:#262C42; --stage-b:#080A10; --rack-rim:0 0 0 1px rgba(255,255,255,.16),0 0 80px rgba(130,140,255,.12); --vis-a:#222840; --vis-b:#10131E;
+  --inst:#181C2A; --inst-hi:#2B3148; --inst-lo:#11141E; --inst-edge:rgba(255,255,255,.12); --inst-seg:#2A3046; --inst-fg:#F3F2EE; --inst-fg-2:#B3BACA; --inst-fg-3:#A9AFC0;
+  --ill-shadow:rgba(0,0,0,.6); --ill-line:#0B0C0E; --ill-body:#DAD8D2; --ill-body-2:#B4B1AA; --ill-cab:#CFCDC7; --ill-seam:#A8A59E;
+  --ill-glass:#29323E; --ill-glass-hi:#4A5868; --ill-tyre:#07080A; --ill-rim:#7E848C; --ill-chassis:#1B1D21; --ill-roof:#B8B5AE; --ill-dish:#E3E1DB; --ill-light:#FFC94D; --ill-hole:#0C0D0F;
+  --ill-case:#262B3C; --ill-case-in:#0E1012; --ill-alu:#9AA0A7; --ill-alu-2:#C5CACF; --ill-rail:#6F767E; --ill-unit:#2A3044; --ill-unit-2:#3B4259; --ill-corner:#B6BBC1;
+  --ill-screen:#07090B; --ill-desk:#1F2434; --ill-desk-top:#323A52; --ill-wall:#1E2333;
+  --logo-bg:#1A1E2C; --logo-edge:rgba(255,255,255,.18);
+  /* Couleurs historiques reprises par les dessins métier (voir « Dessins métier » plus bas) */
+  --d-fg:#F6F7FB; --d-fg-2:#D3D7E2; --d-fg-3:#A9AFC0; --d-fg-4:#959CB1;
+  --d-surface:#161A26; --d-surface-2:#1E2333; --d-surface-3:#282E42; --d-sunken:#0D1019;
+  --d-line:#2C3245; --d-line-2:#434A63; --d-line-soft:rgba(255,255,255,.10);
+  --d-ok:#4FD99B; --d-warn:#F7B24A; --d-err:#FF7B70;
+}
+/* Thème clair : seulement des surcharges ; le sombre est le défaut. */
+:root[data-theme='light']{
+  --bg:#eef0f5; --panel:#ffffff; --panel-2:#f5f6fa; --panel-3:#e9ecf3;
+  --line:#dde1ea; --line-2:#cfd4e0;
+  --text:#161925; --text-2:#4f5670; --text-3:#6b7290;
+  --accent:#4f63e6; --accent-2:#3a4bc4; --accent-soft:rgba(79,99,230,.12);
+  --mask:#0d9488; --on-accent:#ffffff;
+  --live:#e11d48; --live-soft:rgba(225,29,72,.12); --live-btn:#e11d48;
+  --pvw:#15803d; --warn:#b45309; --key:#a16207;
+  --pvw-fill:#22c55e; --warn-fill:#f5a524;
+  --t-red:#c8183f; --t-green:#15803d; --t-blue:#0369a1; --t-yellow:#a16207; --t-pink:#be185d; --t-violet:#6d28d9; --t-orange:#c2410c;
   color-scheme:light;
-  /* Matières : craie, papier mat, plaques claires */
-  --bg:#ECEAE5; --bg-glow:rgba(255,255,255,.85);
-  --surface:#FCFBF9; --surface-2:#F5F3EF; --surface-3:#E6E3DD; --sunken:#E4E1DA;
-  --line:#E1DDD5; --line-2:#C8C3B9; --line-soft:rgba(46,38,24,.09);
-  --fg:#141518; --fg-2:#3A3D44; --fg-3:#5E626A; --fg-4:#63676E;
-  --accent:#2943E4; --accent-soft:#E7EAFD; --accent-2:#1D33C2;
-  --primary-fg:#FFFFFF;
-  --ok:#0A6E42; --ok-soft:#E1F2E8; --warn:#975500; --warn-soft:#FBEFD9; --err:#C42318; --err-soft:#FBE5E2; --info:#4C545F; --info-soft:#ECEDEE;
-  /* Témoins (tally) */
-  --live-soft:#DDF2E5; --live-ink:#0B6B3B;
+  --op-2:#f3f4f8;
+  --topbar-bg:var(--panel);
+  --page-bg:var(--bg);
+  --login-bg:radial-gradient(ellipse at 30% 0%,#dfe3fb 0%,var(--bg) 60%);
+  --sh-menu:0 12px 32px rgba(22,25,37,.16); --sh-dd:0 12px 32px rgba(22,25,37,.16); --sh-modal:0 12px 32px rgba(22,25,37,.16);
+  --sh-login:0 12px 32px rgba(22,25,37,.16); --sh-toast:0 12px 32px rgba(22,25,37,.16); --sh-tip:0 12px 32px rgba(22,25,37,.16);
+  --sh-card-h:0 6px 18px rgba(22,25,37,.1); --sh-save:0 12px 32px rgba(22,25,37,.16);
+  --sunken:#e4e7ef; --line-soft:rgba(22,25,37,.07);
+  --ok-soft:rgba(21,128,61,.1); --warn-soft:rgba(180,83,9,.1);
+  --scrim:rgba(22,25,37,.35);
+  /* Jetons métier : valeurs inchangées (thème clair) */
   --lock:#D98300; --lock-ink:#8A4D00;
   --led-g:#1DB462; --led-y:#E9A10A; --led-r:#E2392B; --seg-off:#D9D5CC;
   --tally-k:82%; --gauge-face:#F4ECD3; --gauge-ink:#3B3428; --gauge-ndl:#16181C; --wk-c:rgba(46,38,24,.05);
-  /* Statuts de projet */
   --st-prep:#4B57D6; --st-pret:#08839A; --st-cours:#D06A0C; --st-annule:#8A919B;
-  /* Alias : une couleur par sens */
-  --urg:var(--err); --soon:var(--warn); --st-fini:var(--ok); --live:var(--led-g); --lock-soft:var(--warn-soft);
-  /* Familles de signaux */
   --sig-v:#2459E0; --sig-a:#0E8550; --sig-l:#B78400; --sig-c:#7A44C9; --sig-p:#CF3A2F; --sig-n:#0A8797; --sig-s:#BD3489; --sig-i:#8C6239; --sig-f:#D06006; --sig-ip:#5B3FD9;
-  /* Toiles de conception */
   --canvas:#F3F1EC; --dot:#CFCAC0; --node-bg:#FFFFFF; --node-edge:#CEC9BF;
   --tag-hi:#FFFFFF; --tag-bg:#F3F1EB; --tag-lo:#DCD8CE; --tag-edge:#B9B4A9; --tag-fg:#17181B;
   --glow:none; --node-shadow:drop-shadow(0 1px 1px rgba(46,38,24,.10)) drop-shadow(0 6px 10px rgba(46,38,24,.09));
   --stage-a:#F8F7F3; --stage-b:#DCD8D0; --rack-rim:0 0 0 1px rgba(0,0,0,.55),0 0 0 4px var(--surface),0 0 0 5px var(--line-2); --vis-a:#F8F7F4; --vis-b:#E6E3DC;
-  /* Plaque « instrument » (toujours sombre) */
   --inst:#17191D; --inst-hi:#2C3037; --inst-lo:#101215; --inst-edge:rgba(255,255,255,.08);
   --inst-fg:#F3F2EE; --inst-fg-2:#B4B8BF; --inst-fg-3:#8E939B; --inst-seg:#2B2F35;
-  /* Illustrations */
   --ill-shadow:rgba(46,38,24,.17); --ill-line:#2A2C31; --ill-body:#FBFAF7; --ill-body-2:#E4E1DA; --ill-cab:#F2F0EB; --ill-seam:#D2CEC5;
   --ill-glass:#34414F; --ill-glass-hi:#5A6A7C; --ill-tyre:#1D1F23; --ill-rim:#A9AFB7; --ill-chassis:#2B2E33; --ill-roof:#DAD6CE; --ill-dish:#EEECE6; --ill-light:#FFC94D;
   --ill-case:#2B2E34; --ill-case-in:#141619; --ill-alu:#C4C9CF; --ill-alu-2:#E6E9EC; --ill-rail:#9198A0; --ill-hole:#0C0D0F; --ill-unit:#2F3339; --ill-unit-2:#40454C; --ill-corner:#D9DDE1;
   --ill-screen:#0E1115; --ill-desk:#2A2D32; --ill-desk-top:#3D4148; --ill-wall:#E9E6DF;
-  /* Logo */
   --logo-bg:#16181C; --logo-edge:rgba(255,255,255,.14);
-  /* Profondeur : plaques, puits, touches */
-  --e1:0 0 0 1px rgba(46,38,24,.075),0 1px 1px rgba(46,38,24,.05),0 3px 8px -2px rgba(46,38,24,.08),inset 0 1px 0 rgba(255,255,255,.9);
-  --e2:0 0 0 1px rgba(46,38,24,.08),0 2px 3px rgba(46,38,24,.06),0 16px 32px -10px rgba(46,38,24,.24),inset 0 1px 0 rgba(255,255,255,.95);
-  --e3:0 0 0 1px rgba(46,38,24,.09),0 12px 24px -10px rgba(30,24,14,.22),0 40px 90px -24px rgba(30,24,14,.42);
-  --e-inst:0 0 0 1px rgba(0,0,0,.55),0 2px 4px rgba(20,16,10,.18),0 24px 48px -16px rgba(20,16,10,.45),inset 0 1px 0 rgba(255,255,255,.1);
-  --well:inset 0 1px 2px rgba(46,38,24,.13),inset 0 0 0 1px rgba(46,38,24,.06),0 1px 0 rgba(255,255,255,.75);
-  --key:inset 0 1px 0 rgba(255,255,255,.95),0 0 0 1px rgba(46,38,24,.14),0 1px 1px rgba(46,38,24,.08),0 2px 5px -1px rgba(46,38,24,.13);
-  --key-ink:inset 0 1px 0 rgba(255,255,255,.16),0 0 0 1px rgba(0,0,0,.65),0 1px 1px rgba(0,0,0,.2),0 5px 12px -4px rgba(0,0,0,.45);
-  --key-bg:linear-gradient(180deg,#FFFFFF 0%,#F1EFEA 100%);
-  --key-bg-h:linear-gradient(180deg,#FFFFFF 0%,#F8F6F2 100%);
-  --primary-bg:linear-gradient(180deg,#33363D 0%,#16181C 100%);
-  --key-led:#93A6FF;
-  --scrim:rgba(24,22,18,.38);
-  --grain:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .16 0 0 0 0 .13 0 0 0 0 .09 0 0 0 .2 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-  /* Typographie */
-  --display:'Bricolage Grotesque Variable','Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;
-  --font:'Inter Variable','Inter',ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
-  --mono:'JetBrains Mono',ui-monospace,'SF Mono',Menlo,Consolas,monospace;
-  /* Échelle typographique (charte § 2.5) : aucune autre taille à l'écran */
-  --fs-2xs:11.5px; --fs-xs:12px; --fs-sm:12.5px; --fs-ctl-sm:13px; --fs-md:13.5px; --fs-lg:16px; --fs-xl:20px; --fs-2xl:26px; --fs-3xl:40px;
-  /* Formes et mouvement */
-  --r-sm:8px; --r-md:12px; --r-lg:18px; --r-xl:24px;
-  --ease:cubic-bezier(.2,.7,.2,1);
-  /* Commandes (charte § 2.2) : M 34 px, S 30 px */
-  --btn-h:34px; --btn-r:8px; --btn-h-sm:30px; --btn-r-sm:7px;
-  --btn-bg:var(--surface); --btn-bg-h:var(--surface-2); --btn-edge:var(--line-2);
-  --btn-pri:#2943E4; --btn-pri-h:#2138CC; --btn-pri-fg:#FFFFFF;
-  --btn-danger:var(--err); --btn-danger-fg:var(--primary-fg);
-  /* Champs : fond blanc, bord ≥ 3:1 */
-  --input-bg:#FFFFFF; --input-edge:#8E9199; --input-edge-h:#6B6F77; --input-bg-off:var(--surface-3);
-  /* Cartes et bandeaux (charte § 2.1) */
-  --card-bg:var(--surface); --card-sh:0 0 0 1px var(--line),0 1px 2px rgba(0,0,0,.04);
-  --mast-bg:color-mix(in srgb,var(--surface) 55%,transparent); --side-bg:color-mix(in srgb,var(--surface) 70%,transparent);
-  --bar-line:var(--line); --mast-sh:none;
-  --body-bg:radial-gradient(1200px 560px at 78% -180px,var(--bg-glow),transparent 72%),var(--grain),var(--bg);
-}
-@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
-  color-scheme:dark;
-  /* Nuit bleutée : trois plans nets (fond, cartes, champs), contours visibles, texte AA. */
-  --bg:#0B0D14; --bg-glow:rgba(120,110,255,.16);
-  --surface:#161A26; --surface-2:#1E2333; --surface-3:#282E42; --sunken:#0D1019;
-  --line:#2C3245; --line-2:#434A63; --line-soft:rgba(255,255,255,.10);
-  --fg:#F6F7FB; --fg-2:#D3D7E2; --fg-3:#A9AFC0; --fg-4:#959CB1;
-  --accent:#9DB0FF; --accent-soft:#242C55; --accent-2:#C6D0FF;
-  --primary-fg:#0E1018;
-  --ok:#4FD99B; --ok-soft:#10301F; --warn:#F7B24A; --warn-soft:#352612; --err:#FF7B70; --err-soft:#3B1716; --info:#B3BACA; --info-soft:#20253A;
-  --live-soft:#0E2A1B; --live-ink:#6BE6A5;
-  --lock:#F5A524; --lock-ink:#FFC061;
-  --led-g:#3EDB87; --led-y:#F6B73C; --led-r:#FF5A4C; --seg-off:#283046;
-  --tally-k:100%; --gauge-face:#2A2416; --gauge-ink:#F1D592; --gauge-ndl:#FFE2A6; --wk-c:rgba(255,255,255,.04);
-  --st-prep:#97A0FF; --st-pret:#3CC7DA; --st-cours:#FF9E4F; --st-annule:#A0A8B8;
-  --sig-v:#6E9BFF; --sig-a:#45CB87; --sig-l:#F4C53A; --sig-c:#B18CF5; --sig-p:#FF7468; --sig-n:#35C8D8; --sig-s:#F370C0; --sig-i:#C9935F; --sig-f:#FF9A4A; --sig-ip:#9C8BFF;
-  --canvas:#0E1119; --dot:#2E3550; --node-bg:#1A1F2E; --node-edge:#3D4560;
-  --tag-hi:#F6F4EE; --tag-bg:#E4E1D9; --tag-lo:#C7C3B9; --tag-edge:#8E8A82; --tag-fg:#141518;
-  --glow:drop-shadow(0 0 2.5px currentColor); --node-shadow:drop-shadow(0 1px 1px rgba(0,0,0,.6)) drop-shadow(0 8px 14px rgba(0,0,0,.55));
-  --stage-a:#262C42; --stage-b:#080A10; --rack-rim:0 0 0 1px rgba(255,255,255,.16),0 0 80px rgba(130,140,255,.12); --vis-a:#222840; --vis-b:#10131E;
-  --inst:#181C2A; --inst-hi:#2B3148; --inst-lo:#11141E; --inst-edge:rgba(255,255,255,.12); --inst-seg:#2A3046; --inst-fg-2:#B3BACA; --inst-fg-3:#A9AFC0;
-  --ill-shadow:rgba(0,0,0,.6); --ill-line:#0B0C0E; --ill-body:#DAD8D2; --ill-body-2:#B4B1AA; --ill-cab:#CFCDC7; --ill-seam:#A8A59E;
-  --ill-glass:#29323E; --ill-glass-hi:#4A5868; --ill-tyre:#07080A; --ill-rim:#7E848C; --ill-chassis:#1B1D21; --ill-roof:#B8B5AE; --ill-dish:#E3E1DB;
-  --ill-case:#262B3C; --ill-case-in:#0E1012; --ill-alu:#9AA0A7; --ill-alu-2:#C5CACF; --ill-rail:#6F767E; --ill-unit:#2A3044; --ill-unit-2:#3B4259; --ill-corner:#B6BBC1;
-  --ill-screen:#07090B; --ill-desk:#1F2434; --ill-desk-top:#323A52; --ill-wall:#1E2333;
-  --logo-bg:#1A1E2C; --logo-edge:rgba(255,255,255,.18);
-  --e1:0 0 0 1px rgba(255,255,255,.085),0 1px 2px rgba(0,0,0,.55),0 10px 24px -10px rgba(0,0,0,.8),inset 0 1px 0 rgba(255,255,255,.07);
-  --e2:0 0 0 1px rgba(255,255,255,.11),0 2px 4px rgba(0,0,0,.55),0 22px 44px -12px rgba(0,0,0,.9),inset 0 1px 0 rgba(255,255,255,.08);
-  --e3:0 0 0 1px rgba(255,255,255,.12),0 30px 80px -20px rgba(0,0,0,.92);
-  --e-inst:0 0 0 1px rgba(255,255,255,.11),0 24px 50px -16px rgba(0,0,0,.9),inset 0 1px 0 rgba(255,255,255,.09);
-  --well:inset 0 1px 3px rgba(0,0,0,.6),inset 0 0 0 1px rgba(255,255,255,.09),0 1px 0 rgba(255,255,255,.05);
-  --key:inset 0 1px 0 rgba(255,255,255,.11),0 0 0 1px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.06),0 1px 2px rgba(0,0,0,.5),0 4px 10px -3px rgba(0,0,0,.6);
-  --key-ink:inset 0 1px 0 rgba(255,255,255,.95),0 0 0 1px rgba(0,0,0,.6),0 3px 10px -3px rgba(0,0,0,.7);
-  --key-bg:linear-gradient(180deg,#2C3248 0%,#222839 100%);
-  --key-bg-h:linear-gradient(180deg,#343B54 0%,#293045 100%);
-  --primary-bg:linear-gradient(180deg,#FFFFFF 0%,#DADDE8 100%);
-  --key-led:#3C55F0;
-  --scrim:rgba(3,4,10,.66);
-  --grain:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .07 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-  --btn-bg:#202538; --btn-bg-h:#283048; --btn-edge:#394159; --btn-pri:#5466F0; --btn-pri-h:#6475F5; --btn-pri-fg:#FFFFFF;
-  --input-bg:#111522; --input-edge:#5E6787; --input-edge-h:var(--fg-4); --input-bg-off:#1B2030;
-  --card-bg:linear-gradient(180deg,#191D2B,#151925);
-  --mast-bg:linear-gradient(180deg,#151827,#10121B); --side-bg:linear-gradient(180deg,#121522,#0E1019);
-  --bar-line:#262B3D; --mast-sh:0 1px 0 rgba(0,0,0,.5);
-  --body-bg:radial-gradient(90% 60% at 0% 0%,rgba(68,58,150,.20),transparent 60%),var(--bg);
-}}
-:root[data-theme="dark"]{
-  color-scheme:dark;
-  /* Nuit bleutée : trois plans nets (fond, cartes, champs), contours visibles, texte AA. */
-  --bg:#0B0D14; --bg-glow:rgba(120,110,255,.16);
-  --surface:#161A26; --surface-2:#1E2333; --surface-3:#282E42; --sunken:#0D1019;
-  --line:#2C3245; --line-2:#434A63; --line-soft:rgba(255,255,255,.10);
-  --fg:#F6F7FB; --fg-2:#D3D7E2; --fg-3:#A9AFC0; --fg-4:#959CB1;
-  --accent:#9DB0FF; --accent-soft:#242C55; --accent-2:#C6D0FF;
-  --primary-fg:#0E1018;
-  --ok:#4FD99B; --ok-soft:#10301F; --warn:#F7B24A; --warn-soft:#352612; --err:#FF7B70; --err-soft:#3B1716; --info:#B3BACA; --info-soft:#20253A;
-  --live-soft:#0E2A1B; --live-ink:#6BE6A5;
-  --lock:#F5A524; --lock-ink:#FFC061;
-  --led-g:#3EDB87; --led-y:#F6B73C; --led-r:#FF5A4C; --seg-off:#283046;
-  --tally-k:100%; --gauge-face:#2A2416; --gauge-ink:#F1D592; --gauge-ndl:#FFE2A6; --wk-c:rgba(255,255,255,.04);
-  --st-prep:#97A0FF; --st-pret:#3CC7DA; --st-cours:#FF9E4F; --st-annule:#A0A8B8;
-  --sig-v:#6E9BFF; --sig-a:#45CB87; --sig-l:#F4C53A; --sig-c:#B18CF5; --sig-p:#FF7468; --sig-n:#35C8D8; --sig-s:#F370C0; --sig-i:#C9935F; --sig-f:#FF9A4A; --sig-ip:#9C8BFF;
-  --canvas:#0E1119; --dot:#2E3550; --node-bg:#1A1F2E; --node-edge:#3D4560;
-  --tag-hi:#F6F4EE; --tag-bg:#E4E1D9; --tag-lo:#C7C3B9; --tag-edge:#8E8A82; --tag-fg:#141518;
-  --glow:drop-shadow(0 0 2.5px currentColor); --node-shadow:drop-shadow(0 1px 1px rgba(0,0,0,.6)) drop-shadow(0 8px 14px rgba(0,0,0,.55));
-  --stage-a:#262C42; --stage-b:#080A10; --rack-rim:0 0 0 1px rgba(255,255,255,.16),0 0 80px rgba(130,140,255,.12); --vis-a:#222840; --vis-b:#10131E;
-  --inst:#181C2A; --inst-hi:#2B3148; --inst-lo:#11141E; --inst-edge:rgba(255,255,255,.12); --inst-seg:#2A3046; --inst-fg-2:#B3BACA; --inst-fg-3:#A9AFC0;
-  --ill-shadow:rgba(0,0,0,.6); --ill-line:#0B0C0E; --ill-body:#DAD8D2; --ill-body-2:#B4B1AA; --ill-cab:#CFCDC7; --ill-seam:#A8A59E;
-  --ill-glass:#29323E; --ill-glass-hi:#4A5868; --ill-tyre:#07080A; --ill-rim:#7E848C; --ill-chassis:#1B1D21; --ill-roof:#B8B5AE; --ill-dish:#E3E1DB;
-  --ill-case:#262B3C; --ill-case-in:#0E1012; --ill-alu:#9AA0A7; --ill-alu-2:#C5CACF; --ill-rail:#6F767E; --ill-unit:#2A3044; --ill-unit-2:#3B4259; --ill-corner:#B6BBC1;
-  --ill-screen:#07090B; --ill-desk:#1F2434; --ill-desk-top:#323A52; --ill-wall:#1E2333;
-  --logo-bg:#1A1E2C; --logo-edge:rgba(255,255,255,.18);
-  --e1:0 0 0 1px rgba(255,255,255,.085),0 1px 2px rgba(0,0,0,.55),0 10px 24px -10px rgba(0,0,0,.8),inset 0 1px 0 rgba(255,255,255,.07);
-  --e2:0 0 0 1px rgba(255,255,255,.11),0 2px 4px rgba(0,0,0,.55),0 22px 44px -12px rgba(0,0,0,.9),inset 0 1px 0 rgba(255,255,255,.08);
-  --e3:0 0 0 1px rgba(255,255,255,.12),0 30px 80px -20px rgba(0,0,0,.92);
-  --e-inst:0 0 0 1px rgba(255,255,255,.11),0 24px 50px -16px rgba(0,0,0,.9),inset 0 1px 0 rgba(255,255,255,.09);
-  --well:inset 0 1px 3px rgba(0,0,0,.6),inset 0 0 0 1px rgba(255,255,255,.09),0 1px 0 rgba(255,255,255,.05);
-  --key:inset 0 1px 0 rgba(255,255,255,.11),0 0 0 1px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.06),0 1px 2px rgba(0,0,0,.5),0 4px 10px -3px rgba(0,0,0,.6);
-  --key-ink:inset 0 1px 0 rgba(255,255,255,.95),0 0 0 1px rgba(0,0,0,.6),0 3px 10px -3px rgba(0,0,0,.7);
-  --key-bg:linear-gradient(180deg,#2C3248 0%,#222839 100%);
-  --key-bg-h:linear-gradient(180deg,#343B54 0%,#293045 100%);
-  --primary-bg:linear-gradient(180deg,#FFFFFF 0%,#DADDE8 100%);
-  --key-led:#3C55F0;
-  --scrim:rgba(3,4,10,.66);
-  --grain:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .07 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-  --btn-bg:#202538; --btn-bg-h:#283048; --btn-edge:#394159; --btn-pri:#5466F0; --btn-pri-h:#6475F5; --btn-pri-fg:#FFFFFF;
-  --input-bg:#111522; --input-edge:#5E6787; --input-edge-h:var(--fg-4); --input-bg-off:#1B2030;
-  --card-bg:linear-gradient(180deg,#191D2B,#151925);
-  --mast-bg:linear-gradient(180deg,#151827,#10121B); --side-bg:linear-gradient(180deg,#121522,#0E1019);
-  --bar-line:#262B3D; --mast-sh:0 1px 0 rgba(0,0,0,.5);
-  --body-bg:radial-gradient(90% 60% at 0% 0%,rgba(68,58,150,.20),transparent 60%),var(--bg);
+  --d-fg:#141518; --d-fg-2:#3A3D44; --d-fg-3:#5E626A; --d-fg-4:#63676E;
+  --d-surface:#FCFBF9; --d-surface-2:#F5F3EF; --d-surface-3:#E6E3DD; --d-sunken:#E4E1DA;
+  --d-line:#E1DDD5; --d-line-2:#C8C3B9; --d-line-soft:rgba(46,38,24,.09);
+  --d-ok:#0A6E42; --d-warn:#975500; --d-err:#C42318;
 }
 
 /* ---------- Base ---------- */
@@ -221,7 +196,7 @@ kbd{font:600 var(--fs-2xs)/1.3 var(--mono);padding:1px 5px;border-radius:5px;bac
 .av.sm{width:26px;height:26px;font-size:10px}
 .av.lg{width:44px;height:44px;font-size:14px}
 .icon-btn{width:40px;height:40px;display:inline-grid;place-items:center;border-radius:999px;border:0;background:none;color:var(--fg-2);position:relative;flex:none;transition:background .15s,box-shadow .15s,color .15s}
-.icon-btn:hover:not(:disabled){background:var(--key-bg);box-shadow:var(--key);color:var(--fg)}
+.icon-btn:hover:not(:disabled){background:var(--key-bg);box-shadow:var(--key-sh);color:var(--fg)}
 .icon-btn.sm{width:34px;height:34px}
 .icon-btn .badge{position:absolute;top:0;right:0;box-shadow:0 0 0 2px var(--bg)}
 #view{flex:1;overflow:auto;padding-block:36px 120px;padding-left:max(40px,env(safe-area-inset-left,0px));padding-right:max(40px,env(safe-area-inset-right,0px));min-height:0}
@@ -280,7 +255,7 @@ kbd{font:600 var(--fs-2xs)/1.3 var(--mono);padding:1px 5px;border-radius:5px;bac
 .seg::-webkit-scrollbar{display:none}
 .seg button{border:0;background:none;height:34px;padding:0 14px;border-radius:9px;font-size:14px;font-weight:550;color:var(--fg-2);white-space:nowrap;transition:background .15s,box-shadow .15s,color .15s}
 .seg button:hover:not(:disabled){color:var(--fg)}
-.seg button.on{background:var(--key-bg);color:var(--fg);font-weight:650;box-shadow:var(--key)}
+.seg button.on{background:var(--key-bg);color:var(--fg);font-weight:650;box-shadow:var(--key-sh)}
 .seg .muted{font-family:var(--mono);font-size:12.5px;margin-left:2px}
 .input{height:44px;border:0;border-radius:12px;background-color:var(--sunken);box-shadow:var(--well);padding:0 14px;min-width:0;width:100%;font-size:15.5px;transition:box-shadow .15s}
 .input:focus{outline:none;box-shadow:var(--well),0 0 0 2px var(--accent)}
@@ -292,7 +267,7 @@ select.input option{color:var(--fg);background:var(--surface)}
 .search .ic{position:absolute;left:13px;top:12px;color:var(--fg-3);pointer-events:none}
 .search .input{padding-left:40px}
 .toolbar{display:flex;gap:10px 12px;flex-wrap:wrap;align-items:center}
-.fchip{height:36px;padding:0 14px;border:0;border-radius:999px;background:var(--key-bg);box-shadow:var(--key);font-size:14px;font-weight:550;color:var(--fg-2);display:inline-flex;align-items:center;gap:8px;white-space:nowrap;transition:background .15s,color .15s,box-shadow .15s}
+.fchip{height:36px;padding:0 14px;border:0;border-radius:999px;background:var(--key-bg);box-shadow:var(--key-sh);font-size:14px;font-weight:550;color:var(--fg-2);display:inline-flex;align-items:center;gap:8px;white-space:nowrap;transition:background .15s,color .15s,box-shadow .15s}
 .fchip:hover:not(:disabled){color:var(--fg)}
 .fchip[style]::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--c);box-shadow:0 0 6px -1px var(--c)}
 .fchip.cxf::before{display:none}
@@ -324,7 +299,7 @@ select.input option{color:var(--fg);background:var(--surface)}
 .flash,.flash td{animation:flash 2.4s ease-out}
 @keyframes flash{0%,35%{background:var(--accent-soft)}100%{background:transparent}}
 .stepper{display:inline-flex;align-items:center;gap:2px;padding:3px;border-radius:12px;background:var(--sunken);box-shadow:var(--well)}
-.stepper button{width:32px;height:32px;border:0;border-radius:9px;background:var(--key-bg);box-shadow:var(--key);color:var(--fg-2);font-size:18px;line-height:1}
+.stepper button{width:32px;height:32px;border:0;border-radius:9px;background:var(--key-bg);box-shadow:var(--key-sh);color:var(--fg-2);font-size:18px;line-height:1}
 .stepper button:hover:not(:disabled){color:var(--fg)}
 .stepper span{min-width:30px;text-align:center;font:600 15px var(--mono)}
 .kv{display:grid;grid-template-columns:auto minmax(0,1fr);gap:9px 16px;font-size:15px;margin:0}
@@ -380,7 +355,7 @@ select.input option{color:var(--fg);background:var(--surface)}
 .fig .vu{width:118px}
 .cols{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:24px;align-items:start}
 .rows{display:flex;flex-direction:column}
-.r-date{display:flex;flex-direction:column;align-items:center;justify-content:center;width:52px;height:56px;border-radius:12px;background:var(--key-bg);box-shadow:var(--key);flex:none}
+.r-date{display:flex;flex-direction:column;align-items:center;justify-content:center;width:52px;height:56px;border-radius:12px;background:var(--key-bg);box-shadow:var(--key-sh);flex:none}
 .r-date b{display:block;font:700 24px/1 var(--display);letter-spacing:-.03em}
 .r-date span{font:600 10.5px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--fg-3);margin-top:3px}
 .r-main{display:flex;flex-direction:column;gap:2px;min-width:0}
@@ -420,7 +395,7 @@ select.input option{color:var(--fg);background:var(--surface)}
 .pmeta>span{display:inline-flex;align-items:center;gap:7px}
 .pmeta .ic{width:17px;height:17px;color:var(--fg-3)}
 .pmeta .tally{--c:var(--urg)}
-.st-select{display:inline-flex;align-items:center;gap:10px;color:var(--fg);font-weight:600;border-radius:12px;padding:0 6px 0 14px;height:42px;background:var(--key-bg);box-shadow:var(--key)}
+.st-select{display:inline-flex;align-items:center;gap:10px;color:var(--fg);font-weight:600;border-radius:12px;padding:0 6px 0 14px;height:42px;background:var(--key-bg);box-shadow:var(--key-sh)}
 .st-select .dot{width:9px;height:9px;border-radius:50%;background:var(--c);box-shadow:0 0 8px var(--c)}
 .st-select select{border:0;background:none;color:inherit;font-weight:600;height:100%;cursor:pointer;font-size:15px;padding-right:6px}
 .st-select select option{color:var(--fg);background:var(--surface)}
@@ -448,7 +423,7 @@ select.input option{color:var(--fg);background:var(--surface)}
 .inv{display:flex;flex-direction:column;gap:28px}
 .card.loc-list{display:flex;flex-direction:row;flex-wrap:wrap;gap:10px;background:none;box-shadow:none;padding:0}
 .loc-list>.card-head,.loc-list>.hint{display:none}
-.loc{display:inline-flex;align-items:center;gap:10px;padding:6px 16px 6px 6px;border-radius:14px;border:0;background:var(--key-bg);box-shadow:var(--key);text-align:left;color:var(--fg)}
+.loc{display:inline-flex;align-items:center;gap:10px;padding:6px 16px 6px 6px;border-radius:14px;border:0;background:var(--key-bg);box-shadow:var(--key-sh);text-align:left;color:var(--fg)}
 .loc .code{font:600 12.5px var(--mono);padding:7px 9px;border-radius:9px;background:var(--sunken);box-shadow:var(--well);color:var(--fg-2)}
 .loc.on .code{background:rgba(255,255,255,.12);box-shadow:none;color:inherit}
 .loc .ln{display:flex;flex-direction:column;line-height:1.2}
@@ -618,9 +593,9 @@ select.input option{color:var(--fg);background:var(--surface)}
 .wz-body h2{font-size:var(--fs-xl);line-height:1.2;letter-spacing:-.015em;font-weight:700}
 .wz-foot{display:flex;justify-content:space-between;gap:8px;padding:16px 28px;border-top:1px solid var(--line);background:var(--surface-2)}
 .choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}
-.choice{border:0;border-radius:18px;padding:16px 18px 18px;text-align:left;background:var(--key-bg);box-shadow:var(--key);display:flex;flex-direction:column;gap:5px;color:var(--fg);transition:box-shadow .15s,transform .15s}
+.choice{border:0;border-radius:18px;padding:16px 18px 18px;text-align:left;background:var(--key-bg);box-shadow:var(--key-sh);display:flex;flex-direction:column;gap:5px;color:var(--fg);transition:box-shadow .15s,transform .15s}
 .choice:hover{transform:translateY(-2px)}
-.choice.on{box-shadow:var(--key),0 0 0 1.5px var(--accent)}
+.choice.on{box-shadow:var(--key-sh),0 0 0 1.5px var(--accent)}
 .choice[disabled]{opacity:.45;cursor:not-allowed;transform:none}
 .choice b{font:650 21px var(--display);letter-spacing:-.015em} .choice span{font-size:14.5px;color:var(--fg-3)}
 .choice .ic{width:26px;height:26px;margin-bottom:8px}
