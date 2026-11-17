@@ -164,6 +164,14 @@
     <rect x={ex + 0.15} y={ey + 0.1} width={ew - 0.3} height={eh - 0.2} fill={schem ? (acc ? '#EEF0F2' : cc) : acc ? '#EEF0F2' : '#F6F7F9'} stroke={schem && !acc ? cc : LINE} stroke-width="0.22" stroke-dasharray={inner ? '1 0.6' : undefined} />
     {#if !acc && !schem}<rect x={ex + 0.15} y={ey + 0.1} width={Math.min(1.4, ew * 0.08)} height={eh - 0.2} fill={color(e)} />{/if}
     {#if sil}{@render facade(t, acc ? ex + 2 : ex + ew - sw - 1.2, ey + eh * 0.2, sw, eh * 0.6)}{/if}
+    <!-- Étagère trop basse pour nommer ce qu'elle porte (6 pt minimum) : un bloc par élément posé. -->
+    {#if acc && carried.length && !(fs && lines[0])}
+      {@const W = ew - 4}
+      {@const gap = Math.min(0.8, W * 0.03)}
+      {@const bw = Math.min(W * 0.3, (W - gap * (carried.length - 1)) / carried.length)}
+      {@const bh = eh * 0.42}
+      {#each carried as _, i}<rect x={ex + 2 + i * (bw + gap)} y={ey + eh * 0.8 - bh} width={bw} height={bh} rx="0.2" fill="#FFFFFF" stroke={INK} stroke-width="0.15" />{/each}
+    {/if}
     {#if panel && face === 'front'}
       {@const per = panel.per_u}
       {@const pw = (ew * 0.62) / per}

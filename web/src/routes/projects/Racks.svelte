@@ -35,6 +35,7 @@
   import { blankClick } from '../../lib/blankclick';
   import { isWhole, rangeTxt, occTxt, aimTxt, fmtU, parseU, sideGeom, FRONT_RAIL_MM } from '../../lib/rackgeom';
   import { ZMIN, ZMAX, zoomStep, readZoom, saveZoom } from '../../lib/rackzoom';
+  import { textWidth } from '../../lib/fit';
 
   // `fixed` : éditeur d'un seul élément, intégré à une autre page (casquette d'un mobilier).
   let { view, fixed = null, reload }: { view: ProjectView; fixed?: string | null; reload?: () => Promise<void> } = $props();
@@ -374,8 +375,8 @@
         return;
       }
       const p = shownRacks.flatMap((R) => R.pending).find((x) => x.instance_id === iid);
-      if (p?.rackable) { sel = null; show3d = false; arm(p, true); }
-      else if (p) toast(`« ${p.tag ?? p.label} » est hors format rack : posez-le sur une étagère du rack.`, 'info');
+      if (p) { sel = null; show3d = false; arm(p, true); }
+      if (p && !p.rackable) toast(`« ${p.tag ?? p.label} » est hors format rack : posez-le sur une étagère du rack.`, 'info');
     });
   });
 
@@ -387,11 +388,62 @@
   const panelOf = (e: { accessory: Accessory | null }) => (e.accessory?.kind === 'panel' ? e.accessory.panel : null);
   let editPanel = $state<RackEl | null>(null);
   const shelfOf = (e: RackEl) => store[e.cid]?.elements.find((x) => x.placement.id === e.placement.shelf_id);
+  /** Étagères posées sur une face (toutes faces si `f` est omis), du haut vers le bas. */
+  const shelvesOf = (R: Rack | null | undefined, f?: Face) => (R?.elements.filter((e) => isShelf(e) && !e.placement.shelf_id && (!f || e.placement.face === f)) ?? []).sort((a, b) => b.placement.u_start - a.placement.u_start || a.placement.col - b.placement.col);
+  /** Nom court d'une étagère : « Étagère 2U · U14 » (son libellé s'il en a un). */
+  const shelfName = (e: RackEl) => `${e.custom || `Étagère ${fmtU(hOf(e))}U`} · ${rangeTxt(e.placement.u_start, hOf(e))}`;
+  const SHELF_MAX = 10;
+  /** Étiquette d'un élément posé sur une étagère : son libellé, sinon son modèle (ID et marque en infobulle). */
+  const chipName = (x: RackEl) => x.custom || x.label;
+  /** Étiquettes affichées sur une étagère : autant que la largeur en tient, sinon « +n ». */
+  function shelfLoad(e: RackEl) {
+    const all = onShelf(e), room = BW / cols(e.placement.width) - 16 - (mode === 'schematic' ? Math.min(140, textWidth(e.label, '500 11px "Inter Variable", Inter, sans-serif') + 16) : 0);
+    const w = (x: RackEl) => Math.min(120, textWidth(chipName(x), '600 10px "Inter Variable", Inter, sans-serif') + 14) + 4;
+    let used = 0, n = 0;
+    for (const [i, x] of all.entries()) { const need = w(x) + (i < all.length - 1 ? 30 : 0); if (used + need > room && n > 0) break; used += w(x); n++; }
+    return { shown: all.slice(0, n), more: all.length - n, rest: all.slice(n).map(chipName).join(', ') };
+  }
+  /** Pose un élément hors format rack sur une étagère (depuis « À placer », éventuellement d'un autre rack). */
   async function putOnShelf(shelf: RackEl, p: Pending) {
+    const to = shelf.cid, from = p.cid, dest = contOf(to);
+    if (!canEdit(to) || placing) return;
+    placing = true;
     try {
-      await act([shelf.cid], () => api.post(`/containers/${shelf.cid}/placements`, { article_id: p.article_id, instance_id: p.instance_id ?? null, face: shelf.placement.face, u_start: shelf.placement.u_start, shelf_id: shelf.placement.id }));
-      await load([shelf.cid]);
-    } catch (e) { fail(e); }
+      const id = await act([to], async (): Promise<string | null> => {
+        let article = p.article_id;
+        if (from !== to) article = (await api.post<{ id: string }>(`/articles/${p.article_id}/move`, { rev: p.article_rev, container_id: to, location_id: dest?.location_id ?? null, instance_id: p.instance_id ?? null })).id;
+        let r: { placement: Placement };
+        try { r = await api.post(`/containers/${to}/placements`, { article_id: article, instance_id: p.instance_id ?? null, face: shelf.placement.face, u_start: shelf.placement.u_start, shelf_id: shelf.placement.id }); }
+        catch (x) { if (from === to) throw x; toast(`« ${p.tag ?? p.label} » est dans « ${dest?.name} », à placer : ${(x as Error).message}`, 'warn'); return null; }
+        const id = r.placement.id;
+        toast(`« ${p.tag ?? p.label} » posé sur ${shelfName(shelf)}.`, 'ok', { run: async () => {
+          await act([to], async () => { await api.del(`/placements/${id}`); if (from !== to) await sendBack({ instance_id: p.instance_id ?? null, article_id: article }, to, from); });
+          if (sel === id) sel = null;
+          await load([to, from]); await reload?.();
+        } });
+        armed = null; aim = null; sel = id;
+        return id;
+      });
+      await load([to, from]);
+      if (id) flash(id);
+      if (from !== to) await reload?.();
+    } catch (e) { fail(e); await load([to, from]); } finally { placing = false; }
+  }
+  /** Passe un élément posé sur une étagère vers une autre étagère du même rack (Annuler : retour). */
+  async function moveToShelf(e: RackEl, shelf: RackEl) {
+    const c = e.cid, back = e.placement.shelf_id, old = shelfOf(e);
+    if (!canEdit(c) || !back || back === shelf.placement.id) return;
+    const body = (rev: number, sid: string, at: RackEl | undefined) => ({ rev, face: at?.placement.face ?? e.placement.face, u_start: at?.placement.u_start ?? e.placement.u_start, width: e.placement.width, col: e.placement.col, circuit_id: e.placement.circuit_id, shelf_id: sid });
+    try {
+      await act([c], () => api.patch(`/placements/${e.placement.id}`, body(e.placement.rev, shelf.placement.id, shelf)));
+      await load([c]); sel = e.placement.id; flash(e.placement.id);
+      toast(`« ${nameOf(e)} » posé sur ${shelfName(shelf)}.`, 'ok', { run: async () => {
+        const now = store[c]?.elements.find((x) => x.placement.id === e.placement.id);
+        if (!now) return;
+        await act([c], () => api.patch(`/placements/${e.placement.id}`, body(now.placement.rev, back, old)));
+        await load([c]);
+      } });
+    } catch (x) { fail(x); await load([c]); }
   }
   const selected = $derived(sel ? (allEls.find((e) => e.placement.id === sel) ?? null) : null);
   /** Baie de l'élément sélectionné. */
@@ -643,7 +695,8 @@
   let moving = $state<RackEl | null>(null);
   let dragP = $state<Pending | null>(null);
   /** Place visée : baie, U de départ (bas de l'équipement), colonne, face et vue où elle s'affiche. */
-  interface Aim { cid: string; u: number; col: number; face: Face; view: View }
+  /** `y` : hauteur du pointeur en U depuis le bas ; `x` : position en largeur (0 à 1). Servent à viser une étagère. */
+  interface Aim { cid: string; u: number; col: number; face: Face; view: View; y?: number; x?: number }
   let aim = $state<Aim | null>(null);
   /** Écart, en U, entre le bas de l'équipement et le pointeur (le fantôme suit la prise). */
   let grabOff = 0;
@@ -662,10 +715,32 @@
   }
   /** Face visée depuis une vue : la vue de côté garde la face de l'équipement déplacé. */
   const faceOfView = (R: Rack, v: View, s: Subject | null = subject): Face => (v === 'side' ? (s?.move && s.move.cid === rid(R) ? s.move.placement.face : mainFace(R)) : v);
+  /** Sujet qui se pose sur une étagère : hors format rack, à placer ou déjà sur une étagère. */
+  const shelfSubj = (s: Subject | null) => !!s && (s.p ? !s.p.rackable : !!s.move.placement.shelf_id);
+  /** Étagère sous la place visée (face, hauteur et colonne du pointeur). */
+  function shelfAt(R: Rack, at: Aim): RackEl | null {
+    if (at.view === 'side') return null;
+    const y = at.y ?? at.u - 0.5, x = at.x ?? (at.col + 0.5);
+    return shelvesOf(R, at.face).find((e) => y >= e.placement.u_start - 1 - 1e-9 && y < e.placement.u_start - 1 + hOf(e) && Math.min(cols(e.placement.width) - 1, Math.floor(x * cols(e.placement.width))) === e.placement.col) ?? null;
+  }
+  /** Visée sur une étagère précise (clavier, « Déplacer »). */
+  const aimOn = (sh: RackEl, v: View): Aim => ({ cid: sh.cid, u: sh.placement.u_start, col: sh.placement.col, face: sh.placement.face, view: v, y: sh.placement.u_start - 1 + hOf(sh) / 2, x: (sh.placement.col + 0.5) / cols(sh.placement.width) });
   /** Place visée : hauteur, colonne, plage « U36–U39 » et raison courte si la pose est impossible. */
   function previewAt(s: Subject | null, at: Aim | null) {
     const R = at ? store[at.cid] : null;
     if (!s || !at || !R || show3d) return null;
+    if (shelfSubj(s)) {
+      // Hors format rack : la cible est une étagère posée (elle s'éclaire), ailleurs la pose est refusée.
+      const sh = shelfAt(R, at), name = s.move ? nameOf(s.move) : s.p.label;
+      let why: string | null = null;
+      if (!canEdit(at.cid)) why = R.lock && !R.lock.mine ? `${R.lock.account_name} a la main` : 'Lecture seule';
+      else if (!sh) why = shelvesOf(R).length ? 'Hors format rack : posez-le sur une étagère' : 'Hors format rack : ajoutez une étagère au rack';
+      else if (s.move && s.move.cid !== at.cid) why = 'Étagère d’un autre rack : retirez-le d’abord';
+      else if (s.move?.placement.shelf_id !== sh.placement.id && onShelf(sh).length >= SHELF_MAX) why = `Étagère pleine (${SHELF_MAX} éléments)`;
+      const same = !!s.move && !!sh && s.move.placement.shelf_id === sh.placement.id;
+      const u = sh ? sh.placement.u_start : Math.max(1, Math.floor(at.y ?? at.u - 1) + 1), h = sh ? hOf(sh) : 1;
+      return { cid: at.cid, u, h, n: sh ? cols(sh.placement.width) : 1, col: sh ? sh.placement.col : 0, why, same, view: at.view, face: at.face, name, range: sh ? `Poser sur ${shelfName(sh)}` : `U${fmtU(u)}`, shelf: sh };
+    }
     const units = unitsOf(R), h = subjH(s), w = subjW(s), n = cols(w), col = Math.min(n - 1, Math.max(0, at.col)), u = at.u;
     let why: string | null = null;
     if (!canEdit(at.cid)) why = R.lock && !R.lock.mine ? `${R.lock.account_name} a la main` : 'Lecture seule';
@@ -673,7 +748,7 @@
     else if (u < 1) why = 'Dépasse le bas du rack';
     else { const b = blocker(R, h, w, col, u, at.face, s.move?.placement.id); if (b) why = `Occupé par ${b.custom || b.label}`; }
     const same = !!s.move && s.move.cid === at.cid && s.move.placement.face === at.face && s.move.placement.u_start === u && s.move.placement.col === col;
-    return { cid: at.cid, u, h, n, col, why, same, view: at.view, face: at.face, name: s.move ? (s.move.custom || s.move.label) : s.p.label, range: aimTxt(u, h) };
+    return { cid: at.cid, u, h, n, col, why, same, view: at.view, face: at.face, name: s.move ? (s.move.custom || s.move.label) : s.p.label, range: aimTxt(u, h), shelf: null as RackEl | null };
   }
   const preview = $derived(previewAt(subject, aim));
   /** U visé par le pointeur (aimanté au pas), moins la prise ; colonne d'après la largeur du sujet.
@@ -686,7 +761,7 @@
     const u = Math.floor((fb - grabOff) / st + 1e-9) * st + 1;
     const n = s ? cols(subjW(s)) : 1;
     const col = v === 'side' ? (s?.move?.placement.col ?? 0) : Math.min(n - 1, Math.max(0, Math.floor(((ev.clientX - r.left) / r.width) * n)));
-    return { cid: rid(R), u, col, face: f, view: v };
+    return { cid: rid(R), u, col, face: f, view: v, y: fb, x: (ev.clientX - r.left) / (r.width || 1) };
   }
   /** Part d'un numéro d'U touchée par la place visée : tout l'U, sa moitié haute ou sa moitié basse. */
   function hotOf(R: Rack, n: number): '' | 'full' | 'top' | 'bot' {
@@ -699,7 +774,7 @@
   }
   /** Bandes libres d'une face pendant une visée, au demi-U. */
   function freeRuns(R: Rack, f: Face) {
-    if (!subject) return [];
+    if (!subject || shelfSubj(subject)) return [];
     const busy = new Set<number>();
     for (const e of faceEls(R, f)) {
       if (subject.move && e.placement.id === subject.move.placement.id) continue;
@@ -723,6 +798,12 @@
     const pv = previewAt(s, at);
     if (!s || !pv || !at) return;
     if (pv.why) { reject(pv.why); return; }
+    if (pv.shelf || shelfSubj(s)) {
+      moving = null; aim = null;
+      if (pv.same || !pv.shelf) return;
+      if (s.move) moveToShelf(s.move, pv.shelf); else putOnShelf(pv.shelf, s.p);
+      return;
+    }
     if (s.move) {
       moving = null; aim = null;
       if (pv.same) return;
@@ -738,7 +819,7 @@
   function startMove(ev: DragEvent, e: RackEl) {
     const r = (ev.currentTarget as HTMLElement).getBoundingClientRect(), h = hOf(e);
     const st = stepFor({ move: e });
-    grabOff = Math.max(0, Math.min(h - st, Math.floor((((r.bottom - ev.clientY) / (r.height || 1)) * h) / st) * st));
+    grabOff = e.placement.shelf_id ? 0 : Math.max(0, Math.min(h - st, Math.floor((((r.bottom - ev.clientY) / (r.height || 1)) * h) / st) * st));
     dragging = e; armed = null; moving = null; aim = null; ctx = null;
     if (ev.dataTransfer) { ev.dataTransfer.effectAllowed = 'move'; ev.dataTransfer.setData('text/plain', nameOf(e)); if (BLANK) ev.dataTransfer.setDragImage(BLANK, 0, 0); }
   }
@@ -900,6 +981,14 @@
       } catch (x) { await load([at]); toast(`« ${label} » ajouté à placer : ${(x as Error).message}`, 'warn'); }
     } catch (x) { fail(x); }
   }
+  /** Ajoute une étagère 1 U au premier U libre en partant du haut (face principale). */
+  async function addShelf(R: Rack) {
+    const f = mainFace(R), at = rid(R);
+    let u: number | null = null;
+    for (let c = unitsOf(R); c >= 1 && u == null; c--) if (!noFit(R, 1, c, f)) u = c;
+    if (u == null) { toast('Plus de place libre pour une étagère sur cette face.', 'warn'); return; }
+    await addAccAt({ kind: 'shelf', depth_mm: 450, height_u: 1 } as Accessory, 'Étagère 1 U', u, f, at);
+  }
   /** Duplique un accessoire simple (plaque, étagère, tiroir, laçage) juste au-dessus, sinon au plus près. */
   async function duplicate(e: RackEl) {
     const a = e.accessory, R = store[e.cid];
@@ -944,7 +1033,8 @@
     grabOff = 0;
     const vv: View = v === 'side' || v === e.placement.face ? v : e.placement.face;
     if (vv !== 'side') reveal(vv);
-    aim = { cid: e.cid, u: e.placement.u_start, col: e.placement.col, face: e.placement.face, view: vv };
+    const sh = e.placement.shelf_id ? shelfOf(e) : null;
+    aim = sh ? aimOn(sh, vv) : { cid: e.cid, u: e.placement.u_start, col: e.placement.col, face: e.placement.face, view: vv };
     await tick();
     document.querySelector<HTMLElement>(bodySel(e.cid, vv))?.focus({ preventScroll: true });
   }
@@ -953,11 +1043,21 @@
     const ok = canEdit(e.cid), ro = ok ? undefined : roWhy(e.cid);
     const simple = e.nature === 'accessory' && !!e.accessory && e.accessory.kind !== 'panel' && e.accessory.kind !== 'vertical_pdu';
     const step = (d: number): CtxItem => { const why = ok ? nudgeWhy(e, d) : ro; return { label: d > 0 ? 'Monter' : 'Descendre', right: `${fmtU(Math.abs(d))} U`, disabled: !!why, title: why ?? undefined, run: () => nudge(e, d) }; };
+    const R = store[e.cid];
+    const others = e.placement.shelf_id ? shelvesOf(R).filter((x) => x.placement.id !== e.placement.shelf_id) : [];
     const items: CtxItem[] = [
       { label: ok ? 'Modifier' : 'Voir', icon: 'pen', run: () => editSel(e) },
-      { label: 'Déplacer', icon: 'hand', disabled: !ok || !!e.placement.shelf_id, title: ro ?? (e.placement.shelf_id ? 'Posé sur une étagère : il en suit la position.' : undefined),
-        sub: [{ label: 'Choisir la place', icon: 'hand', run: () => startMoving(e, v) }, { sep: true }, step(0.5), step(-0.5), step(1), step(-1)] },
+      e.placement.shelf_id
+        ? { label: 'Changer d’étagère', icon: 'hand', disabled: !ok || !others.length, title: ro ?? (!others.length ? 'Pas d’autre étagère dans ce rack.' : undefined),
+            sub: [{ label: 'Choisir l’étagère', icon: 'hand', run: () => startMoving(e, v) }, { sep: true }, ...others.map((x): CtxItem => { const full = onShelf(x).length >= SHELF_MAX; return { label: shelfName(x), right: `${onShelf(x).length} / ${SHELF_MAX}`, disabled: full, title: full ? 'Étagère pleine.' : undefined, run: () => moveToShelf(e, x) }; })] }
+        : { label: 'Déplacer', icon: 'hand', disabled: !ok, title: ro, sub: [{ label: 'Choisir la place', icon: 'hand', run: () => startMoving(e, v) }, { sep: true }, step(0.5), step(-0.5), step(1), step(-1)] },
     ];
+    if (isShelf(e)) {
+      // Étagère : « Poser ici » liste les éléments hors format rack à placer.
+      const off = R?.pending.filter((x) => !x.rackable) ?? [], full = onShelf(e).length >= SHELF_MAX;
+      items.push({ label: 'Poser ici', icon: 'server', disabled: !ok || !off.length || full, title: ro ?? (full ? 'Étagère pleine.' : !off.length ? 'Aucun élément hors format rack à placer.' : undefined),
+        sub: off.map((x): CtxItem => ({ label: x.tag ? `${x.label} · ${x.tag}` : x.label, run: () => putOnShelf(e, x) })) });
+    }
     if (simple) items.push({ label: 'Dupliquer', icon: 'copy', disabled: !ok || !canAdd, title: ro, run: () => duplicate(e) });
     if (panelOf(e)) items.push({ label: ok ? 'Modifier le panel' : 'Voir le panel', icon: 'grid', run: () => (editPanel = e) });
     if (e.item_id && e.nature !== 'accessory') items.push({ label: 'Ouvrir la fiche', icon: 'file', run: () => navigate(`/catalogue/equipment/${e.item_id}`) });
@@ -1043,6 +1143,17 @@
     const s = subject;
     if (!s || !aiming) return;
     const f = faceOfView(R, v, s), h = subjH(s), st = stepFor(s, e.altKey), c = rid(R);
+    if (shelfSubj(s)) {
+      // Hors format rack : ↑↓ passent d'une étagère à l'autre, Entrée pose.
+      const list = shelvesOf(R, f), cur = aim && aim.cid === c && aim.view === v ? shelfAt(R, aim) : null, i = cur ? list.indexOf(cur) : -1;
+      const go = (k: number) => { const t = list[Math.max(0, Math.min(list.length - 1, k))]; if (t) aim = aimOn(t, v); };
+      if (e.key === 'ArrowUp') go(i < 0 ? 0 : i - 1);
+      else if (e.key === 'ArrowDown') go(i < 0 ? 0 : i + 1);
+      else if (e.key === 'Enter' || e.key === ' ') commit(s, aim && aim.cid === c ? aim : list[0] ? aimOn(list[0], v) : { cid: c, u: 1, col: 0, face: f, view: v });
+      else return;
+      e.preventDefault();
+      return;
+    }
     const top = Math.max(1, Math.floor((unitsOf(R) - h) / st + 1e-9) * st + 1);
     const at: Aim = aim && aim.view === v && aim.cid === c ? aim : s.move && s.move.cid === c ? { cid: c, u: s.move.placement.u_start, col: s.move.placement.col, face: f, view: v } : { cid: c, u: top, col: 0, face: f, view: v };
     const n = cols(subjW(s)), d = s.move ? (e.shiftKey ? 1 : 0.5) : (e.shiftKey ? 5 : 1) * st;
@@ -1064,6 +1175,7 @@
     const s = subject, name = all ? `${R.container.name}, ` : '';
     if (!s || !aiming) return v === 'side' ? `${name}vue de côté : profondeurs et réserves de câblage` : `${name}élévation ${FACES[v].toLowerCase()}`;
     const pv = preview && preview.view === v && preview.cid === rid(R) ? preview : null;
+    if (shelfSubj(s)) return `${name}élévation ${FACES[v].toLowerCase()} : étagère pour ${s.move ? nameOf(s.move) : s.p.label}${pv ? `, ${pv.range}${pv.why ? `, ${pv.why.toLowerCase()}` : ''}` : ''} (flèches haut et bas d'une étagère à l'autre, Entrée pour poser, Échap pour annuler)`;
     return `${name}élévation ${FACES[v].toLowerCase()} : position de ${s.move ? nameOf(s.move) : s.p.label}${pv ? `, ${pv.range}${pv.why ? `, ${pv.why.toLowerCase()}` : ', libre'}` : ''} (flèches haut et bas${s.move ? ' : 0,5 U, Maj 1 U' : ', Alt pour le demi-U'}, Entrée pour poser, Échap pour annuler)`;
   };
   const RENDERS = [{ value: 'real', label: 'Réel' }, { value: 'schematic', label: 'Schématique' }, { value: '3d', label: '3D', icon: 'box' }] as const;
@@ -1147,7 +1259,11 @@
               {#each g.list as p (pk(p))}{@render pendRow(p)}{/each}
             {:else}<p class="small muted">Tout est posé.</p>{/each}
             {#if notRackable.length}
-              <h2 style="margin-top:8px" title="Hors format rack : choisissez une étagère posée dans le rack, puis « Poser ».">Sur étagère <span class="muted">· {notRackable.length}</span></h2>
+              <h2 style="margin-top:8px" title="Hors format rack : glissez-le sur une étagère posée dans le rack, ou choisissez-le puis cliquez l’étagère.">Sur étagère <span class="muted">· {notRackable.length}</span></h2>
+              {#if !shelvesOf(rack).length}
+                <p class="small muted" style="margin:0">Ce rack n’a pas d’étagère pour les recevoir.</p>
+                {#if mine && canAdd}<button class="btn sm add-mat" onclick={() => addShelf(rack!)}><Icon name="plus" size="sm" />Ajouter une étagère</button>{/if}
+              {/if}
               {#each notRackable as p (pk(p))}{@render offRow(p)}{/each}
             {/if}
           {:else}
@@ -1251,7 +1367,19 @@
                   {:else}<span class="insp-v" id="rk-c">{R.circuits.find((c) => c.id === p.circuit_id)?.name ?? 'Non branché'}</span>{/if}
                 </div>
               {/if}
-              {#if p.shelf_id}<p class="insp-note">Posé sur une étagère : il en suit la position.</p>{/if}
+              {#if p.shelf_id}
+                {@const others = shelvesOf(R).filter((x) => x.placement.id !== p.shelf_id)}
+                {#if ok && others.length}
+                  <div class="insp-row">
+                    <label class="insp-k" for="rk-shelf">Déplacer vers</label>
+                    <span class="insp-v"><select class="cell" id="rk-shelf" value="" onchange={(ev) => { const t = others.find((x) => x.placement.id === (ev.target as HTMLSelectElement).value); (ev.target as HTMLSelectElement).value = ''; if (t) moveToShelf(e, t); }}>
+                      <option value="" disabled>Une autre étagère…</option>
+                      {#each others as x (x.placement.id)}<option value={x.placement.id} disabled={onShelf(x).length >= SHELF_MAX}>{shelfName(x)} · {onShelf(x).length} / {SHELF_MAX}</option>{/each}
+                    </select></span>
+                  </div>
+                {/if}
+                <p class="insp-note">Posé sur une étagère : il en suit la position.</p>
+              {/if}
             </section>
             <section class="insp-sec">
               <h3>Identification</h3>
@@ -1300,7 +1428,8 @@
               </section>
             {/if}
             {#snippet actions()}
-              {#if ok && !p.shelf_id}<button class="btn sm ghost" title="Déplacer au clavier (flèches puis Entrée) ou à la souris (clic à la nouvelle place)" onclick={() => startMoving(e, p.face)}><Icon name="hand" size="sm" />Déplacer</button>{/if}
+              {#if ok && !p.shelf_id}<button class="btn sm ghost" title="Déplacer au clavier (flèches puis Entrée) ou à la souris (clic à la nouvelle place)" onclick={() => startMoving(e, p.face)}><Icon name="hand" size="sm" />Déplacer</button>
+              {:else if ok && shelvesOf(R).length > 1}<button class="btn sm ghost" title="Choisir une autre étagère (clic sur l’étagère, ou flèches puis Entrée)" onclick={() => startMoving(e, p.face)}><Icon name="hand" size="sm" />Changer d’étagère</button>{/if}
               {#if all}<a class="btn sm ghost" href="/projets/{view.project.id}/racks/{e.cid}{p.instance_id ? `?i=${p.instance_id}` : ''}"><Icon name="arrowr" size="sm" />Ouvrir dans le rack</a>{/if}
               {#if e.item_id && e.nature !== 'accessory'}<a class="btn sm ghost" href="/catalogue/equipment/{e.item_id}"><Icon name="file" size="sm" />Ouvrir la fiche</a>{/if}
               <a class="btn sm ghost" href="/projets/{view.project.id}/synoptique/element/{e.cid}"><Icon name="syn" size="sm" />Voir dans le synoptique</a>
@@ -1385,8 +1514,13 @@
     <i class="pm-c" style="--c:{famColor(p.function)}"></i><span class="pm-l">{p.label}</span>{#if p.tag}<span class="pm-t">{p.tag}</span>{/if}<span class="pm-u">{fmtU(p.height_u ?? 0)} U{widthTxt(p.width)}</span>
   </button>
 {/snippet}
+<!-- Hors format rack : même geste qu'un équipement rackable, la cible est une étagère posée. -->
 {#snippet offRow(p: Pending)}
-  <div class="pend mini" style="cursor:default" data-pend={pk(p)} tabindex="-1" title="{p.label}{p.tag ? ` · ${p.tag}` : ''}"><i class="pm-c" style="--c:{famColor(p.function)}"></i><span class="pm-l">{p.label}</span>{#if p.tag}<span class="pm-t">{p.tag}</span>{/if}</div>
+  {@const ok = canEdit(p.cid)}
+  <button class="pend mini" class:on={armed === p} class:dragging={dragP === p} aria-pressed={armed === p} data-pend={pk(p)} disabled={!ok || show3d} onclick={() => arm(p)}
+    draggable={ok && !show3d} ondragstart={(ev) => startPend(ev, p)} ondragend={endDrag} title="{p.label}{p.tag ? ` · ${p.tag}` : ''} · hors format rack : à poser sur une étagère">
+    <i class="pm-c" style="--c:{famColor(p.function)}"></i><span class="pm-l">{p.label}</span>{#if p.tag}<span class="pm-t">{p.tag}</span>{/if}<span class="pm-u"><Icon name="server" size="sm" /></span>
+  </button>
 {/snippet}
 
 <!-- Vues d'une baie côte à côte, même échelle, alignées sur les U : graduations à gauche de la première et à droite de la dernière. -->
@@ -1427,12 +1561,18 @@
       ondragleave={(e) => dragLeave(e, R, f)}
       ondrop={(e) => drop(e, R, f)}>
       {#if subject}{#each freeRuns(R, f) as r (r.b)}<span class="rfree" style="bottom:calc({r.b} * var(--u));height:calc({r.h} * var(--u))"></span>{/each}{/if}
+      {#if subject && shelfSubj(subject)}{#each shelvesOf(R, f) as sh (sh.placement.id)}<span class="rshelf" class:full={onShelf(sh).length >= SHELF_MAX} style="bottom:calc({sh.placement.u_start - 1} * var(--u));height:calc({hOf(sh)} * var(--u));left:calc({(100 * sh.placement.col) / cols(sh.placement.width)}% + 1px);width:calc({100 / cols(sh.placement.width)}% - 2px)"></span>{/each}{/if}
       {#each faceEls(R, f) as e (e.placement.id)}
         <div class="ritem {e.nature === 'accessory' ? 'acc' : ''} {ALU.has(typeOf(e)) && mode === 'real' ? 'alu' : ''} {e.height_u <= 1 ? 'u1' : ''} {e.height_u < 1 ? 'uh' : ''} {e.placement.width !== 'full' ? `half c${e.placement.col}` : ''} {e.placement.width === 'third' || e.placement.width === 'quarter' ? 'nw' : ''} {mode === 'schematic' ? 'sch' : ''} {oneLine(e) ? 'one' : ''}" class:sel={sel === e.placement.id} class:dw={dw(e)} class:draggable={ok} class:dragging={dragging === e || moving === e} class:flash={flashId === e.placement.id}
           style={style(e)} data-pl={e.placement.id} role="button" tabindex="0" draggable={ok} aria-pressed={sel === e.placement.id} aria-haspopup="menu" aria-label={elTitle(e)} title={elTitle(e)}
           onclick={() => { if (!aiming) sel = e.placement.id; }} onkeydown={(k) => { if (k.key === 'Enter' || k.key === ' ') { if (aiming) return; k.preventDefault(); sel = e.placement.id; } else if (isMenuKey(k)) { k.preventDefault(); k.stopPropagation(); keyMenu(e, k.currentTarget as HTMLElement, f); } }}
           ondragstart={(ev) => startMove(ev, e)} ondragend={endDrag}>
-          {#if e.nature !== 'accessory'}<i class="led"></i>{/if}<span class="rl" class:two={!!rl(e)[1]}>{#if rl(e)[0]}<b class="rn" class:id={!!e.tag && rl(e)[0] === e.tag}>{rl(e)[0]}</b>{/if}{#if rl(e)[1]}<small>{rl(e)[1]}</small>{/if}</span>{#if isShelf(e) && onShelf(e).length}<span class="shelf-load">{#each onShelf(e) as x (x.placement.id)}<span class="sh-it" style="--c:{famColor(x.function)}">{x.label}</span>{/each}</span>{:else if mode === 'real' && panelOf(e)}<span class="pdec"><PanelFace panel={panelOf(e)!} /></span>{:else if mode === 'real'}<span class="dec">{@html decor(typeOf(e))}</span>{:else}<span class="dec"></span>{/if}
+          {#if e.nature !== 'accessory'}<i class="led"></i>{/if}<span class="rl" class:two={!!rl(e)[1]}>{#if rl(e)[0]}<b class="rn" class:id={!!e.tag && rl(e)[0] === e.tag}>{rl(e)[0]}</b>{/if}{#if rl(e)[1]}<small>{rl(e)[1]}</small>{/if}</span>{#if isShelf(e) && onShelf(e).length}{@const ld = shelfLoad(e)}<span class="shelf-load">{#each ld.shown as x (x.placement.id)}<span class="sh-it" class:on={sel === x.placement.id} class:flash={flashId === x.placement.id} style="--c:{famColor(x.function)}" role="button" tabindex="0" data-shelf-it={x.placement.id}
+            title="{elTitle(x)} · sur {shelfName(e)}" aria-label="{nameOf(x)}, sur {shelfName(e)}" draggable={ok}
+            onclick={(ev) => { if (aiming) return; ev.stopPropagation(); sel = x.placement.id; }}
+            onkeydown={(k) => { if (k.key === 'Enter' || k.key === ' ') { k.preventDefault(); k.stopPropagation(); sel = x.placement.id; } else if (isMenuKey(k)) { k.preventDefault(); k.stopPropagation(); keyMenu(x, k.currentTarget as HTMLElement, f); } }}
+            oncontextmenu={(ev) => { if (show3d || aiming || dragging || dragP) return; ev.preventDefault(); ev.stopPropagation(); elementMenu(x, ev.clientX, ev.clientY, f, ev.currentTarget as HTMLElement); }}
+            ondragstart={(ev) => { ev.stopPropagation(); startMove(ev, x); }} ondragend={endDrag}>{chipName(x)}</span>{/each}{#if ld.more}<span class="sh-more" title={ld.rest}>+{ld.more}</span>{/if}</span>{:else if mode === 'real' && panelOf(e)}<span class="pdec"><PanelFace panel={panelOf(e)!} /></span>{:else if mode === 'real'}<span class="dec">{@html decor(typeOf(e))}</span>{:else}<span class="dec"></span>{/if}
         </div>
       {/each}
       {#if pv}{@render ghost(pv)}{/if}
@@ -1622,7 +1762,17 @@
   .s-total .cote b { background: #2A2E34; }
   .s-end { font: 600 10.5px/1 var(--font); letter-spacing: .05em; text-transform: uppercase; color: #AEB6C0; }
 
-  .shelf-load { flex: 1 1 0; min-width: 0; display: flex; gap: 4px; justify-content: flex-end; overflow: hidden; }
+  /* Ce que porte une étagère : posé sur le plateau, de gauche à droite. */
+  .shelf-load { flex: 1 1 0; min-width: 0; align-self: stretch; display: flex; gap: 4px; justify-content: flex-start; align-items: flex-end; padding: 0 2px 5px; overflow: hidden; }
+  .sh-it { cursor: pointer; }
+  .sh-it:hover { filter: brightness(1.15); }
+  .sh-it.on { outline: 1.5px solid var(--accent); outline-offset: 1px; }
+  .sh-it:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .sh-it.flash { animation: rk-flash 1.2s ease-out; }
+  .sh-more { flex: none; font: 600 10px/1 var(--mono); padding: 3px 5px; border-radius: 3px; color: #fff; background: rgba(0, 0, 0, .45); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .2); }
+  /* Visée hors format rack : les étagères posées s'éclairent (pleines : en retrait). */
+  .rshelf { position: absolute; z-index: 3; pointer-events: none; border-radius: 3px; box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--aim) 70%, transparent); background: color-mix(in srgb, var(--aim) 12%, transparent); }
+  .rshelf.full { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--fg-3) 50%, transparent); background: none; }
   .sh-it { flex: none; font: 600 10px/1 var(--font); padding: 3px 6px; border-radius: 3px; color: #fff; background: color-mix(in srgb, var(--c) 70%, #1C1F23); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .15); max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .circ { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 8px 10px; border-radius: 10px; background: var(--surface-2); font-size: 14px; }
   .circ.over { background: var(--err-soft); }

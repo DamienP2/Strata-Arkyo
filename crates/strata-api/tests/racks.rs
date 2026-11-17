@@ -4660,3 +4660,189 @@ async fn vertical_pdu_sits_in_rear_channel() {
     assert_eq!(rack.body["vpdus"][0]["circuit"], "PDU A");
     assert_eq!(rack.body["vpdus"][0]["free"], 24);
 }
+
+#[tokio::test]
+async fn several_items_per_shelf_and_shelf_to_shelf_moves() {
+    let Setup {
+        app,
+        o,
+        pid,
+        cid,
+        free,
+        mixer,
+        ..
+    } = setup().await;
+    // Un second exemplaire du matériel hors format rack.
+    let proj = call(&app, "GET", &format!("/api/projects/{pid}"), None, Some(&o)).await;
+    let item = proj.body["articles"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["id"] == free.as_str())
+        .unwrap()["item_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let more = call(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid}/articles"),
+        Some(json!({"container_id": cid, "nature": "equipment", "item_id": item, "quantity": 1})),
+        Some(&o),
+    )
+    .await;
+    assert!(more.status.is_success(), "{}", more.body);
+    let second = more.body["article"]["id"].as_str().unwrap().to_string();
+    call(
+        &app,
+        "POST",
+        &format!("/api/containers/{cid}/rack/lock"),
+        None,
+        Some(&o),
+    )
+    .await;
+    let mut shelves = Vec::new();
+    for u in [4, 8] {
+        let a = call(&app, "POST", &format!("/api/projects/{pid}/articles"), Some(json!({"container_id": cid, "nature": "accessory", "accessory": {"kind": "shelf", "depth_mm": 450, "height_u": 1}})), Some(&o)).await;
+        let art = a.body["article"]["id"].as_str().unwrap().to_string();
+        let s = call(
+            &app,
+            "POST",
+            &format!("/api/containers/{cid}/placements"),
+            Some(place(&art, u)),
+            Some(&o),
+        )
+        .await;
+        assert_eq!(s.status, StatusCode::CREATED, "{}", s.body);
+        shelves.push(s.body["placement"]["id"].as_str().unwrap().to_string());
+    }
+    let (a, b) = (shelves[0].clone(), shelves[1].clone());
+    // Deux éléments sur la même étagère.
+    let mut on = Vec::new();
+    for art in [&free, &second] {
+        let r = call(
+            &app,
+            "POST",
+            &format!("/api/containers/{cid}/placements"),
+            Some(json!({"article_id": art, "face": "front", "u_start": 1, "shelf_id": a})),
+            Some(&o),
+        )
+        .await;
+        assert_eq!(r.status, StatusCode::CREATED, "{}", r.body);
+        assert_eq!(r.body["placement"]["u_start"], 4);
+        on.push(r.body["placement"].clone());
+    }
+    // Un équipement au format rack ne va pas sur une étagère.
+    let r = call(
+        &app,
+        "POST",
+        &format!("/api/containers/{cid}/placements"),
+        Some(json!({"article_id": mixer, "face": "front", "u_start": 1, "shelf_id": a})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY, "{}", r.body);
+    // D'une étagère à l'autre : il en prend la position.
+    let id0 = on[0]["id"].as_str().unwrap().to_string();
+    let r = call(&app, "PATCH", &format!("/api/placements/{id0}"), Some(json!({"rev": on[0]["rev"], "face": "front", "u_start": 4, "width": "full", "shelf_id": b})), Some(&o)).await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.body);
+    assert_eq!(
+        (
+            r.body["placement"]["shelf_id"].as_str(),
+            r.body["placement"]["u_start"].as_f64()
+        ),
+        (Some(b.as_str()), Some(8.0))
+    );
+    // Vers ce qui n'est pas une étagère : refusé, rien ne change.
+    let rev = r.body["placement"]["rev"].clone();
+    let r = call(
+        &app,
+        "PATCH",
+        &format!("/api/placements/{id0}"),
+        Some(json!({"rev": rev, "face": "front", "u_start": 8, "width": "full", "shelf_id": id0})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY, "{}", r.body);
+    // Un équipement posé dans le rack ne passe pas sur une étagère.
+    let m = call(
+        &app,
+        "POST",
+        &format!("/api/containers/{cid}/placements"),
+        Some(place(&mixer, 1)),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(m.status, StatusCode::CREATED, "{}", m.body);
+    let mid = m.body["placement"]["id"].as_str().unwrap().to_string();
+    let r = call(
+        &app,
+        "PATCH",
+        &format!("/api/placements/{mid}"),
+        Some(json!({"rev": 1, "face": "front", "u_start": 1, "width": "full", "shelf_id": a})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY, "{}", r.body);
+    // L'étagère B monte : ce qu'elle porte (venu de A) la suit.
+    let r = call(
+        &app,
+        "PATCH",
+        &format!("/api/placements/{b}"),
+        Some(json!({"rev": 1, "face": "front", "u_start": 9, "width": "full"})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.body);
+    let rack = call(
+        &app,
+        "GET",
+        &format!("/api/containers/{cid}/rack"),
+        None,
+        Some(&o),
+    )
+    .await;
+    let els = rack.body["elements"].as_array().unwrap();
+    let at =
+        |id: &str| els.iter().find(|e| e["placement"]["id"] == id).unwrap()["placement"].clone();
+    assert_eq!(
+        (at(&id0)["shelf_id"].as_str(), at(&id0)["u_start"].as_f64()),
+        (Some(b.as_str()), Some(9.0))
+    );
+    let id1 = on[1]["id"].as_str().unwrap();
+    assert_eq!(at(id1)["shelf_id"].as_str(), Some(a.as_str()));
+    // Retrait puis Annuler (reposé sur la même étagère).
+    let d = call(
+        &app,
+        "DELETE",
+        &format!("/api/placements/{id1}"),
+        None,
+        Some(&o),
+    )
+    .await;
+    assert!(d.status.is_success(), "{}", d.body);
+    let rack = call(
+        &app,
+        "GET",
+        &format!("/api/containers/{cid}/rack"),
+        None,
+        Some(&o),
+    )
+    .await;
+    assert!(
+        rack.body["pending"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|p| p["article_id"] == second.as_str() && p["rackable"] == false)
+    );
+    let r = call(
+        &app,
+        "POST",
+        &format!("/api/containers/{cid}/placements"),
+        Some(json!({"article_id": second, "face": "front", "u_start": 4, "shelf_id": a})),
+        Some(&o),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::CREATED, "{}", r.body);
+}

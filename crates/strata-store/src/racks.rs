@@ -193,12 +193,13 @@ impl Store {
     }
 
     pub async fn update_placement(&self, id: &str, rev: i64, p: &PlaceSpec) -> Result<Placement> {
-        let done = sqlx::query("UPDATE placements SET face = ?, u_start = ?, width = ?, col = ?, circuit_id = ?, rev = rev + 1, updated_at = ? WHERE id = ? AND rev = ?")
+        let done = sqlx::query("UPDATE placements SET face = ?, u_start = ?, width = ?, col = ?, circuit_id = ?, shelf_id = ?, rev = rev + 1, updated_at = ? WHERE id = ? AND rev = ?")
             .bind(ser(&p.face))
             .bind(p.u_start)
             .bind(ser(&p.width))
             .bind(p.col)
             .bind(&p.circuit_id)
+            .bind(&p.shelf_id)
             .bind(now())
             .bind(id)
             .bind(rev)

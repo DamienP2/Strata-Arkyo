@@ -425,6 +425,32 @@ fn check_face(c: &Container, f: RackFace) -> ApiResult<()> {
     Ok(())
 }
 
+/// Étagère posée dans ce contenant, qui peut encore recevoir un élément (10 au plus).
+async fn shelf_target(st: &AppState, ctx: &Ctx, cid: &str, sid: &str) -> ApiResult<Placement> {
+    let shelf = st
+        .store
+        .placement(sid)
+        .await?
+        .filter(|p| p.container_id == cid)
+        .ok_or_else(|| one("shelf_id", "Étagère inconnue dans cet élément."))?;
+    let is_shelf = ctx
+        .article(&shelf.article_id)
+        .and_then(|x| x.accessory.as_ref())
+        .is_some_and(|acc| matches!(acc, Accessory::Shelf { .. }));
+    if !is_shelf {
+        return Err(one("shelf_id", "Choisissez une étagère."));
+    }
+    if st.store.shelf_load(sid).await? >= SHELF_MAX {
+        return Err(ApiError::Conflict(format!(
+            "Une étagère porte {SHELF_MAX} équipements au plus."
+        )));
+    }
+    Ok(shelf)
+}
+
+/// Éléments posés sur une même étagère, au plus.
+const SHELF_MAX: i64 = 10;
+
 async fn check_circuit(store: &Store, c: &Container, id: &Option<String>) -> ApiResult<()> {
     if let Some(id) = id {
         if !store
@@ -509,30 +535,13 @@ async fn place(
     let (spec, adjusted) = match &b.shelf_id {
         // Sur une étagère : l'équipement prend la position de l'étagère.
         Some(sid) => {
-            let shelf = st
-                .store
-                .placement(sid)
-                .await?
-                .filter(|p| p.container_id == cid)
-                .ok_or_else(|| one("shelf_id", "Étagère inconnue dans cet élément."))?;
-            let is_shelf = ctx
-                .article(&shelf.article_id)
-                .and_then(|x| x.accessory.as_ref())
-                .is_some_and(|acc| matches!(acc, strata_domain::project::Accessory::Shelf { .. }));
-            if !is_shelf {
-                return Err(one("shelf_id", "Choisissez une étagère."));
-            }
             if geo.is_some() {
                 return Err(ApiError::Invalid(
                     "Un équipement au format rack se pose dans le rack, pas sur une étagère."
                         .into(),
                 ));
             }
-            if st.store.shelf_load(sid).await? >= 10 {
-                return Err(ApiError::Conflict(
-                    "Une étagère porte 10 équipements au plus.".into(),
-                ));
-            }
+            let shelf = shelf_target(&st, &ctx, &cid, sid).await?;
             (
                 PlaceSpec {
                     face: shelf.face,
@@ -618,6 +627,9 @@ struct MoveBody {
     #[serde(default)]
     col: i64,
     circuit_id: Option<String>,
+    /// Élément posé sur une étagère : l'étagère qui le reçoit (une autre du même contenant).
+    #[serde(default)]
+    shelf_id: Option<String>,
 }
 
 async fn move_placement(
@@ -642,24 +654,51 @@ async fn move_placement(
         .filter(|p| p.id != id)
         .filter_map(|p| ctx.slot(p))
         .collect();
-    if before.shelf_id.is_some() {
+    if let Some(cur) = &before.shelf_id {
+        // Sur une étagère : il en suit la position ; il peut passer sur une autre étagère.
+        let (target, face, u_start) = match &b.shelf_id {
+            Some(sid) if sid != cur => {
+                let shelf = shelf_target(&st, &ctx, &c.id, sid).await?;
+                (sid.clone(), shelf.face, shelf.u_start)
+            }
+            _ => (cur.clone(), before.face, before.u_start),
+        };
+        let changed = &target != cur;
         let after = st
             .store
             .update_placement(
                 &id,
                 b.rev,
                 &PlaceSpec {
-                    face: before.face,
-                    u_start: before.u_start,
+                    face,
+                    u_start,
                     width: before.width,
                     col: before.col,
                     circuit_id: b.circuit_id,
-                    shelf_id: before.shelf_id.clone(),
+                    shelf_id: Some(target),
                 },
             )
             .await?;
+        if changed {
+            st.store
+                .audit_project(
+                    &c.project_id,
+                    Some(&m.0.account.id),
+                    "move",
+                    "placement",
+                    &id,
+                    Some(&before),
+                    Some(&after),
+                )
+                .await?;
+        }
         saved(&st, &m, &origin, &c);
         return Ok(Json(json!({ "placement": after })));
+    }
+    if b.shelf_id.is_some() {
+        return Err(ApiError::Invalid(
+            "Un équipement au format rack se pose dans le rack, pas sur une étagère.".into(),
+        ));
     }
     let mut slot = ctx
         .slot(&before)
