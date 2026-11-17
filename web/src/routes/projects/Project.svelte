@@ -78,7 +78,10 @@
     { key: 'dossier', label: 'Dossier et exports', href: `/projets/${id}/dossier`, icon: 'file' },
     { key: 'historique', label: 'Historique', href: `/projets/${id}/historique`, icon: 'clock' },
   ] }]);
-  // Une ligne sous le titre des pages dont le rôle n'est pas évident d'après leur nom.
+  // Éditeurs en panneaux plein cadre (pas de marges ni de défilement de page) ; les autres
+  // sections sont des pages de contenu (.library-inner).
+  const FULL = ['inventaire', 'racks', 'mobilier', 'planche', 'synoptique', 'plans', 'dessins'];
+  // Précision (infobulle du « i » du titre) des pages dont le rôle n'est pas évident d'après leur nom.
   const DESC: Record<string, string> = {
     planche: 'Les élévations des racks et du mobilier, et les synoptiques, mis en page sur des feuilles pour l’impression ou l’export.',
     plans: 'Les éléments du projet placés sur le site, avec les liaisons tracées et leurs longueurs réelles.',
@@ -133,7 +136,7 @@
       {/if}
     </span>
   {/snippet}
-  <Workspace {groups} active={sub} label="Sections du projet" store="projet" context={p.name}>
+  <Workspace {groups} active={sub} label="Sections du projet" store="projet" context={p.name} full={FULL.includes(sub)}>
     {#snippet mobileExtra()}
       <span class="small muted">Statut du projet</span>
       {@render statusSelect()}
@@ -153,7 +156,7 @@
     {#snippet top()}
       <PageHead ws portal {crumbs} title={section?.label ?? 'Section introuvable'} count={pageSlot.count} desc={DESC[sub] ?? ''} info={sub ? meta : undefined} />
     {/snippet}
-    <div class="page">
+    <div class="page" class:edit={FULL.includes(sub)}>
     {#if sub === ''}<Overview bind:view reload={load} />
     {:else if sub === 'inventaire'}<Inventory bind:view reload={load} />
     {:else if sub === 'atelier'}<Workshop {view} />

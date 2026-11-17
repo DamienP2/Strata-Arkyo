@@ -273,7 +273,7 @@
       {:else if kind === 'types'}
         <div class="form-grid">
           <div class="field"><label for="rf-par">Sous-type de</label><select class="input" id="rf-par" value={editing.parent_id ?? ''} onchange={(e) => (editing!.parent_id = (e.target as HTMLSelectElement).value || null)}><option value="">— (type principal)</option>{#each refList('types').filter((t) => !t.parent_id && t.id !== editing!.id) as t}<option value={t.id}>{t.name}</option>{/each}</select><FieldError message={errors.parent_id} /></div>
-          {#if !editing.parent_id}<div class="field"><label for="rf-fn">Fonction</label><select class="input" id="rf-fn" bind:value={editing.data.function}>{#each refList('functions') as f}<option value={f.id}>{f.name}</option>{/each}</select><FieldError message={errors.function} /></div>{:else}<p class="muted small" style="align-self:end">Un sous-type reprend la fonction de son type.</p>{/if}
+          {#if !editing.parent_id}<div class="field"><label for="rf-fn">Fonction</label><select class="input" id="rf-fn" bind:value={editing.data.function}>{#each refList('functions') as f}<option value={f.id}>{f.name}</option>{/each}</select><FieldError message={errors.function} /></div>{:else}<button type="button" class="ux3-info" title="Un sous-type reprend la fonction de son type." aria-label="Un sous-type reprend la fonction de son type."><Icon name="info" size="sm" /></button>{/if}
         </div>
       {:else if kind === 'dimensions'}
         <div class="form-grid">

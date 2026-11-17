@@ -564,7 +564,7 @@
           <span class="sp">{#if canDesign}<button class="btn sm" onclick={requestHand}>Demander la main</button>{/if}</span>
         {:else}
           <span class="lk"><span class="key-i"><Icon name="unlock" /></span><span>Personne ne modifie ce plan.</span></span>
-          <span class="sp">{#if canDesign}<button class="btn sm primary" onclick={take}>Prendre la main</button>{:else}<span class="muted small">Lecture seule : votre rôle ne permet pas de concevoir.</span>{/if}</span>
+          <span class="sp">{#if canDesign}<button class="btn sm primary" onclick={take}>Prendre la main</button>{:else}<span class="muted small" title="Votre rôle ne permet pas de concevoir.">Lecture seule</span>{/if}</span>
         {/if}
       </div>{/if}
       <div class="dtool">
@@ -714,7 +714,7 @@
               {/each}
             {/if}
           {:else if side === 'trace'}
-            {#if !d.liaisons.length}<p class="muted small">Aucune liaison entre éléments posés sur ce plan. Les liaisons viennent des câbles du synoptique.</p>{/if}
+            {#if !d.liaisons.length}<p class="muted small" title="Les liaisons viennent des câbles du synoptique.">Aucune liaison entre éléments posés sur ce plan</p>{/if}
             {#each d.liaisons as l (l.key)}
               <div class="li tr">
                 <span class="nm"><i class="dot" style="--c:{lcolor(l)}"></i><b>{l.a.name ?? '?'} ↔ {l.b.name ?? '?'}</b></span>

@@ -49,8 +49,6 @@
     toast(`« ${t.panel.name} » supprimé.`); await load();
   }
 </script>
-
-<p class="muted" style="max-width:70ch">Panels de brassage du site : hauteur, densité, connecteurs, groupes de ports et libellés. Ajouté à un élément de projet, un panel y est recopié et se modifie sans toucher la bibliothèque.</p>
 {#if writable && list.length}<HeadActions><button class="btn primary" onclick={start}><Icon name="plus" />Nouveau panel</button></HeadActions>{/if}
 
 {#if !loaded}<Loading label="Chargement des panels" />

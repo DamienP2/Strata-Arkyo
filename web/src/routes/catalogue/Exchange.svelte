@@ -65,7 +65,7 @@
 <div class="grid-2">
   <section class="card stack">
     <div class="card-head"><div><p class="eyebrow">Tableur</p><h2>Exporter les équipements</h2></div></div>
-    <p class="muted">La version simple se réimporte telle quelle. La version détaillée ajoute une ligne par groupe de ports, pour relire la connectique.</p>
+    <button type="button" class="ux3-info" title="La version simple se réimporte telle quelle. La version détaillée ajoute une ligne par groupe de ports, pour relire la connectique." aria-label="La version simple se réimporte telle quelle. La version détaillée ajoute une ligne par groupe de ports, pour relire la connectique."><Icon name="info" size="sm" /></button>
     <div class="row-actions" style="justify-content:flex-start">
       <button class="btn" onclick={() => download('/catalog/export?format=xlsx')}><Icon name="download" />Excel</button>
       <button class="btn" onclick={() => download('/catalog/export?format=csv')}><Icon name="download" />CSV</button>
@@ -74,7 +74,7 @@
   </section>
   <section class="card stack">
     <div class="card-head"><div><p class="eyebrow">Entre sites</p><h2>Exporter le catalogue</h2></div></div>
-    <p class="muted">Un fichier JSON complet, à importer sur un autre site Strata Arkyo.</p>
+    <button type="button" class="ux3-info" title="Un fichier JSON complet, à importer sur un autre site Strata Arkyo." aria-label="Un fichier JSON complet, à importer sur un autre site Strata Arkyo."><Icon name="info" size="sm" /></button>
     <div style="display:flex;gap:14px;flex-wrap:wrap">{#each SECTIONS as [k, l]}<label class="toggle-row"><input type="checkbox" value={k} bind:group={exportSel}>{l}</label>{/each}</div>
     <div class="row-actions" style="justify-content:flex-start"><button class="btn primary" disabled={!exportSel.length} onclick={() => download(`/catalog/exchange?sections=${exportSel.join(',')}`)}><Icon name="download" />Exporter</button></div>
   </section>
@@ -109,7 +109,7 @@
   </section>
 
   <section class="card">
-    <div class="card-head"><div><p class="eyebrow">Retour arrière</p><h2>Instantanés du catalogue</h2></div><span class="muted small">Un état est enregistré avant chaque import ou échange ; les 20 derniers sont gardés.</span></div>
+    <div class="card-head"><div><p class="eyebrow">Retour arrière</p><h2>Instantanés du catalogue</h2></div><button type="button" class="ux3-info" title="Un état est enregistré avant chaque import ou échange ; les 20 derniers sont gardés." aria-label="Un état est enregistré avant chaque import ou échange ; les 20 derniers sont gardés."><Icon name="info" size="sm" /></button></div>
     <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Date</th><th>Origine</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody>
       {#each snapshots as s (s.id)}
         <tr><td class="mono" style="white-space:nowrap">{dateTime(s.created_at)}</td><td>{s.reason}<br><span class="muted small">{secList(s.sections)}</span></td><td class="acts"><button class="btn sm" onclick={() => (restoring = s)}><Icon name="undo" size="sm" />Restaurer cet état…</button></td></tr>
@@ -121,6 +121,6 @@
 {#if restoring}
   <Confirm title="Restaurer le catalogue dans cet état ?" eyebrow={dateTime(restoring.created_at)} confirmLabel="Restaurer cet état" danger onconfirm={restore} onclose={() => (restoring = null)}>
     <p>{secList(restoring.sections)} reprennent leur état du {dateTime(restoring.created_at)} ; les fiches ajoutées ou modifiées depuis sont remplacées.</p>
-    <p class="muted small">L’état actuel est d’abord enregistré dans un nouvel instantané : cette restauration peut elle aussi être annulée.</p>
+    <button type="button" class="ux3-info" title="L’état actuel est d’abord enregistré dans un nouvel instantané : cette restauration peut elle aussi être annulée." aria-label="L’état actuel est d’abord enregistré dans un nouvel instantané : cette restauration peut elle aussi être annulée."><Icon name="info" size="sm" /></button>
   </Confirm>
 {/if}

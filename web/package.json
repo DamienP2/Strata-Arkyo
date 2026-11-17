@@ -8,7 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "check": "svelte-check --tsconfig ./tsconfig.json",
-    "lint:ui": "! grep -rnE -e '--font-mono|danger-btn|chip\\.sm' src"
+    "lint:ui": "! grep -rnE -e '--font-mono|danger-btn|chip\\.sm|@media \\(prefers-color-scheme|window\\.(confirm|alert|prompt)\\(|class=\"[^\"]*\\b(es-hint|gate-foot)\\b' src"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "5.1.1",

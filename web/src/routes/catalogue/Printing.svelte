@@ -158,7 +158,7 @@
 </div>
 
 {#if tab === 'tb'}
-  <div class="pr-bar"><span class="muted small">Cartouches des exports PDF : le premier actif est utilisé par défaut. Les modèles d’origine se restaurent sans toucher aux vôtres.</span><span style="flex:1"></span>
+  <div class="pr-bar"><button type="button" class="ux3-info" title="Cartouches des exports PDF : le premier actif est utilisé par défaut. Les modèles d’origine se restaurent sans toucher aux vôtres." aria-label="Cartouches des exports PDF : le premier actif est utilisé par défaut. Les modèles d’origine se restaurent sans toucher aux vôtres."><Icon name="info" size="sm" /></button><span style="flex:1"></span>
     {#if canSet}
       {#if dirtyTb}<span class="small muted" role="status">Modifications non enregistrées.</span>{/if}
       <button class="btn sm ghost" onclick={() => restore('title-blocks')}>Restaurer les modèles d’origine</button><button class="btn sm" onclick={newTb}><Icon name="plus" size="sm" />Nouveau cartouche</button><button class="btn sm primary" disabled={!dirtyTb || savingTb} onclick={saveTb}>{#if savingTb}<span class="spin" aria-hidden="true"></span>{/if}Enregistrer</button>
@@ -185,7 +185,7 @@
     {/each}
   </div>
 {:else if tab === 'ls'}
-  <div class="pr-bar"><span class="muted small">Planches pour les étiquettes de câbles : la zone transparente s’enroule autour du câble.</span><span style="flex:1"></span>
+  <div class="pr-bar"><button type="button" class="ux3-info" title="Planches pour les étiquettes de câbles : la zone transparente s’enroule autour du câble." aria-label="Planches pour les étiquettes de câbles : la zone transparente s’enroule autour du câble."><Icon name="info" size="sm" /></button><span style="flex:1"></span>
     {#if canSet}
       {#if dirtyLs}<span class="small muted" role="status">Modifications non enregistrées.</span>{/if}
       <button class="btn sm ghost" onclick={() => restore('label-sheets')}>Restaurer les modèles d’origine</button><button class="btn sm" onclick={newLs}><Icon name="plus" size="sm" />Nouvelle planche</button><button class="btn sm primary" disabled={!dirtyLs || savingLs} onclick={saveLs}>{#if savingLs}<span class="spin" aria-hidden="true"></span>{/if}Enregistrer</button>
@@ -219,7 +219,7 @@
     {/each}
   </div>
 {:else if tab === 'dt'}
-  <div class="pr-bar"><span class="muted small">Compositions de dossier enregistrées depuis l’assistant de dossier d’un projet. Elles ne contiennent aucune donnée de projet.</span></div>
+  <div class="pr-bar"><button type="button" class="ux3-info" title="Compositions de dossier enregistrées depuis l’assistant de dossier d’un projet. Elles ne contiennent aucune donnée de projet." aria-label="Compositions de dossier enregistrées depuis l’assistant de dossier d’un projet. Elles ne contiennent aucune donnée de projet."><Icon name="info" size="sm" /></button></div>
   {#if !dts.length}<EmptyState icon="file" message="Aucun modèle de dossier." hint="Créez-en un à la fin d’un export de dossier, depuis un projet." />{/if}
   <div class="grid">
     {#each dts as t (t.id)}
@@ -232,7 +232,7 @@
     {/each}
   </div>
 {:else if tab === 'cm'}
-  <div class="pr-bar"><span class="muted small">Sélection et ordre des colonnes des tableaux (adressage IP, 2110, équipements, préparation), enregistrés depuis l’assistant de dossier.</span></div>
+  <div class="pr-bar"><button type="button" class="ux3-info" title="Sélection et ordre des colonnes des tableaux (adressage IP, 2110, équipements, préparation), enregistrés depuis l’assistant de dossier." aria-label="Sélection et ordre des colonnes des tableaux (adressage IP, 2110, équipements, préparation), enregistrés depuis l’assistant de dossier."><Icon name="info" size="sm" /></button></div>
   {#if !cms.length}<EmptyState icon="list" message="Aucun modèle de colonnes." hint="Ils s’enregistrent depuis l’assistant de dossier d’un projet." />{/if}
   {#each defs.docs.filter((d) => cms.some((c) => c.table === d.key)) as d}
     <h3 class="h3">{d.title}</h3>
@@ -241,7 +241,7 @@
 {:else}
   <section class="card logo">
     <div class="lg-prev">{#if logo}<img src={logo} alt="Logo du site">{:else}<span class="muted">Aucun logo</span>{/if}</div>
-    <p class="small muted">Imprimé dans les cartouches (zone logo) et sur la page de garde du dossier. PNG ou JPG, 512 Ko au plus.</p>
+    <button type="button" class="ux3-info" title="Imprimé dans les cartouches (zone logo) et sur la page de garde du dossier. PNG ou JPG, 512 Ko au plus." aria-label="Imprimé dans les cartouches (zone logo) et sur la page de garde du dossier. PNG ou JPG, 512 Ko au plus."><Icon name="info" size="sm" /></button>
     {#if canSet}<div class="row">{#if logo}<button class="btn sm ghost danger" onclick={() => (logoConfirm = true)}>Retirer le logo…</button>{/if}<button type="button" class="btn sm" disabled={uploading} onclick={(e) => (e.currentTarget.nextElementSibling as HTMLInputElement).click()}>{#if uploading}<span class="spin" aria-hidden="true"></span>{:else}<Icon name="upload" size="sm" />{/if}Choisir une image</button><input type="file" accept="image/png,image/jpeg" hidden onchange={(e) => { const f = (e.target as HTMLInputElement).files?.[0]; (e.target as HTMLInputElement).value = ''; uploadLogo(f); }}></div>{/if}
   </section>
 {/if}
@@ -258,7 +258,7 @@
       <NumField id="tb-h" label="Hauteur" unit="mm" min={0} max={200} bind:value={() => d.t.height, (v) => (d.t.height = v ?? 0)} />
     </div>
     {@render tbPreview(d.t, true)}
-    <p class="help" style="margin:0">Zones : position et taille en mm depuis le coin haut gauche du cartouche, corps du texte en points.</p>
+    <button type="button" class="ux3-info" title="Zones : position et taille en mm depuis le coin haut gauche du cartouche, corps du texte en points." aria-label="Zones : position et taille en mm depuis le coin haut gauche du cartouche, corps du texte en points."><Icon name="info" size="sm" /></button>
     <div class="tbl-wrap">
       <table class="tbl dense zt"><thead><tr><th>Nature</th><th>Valeur</th><th>Libellé</th><th class="num" title="Position horizontale, en mm">X</th><th class="num" title="Position verticale, en mm">Y</th><th class="num" title="Largeur, en mm">L</th><th class="num" title="Hauteur, en mm">H</th><th class="num" title="Corps du texte, en points">Taille</th><th>Gras</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody>
         {#each d.t.zones as z, i}

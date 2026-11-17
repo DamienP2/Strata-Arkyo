@@ -11,7 +11,6 @@
 
 <div class="empty-state" class:card role="status">
   <span class="es-ic"><Icon name={icon} /></span>
-  <p class="es-msg">{message}</p>
-  {#if hint}<p class="es-hint">{hint}</p>{/if}
+  <p class="es-msg" title={hint || undefined}>{message}</p>
   {#if action}<div class="es-act">{@render action()}</div>{/if}
 </div>

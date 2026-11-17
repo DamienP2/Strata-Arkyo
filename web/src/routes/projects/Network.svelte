@@ -305,7 +305,7 @@
     {/if}
 
   {:else if tab === 'vlans'}
-    <div class="ct-bar"><span class="muted small">Numéro unique de 1 à 4094. Le sous-réseau sert à l’adressage automatique.</span><span style="flex:1"></span>{#if writable && r.vlans.length}<button class="btn sm primary" onclick={newVlan}><Icon name="plus" size="sm" />Nouveau VLAN</button>{/if}</div>
+    <div class="ct-bar"><button type="button" class="ux3-info" title="Numéro unique de 1 à 4094. Le sous-réseau sert à l’adressage automatique." aria-label="Numéro unique de 1 à 4094. Le sous-réseau sert à l’adressage automatique."><Icon name="info" size="sm" /></button><span style="flex:1"></span>{#if writable && r.vlans.length}<button class="btn sm primary" onclick={newVlan}><Icon name="plus" size="sm" />Nouveau VLAN</button>{/if}</div>
     {#if !r.vlans.length}
       <EmptyState icon="network" message="Aucun VLAN" hint="Créez les VLAN du projet (production, contrôle, Dante, gestion), puis affectez-les aux ports.">
         {#snippet action()}{#if writable}<button class="btn primary" onclick={newVlan}><Icon name="plus" size="sm" />Nouveau VLAN</button>{/if}{/snippet}

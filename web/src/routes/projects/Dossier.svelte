@@ -154,7 +154,7 @@
   {#if step === 0}
     <section class="card st0">
       <h2>Composer le dossier</h2>
-      <p class="muted">Un seul PDF : page de garde avec sommaire, documents à leur format, page de fin, pagination continue. Les données sont relues au moment de l’export.</p>
+      <button type="button" class="ux3-info" title="Un seul PDF : page de garde avec sommaire, documents à leur format, page de fin, pagination continue. Les données sont relues au moment de l’export." aria-label="Un seul PDF : page de garde avec sommaire, documents à leur format, page de fin, pagination continue. Les données sont relues au moment de l’export."><Icon name="info" size="sm" /></button>
       <div class="starts">
         <button class="card link start" onclick={() => startWith(fresh())}><Icon name="plus" /><b>Nouvelle composition</b><span class="muted small">Tous les documents, réglages par défaut.</span></button>
         <button class="card link start" disabled={!last.data?.docs} onclick={() => startWith(last.data!.docs!, last.data!.title)}><Icon name="refresh" /><b>Reprendre la dernière</b><span class="muted small">{last.data?.docs ? 'Composition du dernier export réussi.' : 'Aucun export réussi pour ce projet.'}</span></button>
@@ -199,7 +199,7 @@
     <section class="card st1">
       {#if pd && o && pr}
         <h2>{pd.title}</h2>
-        <p class="muted small">Pages imprimées, dans cet ordre ; chacune reçoit le cartouche du site.</p>
+        <button type="button" class="ux3-info" title="Pages imprimées, dans cet ordre ; chacune reçoit le cartouche du site." aria-label="Pages imprimées, dans cet ordre ; chacune reçoit le cartouche du site."><Icon name="info" size="sm" /></button>
         <div class="pick">{#each pr.choices ?? [] as ch}<label class="toggle-row"><input type="checkbox" checked={o.pages?.includes(ch.id)} onchange={(e) => { const on = (e.target as HTMLInputElement).checked; o.pages = on ? [...(o.pages ?? []), ch.id] : (o.pages ?? []).filter((x) => x !== ch.id); }}>{ch.label}</label>{/each}</div>
       {/if}
       <div class="nav"><button class="btn ghost" onclick={() => go(-1)}>Retour</button><span class="grow"></span><button class="btn primary" onclick={() => go(1)}>Continuer</button></div>
@@ -231,7 +231,7 @@
     <div class="stack">
       <div class="field"><label for="tpl-name">Nom</label><input class="input" id="tpl-name" bind:value={saveTpl.name} maxlength="100" required aria-invalid={!!tplErr?.field('name')} aria-describedby={tplErr?.field('name') ? 'tpl-name-err' : undefined}><FieldError message={tplErr?.field('name')} for="tpl-name" /></div>
       <div class="field"><label for="tpl-desc">Description (facultatif)</label><textarea class="input" id="tpl-desc" rows="3" maxlength="500" bind:value={saveTpl.description}></textarea></div>
-      <p class="muted small">Le modèle garde la composition et les réglages, sans aucune donnée du projet.</p>
+      <button type="button" class="ux3-info" title="Le modèle garde la composition et les réglages, sans aucune donnée du projet." aria-label="Le modèle garde la composition et les réglages, sans aucune donnée du projet."><Icon name="info" size="sm" /></button>
     </div>
   </Dialog>
 {/if}

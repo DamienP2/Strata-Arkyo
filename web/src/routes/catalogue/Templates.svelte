@@ -50,8 +50,6 @@
   }
   async function open(t: any) { try { detail = await api.get(`/templates/${t.id}`); } catch (e) { fail(e); } }
 </script>
-
-<p class="muted" style="max-width:70ch">Un modèle garde un élément et tout son contenu : matériel, accessoires, circuits et disposition dans le rack. Créez-en un depuis l’inventaire d’un projet (« Enregistrer comme modèle »), activez-le ici, puis ajoutez-le à n’importe quel projet. Seuls les modèles actifs sont proposés.</p>
 {#if !loaded}<Loading label="Chargement des modèles" />
 {:else if !list.length}
   <EmptyState icon="case" message="Aucun modèle d’élément pour l’instant." hint="Enregistrez un élément comme modèle depuis l’inventaire d’un projet." />

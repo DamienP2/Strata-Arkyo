@@ -551,7 +551,7 @@
         </div>{/if}
         <div class="pl-desk" role="presentation" bind:this={deskEl} bind:clientWidth={deskW} bind:clientHeight={deskH} onpointerdown={(e) => { if (!(e.target as Element).closest('.it, .rz, .pl-empty button')) selected = null; }}>
           <div class="pl-paper" bind:this={svgHost} style="width:{paperW}px;aspect-ratio:{pageSize(sheet)[0]} / {pageSize(sheet)[1]}">
-            {#if page && !page.items.length}<div class="pl-empty"><b>Feuille vide</b><span>{writable ? 'Ajoutez des racks, du mobilier ou des synoptiques depuis le panneau de droite, ou placez tout d’un coup.' : 'Aucun élément sur cette feuille.'}</span>{#if writable}<button class="btn sm" onclick={() => (relayout = true)}><Icon name="grid" size="sm" />Disposer automatiquement</button>{/if}</div>{/if}
+            {#if page && !page.items.length}<div class="pl-empty"><b title={writable ? 'Ajoutez des racks, du mobilier ou des synoptiques depuis le panneau de droite, ou placez tout d’un coup.' : undefined}>Feuille vide</b>{#if writable}<button class="btn sm" onclick={() => (relayout = true)}><Icon name="grid" size="sm" />Disposer automatiquement</button>{/if}</div>{/if}
             {#if page}<SheetPage {sheet} {page} {ctx} {info} {shots} index={cur} total={sheet.pages.length} editable={writable} {selected} onpick={pick} onresize={startResize} onselect={(it) => (selected = it.id)} {nameOf} />{/if}
           </div>
         </div>
@@ -589,7 +589,7 @@
           {/if}
           {#if sel.kind === 'synoptic'}
             <section class="pl-sec">
-              {#if ctx.syn?.[sel.container_id ?? ''] === null}<span class="muted small">Ce synoptique est vide : aucun port relié sur cet élément.</span>{/if}
+              {#if ctx.syn?.[sel.container_id ?? ''] === null}<button type="button" class="ux3-info" title="Ce synoptique est vide : aucun port relié sur cet élément." aria-label="Ce synoptique est vide : aucun port relié sur cet élément."><Icon name="info" size="sm" /></button>{/if}
               <a class="btn sm ghost" href="/projets/{pid}/synoptique/element/{sel.container_id}"><Icon name="syn" size="sm" />Ouvrir le synoptique</a>
             </section>
           {:else if sel.kind === 'rack' || sel.kind === 'desk'}
@@ -606,7 +606,7 @@
               <section class="pl-sec">
                 <span class="lbl-t">Vue 3D</span>
                 <Sheet3DView bind:this={viewer} it={sel} {ctx} aspect={box3d.w / box3d.h} oncamera={(p) => { sel.cam = p; changed('cam:' + sel.id); }} />
-                <span class="muted small">Glisser : tourner · molette : zoom · clic droit : décaler. L’angle est repris sur la feuille.</span>
+                <button type="button" class="ux3-info" title="Glisser : tourner · molette : zoom · clic droit : décaler. L’angle est repris sur la feuille." aria-label="Glisser : tourner · molette : zoom · clic droit : décaler. L’angle est repris sur la feuille."><Icon name="info" size="sm" /></button>
                 <span class="flabel">Cadrage</span>
                 <div class="pl-acts" role="group" aria-label="Cadrage de la vue 3D">{#each FRAMES as [k, l]}<button class="btn sm ghost" disabled={!writable} onclick={() => viewer?.frame(k)}>{k === 'front' && sel.kind === 'desk' ? 'Opérateur' : l}</button>{/each}</div>
                 {#if sel.kind === 'rack' && !/case/.test(ctx.racks[sel.container_id ?? '']?.c?.kind ?? '')}
@@ -693,7 +693,7 @@
               </div>
               <div class="field"><label for="pl-n">Normes</label><input class="input" id="pl-n" bind:value={sheet.block.standards} onchange={() => changed()} disabled={!writable} maxlength="80"></div>
               <div class="field"><label for="pl-no">Notes</label><input class="input" id="pl-no" bind:value={sheet.block.notes} onchange={() => changed()} disabled={!writable} maxlength="120"></div>
-              <span class="muted small">Site, projet, client, lieu, date, numéro de feuille et échelle sont remplis automatiquement.</span>
+              <button type="button" class="ux3-info" title="Site, projet, client, lieu, date, numéro de feuille et échelle sont remplis automatiquement." aria-label="Site, projet, client, lieu, date, numéro de feuille et échelle sont remplis automatiquement."><Icon name="info" size="sm" /></button>
             {/if}
           </section>
           {#if writable && sheet.pages.length > 1}

@@ -157,7 +157,7 @@
         <div class="field"><label for="m-un">Identifiant</label><input class="input" id="m-un" bind:value={form.username} placeholder="Facultatif"></div>
       </div>
       <div class="field"><label for="m-ro">Rôle</label><select class="input" id="m-ro" bind:value={form.role_id} aria-describedby="m-ro-help">{#each roles.filter((r) => r.id !== 'owner') as r}<option value={r.id}>{r.name}</option>{/each}</select>
-        <span class="help" id="m-ro-help">Un mot de passe temporaire est créé : transmettez-le à la personne, elle le remplacera à sa première connexion.</span>
+        <button type="button" class="ux3-info" id="m-ro-help" title="Un mot de passe temporaire est créé : transmettez-le à la personne, elle le remplacera à sa première connexion." aria-label="Un mot de passe temporaire est créé : transmettez-le à la personne, elle le remplacera à sa première connexion."><Icon name="info" size="sm" /></button>
       </div>
       {#if formError}<div class="alert err" role="alert">{formError}</div>{/if}
     </div>

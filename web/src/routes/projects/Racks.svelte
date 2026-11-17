@@ -837,8 +837,7 @@
           <Icon name="chevd" size="sm" />
         </button>
         <section>
-          <h2 class="sheet-t">À placer <span class="muted">· {wanted.length}</span></h2>
-          {#if mine && !show3d}<p class="small muted">Glissez un équipement dans le rack, ou choisissez-le puis sa position (clic, ou flèches et Entrée). Clic droit dans le rack pour ajouter ou poser à un U précis. Échap pour annuler.</p>{/if}
+          <h2 class="sheet-t" title={mine && !show3d ? 'Glissez un équipement dans le rack, ou choisissez-le puis sa position (clic, ou flèches et Entrée). Clic droit dans le rack pour ajouter ou poser à un U précis. Échap pour annuler.' : undefined}>À placer <span class="muted">· {wanted.length}</span></h2>
           {#if canAdd && shownC}<button class="btn sm add-mat" onclick={() => { addAt = null; adding = true; }}><Icon name="plus" size="sm" />Ajouter du matériel</button>{/if}
           {#each wantedGroups as g (g.key)}
             <div class="pcat eyebrow"><i style="--c:{g.color}"></i><span>{g.label}</span><b>{g.list.length}</b></div>
@@ -850,8 +849,7 @@
           {/each}
           {:else}<p class="small muted">Tout est posé.</p>{/each}
           {#if notRackable.length}
-            <h2 style="margin-top:8px">Sur étagère <span class="muted">· {notRackable.length}</span></h2>
-            <p class="small muted">Hors format rack : choisissez une étagère posée dans le rack, puis « Poser ».</p>
+            <h2 style="margin-top:8px" title="Hors format rack : choisissez une étagère posée dans le rack, puis « Poser ».">Sur étagère <span class="muted">· {notRackable.length}</span></h2>
             {#each notRackable as p (p.instance_id ?? p.article_id)}<div class="pend mini" style="cursor:default" data-pend={p.instance_id ?? p.article_id} tabindex="-1" title="{p.label}{p.tag ? ` · ${p.tag}` : ''}"><i class="pm-c" style="--c:{famColor(p.function)}"></i><span class="pm-l">{p.label}</span>{#if p.tag}<span class="pm-t">{p.tag}</span>{/if}</div>{/each}
           {/if}
         </section>

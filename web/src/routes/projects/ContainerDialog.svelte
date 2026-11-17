@@ -154,7 +154,6 @@
       <section class="types" aria-label="Type d’élément">
         <div class="types-h">
           <Seg mode="tabs" label="Groupe de types" options={GROUPS} bind:value={group} controls="ce-types" />
-          <span class="muted small">{GROUPS.find((x) => x.value === group)?.help}</span>
         </div>
         <div class="kcards" role="tabpanel" id="ce-types-{group}" aria-label={GROUPS.find((x) => x.value === group)?.label}>
           {#each kindsOf(group) as k (k)}
@@ -197,7 +196,6 @@
               <NumField id="w-c" label="Colonnes" bind:value={w.cols} min={1} max={16} step={1} error={errors['wall.cols']} />
               <div class="field"><label for="w-s">Support (facultatif)</label><input class="input" id="w-s" list="h-sup" value={w.support ?? ''} oninput={(e) => (w.support = (e.target as HTMLInputElement).value || null)} placeholder="Ex. structure alu">{@render hint('h-sup', ELEMENT_HINTS.support!)}</div>
             </div>
-            <span class="help">Ajoutez ensuite les écrans à l’élément, puis placez-les sur la grille depuis l’inventaire.</span>
             {#if Object.keys(errors).some((k) => k.startsWith('wall.tiles'))}<div class="alert err">Réduire le mur ferait sortir des écrans de la grille : retirez-les d’abord.</div>{/if}
           </section>
         {:else if c.kind === 'desk' || c.kind === 'operator_position'}

@@ -633,7 +633,7 @@
               {#if placedElsewhere.length}<h4 class="eyebrow">Sur d’autres pages</h4>{#each placedElsewhere as b (b.instance_id)}<span class="small muted">{b.snapshot.name} <span class="mono">{b.snapshot.tag}</span> · {pageName(b.placed.find((p) => p.nature === pg!.nature)!.page)}</span>{/each}{/if}
             {:else if side === 'props'}
               {@const ro = !mine}
-              {#if !selList.length}<p class="muted small">Choisissez un élément (Maj + clic pour en choisir plusieurs).</p>
+              {#if !selList.length}<button type="button" class="ux3-info" title="Choisissez un élément (Maj + clic pour en choisir plusieurs)." aria-label="Choisissez un élément (Maj + clic pour en choisir plusieurs)."><Icon name="info" size="sm" /></button>
               {:else}
               <div class="sel-h"><h4 class="eyebrow">{selList.length > 1 ? `${selList.length} ${selList.every((x) => x.type === 'link') ? 'liens' : 'éléments'}` : selList[0]!.type === 'equipment' ? selList[0]!.snapshot.name : ({ text: 'Texte', rect: 'Rectangle', ellipse: 'Ellipse', line: 'Ligne', image: 'Image', zone: 'Zone', link: 'Lien', equipment: 'Équipement' } as Record<string, string>)[selList[0]!.type]}{#if selList.length === 1 && selList[0]!.type === 'equipment'} <span class="mono">{selList[0]!.snapshot.tag}</span>{/if}</h4><button class="icon-btn sm" aria-label="Désélectionner (Échap)" title="Désélectionner (Échap)" onclick={() => (sel = new Set())}><Icon name="x" size="sm" /></button></div>
               {#if selList.length > 1 && selList.every((e) => e.type === 'link')}

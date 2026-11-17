@@ -330,13 +330,13 @@
       </tbody>
     </table></div>
   </section>
-  {#if writable}<p class="muted small">Cliquez une cellule d’une ligne, puis « Recopier vers le bas » : la valeur part sur les lignes choisies en dessous (toutes les lignes affichées en dessous si aucune n’est choisie) ; les numéros s’incrémentent. Rien n’est enregistré avant « Enregistrer ».</p>{/if}
+  {#if writable}<button type="button" class="ux3-info" title="Cliquez une cellule d’une ligne, puis « Recopier vers le bas » : la valeur part sur les lignes choisies en dessous (toutes les lignes affichées en dessous si aucune n’est choisie) ; les numéros s’incrémentent. Rien n’est enregistré avant « Enregistrer »." aria-label="Cliquez une cellule d’une ligne, puis « Recopier vers le bas » : la valeur part sur les lignes choisies en dessous (toutes les lignes affichées en dessous si aucune n’est choisie) ; les numéros s’incrémentent. Rien n’est enregistré avant « Enregistrer »."><Icon name="info" size="sm" /></button>{/if}
 {/if}
 
 {#if lbl}
   <Dialog title="Étiquettes de câbles" eyebrow="Impression" onclose={() => (lbl = null)} dirty={() => false}
     onsubmit={printLabels} submitLabel="Imprimer les étiquettes" cancelLabel={lbl.sheets.length ? 'Annuler' : 'Fermer'} submitDisabled={!lbl.sheets.length || !labelRows.length || !lbl.key}>
-    {#if !lbl.sheets.length}<p class="muted">Aucune planche active : ajoutez-en une dans Catalogue › Impression.</p>
+    {#if !lbl.sheets.length}<p class="muted" title="Ajoutez-en une dans Catalogue › Impression.">Aucune planche active</p>
     {:else}
       <div class="field"><label for="lbl-sheet">Planche</label><select class="input" id="lbl-sheet" bind:value={lbl.key}>{#each lbl.sheets as s}<option value={s.key}>{s.name} · {s.reference}{s.brand ? ` · ${s.brand}` : ''} ({s.cols} × {s.rows}{s.diam_min ? `, Ø ${s.diam_min}–${s.diam_max} mm` : ''})</option>{/each}</select></div>
       <div class="field" role="radiogroup" aria-labelledby="lbl-scope"><span class="flabel" id="lbl-scope">Câbles</span>

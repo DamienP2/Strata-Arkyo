@@ -195,7 +195,7 @@
           <option value="">Automatique · {VISUALS.find(([k]) => k === visualOf({ type_id: data.type_id, label: data.name ?? '' }))?.[1] ?? 'Générique'}</option>
           {#each VISUALS as [k, l]}<option value={k}>{l}</option>{/each}
         </select>
-        <span class="help">Façade dessinée dans les vues réelle et 3D (aperçu en haut de la fiche). Automatique : d’après le type, puis le nom ; pour un moniteur, le nombre d’écrans vient du nom (Dual, Triple, 4×).</span></div>
+        <button type="button" class="ux3-info" title="Façade dessinée dans les vues réelle et 3D (aperçu en haut de la fiche). Automatique : d’après le type, puis le nom ; pour un moniteur, le nombre d’écrans vient du nom (Dual, Triple, 4×)." aria-label="Façade dessinée dans les vues réelle et 3D (aperçu en haut de la fiche). Automatique : d’après le type, puis le nom ; pour un moniteur, le nombre d’écrans vient du nom (Dual, Triple, 4×)."><Icon name="info" size="sm" /></button></div>
     </div>
   {:else}
     <div class="fg3" style="margin-top:16px">
@@ -265,11 +265,11 @@
 </section>
 {:else if tab === 'modules'}
 <section class="card">
-  <div class="card-head"><div><h2>Équipement modulaire</h2><span class="muted small">Un châssis reçoit des modules (cartes, convertisseurs) dans ses emplacements ; un module occupe un ou plusieurs emplacements d’un châssis.</span></div></div>
+  <div class="card-head"><div><h2>Équipement modulaire</h2><button type="button" class="ux3-info" title="Un châssis reçoit des modules (cartes, convertisseurs) dans ses emplacements ; un module occupe un ou plusieurs emplacements d’un châssis." aria-label="Un châssis reçoit des modules (cartes, convertisseurs) dans ses emplacements ; un module occupe un ou plusieurs emplacements d’un châssis."><Icon name="info" size="sm" /></button></div></div>
   <div class="role-seg"><Seg label="Rôle modulaire" value={data.modular?.role ?? 'none'} onchange={(v) => setRole(v as 'none' | 'host' | 'component')} options={[{ value: 'none', label: 'Équipement simple' }, { value: 'host', label: 'Châssis · reçoit des modules' }, { value: 'component', label: 'Module · se glisse dans un châssis' }]} /></div>
   {#if data.modular?.role === 'host'}
     <div class="fg4" style="margin-top:16px"><NumField id="e-slots" label="Emplacements" bind:value={data.modular.slots} min={1} max={40} step={1} error={err('modular.slots')} help="De 1 à 40." /></div>
-    <div class="chassis-h"><b>Composition par défaut</b><span class="muted small">Proposée quand le châssis est ajouté à un projet. Cliquez un emplacement libre pour y glisser un module.</span></div>
+    <div class="chassis-h"><b>Composition par défaut</b><button type="button" class="ux3-info" title="Proposée quand le châssis est ajouté à un projet. Cliquez un emplacement libre pour y glisser un module." aria-label="Proposée quand le châssis est ajouté à un projet. Cliquez un emplacement libre pour y glisser un module."><Icon name="info" size="sm" /></button></div>
     <div class="chassis" style="--n:{data.modular.slots}">
       {#each Array(Math.max(1, Math.min(40, Number(data.modular.slots) || 1))) as _, k}
         {@const slot = k + 1}
@@ -295,15 +295,15 @@
           {#each comps.filter((c) => !compQ.trim() || `${c.name} ${c.reference ?? ''}`.toLowerCase().includes(compQ.trim().toLowerCase())).slice(0, 60) as c (c.id)}
             {@const ok = fits(pickSlot, c.slots)}
             <button type="button" class="cp-row" disabled={!ok} onclick={() => placeComp(c)}><b>{c.name}</b><span class="muted small">{c.reference ?? ''}</span><span class="cp-w">{c.slots} empl.{ok ? '' : ' · ne tient pas ici'}</span></button>
-          {:else}<p class="muted small">Aucun module au catalogue. Ouvrez la fiche d’une carte et choisissez « Module » dans cet onglet.</p>{/each}
+          {:else}<p class="muted small" title="Ouvrez la fiche d’une carte et choisissez « Module » dans cet onglet.">Aucun module au catalogue</p>{/each}
         {/if}
       </div>
     {/if}
   {:else if data.modular?.role === 'component'}
     <div class="fg4" style="margin-top:16px"><NumField id="e-cslots" label="Emplacements occupés" bind:value={data.modular.slots} min={1} max={8} step={1} error={err('modular.slots')} help="Largeur du module dans le châssis, de 1 à 8." /></div>
-    <p class="muted small" style="margin-top:8px">Ce module apparaît dans la liste des modules de chaque fiche de châssis.</p>
+    <button type="button" class="ux3-info" title="Ce module apparaît dans la liste des modules de chaque fiche de châssis." aria-label="Ce module apparaît dans la liste des modules de chaque fiche de châssis."><Icon name="info" size="sm" /></button>
   {:else}
-    <p class="muted small" style="margin-top:14px">Cet équipement ne reçoit pas de modules et ne se glisse pas dans un châssis.</p>
+    <button type="button" class="ux3-info" title="Cet équipement ne reçoit pas de modules et ne se glisse pas dans un châssis." aria-label="Cet équipement ne reçoit pas de modules et ne se glisse pas dans un châssis."><Icon name="info" size="sm" /></button>
   {/if}
 </section>
 
@@ -323,7 +323,7 @@
 </section>
 
 <section class="card">
-  <div class="card-head"><div><h2>Flux IP (SMPTE ST 2110)</h2><span class="muted small">Chaque sortie de flux reçoit un groupe multicast dans le plan d’adressage du projet. Essence déduite de la famille du signal : vidéo, audio ou données annexes.</span></div><label class="toggle-row"><input type="checkbox" bind:checked={ipOn}>Émet ou reçoit des flux IP</label></div>
+  <div class="card-head"><div><h2>Flux IP (SMPTE ST 2110)</h2><button type="button" class="ux3-info" title="Chaque sortie de flux reçoit un groupe multicast dans le plan d’adressage du projet. Essence déduite de la famille du signal : vidéo, audio ou données annexes." aria-label="Chaque sortie de flux reçoit un groupe multicast dans le plan d’adressage du projet. Essence déduite de la famille du signal : vidéo, audio ou données annexes."><Icon name="info" size="sm" /></button></div><label class="toggle-row"><input type="checkbox" bind:checked={ipOn}>Émet ou reçoit des flux IP</label></div>
   {#if ipOn && data.ip}
     <div class="stack" style="gap:8px;margin-top:12px">
       <Seg label="Contrôle" bind:value={data.ip.control} options={[{ value: 'out_of_band', label: 'Contrôle hors bande' }, { value: 'in_band', label: 'Contrôle dans la bande' }]} />
@@ -350,7 +350,7 @@
         <input class="input mono" class:err={!!err(`documents[${i}]`)} bind:value={d.url} placeholder="https://" aria-label="Lien du document">
         <button type="button" class="icon-btn sm danger" title="Retirer ce document" aria-label="Retirer ce document" onclick={() => (data.documents = data.documents.filter((_: unknown, j: number) => j !== i))}><Icon name="x" size="sm" /></button>
       </div>
-    {:else}<p class="muted small">Aucun document : manuel, fiche technique, page du fabricant.</p>{/each}
+    {:else}<p class="muted small" title="Manuel, fiche technique, page du fabricant.">Aucun document</p>{/each}
     <FieldError message={err('documents')} />
   </div>
 </section>

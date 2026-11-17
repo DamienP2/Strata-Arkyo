@@ -22,12 +22,12 @@
 </script>
 
 <div class="field">
-  <label for={id}>{label}</label>
+  <label for={id} title={help || undefined}>{label}</label>
   <div class="unit-in">
     <input class="input mono" class:err={!!error} {id} inputmode="decimal" value={text} oninput={input} onchange={() => onchange?.(value)} {disabled} {placeholder} list={suggestions.length ? `${id}-list` : undefined} {required} data-step={step} data-min={min} data-max={max} autocomplete="off" aria-invalid={error ? 'true' : undefined} aria-describedby={described}>
     {#if unit}<span class="u">{unit}</span>{/if}
   </div>
   {#if suggestions.length}<datalist id="{id}-list">{#each suggestions as s}<option value={String(s).replace('.', ',')}></option>{/each}</datalist>{/if}
-  {#if help && !error}<span class="help" id="{id}-help">{help}</span>{/if}
+  {#if help && !error}<span class="sr-only" id="{id}-help">{help}</span>{/if}
   <FieldError message={error} for={id} />
 </div>

@@ -77,7 +77,7 @@
   {/if}
   {#if writable}
     <div class="row-actions wv-save">
-      {#if !screens.length}<span class="muted small wv-hint">Ajoutez des écrans à l’élément (« Ajouter du matériel ») pour les placer sur le mur.</span>{/if}
+      {#if !screens.length}<button type="button" class="ux3-info wv-hint" title="Ajoutez des écrans à l’élément (« Ajouter du matériel ») pour les placer sur le mur." aria-label="Ajoutez des écrans à l’élément (« Ajouter du matériel ») pour les placer sur le mur."><Icon name="info" size="sm" /></button>{/if}
       <button class="btn sm ghost" disabled={!dirty || saving} onclick={() => { w = JSON.parse(base); sel = null; }}>Annuler</button>
       <button class="btn sm primary" disabled={!dirty || saving} onclick={save}>{#if saving}<span class="spin"></span>{/if}Enregistrer le mur</button>
     </div>

@@ -326,7 +326,7 @@
           <div class="am-list acc-pane">
             <div class="acc-head"><b>{ACC.find((a) => a.k === accKind)?.label}</b><span class="muted small">{ACC.find((a) => a.k === accKind)?.help}</span></div>
             {#if accKind === 'panel'}
-              <p class="muted small">Le panel est recopié dans le projet : vous pourrez le modifier ensuite sans toucher la bibliothèque.</p>
+              <button type="button" class="ux3-info" title="Le panel est recopié dans le projet : vous pourrez le modifier ensuite sans toucher la bibliothèque." aria-label="Le panel est recopié dans le projet : vous pourrez le modifier ensuite sans toucher la bibliothèque."><Icon name="info" size="sm" /></button>
               <div class="plib">
                 {#if lib === null}<Loading label="Chargement des panels" />{:else}
                   {#each libShown as l (l.id)}
@@ -351,12 +351,12 @@
                   <div class="field"><label for="ac-l">Longueur</label><select class="input" id="ac-l" bind:value={acc.length_mm}>{#each [600, 900, 1200, 1500, 1600, 1800, 2000] as d}<option value={d}>{d} mm</option>{/each}</select></div>
                   <div class="field"><label for="ac-o">Prises</label><select class="input" id="ac-o" bind:value={acc.outlets}>{#each [8, 12, 16, 20, 24, 30, 36, 42, 48] as d}<option value={d}>{d}</option>{/each}</select></div>
                 </div>
-                <p class="muted small">Monté à l’arrière, dans le couloir entre le montant et le flanc : il n’occupe aucun U et s’affiche en vue arrière et en 3D.</p>
+                <button type="button" class="ux3-info" title="Monté à l’arrière, dans le couloir entre le montant et le flanc : il n’occupe aucun U et s’affiche en vue arrière et en 3D." aria-label="Monté à l’arrière, dans le couloir entre le montant et le flanc : il n’occupe aucun U et s’affiche en vue arrière et en 3D."><Icon name="info" size="sm" /></button>
               {:else}
                 <div class="fg3">
                   <div class="field"><label for="ac-u">Hauteur</label><select class="input" id="ac-u" bind:value={acc.height_u}>{#each accKind === 'plate' ? [0.5, 1, 2, 3, 4, 5, 6, 7, 8] : [1, 2, 3, 4, 5, 6, 7, 8] as u}<option value={u}>{fmtU(u)} U</option>{/each}</select></div>
                   {#if accKind === 'plate'}<div class="field"><label for="ac-v">Variante</label><select class="input" id="ac-v" bind:value={acc.variant}><option value="blank">Pleine</option><option value="brush">Passe-câble</option><option value="vented">Aérée</option></select></div>
-                  {:else if accKind === 'lacing_bar'}<div class="field"><label for="ac-d">Déport depuis le rail</label><select class="input" id="ac-d" bind:value={acc.depth_mm}>{#each [0, 50, 75, 100, 150, 200] as d}<option value={d}>{d} mm</option>{/each}</select><span class="help">Se pose en face arrière, derrière les équipements à attacher.</span></div>
+                  {:else if accKind === 'lacing_bar'}<div class="field"><label for="ac-d">Déport depuis le rail</label><select class="input" id="ac-d" bind:value={acc.depth_mm}>{#each [0, 50, 75, 100, 150, 200] as d}<option value={d}>{d} mm</option>{/each}</select><button type="button" class="ux3-info" title="Se pose en face arrière, derrière les équipements à attacher." aria-label="Se pose en face arrière, derrière les équipements à attacher."><Icon name="info" size="sm" /></button></div>
                   {:else}<div class="field"><label for="ac-d">Profondeur</label><select class="input" id="ac-d" bind:value={acc.depth_mm}>{#each accKind === 'drawer' ? [200, 250, 300, 350, 400, 450, 500] : [200, 300, 350, 400, 450, 500, 600, 700, 800, 1000, 1200] as d}<option value={d}>{d} mm</option>{/each}</select></div>{/if}
                 </div>
               {/if}

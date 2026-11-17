@@ -106,13 +106,7 @@ input[type=range]{accent-color:var(--accent)}
 :root[data-theme="light"] .next .tally{--c:var(--err);background:var(--err-soft);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--err) 35%,transparent)}
 :root[data-theme="light"] .next .vu i.on{background:var(--ok);box-shadow:none}
 :root[data-theme="light"] .next-vis{--ill-shadow:rgba(46,38,24,.17)}
-@media (prefers-color-scheme: light){
-  :root:not([data-theme="dark"]) .next{--inst-fg:var(--fg);--inst-fg-2:var(--fg-2);--inst-fg-3:var(--fg-3);--inst-edge:var(--line);--inst-seg:var(--seg-off);background:radial-gradient(90% 110% at 92% -10%,var(--accent-soft) 0%,var(--surface) 60%);box-shadow:0 0 0 1px var(--line),0 1px 2px rgba(0,0,0,.05)}
-  :root:not([data-theme="dark"]) .next::before{display:none}
-  :root:not([data-theme="dark"]) .next .tally{--c:var(--err);background:var(--err-soft);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--err) 35%,transparent)}
-  :root:not([data-theme="dark"]) .next .vu i.on{background:var(--ok);box-shadow:none}
-  :root:not([data-theme="dark"]) .next-vis{--ill-shadow:rgba(46,38,24,.17)}
-}
+
 .fig .fig-none{display:block;margin-top:12px;font:650 22px/1.1 var(--display);letter-spacing:-.015em;color:var(--fg-2)}
 
 /* ---------- Système : libellé et valeur rapprochés ---------- */

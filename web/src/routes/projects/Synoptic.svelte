@@ -1836,7 +1836,7 @@
             {#each syn.harnesses as h (h.id)}
               {@const n = syn.cables.filter((c) => c.fields.harness_id === h.id).length}
               <div class="hrow"><button class="hname" onclick={() => showHarness(h)}><i class="dot" style="--c:{h.color}"></i><b>{h.name}</b><span class="muted small">{n} câble{n > 1 ? 's' : ''} dans la vue</span></button>{#if mine}<button class="icon-btn sm" aria-label="Supprimer le faisceau {h.name}" onclick={() => dropHarness(h)}><Icon name="trash" size="sm" /></button>{/if}</div>
-            {:else}<span class="muted small">Aucun faisceau. Choisissez des câbles, puis clic droit › « Créer un faisceau ».</span>{/each}
+            {:else}<span class="muted small" title="Choisissez des câbles, puis clic droit › « Créer un faisceau ».">Aucun faisceau</span>{/each}
             {#if mine}<button class="btn sm ghost" style="justify-self:start" onclick={() => (newHarness = { name: '', color: '#2459E0' })}><Icon name="plus" size="sm" />Nouveau faisceau</button>{/if}
           </section>
         {:else if annSel && tab !== 'issues'}
@@ -1881,7 +1881,7 @@
           {@const cs = [...selNodes].flatMap((k2) => cablesOfNode(k2))}
           <section>
             {@render secHead(`${selNodes.size} nœuds sélectionnés`)}
-            <p class="muted small" style="margin:0">Glissez l’un d’eux pour déplacer tout le groupe (Maj : axe verrouillé). Les points de passage des câbles entre ces nœuds suivent.</p>
+            
             <button class="btn sm" disabled={!cs.length} onclick={() => { multi = new Set(cs.map((c) => c.id)); sel = cs[0]?.id ?? null; selNodes = new Set(); }}>Sélectionner leurs câbles ({new Set(cs.map((c) => c.id)).size})</button>
           </section>
         {:else if nodeSel && !sel}
@@ -1905,12 +1905,12 @@
         {:else if multi.size > 1}
           <section>
             {@render secHead(`${multi.size} câbles choisis`)}
-            <p class="muted small" style="margin:0">Ctrl ou Maj + clic pour en ajouter ou en retirer.</p>
+            <button type="button" class="ux3-info" title="Ctrl ou Maj + clic pour en ajouter ou en retirer." aria-label="Ctrl ou Maj + clic pour en ajouter ou en retirer."><Icon name="info" size="sm" /></button>
             {#if mine}
               <div class="field"><label for="mh">Faisceau</label><select class="input" id="mh" onchange={(e) => { const v = (e.target as HTMLSelectElement).value; if (v === '+') newHarness = { name: '', color: '#2459E0' }; else assign(v || null); (e.target as HTMLSelectElement).value = '~'; }}><option value="~">Ranger dans un faisceau</option><option value="">Aucun faisceau</option>{#each syn.harnesses as h}<option value={h.id}>{h.name}</option>{/each}<option value="+">+ Nouveau faisceau</option></select></div>
               {@const cs = selCables()}
               <div class="field"><span class="flabel">Style du tracé</span><div class="seg" role="group" aria-label="Style du tracé">{#each STYLES as [k2, l]}<button class:on={selStyle(cs) === k2} aria-pressed={selStyle(cs) === k2} onclick={() => styleSel(k2)}>{l}</button>{/each}</div></div>
-              <div class="field"><span class="flabel">Tracé</span><div class="seg" role="group" aria-label="Tracé"><button class:on={selRoute(cs) === 'grouped'} aria-pressed={selRoute(cs) === 'grouped'} disabled={cs.filter(drawn).length < 2} title="Les câbles choisis suivent un même chemin parallèle" onclick={regroupSel}>Regroupé</button><button class:on={selRoute(cs) === 'unique'} aria-pressed={selRoute(cs) === 'unique'} title="Chaque câble reprend son tracé automatique" onclick={uniqueSel}>Unique</button></div><span class="help">Regroupé : un faisceau parallèle sur le chemin du premier câble. Unique : tracés automatiques indépendants.</span></div>
+              <div class="field"><span class="flabel">Tracé</span><div class="seg" role="group" aria-label="Tracé"><button class:on={selRoute(cs) === 'grouped'} aria-pressed={selRoute(cs) === 'grouped'} disabled={cs.filter(drawn).length < 2} title="Les câbles choisis suivent un même chemin parallèle" onclick={regroupSel}>Regroupé</button><button class:on={selRoute(cs) === 'unique'} aria-pressed={selRoute(cs) === 'unique'} title="Chaque câble reprend son tracé automatique" onclick={uniqueSel}>Unique</button></div><button type="button" class="ux3-info" title="Regroupé : un faisceau parallèle sur le chemin du premier câble. Unique : tracés automatiques indépendants." aria-label="Regroupé : un faisceau parallèle sur le chemin du premier câble. Unique : tracés automatiques indépendants."><Icon name="info" size="sm" /></button></div>
               <button class="btn sm" onclick={() => askModel([...multi])}>Type de câble</button>
               <button class="btn sm primary" onclick={() => (numbering = true)}><Icon name="hash" size="sm" />Numéroter la sélection</button>
               <button class="btn sm ghost danger" onclick={() => (confirmDelete = true)}><Icon name="trash" size="sm" />Supprimer les {multi.size} câbles</button>{/if}
@@ -1921,7 +1921,7 @@
             {@render secHead('Attache d’adaptateur')}
             <div class="ends"><div><span class="flabel">Adaptateur</span><b>{endName(c.b, c.b_info)}</b></div><div><span class="flabel">Enfiché sur</span><b>{endName(c.a, c.a_info)}</b></div></div>
             {#each c.warnings as w}<div class="alert warn"><Icon name="alert" /><span>{w}</span></div>{/each}
-            <p class="muted small" style="margin:0">Sans câble : l’entrée de l’adaptateur est enfichée directement sur le port.</p>
+            <button type="button" class="ux3-info" title="Sans câble : l’entrée de l’adaptateur est enfichée directement sur le port." aria-label="Sans câble : l’entrée de l’adaptateur est enfichée directement sur le port."><Icon name="info" size="sm" /></button>
             {#if mine}<button class="btn sm ghost danger" onclick={requestDelete}><Icon name="trash" size="sm" />Détacher</button>{/if}
           </section>
         {:else if selected}
@@ -1952,7 +1952,7 @@
                 {#if c.fields.waypoints?.length}<button class="btn sm ghost" onclick={() => patchSel({ waypoints: [] })}>Réinitialiser le tracé</button>{/if}
                 {#if c.fields.number}<button class="btn sm ghost" onclick={() => patchSel({ number: null })}>Effacer le numéro</button>{/if}
               </div>{/if}
-              {#if mine}<p class="muted small" style="margin:0">Glissez une extrémité vers un autre port pour rebrancher ; glissez une poignée de tronçon pour modifier le tracé.</p>{/if}
+              
             {/if}
             <dl class="kv"><dt>Longueur estimée</dt><dd>{c.estimate_m ? `${nf(c.estimate_m, 1)} m` : '—'}</dd></dl>
             <div class="field"><label for="cno">Notes</label><textarea class="input" id="cno" rows="3" maxlength="2000" disabled={!mine} value={c.fields.notes ?? ''} onchange={(e) => patchSel({ notes: (e.target as HTMLTextAreaElement).value || null })}></textarea></div>
@@ -1974,7 +1974,7 @@
         {:else}
           <section>
             <span class="lbl-t">Rien de sélectionné</span>
-            <p class="muted small" style="margin:0">{mine ? 'Outil Câble (C) : cliquez ou glissez d’un port à l’autre ; les ports compatibles s’allument. Outil Sélection (V) : cliquez un nœud ou un câble, glissez le fond pour sélectionner au rectangle. Clic droit : actions. ? : raccourcis.' : 'Cliquez un câble ou un port câblé pour voir ses détails.'}</p>
+            <p class="sr-only">{mine ? 'Outil Câble (C) : cliquez ou glissez d’un port à l’autre ; les ports compatibles s’allument. Outil Sélection (V) : cliquez un nœud ou un câble, glissez le fond pour sélectionner au rectangle. Clic droit : actions. ? : raccourcis.' : 'Cliquez un câble ou un port câblé pour voir ses détails.'}</p>
             {#if warnCount}
               <span class="lbl-t" style="margin-top:8px">À vérifier</span>
               <AnomalyGroups compact list={toCheck} onpick={(a) => { if (a.src) { sel = a.src; multi = new Set([a.src]); centerOn(`[data-cable="${a.src}"]`); } }} />
@@ -2012,7 +2012,7 @@
           <div class="field"><label for="er">Révision</label><input class="input mono" id="er" bind:value={exp.revision} maxlength="20" placeholder="A"></div>
         </div>
       {/if}
-      <p class="muted small" style="margin:0">Rendu sur fond blanc avec la palette claire, même en thème sombre ; câbles et textes vectoriels dans le PDF.</p>
+      <button type="button" class="ux3-info" title="Rendu sur fond blanc avec la palette claire, même en thème sombre ; câbles et textes vectoriels dans le PDF." aria-label="Rendu sur fond blanc avec la palette claire, même en thème sombre ; câbles et textes vectoriels dans le PDF."><Icon name="info" size="sm" /></button>
     </div>
   </Dialog>
 {/if}

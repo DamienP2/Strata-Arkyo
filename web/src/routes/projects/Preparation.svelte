@@ -135,7 +135,7 @@
         </tbody>
       </table></div>
     </section>
-    <p class="muted small">Quantité : le besoin, calculé depuis l’inventaire et le câblage, plus la réserve que vous saisissez, donne le total à préparer. Un câble sans modèle compte comme manquant ; choisir un modèle l’affecte à toute la ligne.</p>
+    <button type="button" class="ux3-info" title="Quantité : le besoin, calculé depuis l’inventaire et le câblage, plus la réserve que vous saisissez, donne le total à préparer. Un câble sans modèle compte comme manquant ; choisir un modèle l’affecte à toute la ligne." aria-label="Quantité : le besoin, calculé depuis l’inventaire et le câblage, plus la réserve que vous saisissez, donne le total à préparer. Un câble sans modèle compte comme manquant ; choisir un modèle l’affecte à toute la ligne."><Icon name="info" size="sm" /></button>
   {/if}
 {/if}
 
